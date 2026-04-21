@@ -33,6 +33,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1545,6 +1546,12 @@ bool Session::InsertCharacter(commands::Command* command) {
 
   context_->mutable_composer()->InsertCharacterKeyEvent(key);
   ClearUndoContext();
+
+  if (CanDirectCommitAfterPunctuation(key)) {
+    CommitCompositionDirectly(command);
+    return true;
+  }
+
   if (context_->mutable_composer()->ShouldCommit()) {
     CommitCompositionDirectly(command);
     return true;
@@ -2745,46 +2752,110 @@ void Session::OutputKey(commands::Command* command) const {
 }
 
 namespace {
-// return
-// ((key_code == static_cast<uint32_t>('.') ||
-//       key_string == "." || key_string == "．" ||
-//   key_string == "。" || key_string == "｡") &&
-//  (config.auto_conversion_key() &
-//   config::Config::AUTO_CONVERSION_KUTEN)) ||
-// ((key_code == static_cast<uint32_t>(',') ||
-//       key_string == "," || key_string == "，" ||
-//   key_string == "、" || key_string == "､") &&
-//  (config.auto_conversion_key() &
-//   config::Config::AUTO_CONVERSION_TOUTEN)) ||
-// ((key_code == static_cast<uint32_t>('?') ||
-//   key_string == "?" || key_string == "？") &&
-//  (config.auto_conversion_key() &
-//   config::Config::AUTO_CONVERSION_QUESTION_MARK)) ||
-// ((key_code == static_cast<uint32_t>('!') ||
-//   key_string == "!" || key_string == "！") &&
-//  (config.auto_conversion_key() &
-//   config::Config::AUTO_CONVERSION_EXCLAMATION_MARK));
-bool IsValidKey(const config::Config& config, const uint32_t key_code,
-                absl::string_view key_string) {
-  return (((key_code == static_cast<uint32_t>('.') && key_string.empty()) ||
-           key_string == "." || key_string == "．" || key_string == "。" ||
-           key_string == "｡") &&
+
+bool MatchesKeyEvent(const commands::KeyEvent& key_event,
+                     const uint32_t key_code,
+                     std::initializer_list<absl::string_view> key_strings) {
+  if (key_event.key_code() == key_code && key_event.key_string().empty()) {
+    return true;
+  }
+
+  for (const absl::string_view s : key_strings) {
+    if (key_event.key_string() == s) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool MatchesString(absl::string_view value,
+                   std::initializer_list<absl::string_view> candidates) {
+  for (const absl::string_view s : candidates) {
+    if (value == s) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Auto conversion helper.
+// NOTE: This checks the last character in preedit, not key_event.key_string().
+bool IsValidAutoConversionKey(const config::Config& config,
+                              const uint32_t key_code,
+                              absl::string_view last_char) {
+  return (((key_code == static_cast<uint32_t>('.') && last_char.empty()) ||
+           last_char == "." || last_char == "．" || last_char == "。" ||
+           last_char == "｡") &&
           (config.auto_conversion_key() &
            config::Config::AUTO_CONVERSION_KUTEN)) ||
-         (((key_code == static_cast<uint32_t>(',') && key_string.empty()) ||
-           key_string == "," || key_string == "，" || key_string == "、" ||
-           key_string == "､") &&
+         (((key_code == static_cast<uint32_t>(',') && last_char.empty()) ||
+           last_char == "," || last_char == "，" || last_char == "、" ||
+           last_char == "､") &&
           (config.auto_conversion_key() &
            config::Config::AUTO_CONVERSION_TOUTEN)) ||
-         (((key_code == static_cast<uint32_t>('?') && key_string.empty()) ||
-           key_string == "?" || key_string == "？") &&
+         (((key_code == static_cast<uint32_t>('?') && last_char.empty()) ||
+           last_char == "?" || last_char == "？") &&
           (config.auto_conversion_key() &
            config::Config::AUTO_CONVERSION_QUESTION_MARK)) ||
-         (((key_code == static_cast<uint32_t>('!') && key_string.empty()) ||
-           key_string == "!" || key_string == "！") &&
+         (((key_code == static_cast<uint32_t>('!') && last_char.empty()) ||
+           last_char == "!" || last_char == "！") &&
           (config.auto_conversion_key() &
            config::Config::AUTO_CONVERSION_EXCLAMATION_MARK));
 }
+
+bool IsValidDirectCommitKey(const config::Config& config,
+                            const commands::KeyEvent& key_event,
+                            absl::string_view last_char) {
+  return
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>('.'),
+                       {".", "．", "。", "｡"}) &&
+       MatchesString(last_char, {".", "．", "。", "｡"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_KUTEN)) ||
+
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>(','),
+                       {",", "，", "、", "､"}) &&
+       MatchesString(last_char, {",", "，", "、", "､"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_TOUTEN)) ||
+
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>('?'),
+                       {"?", "？"}) &&
+       MatchesString(last_char, {"?", "？"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_QUESTION_MARK)) ||
+
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>('!'),
+                       {"!", "！"}) &&
+       MatchesString(last_char, {"!", "！"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_EXCLAMATION_MARK)) ||
+
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>('('),
+                       {"(", "（"}) &&
+       MatchesString(last_char, {"(", "（"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_OPEN_PARENTHESIS)) ||
+
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>(')'),
+                       {")", "）"}) &&
+       MatchesString(last_char, {")", "）"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_CLOSE_PARENTHESIS)) ||
+
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>('['),
+                       {"[", "［", "「"}) &&
+       MatchesString(last_char, {"[", "［", "「"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_OPEN_BRACKET)) ||
+
+      (MatchesKeyEvent(key_event, static_cast<uint32_t>(']'),
+                       {"]", "］", "」"}) &&
+       MatchesString(last_char, {"]", "］", "」"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_CLOSE_BRACKET));
+}
+
 }  // namespace
 
 bool Session::CanStartAutoConversion(
@@ -2794,17 +2865,10 @@ bool Session::CanStartAutoConversion(
   }
 
   // Disable if the input comes from non-standard user keyboards, like numpad.
-  // http://b/issue?id=2932067
   if (key_event.input_style() != commands::KeyEvent::FOLLOW_MODE) {
     return false;
   }
 
-  // This is a tentative workaround for the bug http://b/issue?id=2932028
-  // When user types <Shift Down>O<Shift Up>racle<Shift Down>!<Shift Up>,
-  // The final "!" must be half-width, however, due to the limitation
-  // of converter interface, we don't have a good way to change it halfwidth, as
-  // the default preference of "!" is fullwidth. Basically, the converter is
-  // not composition-mode-aware.
   // We simply disable the auto conversion feature if the mode is ASCII.
   // We conclude that disabling this feature is better in this situation.
   // TODO(taku): fix the behavior. Converter module needs to be fixed.
@@ -2813,8 +2877,8 @@ bool Session::CanStartAutoConversion(
     return false;
   }
 
-  // We should NOT check key_string. http://b/issue?id=3217992
-
+  // We should NOT check key_string.
+  // http://b/issue?id=3217992
   // Auto conversion is not triggered if the composition is empty or
   // only one character, or the cursor is not in the end of the
   // composition.
@@ -2824,18 +2888,13 @@ bool Session::CanStartAutoConversion(
   }
 
   const uint32_t key_code = key_event.key_code();
-
   const std::string preedit = context_->composer().GetStringForPreedit();
-  const absl::string_view last_char =
-      Util::Utf8SubString(preedit, length - 1, 1);
+  const absl::string_view last_char = Util::Utf8SubString(preedit, length - 1, 1);
   if (last_char.empty()) {
     return false;
   }
 
-  // Check last character as user may change romaji table,
-  // For instance, if user assigns "." as "foo", we don't
-  // want to invoke auto_conversion.
-  if (!IsValidKey(context_->GetConfig(), key_code, last_char)) {
+  if (!IsValidAutoConversionKey(context_->GetConfig(), key_code, last_char)) {
     return false;
   }
 
@@ -2849,8 +2908,52 @@ bool Session::CanStartAutoConversion(
       Util::NUMBER == Util::GetScriptType(last_prev_char)) {
     return false;
   }
-
   return true;
+}
+
+bool Session::CanDirectCommitAfterPunctuation(
+    const commands::KeyEvent& key_event) const {
+  const config::Config& config = context_->GetConfig();
+
+  if (!config.use_direct_commit()) {
+    return false;
+  }
+
+  // Mutual exclusion guard. Even if both are accidentally enabled in config,
+  // direct commit is disabled here.
+  if (config.use_auto_conversion()) {
+    return false;
+  }
+
+  if (!(context_->state() &
+        (ImeContext::PRECOMPOSITION | ImeContext::COMPOSITION))) {
+    return false;
+  }
+
+  // Disable if the input comes from non-standard user keyboards, like numpad.
+  if (key_event.input_style() != commands::KeyEvent::FOLLOW_MODE) {
+    return false;
+  }
+
+  // Disable in ASCII mode.
+  if (key_event.mode() == commands::HALF_ASCII ||
+      key_event.mode() == commands::FULL_ASCII) {
+    return false;
+  }
+
+  const size_t length = context_->composer().GetLength();
+  if (length == 0 || length != context_->composer().GetCursor()) {
+    return false;
+  }
+
+  const std::string preedit = context_->composer().GetStringForPreedit();
+  const absl::string_view last_char =
+      Util::Utf8SubString(preedit, length - 1, 1);
+  if (last_char.empty()) {
+    return false;
+  }
+
+  return IsValidDirectCommitKey(config, key_event, last_char);
 }
 
 void Session::UpdateTime() {

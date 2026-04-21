@@ -72,6 +72,7 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   virtual void ResetToDefaults();
   virtual void SelectInputModeSetting(int index);
   virtual void SelectAutoConversionSetting(int state);
+  virtual void SelectDirectCommitSetting(int state);
   virtual void SelectSuggestionSetting(int state);
   virtual void LaunchAdministrationDialog();
   virtual void EnableApplyButton();

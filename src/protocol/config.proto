@@ -254,6 +254,23 @@ message Config {
   // undefined enum type is not correctly handled.
   optional uint32 auto_conversion_key = 62 [default = 13];
 
+  enum DirectCommitKey {
+    DIRECT_COMMIT_OFF = 0;
+    DIRECT_COMMIT_KUTEN = 1;
+    DIRECT_COMMIT_TOUTEN = 2;
+    DIRECT_COMMIT_QUESTION_MARK = 4;
+    DIRECT_COMMIT_EXCLAMATION_MARK = 8;
+    DIRECT_COMMIT_OPEN_PARENTHESIS = 16;
+    DIRECT_COMMIT_CLOSE_PARENTHESIS = 32;
+    DIRECT_COMMIT_OPEN_BRACKET = 64;
+    DIRECT_COMMIT_CLOSE_BRACKET = 128;
+  }
+  optional bool use_direct_commit = 1001 [default = false];
+
+  // can't use DirectCommitKey as a type since
+  // undefined enum type is not correctly handled.
+  optional uint32 direct_commit_key = 1002 [default = 0];
+
   // Mac only config items: yen_sign_character and use_japanese_layout.
   enum YenSignCharacter {
     YEN_SIGN = 0;

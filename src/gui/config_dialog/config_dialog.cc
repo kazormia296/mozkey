@@ -219,6 +219,8 @@ ConfigDialog::ConfigDialog()
                    SLOT(SelectInputModeSetting(int)));
   QObject::connect(useAutoConversion, SIGNAL(stateChanged(int)), this,
                    SLOT(SelectAutoConversionSetting(int)));
+  QObject::connect(useDirectCommit, SIGNAL(stateChanged(int)), this,
+                   SLOT(SelectDirectCommitSetting(int)));
   QObject::connect(historySuggestCheckBox, SIGNAL(stateChanged(int)), this,
                    SLOT(SelectSuggestionSetting(int)));
   QObject::connect(dictionarySuggestCheckBox, SIGNAL(stateChanged(int)), this,
@@ -343,8 +345,8 @@ void ConfigDialog::Reload() {
   }
   ConvertFromProto(config);
 
-  SelectAutoConversionSetting(static_cast<int>(config.use_auto_conversion()));
-
+  SelectAutoConversionSetting(static_cast<int>(useAutoConversion->isChecked()));
+  SelectDirectCommitSetting(static_cast<int>(useDirectCommit->isChecked()));
   initial_preedit_method_ = static_cast<int>(config.preedit_method());
   initial_use_keyboard_to_change_preedit_method_ =
       config.use_keyboard_to_change_preedit_method();
@@ -538,6 +540,32 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
       config.auto_conversion_key() &
       config::Config::AUTO_CONVERSION_EXCLAMATION_MARK);
 
+  SET_CHECKBOX(useDirectCommit, use_direct_commit);
+  directCommitKutenCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_KUTEN);
+  directCommitToutenCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_TOUTEN);
+  directCommitQuestionMarkCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_QUESTION_MARK);
+  directCommitExclamationMarkCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_EXCLAMATION_MARK);
+  directCommitOpenParenthesisCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_OPEN_PARENTHESIS);
+  directCommitCloseParenthesisCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_CLOSE_PARENTHESIS);
+  directCommitOpenBracketCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_OPEN_BRACKET);
+  directCommitCloseBracketCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_CLOSE_BRACKET);
+
   SET_COMBOBOX(shiftKeyModeSwitchComboBox, ShiftKeyModeSwitch,
                shift_key_mode_switch);
 
@@ -615,7 +643,7 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   GET_CHECKBOX(useAutoConversion, use_auto_conversion);
-
+  GET_CHECKBOX(useDirectCommit, use_direct_commit);
   GET_CHECKBOX(useJapaneseLayout, use_japanese_layout);
 
   GET_CHECKBOX(useModeIndicator, use_mode_indicator);
@@ -634,6 +662,42 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
     auto_conversion_key |= config::Config::AUTO_CONVERSION_EXCLAMATION_MARK;
   }
   config->set_auto_conversion_key(auto_conversion_key);
+
+  uint32_t direct_commit_key = 0;
+  if (directCommitKutenCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_KUTEN;
+  }
+  if (directCommitToutenCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_TOUTEN;
+  }
+  if (directCommitQuestionMarkCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_QUESTION_MARK;
+  }
+  if (directCommitExclamationMarkCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_EXCLAMATION_MARK;
+  }
+  if (directCommitOpenParenthesisCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_OPEN_PARENTHESIS;
+  }
+  if (directCommitCloseParenthesisCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_CLOSE_PARENTHESIS;
+  }
+  if (directCommitOpenBracketCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_OPEN_BRACKET;
+  }
+  if (directCommitCloseBracketCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_CLOSE_BRACKET;
+  }
+  config->set_direct_commit_key(direct_commit_key);
+
+  // Mutual exclusion normalization.
+  if (config->use_auto_conversion()) {
+    config->set_use_direct_commit(false);
+    config->set_direct_commit_key(0);
+  } else if (config->use_direct_commit()) {
+    config->set_use_auto_conversion(false);
+    config->set_auto_conversion_key(0);
+  }
 
   GET_COMBOBOX(shiftKeyModeSwitchComboBox, ShiftKeyModeSwitch,
                shift_key_mode_switch);
@@ -782,10 +846,33 @@ void ConfigDialog::SelectInputModeSetting(int index) {
 }
 
 void ConfigDialog::SelectAutoConversionSetting(int state) {
-  kutenCheckBox->setEnabled(static_cast<bool>(state));
-  toutenCheckBox->setEnabled(static_cast<bool>(state));
-  questionMarkCheckBox->setEnabled(static_cast<bool>(state));
-  exclamationMarkCheckBox->setEnabled(static_cast<bool>(state));
+  const bool enabled = static_cast<bool>(state);
+
+  kutenCheckBox->setEnabled(enabled);
+  toutenCheckBox->setEnabled(enabled);
+  questionMarkCheckBox->setEnabled(enabled);
+  exclamationMarkCheckBox->setEnabled(enabled);
+
+  if (enabled && useDirectCommit->isChecked()) {
+    useDirectCommit->setChecked(false);
+  }
+}
+
+void ConfigDialog::SelectDirectCommitSetting(int state) {
+  const bool enabled = static_cast<bool>(state);
+
+  directCommitKutenCheckBox->setEnabled(enabled);
+  directCommitToutenCheckBox->setEnabled(enabled);
+  directCommitQuestionMarkCheckBox->setEnabled(enabled);
+  directCommitExclamationMarkCheckBox->setEnabled(enabled);
+  directCommitOpenParenthesisCheckBox->setEnabled(enabled);
+  directCommitCloseParenthesisCheckBox->setEnabled(enabled);
+  directCommitOpenBracketCheckBox->setEnabled(enabled);
+  directCommitCloseBracketCheckBox->setEnabled(enabled);
+
+  if (enabled && useAutoConversion->isChecked()) {
+    useAutoConversion->setChecked(false);
+  }
 }
 
 void ConfigDialog::SelectSuggestionSetting(int state) {

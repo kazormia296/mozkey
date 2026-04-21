@@ -649,7 +649,7 @@
       <property name="geometry">
        <rect>
         <x>30</x>
-        <y>190</y>
+        <y>220</y>
         <width>441</width>
         <height>141</height>
        </rect>
@@ -691,7 +691,7 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>160</y>
+        <y>190</y>
         <width>461</width>
         <height>21</height>
        </rect>
@@ -725,31 +725,34 @@
         <x>30</x>
         <y>40</y>
         <width>441</width>
-        <height>113</height>
+        <height>145</height>
        </rect>
       </property>
       <layout class="QGridLayout" name="gridLayout_9">
-       <item row="0" column="0" colspan="7">
+       <item row="0" column="0" colspan="8">
         <widget class="QCheckBox" name="autoSwitchCompositionMode">
          <property name="text">
           <string>Automatically switch to halfwidth</string>
          </property>
         </widget>
        </item>
-       <item row="2" column="0" colspan="3">
-        <widget class="QLabel" name="autoCorrectionLable_3">
+       <item row="1" column="0" colspan="3">
+        <widget class="QCheckBox" name="useAutoConversion">
          <property name="text">
-          <string>Shift key mode switch</string>
+          <string>Convert at punctuations</string>
          </property>
         </widget>
        </item>
-       <item row="2" column="3" colspan="4">
-        <widget class="QComboBox" name="shiftKeyModeSwitchComboBox">
-         <property name="minimumSize">
+       <item row="1" column="3">
+        <widget class="QCheckBox" name="kutenCheckBox">
+         <property name="maximumSize">
           <size>
-           <width>150</width>
-           <height>0</height>
+           <width>45</width>
+           <height>16777215</height>
           </size>
+         </property>
+         <property name="text">
+          <string>。</string>
          </property>
         </widget>
        </item>
@@ -779,26 +782,6 @@
          </property>
         </widget>
        </item>
-       <item row="1" column="0" colspan="3">
-        <widget class="QCheckBox" name="useAutoConversion">
-         <property name="text">
-          <string>Convert at punctuations</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="3">
-        <widget class="QCheckBox" name="kutenCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>。</string>
-         </property>
-        </widget>
-       </item>
        <item row="1" column="6">
         <widget class="QCheckBox" name="exclamationMarkCheckBox">
          <property name="maximumSize">
@@ -812,7 +795,152 @@
          </property>
         </widget>
        </item>
-       <item row="3" column="0" colspan="7">
+
+       <item row="2" column="0" colspan="3">
+        <widget class="QCheckBox" name="useDirectCommit">
+         <property name="text">
+          <string>句読点・記号の単打確定を有効にする</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="3">
+        <widget class="QCheckBox" name="directCommitKutenCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>45</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>。</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="4">
+        <widget class="QCheckBox" name="directCommitToutenCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>45</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>、</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="5">
+        <widget class="QCheckBox" name="directCommitQuestionMarkCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>45</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>?</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="6">
+        <widget class="QCheckBox" name="directCommitExclamationMarkCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>45</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>!</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="7">
+        <widget class="QCheckBox" name="directCommitOpenParenthesisCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>45</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>（</string>
+         </property>
+        </widget>
+       </item>
+
+       <item row="3" column="0" colspan="3">
+        <spacer name="horizontalSpacer_directCommit">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item row="3" column="3">
+        <widget class="QCheckBox" name="directCommitCloseParenthesisCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>45</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>）</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="4">
+        <widget class="QCheckBox" name="directCommitOpenBracketCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>55</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>「</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="5">
+        <widget class="QCheckBox" name="directCommitCloseBracketCheckBox">
+         <property name="maximumSize">
+          <size>
+           <width>55</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>」</string>
+         </property>
+        </widget>
+       </item>
+
+       <item row="4" column="0" colspan="3">
+        <widget class="QLabel" name="autoCorrectionLable_3">
+         <property name="text">
+          <string>Shift key mode switch</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="3" colspan="5">
+        <widget class="QComboBox" name="shiftKeyModeSwitchComboBox">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+
+       <item row="5" column="0" colspan="8">
         <widget class="QCheckBox" name="useJapaneseLayout">
          <property name="enabled">
           <bool>true</bool>
@@ -822,7 +950,7 @@
          </property>
         </widget>
        </item>
-       <item row="4" column="0" colspan="7">
+       <item row="6" column="0" colspan="8">
         <widget class="QCheckBox" name="useModeIndicator">
          <property name="enabled">
           <bool>true</bool>
@@ -1826,6 +1954,15 @@
   <tabstop>toutenCheckBox</tabstop>
   <tabstop>questionMarkCheckBox</tabstop>
   <tabstop>exclamationMarkCheckBox</tabstop>
+  <tabstop>useDirectCommit</tabstop>
+  <tabstop>directCommitKutenCheckBox</tabstop>
+  <tabstop>directCommitToutenCheckBox</tabstop>
+  <tabstop>directCommitQuestionMarkCheckBox</tabstop>
+  <tabstop>directCommitExclamationMarkCheckBox</tabstop>
+  <tabstop>directCommitOpenParenthesisCheckBox</tabstop>
+  <tabstop>directCommitCloseParenthesisCheckBox</tabstop>
+  <tabstop>directCommitOpenBracketCheckBox</tabstop>
+  <tabstop>directCommitCloseBracketCheckBox</tabstop>
   <tabstop>shiftKeyModeSwitchComboBox</tabstop>
   <tabstop>useJapaneseLayout</tabstop>
   <tabstop>characterFormEditor</tabstop>
