@@ -29,8 +29,12 @@
 
 #include "gui/config_dialog/roman_table_editor.h"
 
+#include <QEvent>
+#include <QHelpEvent>
+#include <QHeaderView>
 #include <QMenu>
 #include <QMessageBox>
+#include <QToolTip>
 #include <QtGui>
 #include <istream>
 #include <memory>
@@ -58,10 +62,57 @@ enum {
   MENU_SIZE = 5
 };
 constexpr char kRomanTableFile[] = "system://romanji-hiragana.tsv";
+constexpr char kDisplayAmbiguousResult[] = "DisplayAmbiguousResult";
+
+bool SplitDisplayAmbiguousResultAttribute(const std::string &attributes,
+                                          std::string *remaining_attributes) {
+  CHECK(remaining_attributes);
+  remaining_attributes->clear();
+
+  bool found = false;
+  for (absl::string_view token : absl::StrSplit(attributes, ' ', absl::SkipEmpty())) {
+    if (token == kDisplayAmbiguousResult) {
+      found = true;
+      continue;
+    }
+    if (!remaining_attributes->empty()) {
+      remaining_attributes->push_back(' ');
+    }
+    remaining_attributes->append(token.data(), token.size());
+  }
+
+  return found;
+}
+
+std::string BuildAttributes(const std::string &remaining_attributes,
+                            bool display_ambiguous_result) {
+  std::string attributes = remaining_attributes;
+  if (display_ambiguous_result) {
+    if (!attributes.empty()) {
+      attributes.push_back(' ');
+    }
+    attributes += kDisplayAmbiguousResult;
+  }
+  return attributes;
+}
+
+QTableWidgetItem *CreateDisplayAmbiguousResultItem(
+    bool checked, const std::string &remaining_attributes) {
+  auto *item = new QTableWidgetItem();
+  item->setFlags((item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled |
+                  Qt::ItemIsSelectable) &
+                  ~Qt::ItemIsEditable);
+  item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+  item->setData(Qt::UserRole, QString::fromStdString(remaining_attributes));
+  item->setToolTip(QObject::tr(
+    "まだ入力途中でも、この行の出力を先に表示します。"
+    "続きの入力で別の規則に一致した場合は表示が更新されます。"));
+  return item;
+}
 }  // namespace
 
 RomanTableEditorDialog::RomanTableEditorDialog(QWidget *parent)
-    : GenericTableEditorDialog(parent, 3), actions_(MENU_SIZE) {
+    : GenericTableEditorDialog(parent, 4), actions_(MENU_SIZE) {
   actions_[NEW_INDEX] = mutable_edit_menu()->addAction(tr("New entry"));
   actions_[REMOVE_INDEX] =
       mutable_edit_menu()->addAction(tr("Remove selected entries"));
@@ -78,12 +129,14 @@ RomanTableEditorDialog::RomanTableEditorDialog(QWidget *parent)
   GuiUtil::ReplaceWidgetLabels(this);
   dialog_title_ = GuiUtil::ReplaceString(tr("[ProductName] settings"));
   CHECK(mutable_table_widget());
-  CHECK_EQ(mutable_table_widget()->columnCount(), 3);
+  CHECK_EQ(mutable_table_widget()->columnCount(), 4);
   QStringList headers;
-  headers << tr("Input") << tr("Output") << tr("Next input");
+  headers << tr("Input") << tr("Output") << tr("Next input")
+          << tr("途中一致でも表示");
   mutable_table_widget()->setHorizontalHeaderLabels(headers);
+  mutable_table_widget()->horizontalHeader()->viewport()->installEventFilter(this);
 
-  resize(330, 350);
+  resize(430, 350);
 
   UpdateMenuStatus();
 }
@@ -111,6 +164,10 @@ std::string RomanTableEditorDialog::GetDefaultRomanTable() {
       result += '\t';
       result += fields[2];
     }
+    if (fields.size() >= 4) {
+      result += '\t';
+      result += fields[3];
+    }
     result += '\n';
   }
   return result;
@@ -136,9 +193,13 @@ bool RomanTableEditorDialog::LoadFromStream(std::istream *is) {
       continue;
     }
 
-    if (fields.size() == 2) {
+    while (fields.size() < 4) {
       fields.push_back("");
     }
+
+    std::string remaining_attributes;
+    const bool display_ambiguous_result =
+        SplitDisplayAmbiguousResultAttribute(fields[3], &remaining_attributes);
 
     QTableWidgetItem *input =
         new QTableWidgetItem(QString::fromStdString(fields[0]));
@@ -146,11 +207,14 @@ bool RomanTableEditorDialog::LoadFromStream(std::istream *is) {
         new QTableWidgetItem(QString::fromStdString(fields[1]));
     QTableWidgetItem *pending =
         new QTableWidgetItem(QString::fromStdString(fields[2]));
-
+    QTableWidgetItem *attributes =
+        CreateDisplayAmbiguousResultItem(display_ambiguous_result,
+                                         remaining_attributes);
     mutable_table_widget()->insertRow(row);
     mutable_table_widget()->setItem(row, 0, input);
     mutable_table_widget()->setItem(row, 1, output);
     mutable_table_widget()->setItem(row, 2, pending);
+    mutable_table_widget()->setItem(row, 3, attributes);
     ++row;
 
     if (row >= max_entry_size()) {
@@ -191,15 +255,32 @@ bool RomanTableEditorDialog::Update() {
         TableUtil::SafeGetItemText(mutable_table_widget(), i, 1).toStdString();
     const std::string &pending =
         TableUtil::SafeGetItemText(mutable_table_widget(), i, 2).toStdString();
+
+    QTableWidgetItem *attributes_item = mutable_table_widget()->item(i, 3);
+    const bool display_ambiguous_result =
+        (attributes_item != nullptr &&
+        attributes_item->checkState() == Qt::Checked);
+    const std::string remaining_attributes =
+        (attributes_item == nullptr)
+            ? std::string()
+            : attributes_item->data(Qt::UserRole).toString().toStdString();
+    const std::string attributes =
+        BuildAttributes(remaining_attributes, display_ambiguous_result);
+
     if (input.empty() || (output.empty() && pending.empty())) {
       continue;
     }
+
     *table += input;
     *table += '\t';
     *table += output;
-    if (!pending.empty()) {
+    if (!pending.empty() || !attributes.empty()) {
       *table += '\t';
       *table += pending;
+    }
+    if (!attributes.empty()) {
+      *table += '\t';
+      *table += attributes;
     }
     *table += '\n';
 
@@ -233,6 +314,14 @@ void RomanTableEditorDialog::UpdateMenuStatus() {
 void RomanTableEditorDialog::OnEditMenuAction(QAction *action) {
   if (action == actions_[NEW_INDEX]) {
     AddNewItem();
+    const int row = (mutable_table_widget()->currentRow() >= 0)
+                        ? mutable_table_widget()->currentRow()
+                        : (mutable_table_widget()->rowCount() - 1);
+    if (row >= 0) {
+      delete mutable_table_widget()->takeItem(row, 3);
+      mutable_table_widget()->setItem(
+          row, 3, CreateDisplayAmbiguousResultItem(false, std::string()));
+    }
   } else if (action == actions_[REMOVE_INDEX]) {
     DeleteSelectedItems();
   } else if (action == actions_[IMPORT_FROM_FILE_INDEX] ||
@@ -254,6 +343,26 @@ void RomanTableEditorDialog::OnEditMenuAction(QAction *action) {
   } else if (action == actions_[EXPORT_TO_FILE_INDEX]) {
     Export();
   }
+}
+
+bool RomanTableEditorDialog::eventFilter(QObject *obj, QEvent *event) {
+  if (obj == mutable_table_widget()->horizontalHeader()->viewport() &&
+      event->type() == QEvent::ToolTip) {
+    auto *help_event = static_cast<QHelpEvent *>(event);
+    QHeaderView *header = mutable_table_widget()->horizontalHeader();
+    const int logical_index = header->logicalIndexAt(help_event->pos());
+
+    if (logical_index == 3) {
+      QToolTip::showText(
+          help_event->globalPos(),
+          tr("長い規則の途中一致でも、この行の出力を未変換表示に出します。"
+             "続きの入力で長い規則に一致した場合は表示が更新されます。"),
+          header);
+      return true;
+    }
+  }
+
+  return GenericTableEditorDialog::eventFilter(obj, event);
 }
 
 // static

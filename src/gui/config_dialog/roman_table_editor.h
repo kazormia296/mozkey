@@ -31,6 +31,7 @@
 #define MOZC_GUI_CONFIG_DIALOG_ROMAN_TABLE_EDITOR_H_
 
 #include <QAbstractButton>
+#include <QEvent>
 #include <QWidget>
 #include <istream>
 #include <string>
@@ -42,7 +43,7 @@ namespace mozc {
 namespace gui {
 
 class RomanTableEditorDialog : public GenericTableEditorDialog {
-  Q_OBJECT;
+  Q_OBJECT
 
  public:
   explicit RomanTableEditorDialog(QWidget *parent);
@@ -61,6 +62,7 @@ class RomanTableEditorDialog : public GenericTableEditorDialog {
   }
   bool LoadFromStream(std::istream *is) override;
   bool Update() override;
+  bool eventFilter(QObject *obj, QEvent *event) override;
 
  private:
   bool LoadDefaultRomanTable();
