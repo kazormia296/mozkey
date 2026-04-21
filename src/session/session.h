@@ -385,6 +385,11 @@ class Session {
   // AutoIMEConversion.
   bool CanStartAutoConversion(const mozc::commands::KeyEvent& key_event) const;
 
+  // return true if the current composition should be committed directly
+  // after typing the configured punctuation/symbol key.
+  bool CanDirectCommitAfterPunctuation(
+    const mozc::commands::KeyEvent& key_event) const;
+
   // Handles KeyEvent::activated to support indirect IME on/off.
   bool HandleIndirectImeOnOff(mozc::commands::Command* command);
 
