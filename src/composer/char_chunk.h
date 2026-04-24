@@ -181,9 +181,17 @@ class CharChunk final {
   friend bool operator==(const CharChunk& lhs, const CharChunk& rhs) {
     return std::tie(lhs.table_, lhs.raw_, lhs.conversion_, lhs.pending_,
                     lhs.ambiguous_, lhs.display_ambiguous_as_result_,
+                    lhs.display_ambiguous_result_raw_,
+                    lhs.display_ambiguous_result_conversion_,
+                    lhs.display_ambiguous_result_ambiguous_,
+                    lhs.display_ambiguous_result_attributes_,
                     lhs.transliterator_, lhs.attributes_) ==
            std::tie(rhs.table_, rhs.raw_, rhs.conversion_, rhs.pending_,
                     rhs.ambiguous_, rhs.display_ambiguous_as_result_,
+                    rhs.display_ambiguous_result_raw_,
+                    rhs.display_ambiguous_result_conversion_,
+                    rhs.display_ambiguous_result_ambiguous_,
+                    rhs.display_ambiguous_result_attributes_,
                     rhs.transliterator_, rhs.attributes_);
   }
 
@@ -204,12 +212,18 @@ class CharChunk final {
   }
 
   // bool = should loop
-  // string_view = rest of the input
-  std::pair<bool, absl::string_view> AddInputInternal(absl::string_view input);
+  // string = rest of the input. This may include replayed input when a
+  // DisplayAmbiguousResult fallback is applied.
+  std::pair<bool, std::string> AddInputInternal(absl::string_view input);
 
  private:
   void AddInputAndConvertedChar(CompositionInput* composition_input);
   std::string GetDisplayConverted() const;
+
+  void ClearDisplayAmbiguousResultFallback();
+  void SaveDisplayAmbiguousResultFallback();
+  bool HasDisplayAmbiguousResultFallback() const;
+  std::string RestoreDisplayAmbiguousResultFallback(absl::string_view input);
 
   std::shared_ptr<const Table> table_;
 
@@ -242,6 +256,18 @@ class CharChunk final {
   // In this case, "ん" is stored to `ambiguous_` instead of `conversion_`.
   std::string ambiguous_;
   bool display_ambiguous_as_result_ = false;
+
+  // Snapshot for DisplayAmbiguousResult fallback.
+  //
+  // When a DisplayAmbiguousResult entry is ambiguous, the converted result is
+  // shown to the user but not fixed internally. If later inputs move the chunk
+  // to a longer prefix-only state and then fail, we restore this snapshot,
+  // fix the displayed ambiguous result, and replay the consumed suffix.
+  std::string display_ambiguous_result_raw_;
+  std::string display_ambiguous_result_conversion_;
+  std::string display_ambiguous_result_ambiguous_;
+  TableAttributes display_ambiguous_result_attributes_ = NO_TABLE_ATTRIBUTE;
+
   Transliterators::Transliterator transliterator_;
   TableAttributes attributes_ = NO_TABLE_ATTRIBUTE;
   // for thread safety.

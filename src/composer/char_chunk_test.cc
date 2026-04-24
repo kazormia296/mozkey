@@ -59,7 +59,7 @@ TEST(CharChunkTest, AddInput_CharByChar) {
   table->AddRule("ta", "た", "");
 
   CharChunk chunk1(Transliterators::CONVERSION_STRING, table);
-  std::pair<bool, absl::string_view> result = chunk1.AddInputInternal("i");
+  std::pair<bool, std::string> result = chunk1.AddInputInternal("i");
   EXPECT_THAT(result, NoLoop());
   EXPECT_TRUE(chunk1.IsFixed());
   EXPECT_EQ(chunk1.raw(), "i");
@@ -100,7 +100,7 @@ TEST(CharChunkTest, AddInput_NoEffectInput) {
   table->AddRule("*", "", "");
 
   CharChunk chunk1(Transliterators::CONVERSION_STRING, table);
-  std::pair<bool, absl::string_view> result = chunk1.AddInputInternal("2");
+  std::pair<bool, std::string> result = chunk1.AddInputInternal("2");
   EXPECT_THAT(result, NoLoop());
   EXPECT_FALSE(chunk1.IsFixed());
   EXPECT_EQ(chunk1.raw(), "2");
@@ -130,7 +130,7 @@ TEST(CharChunkTest, AddInput_ForN) {
   table->AddRule("ka", "[KA]", "");
 
   CharChunk chunk1(Transliterators::CONVERSION_STRING, table);
-  std::pair<bool, absl::string_view> result = chunk1.AddInputInternal("n");
+  std::pair<bool, std::string> result = chunk1.AddInputInternal("n");
   EXPECT_THAT(result, NoLoop());
   EXPECT_FALSE(chunk1.IsFixed());
   EXPECT_EQ(chunk1.raw(), "n");
@@ -171,7 +171,7 @@ TEST(CharChunkTest, AddInput_DisplayAmbiguousResult) {
 
   CharChunk chunk(Transliterators::CONVERSION_STRING, table);
 
-  std::pair<bool, absl::string_view> result = chunk.AddInputInternal("m");
+  std::pair<bool, std::string> result = chunk.AddInputInternal("m");
   EXPECT_THAT(result, NoLoop());
 
   result = chunk.AddInputInternal("s");
@@ -202,6 +202,88 @@ TEST(CharChunkTest, AddInput_DisplayAmbiguousResult) {
   EXPECT_EQ(preedit, "[MASHITA]");
 }
 
+TEST(CharChunkTest, DisplayAmbiguousResultFallbackReplaysConsumedPrefix) {
+  auto table = std::make_shared<Table>();
+
+  table->AddRuleWithAttributes("ct", "こと", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+  table->AddRuleWithAttributes("ctn", "ことに", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+  table->AddRuleWithAttributes("ctnnr", "ことになる", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+  table->AddRuleWithAttributes("ctnnc", "ことなのか", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+
+  table->AddRuleWithAttributes("nr", "なる", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+  table->AddRule("na", "な", "");
+  table->AddRule("ru", "る", "");
+  table->AddRule("a", "あ", "");
+  table->AddRule("u", "う", "");
+  table->AddRule("n", "ん", "");
+
+  CharChunk chunk(Transliterators::CONVERSION_STRING, table);
+
+  std::string input;
+
+  input = "c";
+  chunk.AddInput(&input);
+  EXPECT_TRUE(input.empty());
+
+  input = "t";
+  chunk.AddInput(&input);
+  EXPECT_TRUE(input.empty());
+
+  input = "n";
+  chunk.AddInput(&input);
+  EXPECT_TRUE(input.empty());
+  EXPECT_EQ(chunk.raw(), "ctn");
+  EXPECT_EQ(chunk.pending(), "ctn");
+  EXPECT_EQ(chunk.ambiguous(), "ことに");
+
+  input = "n";
+  chunk.AddInput(&input);
+  EXPECT_TRUE(input.empty());
+  EXPECT_EQ(chunk.raw(), "ctnn");
+  EXPECT_EQ(chunk.pending(), "ctnn");
+  EXPECT_TRUE(chunk.ambiguous().empty());
+
+  input = "a";
+  chunk.AddInput(&input);
+
+  EXPECT_EQ(chunk.raw(), "ctn");
+  EXPECT_EQ(chunk.conversion(), "ことに");
+  EXPECT_TRUE(chunk.pending().empty());
+  EXPECT_TRUE(chunk.ambiguous().empty());
+
+  // The consumed "n" is replayed with the current "a".
+  EXPECT_EQ(input, "na");
+}
+
+TEST(CharChunkTest, DisplayAmbiguousResultFallbackKeepsLongerValidRule) {
+  auto table = std::make_shared<Table>();
+
+  table->AddRuleWithAttributes("ct", "こと", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+  table->AddRuleWithAttributes("ctn", "ことに", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+  table->AddRuleWithAttributes("ctnnr", "ことになる", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+  table->AddRuleWithAttributes("ctnnc", "ことなのか", "",
+                               DISPLAY_AMBIGUOUS_RESULT);
+
+  CharChunk chunk(Transliterators::CONVERSION_STRING, table);
+
+  std::string input = "ctnnr";
+  chunk.AddInput(&input);
+
+  EXPECT_TRUE(input.empty());
+  EXPECT_EQ(chunk.raw(), "ctnnr");
+  EXPECT_EQ(chunk.conversion(), "ことになる");
+  EXPECT_TRUE(chunk.pending().empty());
+  EXPECT_TRUE(chunk.ambiguous().empty());
+}
+
 TEST(CharChunkTest, AddInput_WithString) {
   // Test against http://b/1547858
   auto table = std::make_shared<Table>();
@@ -210,7 +292,7 @@ TEST(CharChunkTest, AddInput_WithString) {
   table->AddRule("ta", "た", "");
 
   CharChunk chunk1(Transliterators::CONVERSION_STRING, table);
-  std::pair<bool, absl::string_view> result = chunk1.AddInputInternal("itta");
+  std::pair<bool, std::string> result = chunk1.AddInputInternal("itta");
   EXPECT_THAT(result, NoLoop());
   EXPECT_TRUE(chunk1.IsFixed());
   EXPECT_EQ(chunk1.raw(), "i");
@@ -244,17 +326,17 @@ TEST(CharChunkTest, AddInput_EmptyOutput) {
   table->AddRuleWithAttributes("c", "", "", NEW_CHUNK | NO_TRANSLITERATION);
 
   CharChunk chunk_a(Transliterators::CONVERSION_STRING, table);
-  std::pair<bool, absl::string_view> result_a = chunk_a.AddInputInternal("a");
+  std::pair<bool, std::string> result_a = chunk_a.AddInputInternal("a");
   EXPECT_TRUE(result_a.second.empty());
   EXPECT_EQ(chunk_a.raw(), "a");
 
   CharChunk chunk_b(Transliterators::CONVERSION_STRING, table);
-  std::pair<bool, absl::string_view> result_b = chunk_b.AddInputInternal("b");
+  std::pair<bool, std::string> result_b = chunk_b.AddInputInternal("b");
   EXPECT_TRUE(result_b.second.empty());
   EXPECT_TRUE(chunk_b.raw().empty());
 
   CharChunk chunk_c(Transliterators::CONVERSION_STRING, table);
-  std::pair<bool, absl::string_view> result_c = chunk_c.AddInputInternal("c");
+  std::pair<bool, std::string> result_c = chunk_c.AddInputInternal("c");
   EXPECT_TRUE(result_c.second.empty());
   EXPECT_TRUE(chunk_c.raw().empty());
 }
