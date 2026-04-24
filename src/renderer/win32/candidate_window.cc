@@ -208,6 +208,10 @@ std::string GetIndexGuideString(
   return footer_string.str();
 }
 
+bool ShouldRenderFooterText(const std::string& text) {
+  return text != "Tabキーで選択";
+}
+
 // Returns the smallest index of the given candidate list which satisfies
 // |candidates.focused_index| == |candidates.candidate(i).index()|.
 // This function returns the size of the given candidate list when there
@@ -557,8 +561,26 @@ void CandidateWindow::UpdateLayout(
   if (candidate_window_->has_footer()) {
     Size footer_size(0, 0);
 
-    // We intentionally do not reserve space for footer label/sub_label
-    // such as "Tabキーで選択".
+    // Reserve space for important footer labels.
+    // Keep hiding the simple suggestion hint such as "Tabキーで選択",
+    // but preserve operational hints such as "Ctrl+Delで履歴から削除".
+    if (candidate_window_->footer().has_label() &&
+        ShouldRenderFooterText(candidate_window_->footer().label())) {
+      const std::wstring footer_label =
+          mozc::win32::Utf8ToWide(candidate_window_->footer().label());
+      const Size label_string_size = text_renderer_->MeasureString(
+          TextRenderer::FONTSET_FOOTER_LABEL, L" " + footer_label + L" ");
+      footer_size.width += label_string_size.width;
+      footer_size.height = std::max(footer_size.height, label_string_size.height);
+    } else if (candidate_window_->footer().has_sub_label() &&
+              ShouldRenderFooterText(candidate_window_->footer().sub_label())) {
+      const std::wstring footer_sub_label =
+          mozc::win32::Utf8ToWide(candidate_window_->footer().sub_label());
+      const Size label_string_size = text_renderer_->MeasureString(
+          TextRenderer::FONTSET_FOOTER_SUBLABEL, L" " + footer_sub_label + L" ");
+      footer_size.width += label_string_size.width;
+      footer_size.height = std::max(footer_size.height, label_string_size.height);
+    }
 
     // Calculate the size to display a index string.
     if (candidate_window_->footer().index_visible()) {
@@ -851,8 +873,26 @@ void CandidateWindow::DrawFooter(HDC dc) {
     right_used = index_guide_size.width;
   }
 
-  // Intentionally do not render footer label/sub_label
-  // such as "Tabキーで選択".
+  if (candidate_window_->footer().has_label() &&
+      ShouldRenderFooterText(candidate_window_->footer().label())) {
+    const Rect label_rect(left_used, footer_content_rect.Top(),
+                          footer_content_rect.Width() - left_used - right_used,
+                          footer_content_rect.Height());
+    const std::wstring footer_label =
+        mozc::win32::Utf8ToWide(candidate_window_->footer().label());
+    text_renderer_->RenderText(dc, L" " + footer_label + L" ", label_rect,
+                              TextRenderer::FONTSET_FOOTER_LABEL);
+  } else if (candidate_window_->footer().has_sub_label() &&
+            ShouldRenderFooterText(candidate_window_->footer().sub_label())) {
+    const std::wstring footer_sub_label =
+        mozc::win32::Utf8ToWide(candidate_window_->footer().sub_label());
+    const Rect label_rect(left_used, footer_content_rect.Top(),
+                          footer_content_rect.Width() - left_used - right_used,
+                          footer_content_rect.Height());
+    const std::wstring text = L" " + footer_sub_label + L" ";
+    text_renderer_->RenderText(dc, text, label_rect,
+                              TextRenderer::FONTSET_FOOTER_SUBLABEL);
+  }
 }
 
 void CandidateWindow::DrawSelectedRect(HDC dc) {

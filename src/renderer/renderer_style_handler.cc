@@ -88,8 +88,12 @@ void ApplyLightCandidateWindowTheme(RendererStyle* style) {
            0x00, 0x00, 0x00);
   SetColor(infostyle->mutable_title_style()->mutable_foreground_color(),
            0x00, 0x00, 0x00);
+  SetColor(infostyle->mutable_title_style()->mutable_background_color(),
+           0xff, 0xff, 0xff);
   SetColor(infostyle->mutable_description_style()->mutable_foreground_color(),
            0x33, 0x33, 0x33);
+  SetColor(infostyle->mutable_description_style()->mutable_background_color(),
+           0xff, 0xff, 0xff);
   SetColor(infostyle->mutable_border_color(), 0x96, 0x96, 0x96);
   SetColor(infostyle->mutable_caption_background_color(), 0xec, 0xf0, 0xfa);
   SetColor(infostyle->mutable_focused_background_color(), 0xd1, 0xea, 0xff);
@@ -135,8 +139,12 @@ void ApplyDarkCandidateWindowTheme(RendererStyle* style) {
            0xe6, 0xed, 0xf3);
   SetColor(infostyle->mutable_title_style()->mutable_foreground_color(),
            0xe6, 0xed, 0xf3);
+  SetColor(infostyle->mutable_title_style()->mutable_background_color(),
+           0x18, 0x1b, 0x20);
   SetColor(infostyle->mutable_description_style()->mutable_foreground_color(),
            0xc9, 0xd1, 0xd9);
+  SetColor(infostyle->mutable_description_style()->mutable_background_color(),
+           0x18, 0x1b, 0x20);
   SetColor(infostyle->mutable_border_color(), 0x32, 0x38, 0x40);
   SetColor(infostyle->mutable_caption_background_color(), 0x1a, 0x1e, 0x24);
   SetColor(infostyle->mutable_focused_background_color(), 0x24, 0x2b, 0x34);

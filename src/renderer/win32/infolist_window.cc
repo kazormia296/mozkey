@@ -269,9 +269,9 @@ Size InfolistWindow::DoPaintRow(HDC dc, int row, int ypos) {
     }
     if (desc_style.has_background_color()) {
       FillSolidRect(dc, &desc_back_crect,
-                    RGB(title_style.background_color().r(),
-                        title_style.background_color().g(),
-                        title_style.background_color().b()));
+                    RGB(desc_style.background_color().r(),
+                        desc_style.background_color().g(),
+                        desc_style.background_color().b()));
     } else {
       FillSolidRect(dc, &desc_back_crect, RGB(255, 255, 255));
     }
