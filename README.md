@@ -44,6 +44,30 @@ Typing `ms` shows `ます` in preedit, and then typing `t` updates the preedit t
 
 のような規則で、`ms` を入力した時点で `ます` を未変換表示し、続けて `t` を入力すると `ました` に更新されます。
 
+If the input temporarily follows a longer ambiguous rule but the longer rule
+later fails, Mozc falls back to the last displayed ambiguous result and replays
+the remaining input.
+
+For example, with rules such as:
+
+- `ctn -> ことに`
+- `ctnnr -> ことになる`
+- `ctnnc -> ことなのか`
+
+typing `ctnnaru` is interpreted as `ctn + naru`, resulting in `ことになる`,
+while valid longer rules such as `ctnnr` and `ctnnc` still work.
+
+長い曖昧規則の途中まで進んだ後、その規則が成立しない場合は、最後に表示できていた曖昧結果まで戻り、残りの入力を通常のローマ字として再解釈します。
+
+たとえば
+
+- `ctn -> ことに`
+- `ctnnr -> ことになる`
+- `ctnnc -> ことなのか`
+
+のような規則がある場合、`ctnnaru` は `ctn + naru` として解釈され、`ことになる` になります。
+一方で、`ctnnr` や `ctnnc` のように長い規則として成立する入力は、従来どおりその規則が使われます。
+
 ### Direct commit for punctuations/symbols
 
 With the direct-commit option enabled, configured punctuations/symbols are committed immediately.

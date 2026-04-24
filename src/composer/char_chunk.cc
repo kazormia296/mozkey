@@ -129,6 +129,7 @@ void CharChunk::Clear() {
   pending_.clear();
   ambiguous_.clear();
   display_ambiguous_as_result_ = false;
+  ClearDisplayAmbiguousResultFallback();
   local_length_cache_ = std::string::npos;
 }
 
@@ -309,7 +310,47 @@ void CharChunk::Combine(const CharChunk& left_chunk) {
   pending_ = left_chunk.pending_ + pending_;
 }
 
-std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
+void CharChunk::ClearDisplayAmbiguousResultFallback() {
+  display_ambiguous_result_raw_.clear();
+  display_ambiguous_result_conversion_.clear();
+  display_ambiguous_result_ambiguous_.clear();
+  display_ambiguous_result_attributes_ = NO_TABLE_ATTRIBUTE;
+}
+
+void CharChunk::SaveDisplayAmbiguousResultFallback() {
+  display_ambiguous_result_raw_ = raw_;
+  display_ambiguous_result_conversion_ = conversion_;
+  display_ambiguous_result_ambiguous_ = ambiguous_;
+  display_ambiguous_result_attributes_ = attributes_;
+}
+
+bool CharChunk::HasDisplayAmbiguousResultFallback() const {
+  return !display_ambiguous_result_raw_.empty() &&
+         raw_.size() > display_ambiguous_result_raw_.size() &&
+         raw_.starts_with(display_ambiguous_result_raw_);
+}
+
+std::string CharChunk::RestoreDisplayAmbiguousResultFallback(
+    absl::string_view input) {
+  std::string replay_input =
+      raw_.substr(display_ambiguous_result_raw_.size());
+  replay_input.append(input.data(), input.size());
+
+  raw_ = display_ambiguous_result_raw_;
+  conversion_ = absl::StrCat(display_ambiguous_result_conversion_,
+                             display_ambiguous_result_ambiguous_);
+  pending_.clear();
+  ambiguous_.clear();
+  display_ambiguous_as_result_ = false;
+  attributes_ = display_ambiguous_result_attributes_;
+
+  ClearDisplayAmbiguousResultFallback();
+  local_length_cache_ = std::string::npos;
+
+  return replay_input;
+}
+
+std::pair<bool, std::string> CharChunk::AddInputInternal(
     absl::string_view input) {
   constexpr bool kLoop = true;
   constexpr bool kNoLoop = false;
@@ -321,12 +362,17 @@ std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
   local_length_cache_ = std::string::npos;
 
   if (entry == nullptr) {
+    if (used_key_length <= pending_.size() &&
+        HasDisplayAmbiguousResultFallback()) {
+      return {kNoLoop, RestoreDisplayAmbiguousResultFallback(input)};
+    }
+
     if (used_key_length == 0) {
       // If `input` starts with a special key, erases it and keeps the loop.
       // For example, if `input` is "{!}ab{?}", `input` becomes "ab{?}".
       const absl::string_view trimmed = TrimLeadingSpecialKey(input);
       if (trimmed.size() < input.size()) {
-        return {kLoop, trimmed};
+        return {kLoop, std::string(trimmed)};
       }
 
       // The prefix characters are not contained in the table, fallback
@@ -338,7 +384,7 @@ std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
         absl::StrAppend(&conversion_, front);
         input = rest;
       }
-      return {kNoLoop, input};
+      return {kNoLoop, std::string(input)};
     }
 
     if (used_key_length == pending_.size()) {
@@ -352,15 +398,15 @@ std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
       const bool no_entry = (next_entry == nullptr && used_length == 0);
       const absl::string_view trimmed = TrimLeadingSpecialKey(input);
       if (no_entry && trimmed.size() < input.size()) {
-        return {kLoop, trimmed};
+        return {kLoop, std::string(trimmed)};
       }
-      return {kNoLoop, input};
+      return {kNoLoop, std::string(input)};
     }
 
     if (used_key_length < pending_.size()) {
       // Do not modify this char_chunk, all key characters will be used
       // by the next char_chunk.
-      return {kNoLoop, input};
+      return {kNoLoop, std::string(input)};
     }
 
     // Some prefix character is contained in the table, but not
@@ -376,7 +422,7 @@ std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
     absl::StrAppend(&pending_, used_input_chars);
     ambiguous_.clear();
     display_ambiguous_as_result_ = false;
-    return {kNoLoop, input.substr(used_input_length)};
+    return {kNoLoop, std::string(input.substr(used_input_length))};
   }
 
   // The prefix of key reached a conversion result, thus entry is not nullptr.
@@ -403,6 +449,7 @@ std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
     pending_ = entry->pending();
     ambiguous_.clear();
     display_ambiguous_as_result_ = false;
+    ClearDisplayAmbiguousResultFallback();
   } else {
     // A result was found, but it is still ambiguous.
     // e.g. "n" with "n->ん and na->な".
@@ -410,6 +457,12 @@ std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
     ambiguous_ = entry->result();
     display_ambiguous_as_result_ =
         (entry->attributes() & DISPLAY_AMBIGUOUS_RESULT);
+
+    if (display_ambiguous_as_result_) {
+      SaveDisplayAmbiguousResultFallback();
+    } else {
+      ClearDisplayAmbiguousResultFallback();
+    }
   }
 
   // If the lookup is deterministically done (e.g. fixed is true and input is
@@ -419,25 +472,25 @@ std::pair<bool, absl::string_view> CharChunk::AddInputInternal(
   if (fixed && input.empty() && conversion_.empty() && pending_.empty() &&
       (attributes_ & NO_TRANSLITERATION)) {
     raw_.clear();
-    return {kNoLoop, input};
+    return {kNoLoop, std::string(input)};
   }
 
   if (input.empty() || pending_.empty()) {
     // If the remaining input character or pending character is empty,
     // there is no reason to continue the looping.
-    return {kNoLoop, input};
+    return {kNoLoop, std::string(input)};
   }
 
-  return {kLoop, input};
+  return {kLoop, std::string(input)};
 }
 
 void CharChunk::AddInput(std::string* input) {
-  absl::string_view tmp = *input;
+  std::string tmp = *input;
   bool loop = true;
   while (loop) {
     std::tie(loop, tmp) = AddInputInternal(tmp);
   }
-  input->erase(0, input->size() - tmp.size());
+  *input = std::move(tmp);
 }
 
 void CharChunk::AddInputAndConvertedChar(CompositionInput* input) {
