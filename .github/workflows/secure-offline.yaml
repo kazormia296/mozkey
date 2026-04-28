@@ -87,6 +87,37 @@ jobs:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
 
+      - name: Pin Bazel to Visual Studio 2022
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+          $vs = & $vswhere `
+            -version "[17.0,18.0)" `
+            -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+
+          if (-not $vs) {
+            throw "Visual Studio 2022 with VC tools was not found."
+          }
+
+          $vc = Join-Path $vs "VC"
+
+          if (!(Test-Path $vc)) {
+            throw "VC path not found: $vc"
+          }
+
+          "BAZEL_VS=$vs" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BAZEL_VC=$vc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          Write-Host "Pinned BAZEL_VS=$vs"
+          Write-Host "Pinned BAZEL_VC=$vc"
+
+          Write-Host "Available CRT redist files:"
+          Get-ChildItem (Join-Path $vc "Redist\MSVC") -Recurse -Filter msvcp140.dll |
+            Select-Object FullName
+
       - name: Install dependencies
         shell: cmd
         working-directory: .\src
