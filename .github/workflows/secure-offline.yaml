@@ -70,7 +70,7 @@ jobs:
 
   binary_check:
     name: Binary no-network check
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 120
     if: github.event_name == 'workflow_dispatch'
 
