@@ -134,7 +134,61 @@ jobs:
         shell: cmd
         working-directory: .\src
         run: |
-          if exist third_party\qt_src rmdir third_party\qt_src /s /q
+
+      - name: Prepare CRT redist directory expected by WiX
+        shell: pwsh
+        run: |
+          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
+
+          $requiredDlls = @(
+            "msvcp140.dll",
+            "msvcp140_1.dll",
+            "msvcp140_2.dll",
+            "vcruntime140.dll",
+            "vcruntime140_1.dll"
+          )
+
+          $searchRoots = @(
+            "C:\Program Files\Microsoft Visual Studio\2022",
+            "C:\Program Files\Microsoft Visual Studio\17",
+            "C:\Program Files\Microsoft Visual Studio\18",
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022",
+            "C:\Program Files (x86)\Microsoft Visual Studio\17",
+            "C:\Program Files (x86)\Microsoft Visual Studio\18"
+          ) | Where-Object { Test-Path $_ }
+
+          Write-Host "Expected CRT redist dir:"
+          Write-Host $expectedDir
+
+          Write-Host "Search roots:"
+          $searchRoots | ForEach-Object { Write-Host $_ }
+
+          New-Item -ItemType Directory -Force $expectedDir | Out-Null
+
+          foreach ($dll in $requiredDlls) {
+            $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT\\" } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+
+            if (-not $source) {
+              Write-Host "Available CRT directories:"
+              Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT$" } |
+                Select-Object FullName
+
+              throw "Required CRT DLL was not found: $dll"
+            }
+
+            $destination = Join-Path $expectedDir $dll
+            Copy-Item $source.FullName $destination -Force
+            Write-Host "Copied $dll"
+            Write-Host "  from: $($source.FullName)"
+            Write-Host "  to:   $destination"
+          }
+
+          Write-Host "Prepared CRT redist directory:"
+          Get-ChildItem $expectedDir | Select-Object FullName
 
       - name: Build Windows package
         shell: cmd
