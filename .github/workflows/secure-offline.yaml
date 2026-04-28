@@ -236,7 +236,7 @@ jobs:
           python tools\check_no_network_strings.py --root msi_extract
 
       - name: Upload MSI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Mozc64.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
