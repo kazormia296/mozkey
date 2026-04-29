@@ -645,332 +645,617 @@
      <attribute name="title">
       <string>Advanced</string>
      </attribute>
-     <widget class="CharacterFormEditor" name="characterFormEditor">
+     <widget class="QScrollArea" name="inputSupportScrollArea">
       <property name="geometry">
        <rect>
-        <x>30</x>
-        <y>220</y>
-        <width>441</width>
-        <height>141</height>
+        <x>0</x>
+        <y>0</y>
+        <width>501</width>
+        <height>351</height>
        </rect>
       </property>
-     </widget>
-     <widget class="QWidget" name="horizontalLayoutWidget_2">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>10</y>
-        <width>461</width>
-        <height>21</height>
-       </rect>
+      <property name="styleSheet">
+       <string notr="true">QScrollArea#inputSupportScrollArea { background-color: palette(window); border: 0px; }
+QScrollArea#inputSupportScrollArea &gt; QWidget { background-color: palette(window); }
+QWidget#inputSupportScrollAreaWidgetContents { background-color: palette(window); }</string>
       </property>
-      <layout class="QHBoxLayout" name="horizontalLayout_4">
-       <item>
-        <widget class="QLabel" name="autoCorrectionLable">
-         <property name="text">
-          <string>Input Assistance</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="Line" name="autoCorrectionLine_2">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="horizontalLayoutWidget_3">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>190</y>
-        <width>461</width>
-        <height>21</height>
-       </rect>
+      <property name="frameShape">
+       <enum>QFrame::NoFrame</enum>
       </property>
-      <layout class="QHBoxLayout" name="horizontalLayout_6">
-       <item>
-        <widget class="QLabel" name="autoCorrectionLable_2">
-         <property name="text">
-          <string>Fullwidth/Halfwidth</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="Line" name="halffullWidthLine">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="gridLayoutWidget_9">
-      <property name="geometry">
-       <rect>
-        <x>30</x>
-        <y>40</y>
-        <width>441</width>
-        <height>145</height>
-       </rect>
+      <property name="horizontalScrollBarPolicy">
+       <enum>Qt::ScrollBarAlwaysOff</enum>
       </property>
-      <layout class="QGridLayout" name="gridLayout_9">
-       <item row="0" column="0" colspan="8">
-        <widget class="QCheckBox" name="autoSwitchCompositionMode">
-         <property name="text">
-          <string>Automatically switch to halfwidth</string>
+      <property name="widgetResizable">
+       <bool>false</bool>
+      </property>
+      <widget class="QWidget" name="inputSupportScrollAreaWidgetContents">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>0</y>
+         <width>485</width>
+         <height>630</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">QWidget#inputSupportScrollAreaWidgetContents { background-color: palette(window); }</string>
+       </property>
+       <widget class="QWidget" name="horizontalLayoutWidget_2">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>10</y>
+          <width>461</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <item>
+          <widget class="QLabel" name="autoCorrectionLable">
+           <property name="text">
+            <string>Input Assistance</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="Line" name="autoCorrectionLine_2">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="gridLayoutWidget_9">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>40</y>
+          <width>441</width>
+          <height>145</height>
+         </rect>
+        </property>
+        <layout class="QGridLayout" name="gridLayout_9">
+         <item row="0" column="0" colspan="8">
+          <widget class="QCheckBox" name="autoSwitchCompositionMode">
+           <property name="text">
+            <string>Automatically switch to halfwidth</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0" colspan="3">
+          <widget class="QCheckBox" name="useAutoConversion">
+           <property name="text">
+            <string>Convert at punctuations</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="3">
+          <widget class="QCheckBox" name="kutenCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>。</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="4">
+          <widget class="QCheckBox" name="toutenCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>、</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="5">
+          <widget class="QCheckBox" name="questionMarkCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>?</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="6">
+          <widget class="QCheckBox" name="exclamationMarkCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>!</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0" colspan="3">
+          <widget class="QCheckBox" name="useDirectCommit">
+           <property name="text">
+            <string>句読点・記号の単打確定を有効にする</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="3">
+          <widget class="QCheckBox" name="directCommitKutenCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>。</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="4">
+          <widget class="QCheckBox" name="directCommitToutenCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>、</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="5">
+          <widget class="QCheckBox" name="directCommitQuestionMarkCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>?</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="6">
+          <widget class="QCheckBox" name="directCommitExclamationMarkCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>!</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="7">
+          <widget class="QCheckBox" name="directCommitOpenParenthesisCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>（</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0" colspan="3">
+          <spacer name="horizontalSpacer_directCommit">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item row="3" column="3">
+          <widget class="QCheckBox" name="directCommitCloseParenthesisCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>）</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="4">
+          <widget class="QCheckBox" name="directCommitOpenBracketCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>55</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>「</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="5">
+          <widget class="QCheckBox" name="directCommitCloseBracketCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>55</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>」</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="0" colspan="3">
+          <widget class="QLabel" name="autoCorrectionLable_3">
+           <property name="text">
+            <string>Shift key mode switch</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="3" colspan="5">
+          <widget class="QComboBox" name="shiftKeyModeSwitchComboBox">
+           <property name="minimumSize">
+            <size>
+             <width>150</width>
+             <height>0</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0" colspan="8">
+          <widget class="QCheckBox" name="useJapaneseLayout">
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="text">
+            <string>Always use Japanese keyboard layout for Japanese input</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="0" colspan="8">
+          <widget class="QCheckBox" name="useModeIndicator">
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="text">
+            <string>Show input mode indicator near the cursor</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="0" colspan="8">
+          <widget class="QCheckBox" name="useDarkModeCandidateWindow">
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="text">
+            <string>Use dark mode for candidate window</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="horizontalLayoutWidget_3">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>190</y>
+          <width>461</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <layout class="QHBoxLayout" name="horizontalLayout_6">
+         <item>
+          <widget class="QLabel" name="autoCorrectionLable_2">
+           <property name="text">
+            <string>Fullwidth/Halfwidth</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="Line" name="halffullWidthLine">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="CharacterFormEditor" name="characterFormEditor">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>220</y>
+          <width>441</width>
+          <height>141</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QWidget" name="preeditDisplayColorGroupBox">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>370</y>
+          <width>441</width>
+          <height>240</height>
+         </rect>
+        </property>
+        <widget class="QWidget" name="horizontalLayoutWidget_preeditDisplayColor">
+         <property name="geometry">
+          <rect>
+           <x>0</x>
+           <y>0</y>
+           <width>441</width>
+           <height>21</height>
+          </rect>
          </property>
+         <layout class="QHBoxLayout" name="horizontalLayout_preeditDisplayColor">
+          <item>
+           <widget class="QLabel" name="preeditDisplayColorSectionLabel">
+            <property name="text">
+             <string>未確定文字の表示色（カスタム）</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="Line" name="preeditDisplayColorSectionLine">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
-       </item>
-       <item row="1" column="0" colspan="3">
-        <widget class="QCheckBox" name="useAutoConversion">
+        <widget class="QWidget" name="preeditDisplayColorBodyWidget">
+         <property name="geometry">
+          <rect>
+           <x>10</x>
+           <y>30</y>
+           <width>421</width>
+           <height>205</height>
+          </rect>
+         </property>
+         <layout class="QGridLayout" name="preeditDisplayColorGridLayout">
+         <property name="leftMargin">
+         <number>8</number>
+         </property>
+         <property name="topMargin">
+         <number>8</number>
+         </property>
+         <property name="rightMargin">
+         <number>8</number>
+         </property>
+         <property name="bottomMargin">
+         <number>8</number>
+         </property>
+         <property name="horizontalSpacing">
+         <number>8</number>
+         </property>
+         <property name="verticalSpacing">
+         <number>3</number>
+         </property>
+         <item row="0" column="0" colspan="3">
+         <widget class="QLabel" name="inputPreeditColorLabel">
          <property name="text">
-          <string>Convert at punctuations</string>
+         <string>入力中の文字</string>
          </property>
-        </widget>
-       </item>
-       <item row="1" column="3">
-        <widget class="QCheckBox" name="kutenCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
+         </widget>
+         </item>
+         <item row="1" column="0" colspan="2">
+         <widget class="QCheckBox" name="inputPreeditTextColorCheckBox">
          <property name="text">
-          <string>。</string>
+         <string>文字色</string>
          </property>
-        </widget>
-       </item>
-       <item row="1" column="4">
-        <widget class="QCheckBox" name="toutenCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>、</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="5">
-        <widget class="QCheckBox" name="questionMarkCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>?</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="6">
-        <widget class="QCheckBox" name="exclamationMarkCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>!</string>
-         </property>
-        </widget>
-       </item>
-
-       <item row="2" column="0" colspan="3">
-        <widget class="QCheckBox" name="useDirectCommit">
-         <property name="text">
-          <string>句読点・記号の単打確定を有効にする</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="3">
-        <widget class="QCheckBox" name="directCommitKutenCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>。</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="4">
-        <widget class="QCheckBox" name="directCommitToutenCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>、</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="5">
-        <widget class="QCheckBox" name="directCommitQuestionMarkCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>?</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="6">
-        <widget class="QCheckBox" name="directCommitExclamationMarkCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>!</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="7">
-        <widget class="QCheckBox" name="directCommitOpenParenthesisCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>（</string>
-         </property>
-        </widget>
-       </item>
-
-       <item row="3" column="0" colspan="3">
-        <spacer name="horizontalSpacer_directCommit">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>20</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-       <item row="3" column="3">
-        <widget class="QCheckBox" name="directCommitCloseParenthesisCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>45</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>）</string>
-         </property>
-        </widget>
-       </item>
-       <item row="3" column="4">
-        <widget class="QCheckBox" name="directCommitOpenBracketCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>55</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>「</string>
-         </property>
-        </widget>
-       </item>
-       <item row="3" column="5">
-        <widget class="QCheckBox" name="directCommitCloseBracketCheckBox">
-         <property name="maximumSize">
-          <size>
-           <width>55</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>」</string>
-         </property>
-        </widget>
-       </item>
-
-       <item row="4" column="0" colspan="3">
-        <widget class="QLabel" name="autoCorrectionLable_3">
-         <property name="text">
-          <string>Shift key mode switch</string>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="3" colspan="5">
-        <widget class="QComboBox" name="shiftKeyModeSwitchComboBox">
+         </widget>
+         </item>
+         <item row="1" column="2">
+         <widget class="QPushButton" name="inputPreeditTextColorButton">
          <property name="minimumSize">
-          <size>
-           <width>150</width>
-           <height>0</height>
-          </size>
+         <size>
+         <width>80</width>
+         <height>0</height>
+         </size>
          </property>
-        </widget>
-       </item>
-
-       <item row="5" column="0" colspan="8">
-        <widget class="QCheckBox" name="useJapaneseLayout">
-         <property name="enabled">
-          <bool>true</bool>
+         <property name="maximumSize">
+         <size>
+         <width>90</width>
+         <height>16777215</height>
+         </size>
          </property>
          <property name="text">
-          <string>Always use Japanese keyboard layout for Japanese input</string>
+         <string>#FF5000</string>
          </property>
-        </widget>
-       </item>
-       <item row="6" column="0" colspan="8">
-        <widget class="QCheckBox" name="useModeIndicator">
-         <property name="enabled">
-          <bool>true</bool>
+         </widget>
+         </item>
+         <item row="2" column="0" colspan="2">
+         <widget class="QCheckBox" name="inputPreeditBackgroundColorCheckBox">
+         <property name="text">
+         <string>背景色</string>
+         </property>
+         </widget>
+         </item>
+         <item row="2" column="2">
+         <widget class="QPushButton" name="inputPreeditBackgroundColorButton">
+         <property name="minimumSize">
+         <size>
+         <width>80</width>
+         <height>0</height>
+         </size>
+         </property>
+         <property name="maximumSize">
+         <size>
+         <width>90</width>
+         <height>16777215</height>
+         </size>
          </property>
          <property name="text">
-          <string>Show input mode indicator near the cursor</string>
+         <string>#FFFFCC</string>
          </property>
-        </widget>
-       </item>
-       <item row="7" column="0" colspan="8">
-        <widget class="QCheckBox" name="useDarkModeCandidateWindow">
-         <property name="enabled">
-          <bool>true</bool>
+         </widget>
+         </item>
+         <item row="3" column="0" colspan="2">
+         <widget class="QCheckBox" name="inputPreeditUnderlineColorCheckBox">
+         <property name="text">
+         <string>下線色</string>
+         </property>
+         </widget>
+         </item>
+         <item row="3" column="2">
+         <widget class="QPushButton" name="inputPreeditUnderlineColorButton">
+         <property name="minimumSize">
+         <size>
+         <width>80</width>
+         <height>0</height>
+         </size>
+         </property>
+         <property name="maximumSize">
+         <size>
+         <width>90</width>
+         <height>16777215</height>
+         </size>
          </property>
          <property name="text">
-          <string>Use dark mode for candidate window</string>
+         <string>#FF0000</string>
          </property>
+         </widget>
+         </item>
+         <item row="4" column="0" colspan="3">
+         <widget class="QLabel" name="targetPreeditColorLabel">
+         <property name="text">
+         <string>変換中の文節</string>
+         </property>
+         </widget>
+         </item>
+         <item row="5" column="0" colspan="2">
+         <widget class="QCheckBox" name="targetPreeditTextColorCheckBox">
+         <property name="text">
+         <string>文字色</string>
+         </property>
+         </widget>
+         </item>
+         <item row="5" column="2">
+         <widget class="QPushButton" name="targetPreeditTextColorButton">
+         <property name="minimumSize">
+         <size>
+         <width>80</width>
+         <height>0</height>
+         </size>
+         </property>
+         <property name="maximumSize">
+         <size>
+         <width>90</width>
+         <height>16777215</height>
+         </size>
+         </property>
+         <property name="text">
+         <string>#000000</string>
+         </property>
+         </widget>
+         </item>
+         <item row="6" column="0" colspan="2">
+         <widget class="QCheckBox" name="targetPreeditBackgroundColorCheckBox">
+         <property name="text">
+         <string>背景色</string>
+         </property>
+         </widget>
+         </item>
+         <item row="6" column="2">
+         <widget class="QPushButton" name="targetPreeditBackgroundColorButton">
+         <property name="minimumSize">
+         <size>
+         <width>80</width>
+         <height>0</height>
+         </size>
+         </property>
+         <property name="maximumSize">
+         <size>
+         <width>90</width>
+         <height>16777215</height>
+         </size>
+         </property>
+         <property name="text">
+         <string>#DDEEFF</string>
+         </property>
+         </widget>
+         </item>
+         <item row="7" column="0" colspan="2">
+         <widget class="QCheckBox" name="targetPreeditUnderlineColorCheckBox">
+         <property name="text">
+         <string>下線色</string>
+         </property>
+         </widget>
+         </item>
+         <item row="7" column="2">
+         <widget class="QPushButton" name="targetPreeditUnderlineColorButton">
+         <property name="minimumSize">
+         <size>
+         <width>80</width>
+         <height>0</height>
+         </size>
+         </property>
+         <property name="maximumSize">
+         <size>
+         <width>90</width>
+         <height>16777215</height>
+         </size>
+         </property>
+         <property name="text">
+         <string>#0066FF</string>
+         </property>
+         </widget>
+         </item>
+         <item row="8" column="0" colspan="3">
+         <widget class="QLabel" name="preeditDisplayColorNoteLabel">
+         <property name="text">
+         <string>対応アプリのみ有効です。Chrome/Edge では反映されない場合があります。</string>
+         </property>
+         <property name="wordWrap">
+         <bool>true</bool>
+         </property>
+         </widget>
+         </item>
+         </layout>
         </widget>
-       </item>
-      </layout>
+       </widget>
+      </widget>
      </widget>
     </widget>
     <widget class="QWidget" name="suggestionsTab">
@@ -1882,6 +2167,18 @@
   <tabstop>useJapaneseLayout</tabstop>
   <tabstop>useModeIndicator</tabstop>
   <tabstop>useDarkModeCandidateWindow</tabstop>
+  <tabstop>inputPreeditTextColorCheckBox</tabstop>
+  <tabstop>inputPreeditTextColorButton</tabstop>
+  <tabstop>inputPreeditBackgroundColorCheckBox</tabstop>
+  <tabstop>inputPreeditBackgroundColorButton</tabstop>
+  <tabstop>inputPreeditUnderlineColorCheckBox</tabstop>
+  <tabstop>inputPreeditUnderlineColorButton</tabstop>
+  <tabstop>targetPreeditTextColorCheckBox</tabstop>
+  <tabstop>targetPreeditTextColorButton</tabstop>
+  <tabstop>targetPreeditBackgroundColorCheckBox</tabstop>
+  <tabstop>targetPreeditBackgroundColorButton</tabstop>
+  <tabstop>targetPreeditUnderlineColorCheckBox</tabstop>
+  <tabstop>targetPreeditUnderlineColorButton</tabstop>
   <tabstop>characterFormEditor</tabstop>
   <tabstop>historySuggestCheckBox</tabstop>
   <tabstop>clearUnusedUserPredictionButton</tabstop>

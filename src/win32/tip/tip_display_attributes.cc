@@ -31,10 +31,14 @@
 
 #include <windows.h>
 
+#include <cstdint>
+#include <memory>
 #include <string_view>
 
 #include "absl/base/nullability.h"
 #include "base/win32/com.h"
+#include "config/config_handler.h"
+#include "protocol/config.pb.h"
 
 namespace mozc {
 namespace win32 {
@@ -63,6 +67,86 @@ constexpr TF_DISPLAYATTRIBUTE kConvertedAttribute = {
     {TF_CT_NONE, {}},         // underline color
     TF_ATTR_TARGET_CONVERTED  // attribute info
 };
+
+COLORREF RgbHexToColorRef(const uint32_t rgb) {
+  const BYTE r = static_cast<BYTE>((rgb >> 16) & 0xff);
+  const BYTE g = static_cast<BYTE>((rgb >> 8) & 0xff);
+  const BYTE b = static_cast<BYTE>(rgb & 0xff);
+  return RGB(r, g, b);
+}
+
+TF_DA_COLOR NoColor() {
+  TF_DA_COLOR color = {};
+  color.type = TF_CT_NONE;
+  return color;
+}
+
+TF_DA_COLOR CustomColor(const uint32_t rgb) {
+  TF_DA_COLOR color = {};
+  color.type = TF_CT_COLORREF;
+  color.cr = RgbHexToColorRef(rgb);
+  return color;
+}
+
+std::shared_ptr<const config::Config> ReloadAndGetConfig() {
+  // The config dialog runs in another process.  Reload here so that
+  // GetAttributeInfo() can pick up newly saved values when TSF asks for
+  // updated display attributes.
+  config::ConfigHandler::Reload();
+  return config::ConfigHandler::GetSharedConfig();
+}
+
+TF_DISPLAYATTRIBUTE CreateInputAttributeFromConfig() {
+  TF_DISPLAYATTRIBUTE attr = kInputAttribute;
+
+  const std::shared_ptr<const config::Config> config = ReloadAndGetConfig();
+  if (config == nullptr) {
+    return attr;
+  }
+
+  attr.crText =
+      config->use_custom_preedit_text_color()
+          ? CustomColor(config->preedit_text_color())
+          : NoColor();
+
+  attr.crBk =
+      config->use_custom_preedit_background_color()
+          ? CustomColor(config->preedit_background_color())
+          : NoColor();
+
+  attr.crLine =
+      config->use_custom_preedit_underline_color()
+          ? CustomColor(config->preedit_underline_color())
+          : NoColor();
+
+  return attr;
+}
+
+TF_DISPLAYATTRIBUTE CreateConvertedAttributeFromConfig() {
+  TF_DISPLAYATTRIBUTE attr = kConvertedAttribute;
+
+  const std::shared_ptr<const config::Config> config = ReloadAndGetConfig();
+  if (config == nullptr) {
+    return attr;
+  }
+
+  attr.crText =
+      config->use_custom_preedit_target_text_color()
+          ? CustomColor(config->preedit_target_text_color())
+          : NoColor();
+
+  attr.crBk =
+      config->use_custom_preedit_target_background_color()
+          ? CustomColor(config->preedit_target_background_color())
+          : NoColor();
+
+  attr.crLine =
+      config->use_custom_preedit_target_underline_color()
+          ? CustomColor(config->preedit_target_underline_color())
+          : NoColor();
+
+  return attr;
+}
 
 #ifdef GOOGLE_JAPANESE_INPUT_BUILD
 
@@ -142,11 +226,21 @@ TipDisplayAttributeInput::TipDisplayAttributeInput()
     : TipDisplayAttribute(kDisplayAttributeInput, kInputAttribute,
                           kInputDescription) {}
 
+STDMETHODIMP TipDisplayAttributeInput::GetAttributeInfo(
+    TF_DISPLAYATTRIBUTE* absl_nullable attribute) {
+  return SaveToOutParam(CreateInputAttributeFromConfig(), attribute);
+}
+
 const GUID& TipDisplayAttributeInput::guid() { return kDisplayAttributeInput; }
 
 TipDisplayAttributeConverted::TipDisplayAttributeConverted()
     : TipDisplayAttribute(kDisplayAttributeConverted, kConvertedAttribute,
                           kConvertedDescription) {}
+
+STDMETHODIMP TipDisplayAttributeConverted::GetAttributeInfo(
+    TF_DISPLAYATTRIBUTE* absl_nullable attribute) {
+  return SaveToOutParam(CreateConvertedAttributeFromConfig(), attribute);
+}
 
 const GUID& TipDisplayAttributeConverted::guid() {
   return kDisplayAttributeConverted;

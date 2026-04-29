@@ -380,6 +380,29 @@ message Config {
   // Use dark mode for candidate window on Windows.
   optional bool use_dark_mode_candidate_window = 121 [default = false];
 
+  // Customize preedit display attributes on Windows TSF.
+  // Color values are stored as 0xRRGGBB, not Windows COLORREF.
+
+  // Raw/input preedit text.
+  optional bool use_custom_preedit_text_color = 122 [default = false];
+  optional uint32 preedit_text_color = 123 [default = 0xff5000];
+
+  optional bool use_custom_preedit_background_color = 124 [default = false];
+  optional uint32 preedit_background_color = 125 [default = 0xffffcc];
+
+  optional bool use_custom_preedit_underline_color = 126 [default = false];
+  optional uint32 preedit_underline_color = 127 [default = 0xff0000];
+
+  // Converted/target preedit segment.
+  optional bool use_custom_preedit_target_text_color = 128 [default = false];
+  optional uint32 preedit_target_text_color = 129 [default = 0x000000];
+
+  optional bool use_custom_preedit_target_background_color = 130 [default = false];
+  optional uint32 preedit_target_background_color = 131 [default = 0xddeeff];
+
+  optional bool use_custom_preedit_target_underline_color = 132 [default = false];
+  optional uint32 preedit_target_underline_color = 133 [default = 0x0066ff];
+
   //////////////////////////////////////////////////////////////
   //
   // Cloud (300-319)

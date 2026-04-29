@@ -37,6 +37,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <cstdint>
 
 #include "client/client_interface.h"
 #include "gui/config_dialog/ui_config_dialog.h"
@@ -74,6 +75,7 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   virtual void SelectAutoConversionSetting(int state);
   virtual void SelectDirectCommitSetting(int state);
   virtual void SelectSuggestionSetting(int state);
+  virtual void SelectPreeditColor();
   virtual void LaunchAdministrationDialog();
   virtual void EnableApplyButton();
 
@@ -98,6 +100,21 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   bool initial_use_keyboard_to_change_preedit_method_;
   bool initial_use_mode_indicator_;
   bool initial_use_dark_mode_candidate_window_;
+
+  bool initial_use_custom_preedit_text_color_;
+  uint32_t initial_preedit_text_color_;
+  bool initial_use_custom_preedit_background_color_;
+  uint32_t initial_preedit_background_color_;
+  bool initial_use_custom_preedit_underline_color_;
+  uint32_t initial_preedit_underline_color_;
+
+  bool initial_use_custom_preedit_target_text_color_;
+  uint32_t initial_preedit_target_text_color_;
+  bool initial_use_custom_preedit_target_background_color_;
+  uint32_t initial_preedit_target_background_color_;
+  bool initial_use_custom_preedit_target_underline_color_;
+  uint32_t initial_preedit_target_underline_color_;
+
   std::map<QString, config::Config::SessionKeymap>
       keymapname_sessionkeymap_map_;
 };

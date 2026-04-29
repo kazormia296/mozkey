@@ -71,6 +71,9 @@ class TipDisplayAttributeInput : public TipDisplayAttribute {
  public:
   TipDisplayAttributeInput();
 
+  STDMETHODIMP
+  GetAttributeInfo(TF_DISPLAYATTRIBUTE* absl_nullable attribute) override;
+
   static const GUID& guid();
 };
 
@@ -78,6 +81,9 @@ class TipDisplayAttributeInput : public TipDisplayAttribute {
 class TipDisplayAttributeConverted : public TipDisplayAttribute {
  public:
   TipDisplayAttributeConverted();
+
+  STDMETHODIMP
+  GetAttributeInfo(TF_DISPLAYATTRIBUTE* absl_nullable attribute) override;
 
   static const GUID& guid();
 };

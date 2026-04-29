@@ -754,6 +754,8 @@ mozc_cc_library(
     deps = [
         ":tip_dll_module",
         "//base/win32:com",
+        "//config:config_handler",
+        "//protocol:config_cc_proto",
         "@com_google_absl//absl/base:nullability",
     ],
 )

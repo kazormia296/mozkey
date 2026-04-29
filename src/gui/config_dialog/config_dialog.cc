@@ -39,6 +39,16 @@
 #include <sstream>
 #include <string>
 
+#ifdef _WIN32
+#include <msctf.h>
+#include <objbase.h>
+#endif  // _WIN32
+
+#include <QColor>
+#include <QColorDialog>
+#include <QPushButton>
+#include <QScrollArea>
+
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "base/config_file_stream.h"
@@ -82,6 +92,12 @@ void Connect(const QList<T *> &objects, const char *signal,
 namespace mozc {
 namespace gui {
 
+namespace {
+#ifdef _WIN32
+void NotifyDisplayAttributeUpdate();
+#endif  // _WIN32
+}  // namespace
+
 ConfigDialog::ConfigDialog()
     : client_(client::ClientFactory::NewClient()),
       initial_preedit_method_(0),
@@ -89,6 +105,33 @@ ConfigDialog::ConfigDialog()
       initial_use_mode_indicator_(true),
       initial_use_dark_mode_candidate_window_(false) {
   setupUi(this);
+
+  // QScrollArea uses QPalette::Base for its viewport by default. In this
+  // dialog it can become black while the original settings tabs use a gray
+  // surface. Force the scroll area's viewport and content widget to match
+  // the existing tab background color.
+  const QString input_support_background = QStringLiteral("#4b4b4b");
+  const QString input_support_background_style =
+      QString("background-color: %1;").arg(input_support_background);
+
+  inputSupportScrollArea->setStyleSheet(
+      QString("QScrollArea#inputSupportScrollArea {"
+              " background-color: %1;"
+              " border: 0px;"
+              " }"
+              "QScrollArea#inputSupportScrollArea > QWidget {"
+              " background-color: %1;"
+              " }"
+              "QWidget#inputSupportScrollAreaWidgetContents {"
+              " background-color: %1;"
+              " }")
+          .arg(input_support_background));
+
+  inputSupportScrollArea->viewport()->setStyleSheet(
+      input_support_background_style);
+  inputSupportScrollAreaWidgetContents->setStyleSheet(
+      input_support_background_style);
+
   setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint);
   setWindowModality(Qt::NonModal);
 
@@ -191,6 +234,9 @@ ConfigDialog::ConfigDialog()
 
   // Candidate window dark mode is available only on Windows.
   useDarkModeCandidateWindow->hide();
+
+  // Preedit display color customization is available only on Windows TSF.
+  preeditDisplayColorGroupBox->hide();
 #endif  // !_WIN32
 
   // Reset texts explicitly for translations.
@@ -230,6 +276,32 @@ ConfigDialog::ConfigDialog()
                    SLOT(SelectSuggestionSetting(int)));
   QObject::connect(launchAdministrationDialogButton, SIGNAL(clicked()), this,
                    SLOT(LaunchAdministrationDialog()));
+
+  QObject::connect(inputPreeditTextColorButton, SIGNAL(clicked()), this,
+                   SLOT(SelectPreeditColor()));
+  QObject::connect(inputPreeditBackgroundColorButton, SIGNAL(clicked()), this,
+                   SLOT(SelectPreeditColor()));
+  QObject::connect(inputPreeditUnderlineColorButton, SIGNAL(clicked()), this,
+                   SLOT(SelectPreeditColor()));
+  QObject::connect(targetPreeditTextColorButton, SIGNAL(clicked()), this,
+                   SLOT(SelectPreeditColor()));
+  QObject::connect(targetPreeditBackgroundColorButton, SIGNAL(clicked()), this,
+                   SLOT(SelectPreeditColor()));
+  QObject::connect(targetPreeditUnderlineColorButton, SIGNAL(clicked()), this,
+                   SLOT(SelectPreeditColor()));
+
+  QObject::connect(inputPreeditTextColorCheckBox, SIGNAL(toggled(bool)),
+                   inputPreeditTextColorButton, SLOT(setEnabled(bool)));
+  QObject::connect(inputPreeditBackgroundColorCheckBox, SIGNAL(toggled(bool)),
+                   inputPreeditBackgroundColorButton, SLOT(setEnabled(bool)));
+  QObject::connect(inputPreeditUnderlineColorCheckBox, SIGNAL(toggled(bool)),
+                   inputPreeditUnderlineColorButton, SLOT(setEnabled(bool)));
+  QObject::connect(targetPreeditTextColorCheckBox, SIGNAL(toggled(bool)),
+                   targetPreeditTextColorButton, SLOT(setEnabled(bool)));
+  QObject::connect(targetPreeditBackgroundColorCheckBox, SIGNAL(toggled(bool)),
+                   targetPreeditBackgroundColorButton, SLOT(setEnabled(bool)));
+  QObject::connect(targetPreeditUnderlineColorCheckBox, SIGNAL(toggled(bool)),
+                   targetPreeditUnderlineColorButton, SLOT(setEnabled(bool)));
 
   // Event handlers to enable 'Apply' button.
   Connect(findChildren<QPushButton *>(), SIGNAL(clicked()), this,
@@ -329,6 +401,32 @@ void ConfigDialog::Reload() {
   initial_use_mode_indicator_ = config.use_mode_indicator();
   initial_use_dark_mode_candidate_window_ =
       config.use_dark_mode_candidate_window();
+
+  initial_use_custom_preedit_text_color_ =
+      config.use_custom_preedit_text_color();
+  initial_preedit_text_color_ = config.preedit_text_color();
+
+  initial_use_custom_preedit_background_color_ =
+      config.use_custom_preedit_background_color();
+  initial_preedit_background_color_ = config.preedit_background_color();
+
+  initial_use_custom_preedit_underline_color_ =
+      config.use_custom_preedit_underline_color();
+  initial_preedit_underline_color_ = config.preedit_underline_color();
+
+  initial_use_custom_preedit_target_text_color_ =
+      config.use_custom_preedit_target_text_color();
+  initial_preedit_target_text_color_ = config.preedit_target_text_color();
+
+  initial_use_custom_preedit_target_background_color_ =
+      config.use_custom_preedit_target_background_color();
+  initial_preedit_target_background_color_ =
+      config.preedit_target_background_color();
+
+  initial_use_custom_preedit_target_underline_color_ =
+      config.use_custom_preedit_target_underline_color();
+  initial_preedit_target_underline_color_ =
+      config.preedit_target_underline_color();
 }
 
 bool ConfigDialog::Update() {
@@ -355,6 +453,31 @@ bool ConfigDialog::Update() {
   const bool use_dark_mode_candidate_window_changed =
       (initial_use_dark_mode_candidate_window_ !=
        config.use_dark_mode_candidate_window());
+
+  const bool preedit_display_color_changed =
+      initial_use_custom_preedit_text_color_ !=
+          config.use_custom_preedit_text_color() ||
+      initial_preedit_text_color_ != config.preedit_text_color() ||
+      initial_use_custom_preedit_background_color_ !=
+          config.use_custom_preedit_background_color() ||
+      initial_preedit_background_color_ !=
+          config.preedit_background_color() ||
+      initial_use_custom_preedit_underline_color_ !=
+          config.use_custom_preedit_underline_color() ||
+      initial_preedit_underline_color_ !=
+          config.preedit_underline_color() ||
+      initial_use_custom_preedit_target_text_color_ !=
+          config.use_custom_preedit_target_text_color() ||
+      initial_preedit_target_text_color_ !=
+          config.preedit_target_text_color() ||
+      initial_use_custom_preedit_target_background_color_ !=
+          config.use_custom_preedit_target_background_color() ||
+      initial_preedit_target_background_color_ !=
+          config.preedit_target_background_color() ||
+      initial_use_custom_preedit_target_underline_color_ !=
+          config.use_custom_preedit_target_underline_color() ||
+      initial_preedit_target_underline_color_ !=
+          config.preedit_target_underline_color();
 
   if (!SetConfig(config)) {
     QMessageBox::critical(this, windowTitle(), tr("Failed to update config"));
@@ -387,6 +510,36 @@ bool ConfigDialog::Update() {
            " new applications."));
     initial_use_dark_mode_candidate_window_ =
         config.use_dark_mode_candidate_window();
+  }
+
+  if (preedit_display_color_changed) {
+    NotifyDisplayAttributeUpdate();
+
+    initial_use_custom_preedit_text_color_ =
+        config.use_custom_preedit_text_color();
+    initial_preedit_text_color_ = config.preedit_text_color();
+
+    initial_use_custom_preedit_background_color_ =
+        config.use_custom_preedit_background_color();
+    initial_preedit_background_color_ = config.preedit_background_color();
+
+    initial_use_custom_preedit_underline_color_ =
+        config.use_custom_preedit_underline_color();
+    initial_preedit_underline_color_ = config.preedit_underline_color();
+
+    initial_use_custom_preedit_target_text_color_ =
+        config.use_custom_preedit_target_text_color();
+    initial_preedit_target_text_color_ = config.preedit_target_text_color();
+
+    initial_use_custom_preedit_target_background_color_ =
+        config.use_custom_preedit_target_background_color();
+    initial_preedit_target_background_color_ =
+        config.preedit_target_background_color();
+
+    initial_use_custom_preedit_target_underline_color_ =
+        config.use_custom_preedit_target_underline_color();
+    initial_preedit_target_underline_color_ =
+        config.preedit_target_underline_color();
   }
 #endif  // _WIN32
 
@@ -436,7 +589,90 @@ bool ConfigDialog::Update() {
   } while (0)
 
 namespace {
+
 static constexpr int kPreeditMethodSize = 2;
+
+constexpr uint32_t kDefaultInputPreeditTextColor = 0xff5000;
+constexpr uint32_t kDefaultInputPreeditBackgroundColor = 0xffffcc;
+constexpr uint32_t kDefaultInputPreeditUnderlineColor = 0xff0000;
+
+constexpr uint32_t kDefaultTargetPreeditTextColor = 0x000000;
+constexpr uint32_t kDefaultTargetPreeditBackgroundColor = 0xddeeff;
+constexpr uint32_t kDefaultTargetPreeditUnderlineColor = 0x0066ff;
+
+QColor RgbHexToQColor(const uint32_t rgb) {
+  return QColor((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
+}
+
+uint32_t QColorToRgbHex(const QColor &color) {
+  return (static_cast<uint32_t>(color.red()) << 16) |
+         (static_cast<uint32_t>(color.green()) << 8) |
+         static_cast<uint32_t>(color.blue());
+}
+
+QString RgbHexText(const uint32_t rgb) {
+  return QString("#%1").arg(rgb, 6, 16, QLatin1Char('0')).toUpper();
+}
+
+void SetColorButton(QPushButton *button, const uint32_t rgb) {
+  if (button == nullptr) {
+    return;
+  }
+
+  const QString background = RgbHexText(rgb);
+
+  const int r = static_cast<int>((rgb >> 16) & 0xff);
+  const int g = static_cast<int>((rgb >> 8) & 0xff);
+  const int b = static_cast<int>(rgb & 0xff);
+  const int luminance = (r * 299 + g * 587 + b * 114) / 1000;
+  const QString foreground =
+      luminance < 128 ? QStringLiteral("#ffffff") : QStringLiteral("#000000");
+
+  button->setProperty("rgb", rgb);
+  button->setText(background);
+  button->setStyleSheet(
+      QString("background-color: %1; color: %2;")
+          .arg(background, foreground));
+}
+
+uint32_t GetColorButtonRgb(const QPushButton *button,
+                           const uint32_t default_rgb) {
+  if (button == nullptr) {
+    return default_rgb;
+  }
+
+  const QVariant value = button->property("rgb");
+  if (!value.isValid()) {
+    return default_rgb;
+  }
+
+  return value.toUInt();
+}
+
+#ifdef _WIN32
+void NotifyDisplayAttributeUpdate() {
+  HRESULT coinit_result = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool should_uninitialize =
+      (coinit_result == S_OK || coinit_result == S_FALSE);
+
+  if (SUCCEEDED(coinit_result) || coinit_result == RPC_E_CHANGED_MODE) {
+    ITfDisplayAttributeMgr *display_attribute_mgr = nullptr;
+    const HRESULT hr = ::CoCreateInstance(
+        CLSID_TF_DisplayAttributeMgr, nullptr, CLSCTX_INPROC_SERVER,
+        IID_ITfDisplayAttributeMgr,
+        reinterpret_cast<void **>(&display_attribute_mgr));
+
+    if (SUCCEEDED(hr) && display_attribute_mgr != nullptr) {
+      display_attribute_mgr->OnUpdateInfo();
+      display_attribute_mgr->Release();
+    }
+  }
+
+  if (should_uninitialize) {
+    ::CoUninitialize();
+  }
+}
+#endif  // _WIN32
 
 void SetComboboxForPreeditMethod(const config::Config &config,
                                  QComboBox *combobox) {
@@ -555,6 +791,46 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
 
   SET_CHECKBOX(useDarkModeCandidateWindow, use_dark_mode_candidate_window);
 
+  SET_CHECKBOX(inputPreeditTextColorCheckBox, use_custom_preedit_text_color);
+  SetColorButton(inputPreeditTextColorButton, config.preedit_text_color());
+  inputPreeditTextColorButton->setEnabled(
+      config.use_custom_preedit_text_color());
+
+  SET_CHECKBOX(inputPreeditBackgroundColorCheckBox,
+              use_custom_preedit_background_color);
+  SetColorButton(inputPreeditBackgroundColorButton,
+                config.preedit_background_color());
+  inputPreeditBackgroundColorButton->setEnabled(
+      config.use_custom_preedit_background_color());
+
+  SET_CHECKBOX(inputPreeditUnderlineColorCheckBox,
+              use_custom_preedit_underline_color);
+  SetColorButton(inputPreeditUnderlineColorButton,
+                config.preedit_underline_color());
+  inputPreeditUnderlineColorButton->setEnabled(
+      config.use_custom_preedit_underline_color());
+
+  SET_CHECKBOX(targetPreeditTextColorCheckBox,
+              use_custom_preedit_target_text_color);
+  SetColorButton(targetPreeditTextColorButton,
+                config.preedit_target_text_color());
+  targetPreeditTextColorButton->setEnabled(
+      config.use_custom_preedit_target_text_color());
+
+  SET_CHECKBOX(targetPreeditBackgroundColorCheckBox,
+              use_custom_preedit_target_background_color);
+  SetColorButton(targetPreeditBackgroundColorButton,
+                config.preedit_target_background_color());
+  targetPreeditBackgroundColorButton->setEnabled(
+      config.use_custom_preedit_target_background_color());
+
+  SET_CHECKBOX(targetPreeditUnderlineColorCheckBox,
+              use_custom_preedit_target_underline_color);
+  SetColorButton(targetPreeditUnderlineColorButton,
+                config.preedit_target_underline_color());
+  targetPreeditUnderlineColorButton->setEnabled(
+      config.use_custom_preedit_target_underline_color());
+
   // tab4
   SET_CHECKBOX(historySuggestCheckBox, use_history_suggest);
   SET_CHECKBOX(dictionarySuggestCheckBox, use_dictionary_suggest);
@@ -630,6 +906,42 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(useModeIndicator, use_mode_indicator);
 
   GET_CHECKBOX(useDarkModeCandidateWindow, use_dark_mode_candidate_window);
+
+  GET_CHECKBOX(inputPreeditTextColorCheckBox,
+              use_custom_preedit_text_color);
+  config->set_preedit_text_color(
+      GetColorButtonRgb(inputPreeditTextColorButton,
+                        kDefaultInputPreeditTextColor));
+
+  GET_CHECKBOX(inputPreeditBackgroundColorCheckBox,
+              use_custom_preedit_background_color);
+  config->set_preedit_background_color(
+      GetColorButtonRgb(inputPreeditBackgroundColorButton,
+                        kDefaultInputPreeditBackgroundColor));
+
+  GET_CHECKBOX(inputPreeditUnderlineColorCheckBox,
+              use_custom_preedit_underline_color);
+  config->set_preedit_underline_color(
+      GetColorButtonRgb(inputPreeditUnderlineColorButton,
+                        kDefaultInputPreeditUnderlineColor));
+
+  GET_CHECKBOX(targetPreeditTextColorCheckBox,
+              use_custom_preedit_target_text_color);
+  config->set_preedit_target_text_color(
+      GetColorButtonRgb(targetPreeditTextColorButton,
+                        kDefaultTargetPreeditTextColor));
+
+  GET_CHECKBOX(targetPreeditBackgroundColorCheckBox,
+              use_custom_preedit_target_background_color);
+  config->set_preedit_target_background_color(
+      GetColorButtonRgb(targetPreeditBackgroundColorButton,
+                        kDefaultTargetPreeditBackgroundColor));
+
+  GET_CHECKBOX(targetPreeditUnderlineColorCheckBox,
+              use_custom_preedit_target_underline_color);
+  config->set_preedit_target_underline_color(
+      GetColorButtonRgb(targetPreeditUnderlineColorButton,
+                        kDefaultTargetPreeditUnderlineColor));
 
   uint32_t auto_conversion_key = 0;
   if (kutenCheckBox->isChecked()) {
@@ -709,6 +1021,25 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
 #undef SET_CHECKBOX
 #undef GET_COMBOBOX
 #undef GET_CHECKBOX
+
+void ConfigDialog::SelectPreeditColor() {
+  QPushButton *button = qobject_cast<QPushButton *>(sender());
+  if (button == nullptr) {
+    return;
+  }
+
+  const uint32_t current_rgb = GetColorButtonRgb(button, 0x000000);
+  const QColor selected_color =
+      QColorDialog::getColor(RgbHexToQColor(current_rgb), this,
+                            QString::fromUtf8("未確定文字の色を選択"));
+
+  if (!selected_color.isValid()) {
+    return;
+  }
+
+  SetColorButton(button, QColorToRgbHex(selected_color));
+  EnableApplyButton();
+}
 
 void ConfigDialog::clicked(QAbstractButton *button) {
   switch (configDialogButtonBox->buttonRole(button)) {
