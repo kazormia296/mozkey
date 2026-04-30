@@ -81,7 +81,7 @@ Download / Install
 
 Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mozc/releases) からダウンロードできます。
 
-- 通常の 64-bit Windows では `Mozc64_myproduct_v0.3.0_offline_x64.msi` を使用してください。
+- 通常の 64-bit Windows では `Mozc64_myproduct_v0.3.1_offline_x64.msi` を使用してください。
 - 初回リリースは pre-release として公開しています。
 
 > [!WARNING]
