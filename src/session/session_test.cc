@@ -7015,6 +7015,64 @@ TEST_F(SessionTest, IssueRevert) {
   EXPECT_FALSE(command.output().consumed());
 }
 
+TEST_F(SessionTest, CancelKeyForCompositionOrConversionRevertsHistoryAfterCommit) {
+  config::Config config;
+  config.set_session_keymap(config::Config::MSIME);
+
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  auto key_map_manager = std::make_shared<keymap::KeyMapManager>(config);
+  session.SetConfig(config);
+  session.SetKeyMapManager(key_map_manager);
+  InitSessionToPrecomposition(&session);
+
+  SetUndoContext(&session, converter.get());
+  EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+
+  // Use MS-IME keymap as a representative keymap where Ctrl+Z is assigned to
+  // Cancel in composition/conversion states, but not to Revert in
+  // precomposition state.  After a commit, a key assigned to Cancel should
+  // still rollback the just-learned history and be echoed back so that the
+  // application can handle the key event.
+  EXPECT_CALL(*converter, RevertConversion(_));
+  EXPECT_CALL(*converter, ResetConversion(_));
+
+  commands::Command command;
+  ASSERT_TRUE(SetSendKeyCommand("Ctrl z", &command));
+  EXPECT_TRUE(session.SendKey(&command));
+  EXPECT_FALSE(command.output().consumed());
+}
+
+TEST_F(SessionTest, TestSendKeyCancelKeyRevertsHistoryAfterCommit) {
+  config::Config config;
+  config.set_session_keymap(config::Config::MSIME);
+
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  auto key_map_manager = std::make_shared<keymap::KeyMapManager>(config);
+  session.SetConfig(config);
+  session.SetKeyMapManager(key_map_manager);
+  InitSessionToPrecomposition(&session);
+
+  SetUndoContext(&session, converter.get());
+  EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+
+  // TestSendKey should follow the same cancel-key fallback as SendKey so that
+  // clients can observe that the key is echoed back after rolling back the
+  // just-learned history.
+  EXPECT_CALL(*converter, RevertConversion(_));
+  EXPECT_CALL(*converter, ResetConversion(_));
+
+  commands::Command command;
+  ASSERT_TRUE(SetSendKeyCommand("Ctrl z", &command));
+  EXPECT_TRUE(session.TestSendKey(&command));
+  EXPECT_FALSE(command.output().consumed());
+}
+
 // Undo command must call RervertConversion
 TEST_F(SessionTest, Issue3428520) {
   MockEngine engine;

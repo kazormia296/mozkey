@@ -104,7 +104,7 @@ Main branches
 - 句読点・記号を単打で確定できるオプションを追加
 - 単打確定の対象を設定画面のチェックボックスで選択可能
 - 句読点変換と句読点・記号の単打確定は排他的に動作
-- 変換確定直後に Backspace で取り消した場合のユーザー履歴学習の扱いを改善
+- 変換確定直後に Backspace や Cancel キーで取り消した場合のユーザー履歴学習の扱いを改善
 - Windows 版で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を個別キーとして設定画面から割り当て可能
 - Windows 版の候補ウィンドウにダークモード切り替えを追加
 - Windows 版で未確定文字の文字色・背景色・下線色を設定画面からカスタマイズ可能
@@ -178,13 +178,13 @@ You can choose which punctuations/symbols are committed directly in the config d
 
 どの句読点・記号を単打確定の対象にするかは、設定画面のチェックボックスで選択できます。
 
-### Partial revert of conversion history learning
+### Partial revert of history learning after immediate correction
 
-When a committed conversion is immediately followed by Backspace, this fork treats it as a revert signal for the just-committed learning result.
+When a committed conversion is immediately followed by Backspace, or by a key assigned to Cancel in the current keymap, this fork treats it as a revert signal for the just-committed learning result.
 
-If the entire committed text is erased, the just-committed user segment history does not continue to affect later conversions.
+If the entire committed text is erased, the just-committed suggestion history and user segment history do not continue to affect later suggestions or conversions.
 
-If only the tail of the committed text is erased, the history for the remaining part is kept while the erased tail is reverted.
+If only the tail of the committed text is erased with Backspace, the history for the remaining part is kept while the erased tail is reverted.
 
 For example:
 
@@ -195,13 +195,13 @@ For example:
 
 This makes immediate correction after conversion confirmation behave closer to user intent.
 
-### 変換履歴学習の部分的な取り消し
+### 確定直後の修正による履歴学習の取り消し
 
-変換確定直後に Backspace が入力された場合、このフォークでは直前に確定した変換学習を取り消し対象として扱います。
+変換確定直後に Backspace、または現在のキー設定で Cancel に割り当てられたキーが入力された場合、このフォークでは直前に確定した学習結果を取り消し対象として扱います。
 
-確定した文字列全体を削除した場合は、その確定によるユーザーセグメント履歴が以後の変換順位に残らないようにします。
+確定した文字列全体を削除した場合は、その確定によるサジェスト履歴およびユーザーセグメント履歴が、以後のサジェストや変換順位に残らないようにします。
 
-一方で、確定文字列の末尾だけを削除した場合は、残っている部分の履歴は保持し、削除された末尾に対応する履歴だけを取り消します。
+一方で、Backspace により確定文字列の末尾だけを削除した場合は、残っている部分の履歴は保持し、削除された末尾に対応する履歴だけを取り消します。
 
 たとえば:
 

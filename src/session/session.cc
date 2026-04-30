@@ -268,6 +268,25 @@ void Session::ClearUndoContext() { undo_contexts_.clear(); }
 
 bool Session::HasUndoContext() const { return !undo_contexts_.empty(); }
 
+bool Session::IsCancelKeyForCompositionOrConversion(
+    const commands::KeyEvent& key) const {
+  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
+
+  keymap::CompositionState::Commands composition_command;
+  if (keymap->GetCommandComposition(key, &composition_command) &&
+      composition_command == keymap::CompositionState::CANCEL) {
+    return true;
+  }
+
+  keymap::ConversionState::Commands conversion_command;
+  if (keymap->GetCommandConversion(key, &conversion_command) &&
+      conversion_command == keymap::ConversionState::CANCEL) {
+    return true;
+  }
+
+  return false;
+}
+
 void Session::MaybeSetUndoStatus(commands::Command* command) const {
   if (HasUndoContext()) {
     command->mutable_output()->mutable_status()->set_undo_available(true);
@@ -451,6 +470,10 @@ bool Session::TestSendKey(commands::Command* command) {
         is_suggestion ? keymap->GetCommandZeroQuerySuggestion(key, &key_command)
                       : keymap->GetCommandPrecomposition(key, &key_command);
     if (!result || key_command == keymap::PrecompositionState::NONE) {
+      if (HasUndoContext() && IsCancelKeyForCompositionOrConversion(key)) {
+        return Revert(command);
+      }
+
       // Clear undo context just in case. b/5529702.
       // Note that the undo context will not be cleared in
       // EchoBackAndClearUndoContext if the key event consists of modifier keys
@@ -625,6 +648,10 @@ bool Session::SendKeyPrecompositionState(commands::Command* command) {
                                              &key_command);
 
   if (!result) {
+    if (HasUndoContext() &&
+        IsCancelKeyForCompositionOrConversion(command->input().key())) {
+      return Revert(command);
+    }
     return EchoBackAndClearUndoContext(command);
   }
 
@@ -696,6 +723,10 @@ bool Session::SendKeyPrecompositionState(commands::Command* command) {
       return PredictAndConvert(command);
 
     case keymap::PrecompositionState::NONE:
+      if (HasUndoContext() &&
+          IsCancelKeyForCompositionOrConversion(command->input().key())) {
+        return Revert(command);
+      }
       return EchoBackAndClearUndoContext(command);
     case keymap::PrecompositionState::RECONVERT:
       return RequestConvertReverse(command);

@@ -291,6 +291,12 @@ class Session {
   // behavior, which clears the undo context on the user's edit operation.
   void ClearUndoContext();
   bool HasUndoContext() const;
+
+  // Returns true if |key| is assigned to Cancel in the current composition or
+  // conversion keymap.
+  bool IsCancelKeyForCompositionOrConversion(
+      const mozc::commands::KeyEvent& key) const;
+
   // Set command.output.status.undo_available to true if HasUndoContext()==true.
   // Otherwise no-op.
   // Some code treats empty Status and default Status differently so
