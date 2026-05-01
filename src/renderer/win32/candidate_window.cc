@@ -35,6 +35,7 @@
 #include <wil/resource.h>
 #include <windows.h>
 
+#include <cstdint>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -56,9 +57,6 @@ namespace mozc {
 namespace renderer {
 namespace win32 {
 namespace {
-
-// 96 DPI is the default DPI in Windows.
-constexpr int kDefaultDPI = 96;
 
 // layout size constants in pixel unit in the default DPI.
 constexpr int kIndicatorWidthInDefaultDPI = 4;
@@ -98,9 +96,9 @@ COLORREF ToColorRef(const RendererStyle::RGBAColor& color) {
              static_cast<int>(color.b()));
 }
 
-RendererStyle GetCurrentRendererStyle() {
+RendererStyle GetCurrentRendererStyle(uint32_t dpi) {
   RendererStyle style;
-  GetScaledRendererStyle(&style);
+  GetScaledRendererStyle(&style, dpi);
   return style;
 }
 
@@ -149,17 +147,17 @@ COLORREF GetFooterBorderColor(const RendererStyle& style) {
   return GetFrameColor(style);
 }
 
-int GetWindowCornerRadius() {
-  const int radius = static_cast<int>(6.0 * GetDPIScalingFactor());
+int GetWindowCornerRadius(uint32_t dpi) {
+  const int radius = static_cast<int>(6.0 * GetDPIScalingFactor(dpi));
   return (radius < 6) ? 6 : radius;
 }
 
-void UpdateRoundedWindowRegion(HWND hwnd, const Size& size) {
+void UpdateRoundedWindowRegion(HWND hwnd, const Size& size, uint32_t dpi) {
   if (hwnd == nullptr || size.width <= 0 || size.height <= 0) {
     return;
   }
 
-  const int radius = GetWindowCornerRadius();
+  const int radius = GetWindowCornerRadius(dpi);
   HRGN region =
       ::CreateRoundRectRgn(0, 0, size.width + 1, size.height + 1,
                            radius * 2, radius * 2);
@@ -312,12 +310,19 @@ CandidateWindow::CandidateWindow()
       footer_logo_display_size_(0, 0),
       send_command_interface_(nullptr),
       table_layout_(std::make_unique<TableLayout>()),
-      text_renderer_(TextRenderer::Create()),
+      dpi_(::GetDpiForSystem()),
+      text_renderer_(TextRenderer::Create(dpi_)),
       indicator_width_(0),
       metrics_changed_(false),
       mouse_moving_(true) {
+  UpdateDpiDependentResources();
+}
+
+CandidateWindow::~CandidateWindow() = default;
+
+void CandidateWindow::UpdateDpiDependentResources() {
+  const double scale_factor = GetDPIScalingFactor(dpi_);
   double image_scale_factor = 1.0;
-  const double scale_factor = GetDPIScalingFactor();
   if (scale_factor < 1.125) {
     footer_logo_.reset(LoadBitmapFromResource(::GetModuleHandle(nullptr),
                                               IDB_FOOTER_LOGO_COLOR_100));
@@ -336,7 +341,7 @@ CandidateWindow::CandidateWindow()
     image_scale_factor = 2.0;
   }
 
-  // If DPI is not default value, re-calculate the size based on the DPI.
+  footer_logo_display_size_ = Size(0, 0);
   if (footer_logo_.is_valid()) {
     BITMAP bm = {};
     if (::GetObject(footer_logo_.get(), sizeof(bm), &bm)) {
@@ -349,11 +354,18 @@ CandidateWindow::CandidateWindow()
   indicator_width_ = kIndicatorWidthInDefaultDPI * scale_factor;
 }
 
-CandidateWindow::~CandidateWindow() {}
-
 LRESULT CandidateWindow::OnCreate(LPCREATESTRUCT create_struct) {
   EnableOrDisableWindowForWorkaround();
   return 0;
+}
+
+void CandidateWindow::UpdateDpi(uint32_t dpi) {
+  if (dpi == dpi_) {
+    return;
+  }
+  dpi_ = dpi;
+  UpdateDpiDependentResources();
+  text_renderer_->OnDpiChanged(dpi_);
 }
 
 void CandidateWindow::EnableOrDisableWindowForWorkaround() {
@@ -373,10 +385,6 @@ void CandidateWindow::OnDestroy() {
   // windows are not closed. WindowManager should close these windows
   // before process termination.
   ::PostQuitMessage(0);
-}
-
-void CandidateWindow::OnDpiChanged(UINT dpiX, UINT dpiY, RECT* rect) {
-  metrics_changed_ = true;
 }
 
 BOOL CandidateWindow::OnEraseBkgnd(HDC dc) {
@@ -689,7 +697,7 @@ void CandidateWindow::UpdateLayout(
   table_layout_->FreezeLayout();
 
   if (m_hWnd != nullptr) {
-    UpdateRoundedWindowRegion(m_hWnd, table_layout_->GetTotalSize());
+    UpdateRoundedWindowRegion(m_hWnd, table_layout_->GetTotalSize(), dpi_);
   }
 }
 
@@ -768,7 +776,7 @@ void CandidateWindow::DrawVScrollBar(HDC dc) {
     const int end_index =
         candidate_window_->candidate(candidates_in_page - 1).index();
 
-    const auto style = GetCurrentRendererStyle();
+    const auto style = GetCurrentRendererStyle(dpi_);
     const CRect background_crect = ToCRect(vscroll_rect);
     FillSolidRect(dc, &background_crect, GetIndicatorBackgroundColor(style));
 
@@ -793,7 +801,7 @@ void CandidateWindow::DrawShortcutBackground(HDC dc) {
       const int width = shortcut_colmun_rect.Right() - row_rect.Left();
       shortcut_colmun_rect.origin.x = row_rect.Left();
       shortcut_colmun_rect.size.width = width;
-      const auto style = GetCurrentRendererStyle();
+      const auto style = GetCurrentRendererStyle(dpi_);
       const CRect shortcut_colmun_crect = ToCRect(shortcut_colmun_rect);
       FillSolidRect(dc, &shortcut_colmun_crect,
                     GetShortcutBackgroundColor(style));
@@ -807,7 +815,7 @@ void CandidateWindow::DrawFooter(HDC dc) {
     return;
   }
 
-  const auto style = GetCurrentRendererStyle();
+  const auto style = GetCurrentRendererStyle(dpi_);
 
   const COLORREF kFooterSeparatorColors[kFooterSeparatorHeight] = {
     GetFooterBorderColor(style)};
@@ -904,14 +912,14 @@ void CandidateWindow::DrawSelectedRect(HDC dc) {
       focused_array_index < candidate_window_->candidate_size()) {
     (void)candidate_window_->candidate(focused_array_index);
 
-    const auto style = GetCurrentRendererStyle();
+    const auto style = GetCurrentRendererStyle(dpi_);
 
     CRect selected_rect =
         ToCRect(table_layout_->GetRowRect(focused_array_index));
 
     selected_rect.DeflateRect(4, 1);
 
-    const int radius = GetWindowCornerRadius();
+    const int radius = GetWindowCornerRadius(dpi_);
 
     wil::unique_select_object prev_pen =
         wil::SelectObject(dc, static_cast<HPEN>(::GetStockObject(DC_PEN)));
@@ -928,7 +936,7 @@ void CandidateWindow::DrawSelectedRect(HDC dc) {
 
 void CandidateWindow::DrawInformationIcon(HDC dc) {
   DCHECK(table_layout_->IsLayoutFrozen()) << "Table layout is not frozen.";
-  const double scale_factor = GetDPIScalingFactor();
+  const double scale_factor = GetDPIScalingFactor(dpi_);
   for (size_t i = 0; i < candidate_window_->candidate_size(); ++i) {
     if (candidate_window_->candidate(i).has_information_id()) {
       CRect rect = ToCRect(table_layout_->GetRowRect(i));
@@ -936,7 +944,7 @@ void CandidateWindow::DrawInformationIcon(HDC dc) {
       rect.right = rect.right - (2.0 * scale_factor);
       rect.top += (2.0 * scale_factor);
       rect.bottom -= (2.0 * scale_factor);
-      const auto style = GetCurrentRendererStyle();
+      const auto style = GetCurrentRendererStyle(dpi_);
 
       FillSolidRect(dc, &rect, GetIndicatorColor(style));
       ::SetDCBrushColor(dc, GetIndicatorColor(style));
@@ -946,18 +954,18 @@ void CandidateWindow::DrawInformationIcon(HDC dc) {
 }
 
 void CandidateWindow::DrawBackground(HDC dc) {
-  const auto style = GetCurrentRendererStyle();
+  const auto style = GetCurrentRendererStyle(dpi_);
   const Rect client_rect(Point(0, 0), table_layout_->GetTotalSize());
   const CRect client_crect = ToCRect(client_rect);
   FillSolidRect(dc, &client_crect, GetDefaultBackgroundColor(style));
 }
 
 void CandidateWindow::DrawFrame(HDC dc) {
-  const auto style = GetCurrentRendererStyle();
+  const auto style = GetCurrentRendererStyle(dpi_);
   const Rect client_rect(Point(0, 0), table_layout_->GetTotalSize());
   const CRect client_crect = ToCRect(client_rect);
 
-  const int radius = GetWindowCornerRadius();
+  const int radius = GetWindowCornerRadius(dpi_);
 
   wil::unique_select_object prev_pen =
       wil::SelectObject(dc, static_cast<HPEN>(::GetStockObject(DC_PEN)));
