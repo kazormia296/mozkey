@@ -31,6 +31,7 @@
 
 #include "session/session.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -71,6 +72,40 @@ using ::mozc::engine::EngineConverterInterface;
 
 // Maximum size of multiple undo stack.
 const size_t kMultipleUndoMaxSize = 10;
+
+// Default live conversion debounce delay. The user-visible value is stored in
+// Config::live_conversion_delay_msec.
+constexpr uint32_t kDefaultLiveConversionDelayMillisec = 228;
+constexpr uint32_t kMaxLiveConversionDelayMillisec = 1000;
+
+// Do not run live conversion for a single-character composition.
+// Single-character input is often a particle such as 「に」「を」「が」,
+// and converting it to a kanji such as 「二」 too eagerly is noisy.
+constexpr size_t kMinLiveConversionCompositionLength = 2;
+
+uint32_t GetLiveConversionDelayMillisec(const config::Config& config) {
+  if (!config.has_live_conversion_delay_msec()) {
+    return kDefaultLiveConversionDelayMillisec;
+  }
+  return std::min(config.live_conversion_delay_msec(),
+                  kMaxLiveConversionDelayMillisec);
+}
+
+bool StartsWithString(absl::string_view text, absl::string_view prefix) {
+  return text.size() >= prefix.size() &&
+         text.substr(0, prefix.size()) == prefix;
+}
+
+void AddPreeditSegment(absl::string_view key,
+                       absl::string_view value,
+                       commands::Preedit::Segment::Annotation annotation,
+                       commands::Preedit* preedit) {
+  commands::Preedit::Segment* segment = preedit->add_segment();
+  segment->set_annotation(annotation);
+  segment->set_key(std::string(key));
+  segment->set_value(std::string(value));
+  segment->set_value_length(Util::CharsLen(value));
+}
 
 bool IsPlainBackspaceKey(const commands::KeyEvent& key) {
   return key.has_special_key() &&
@@ -429,6 +464,11 @@ bool Session::SendCommand(commands::Command* command) {
     case commands::SessionCommand::UPDATE_COMPOSITION:
       result = UpdateComposition(command);
       break;
+
+    case commands::SessionCommand::APPLY_LIVE_CONVERSION:
+      result = ApplyDelayedLiveConversion(command);
+      break;
+
     case commands::SessionCommand::REQUEST_NWP: {
       ConversionPreferences conversion_preferences =
           context_->converter().conversion_preferences();
@@ -1227,6 +1267,7 @@ bool Session::Revert(commands::Command* command) {
   ClearUndoContext();
 
   SetStateToPredompositionAndCancel(context_.get());
+  ClearLiveConversionState();
   Output(command);
   return true;
 }
@@ -1243,6 +1284,7 @@ bool Session::ResetContext(commands::Command* command) {
   context_->mutable_converter()->Reset();
 
   SetStateToPredompositionAndCancel(context_.get());
+  ClearLiveConversionState();
   Output(command);
   return true;
 }
@@ -1533,7 +1575,30 @@ bool Session::MaybeSelectCandidate(commands::Command* command) {
   return context_->mutable_converter()->CandidateMoveToShortcut(shortcut);
 }
 
+void Session::CancelPendingLiveConversion() {
+  ++live_conversion_generation_;
+  live_conversion_pending_ = false;
+  pending_live_conversion_generation_ = 0;
+  pending_live_conversion_key_.clear();
+}
+
+void Session::ClearLiveConversionState() {
+  ++live_conversion_generation_;
+
+  live_conversion_active_ = false;
+  live_conversion_pending_ = false;
+  pending_live_conversion_generation_ = 0;
+  pending_live_conversion_key_.clear();
+
+  live_conversion_key_.clear();
+  live_conversion_preedit_.clear();
+  live_conversion_value_.clear();
+  live_conversion_preedit_output_.Clear();
+}
+
 void Session::CancelLiveConversionForEditing() {
+  CancelPendingLiveConversion();
+
   if (!live_conversion_active_) {
     return;
   }
@@ -1564,9 +1629,21 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   }
 
   const size_t length = context_->composer().GetLength();
-  if (length == 0 || length != context_->composer().GetCursor()) {
+  if (length < kMinLiveConversionCompositionLength ||
+      length != context_->composer().GetCursor()) {
     return false;
   }
+
+  // Capture the raw composition before Convert(). These strings are the stable
+  // source for the next pending-suffix display.
+  const std::string live_conversion_key =
+      context_->composer().GetQueryForConversion();
+  const std::string live_conversion_preedit =
+      context_->composer().GetStringForPreedit();
+
+  live_conversion_pending_ = false;
+  pending_live_conversion_generation_ = 0;
+  pending_live_conversion_key_.clear();
 
   if (!context_->mutable_converter()->Convert(context_->composer())) {
     OutputComposition(command);
@@ -1577,23 +1654,239 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   live_conversion_active_ = true;
 
   // Keep the candidate list visible internally so that the Windows renderer is
-  // updated.  The actual candidate windows are hidden in WindowManager when
-  // output.live_conversion() is true.
+  // updated.
   context_->mutable_converter()->SetCandidateListVisible(true);
 
   Output(command);
   command->mutable_output()->set_live_conversion(true);
+  command->mutable_output()->set_live_conversion_pending(false);
+
+  live_conversion_key_ = live_conversion_key;
+  live_conversion_preedit_ = live_conversion_preedit;
 
   if (command->output().has_preedit()) {
+    live_conversion_preedit_output_ = command->output().preedit();
+
+    std::string unused_key;
     ExtractPreeditKeyAndValue(command->output().preedit(),
-                              &live_conversion_key_,
+                              &unused_key,
                               &live_conversion_value_);
   } else {
-    live_conversion_key_ = context_->composer().GetQueryForConversion();
+    live_conversion_preedit_output_.Clear();
     live_conversion_value_ = context_->composer().GetStringForSubmission();
   }
 
   return true;
+}
+
+bool Session::OutputPendingLiveConversion(commands::Command* command) const {
+  const std::string current_key = context_->composer().GetQueryForConversion();
+  const std::string raw_preedit = context_->composer().GetStringForPreedit();
+
+  const bool has_stable_live_conversion =
+      !live_conversion_key_.empty() &&
+      !live_conversion_preedit_.empty() &&
+      !live_conversion_value_.empty() &&
+      live_conversion_preedit_output_.segment_size() > 0;
+
+  // First composition after starting IME has no stable converted prefix yet.
+  // In that case, raw pending display is expected and should still be debounced.
+  if (!has_stable_live_conversion) {
+    OutputComposition(command);
+    commands::Output* output = command->mutable_output();
+    output->clear_candidate_window();
+    output->set_live_conversion(true);
+    output->set_live_conversion_pending(true);
+    return true;
+  }
+
+  // If stable-prefix composition cannot be built safely, do not fall back to
+  // raw hiragana. The caller should immediately run live conversion instead.
+  if (!StartsWithString(current_key, live_conversion_key_) ||
+      !StartsWithString(raw_preedit, live_conversion_preedit_)) {
+    return false;
+  }
+
+  const std::string suffix_key =
+      current_key.substr(live_conversion_key_.size());
+  const std::string suffix_value =
+      raw_preedit.substr(live_conversion_preedit_.size());
+
+  OutputComposition(command);
+
+  commands::Output* output = command->mutable_output();
+  output->clear_candidate_window();
+  output->set_live_conversion(true);
+  output->set_live_conversion_pending(true);
+
+  commands::Preedit* preedit = output->mutable_preedit();
+  preedit->Clear();
+
+  // Reuse the exact segment structure and annotations from the latest real
+  // live conversion. This avoids flickering between UNDERLINE and HIGHLIGHT
+  // display attributes.
+  for (int i = 0; i < live_conversion_preedit_output_.segment_size(); ++i) {
+    *preedit->add_segment() = live_conversion_preedit_output_.segment(i);
+  }
+
+  if (!suffix_value.empty()) {
+    AddPreeditSegment(suffix_key.empty() ? suffix_value : suffix_key,
+                      suffix_value,
+                      commands::Preedit::Segment::UNDERLINE,
+                      preedit);
+  }
+
+  preedit->set_cursor(Util::CharsLen(live_conversion_value_) +
+                      Util::CharsLen(suffix_value));
+
+  return true;
+}
+
+void Session::AttachDelayedLiveConversionCallback(
+    commands::Command* command) const {
+  commands::Output::Callback* callback =
+      command->mutable_output()->mutable_callback();
+
+  commands::SessionCommand* session_command =
+      callback->mutable_session_command();
+
+  session_command->set_type(
+      commands::SessionCommand::APPLY_LIVE_CONVERSION);
+  session_command->set_live_conversion_generation(
+      pending_live_conversion_generation_);
+  session_command->set_live_conversion_key(pending_live_conversion_key_);
+
+  callback->set_delay_millisec(
+    GetLiveConversionDelayMillisec(context_->GetConfig()));
+}
+
+bool Session::MaybeScheduleLiveConversion(commands::Command* command) {
+  if (!context_->GetConfig().use_live_conversion()) {
+    return false;
+  }
+
+  if (context_->state() != ImeContext::COMPOSITION) {
+    return false;
+  }
+
+  if (context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
+    return false;
+  }
+
+  const transliteration::TransliterationType input_mode =
+      context_->composer().GetInputMode();
+  if (input_mode == transliteration::HALF_ASCII ||
+      input_mode == transliteration::FULL_ASCII) {
+    return false;
+  }
+
+  const size_t length = context_->composer().GetLength();
+  if (length < kMinLiveConversionCompositionLength ||
+      length != context_->composer().GetCursor()) {
+    return false;
+  }
+
+  const uint32_t delay_msec =
+      GetLiveConversionDelayMillisec(context_->GetConfig());
+  if (delay_msec == 0) {
+    return MaybeStartLiveConversion(command);
+  }
+
+  ++live_conversion_generation_;
+  live_conversion_pending_ = true;
+  pending_live_conversion_generation_ = live_conversion_generation_;
+  pending_live_conversion_key_ = context_->composer().GetQueryForConversion();
+
+  if (!OutputPendingLiveConversion(command)) {
+    // Avoid showing raw hiragana fallback. If pending display cannot be built
+    // from the stable converted prefix, materialize live conversion immediately.
+    return MaybeStartLiveConversion(command);
+  }
+
+  AttachDelayedLiveConversionCallback(command);
+
+  return true;
+}
+
+bool Session::IgnoreStaleDelayedLiveConversion(commands::Command* command) {
+  command->mutable_output()->set_consumed(true);
+
+  // A stale delayed callback must not return an empty Output. In TSF, an empty
+  // consumed Output may clear the visible composition even though the server-side
+  // composer still has text.
+  if (live_conversion_pending_) {
+    OutputPendingLiveConversion(command);
+    return true;
+  }
+
+  if (live_conversion_active_ && context_->state() == ImeContext::CONVERSION) {
+    Output(command);
+    command->mutable_output()->set_live_conversion(true);
+    command->mutable_output()->set_live_conversion_pending(false);
+    return true;
+  }
+
+  OutputFromState(command);
+  return true;
+}
+
+bool Session::ApplyDelayedLiveConversion(commands::Command* command) {
+  command->mutable_output()->set_consumed(true);
+
+  const commands::SessionCommand& session_command =
+      command->input().command();
+
+  if (!live_conversion_pending_) {
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  if (!session_command.has_live_conversion_generation() ||
+      session_command.live_conversion_generation() !=
+          pending_live_conversion_generation_) {
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  if (!session_command.has_live_conversion_key() ||
+      session_command.live_conversion_key() != pending_live_conversion_key_) {
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  if (context_->state() != ImeContext::COMPOSITION) {
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  const std::string current_key = context_->composer().GetQueryForConversion();
+  if (current_key != pending_live_conversion_key_) {
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  const size_t length = context_->composer().GetLength();
+  if (length < kMinLiveConversionCompositionLength ||
+      length != context_->composer().GetCursor()) {
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  return MaybeStartLiveConversion(command);
+}
+
+bool Session::FlushPendingLiveConversion() {
+  if (!live_conversion_pending_) {
+    return false;
+  }
+
+  if (context_->state() != ImeContext::COMPOSITION) {
+    CancelPendingLiveConversion();
+    return false;
+  }
+
+  const std::string current_key = context_->composer().GetQueryForConversion();
+  if (current_key != pending_live_conversion_key_) {
+    CancelPendingLiveConversion();
+    return false;
+  }
+
+  commands::Command dummy_command;
+  return MaybeStartLiveConversion(&dummy_command);
 }
 
 bool Session::CommitLiveConversionResult(commands::Command* command) {
@@ -1620,9 +1913,7 @@ bool Session::CommitLiveConversionResult(commands::Command* command) {
   std::string value = live_conversion_value_;
   value.append(last_char);
 
-  live_conversion_active_ = false;
-  live_conversion_key_.clear();
-  live_conversion_value_.clear();
+  ClearLiveConversionState();
 
   CommitStringDirectly(key, value, command);
   return true;
@@ -1688,6 +1979,13 @@ bool Session::InsertCharacter(commands::Command* command) {
 
   command->mutable_output()->set_consumed(true);
 
+  // If a direct-commit punctuation/symbol is typed while a delayed live
+  // conversion is pending, first materialize the pending conversion so that
+  // CommitLiveConversionResult() can commit the exact visible converted prefix.
+  if (live_conversion_pending_ && CanDirectCommitAfterPunctuation(key)) {
+    FlushPendingLiveConversion();
+  }
+
   const bool was_live_conversion = live_conversion_active_;
 
   // If the current conversion was started by live conversion, ordinary
@@ -1726,6 +2024,16 @@ bool Session::InsertCharacter(commands::Command* command) {
   context_->mutable_composer()->InsertCharacterKeyEvent(key);
   ClearUndoContext();
 
+  if (!was_live_conversion && !live_conversion_pending_ &&
+      context_->composer().GetLength() == 1) {
+    // A new composition must not reuse the stable prefix from a previous
+    // live conversion.
+    live_conversion_key_.clear();
+    live_conversion_preedit_.clear();
+    live_conversion_value_.clear();
+    live_conversion_preedit_output_.Clear();
+  }
+
   if (CanDirectCommitAfterPunctuation(key)) {
     if (was_live_conversion && CommitLiveConversionResult(command)) {
       return true;
@@ -1745,10 +2053,11 @@ bool Session::InsertCharacter(commands::Command* command) {
 
   SetSessionState(ImeContext::COMPOSITION, context_.get());
   if (CanStartAutoConversion(key)) {
+    CancelPendingLiveConversion();
     return Convert(command);
   }
 
-  if (MaybeStartLiveConversion(command)) {
+  if (MaybeScheduleLiveConversion(command)) {
     return true;
   }
 
@@ -1934,6 +2243,7 @@ bool Session::EditCancel(commands::Command* command) {
   TryCancelConvertReverse(command);
 
   SetStateToPredompositionAndCancel(context_.get());
+  ClearLiveConversionState();
   Output(command);
   return true;
 }
@@ -1959,6 +2269,7 @@ bool Session::EditCancelAndIMEOff(commands::Command* command) {
   context_->mutable_converter()->Reset();
 
   SetSessionState(ImeContext::DIRECT, context_.get());
+  ClearLiveConversionState();
   Output(command);
   return true;
 }
@@ -1990,10 +2301,13 @@ bool Session::CommitInternal(commands::Command* command,
   Output(command);
   // Copy the previous output for Undo.
   *context_->mutable_output() = command->output();
+
+  ClearLiveConversionState();
   return true;
 }
 
 bool Session::Commit(commands::Command* command) {
+  FlushPendingLiveConversion();
   return CommitInternal(command,
                         context_->GetRequest().zero_query_suggestion());
 }
@@ -2525,6 +2839,7 @@ bool Session::DeleteCandidateFromHistory(commands::Command* command) {
 }
 
 bool Session::Convert(commands::Command* command) {
+  CancelPendingLiveConversion();
   command->mutable_output()->set_consumed(true);
   const std::string composition = context_->composer().GetQueryForConversion();
 
@@ -2576,6 +2891,7 @@ bool Session::Convert(commands::Command* command) {
 }
 
 bool Session::ConvertWithoutHistory(commands::Command* command) {
+  CancelPendingLiveConversion();
   command->mutable_output()->set_consumed(true);
 
   ConversionPreferences preferences =
@@ -2884,6 +3200,8 @@ bool Session::ConvertCancel(commands::Command* command) {
 }
 
 bool Session::PredictAndConvert(commands::Command* command) {
+  CancelPendingLiveConversion();
+
   if (context_->state() == ImeContext::CONVERSION) {
     return ConvertNext(command);
   }

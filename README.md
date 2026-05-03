@@ -81,7 +81,7 @@ Download / Install
 
 Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mozc/releases) からダウンロードできます。
 
-- 通常の 64-bit Windows では `Mozc64_myproduct_v0.4.0_offline_x64.msi` を使用してください。
+- 通常の 64-bit Windows では `Mozc64_myproduct_v0.4.1_offline_x64.msi` を使用してください。
 - 本 fork のリリースは個人用の experimental build として公開しています。
 
 > [!WARNING]
@@ -105,8 +105,10 @@ Main branches
 - 単打確定の対象を設定画面のチェックボックスで選択可能
 - 句読点変換と句読点・記号の単打確定は排他的に動作
 - 変換確定直後に Backspace や Cancel キーで取り消した場合のユーザー履歴学習の扱いを改善
-- ライブ変換機能を追加。未確定文字列を文字入力ごとに自動変換し、確定前の読みをルビ風 overlay で表示可能
-- ライブ変換は設定画面から ON/OFF 切り替え可能
+- ライブ変換機能を追加。未確定文字列を自動変換し、確定前の読みをルビ風 overlay で表示
+- ライブ変換は設定画面から ON/OFF と変換開始までの遅延時間を変更可能
+- ライブ変換は入力直後の不要な変換ちらつきを抑えるため、文字入力後に短いデバウンスを挟んで実行
+- 1文字だけの未確定文字列では、助詞などの誤変換を避けるためライブ変換を実行しない
 - Windows 版で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を個別キーとして設定画面から割り当て可能
 - Windows 版の候補ウィンドウにダークモード切り替えを追加
 - Windows 版で未確定文字の文字色・背景色・下線色を設定画面からカスタマイズ可能
@@ -158,33 +160,39 @@ while valid longer rules such as `ctnnr` and `ctnnc` still work.
 
 ### Live conversion
 
-With live conversion enabled, Mozc converts the current composition after each character input without committing it immediately.
+With live conversion enabled, Mozc automatically converts the current composition without committing it immediately.
+
+To reduce distracting intermediate conversions, this fork applies live conversion after a short configurable debounce delay instead of converting every character immediately. Single-character compositions are not live-converted, because they are often particles such as `に`, `を`, or `が`.
 
 For example:
 
 - Type `kyouha`
-- The preedit can be shown as `今日は` before pressing Space
-- Typing more characters continues updating the same uncommitted composition
+- After the debounce delay, the preedit can be shown as `今日は` before pressing Space
+- Typing more characters keeps the same uncommitted composition and schedules another live conversion
+- Pressing Backspace or Delete updates the live conversion result immediately
 - Pressing Enter commits the current live conversion result
 
 During live conversion, this fork shows a small ruby-like overlay window above the preedit text so that the original reading remains visible while the converted text is shown.
 
-The live conversion feature can be enabled or disabled from the config dialog.
+The live conversion feature can be enabled or disabled from the config dialog. The debounce delay can also be configured there.
 
 ### ライブ変換
 
-ライブ変換を有効にすると、スペースキーを押さなくても、入力中の未確定文字列が文字入力ごとに自動で変換されます。
+ライブ変換を有効にすると、スペースキーを押さなくても、入力中の未確定文字列が自動で変換されます。
+
+入力途中の不要な中間変換表示を抑えるため、この fork では文字入力後に短い設定可能なデバウンス時間を挟んでからライブ変換を実行します。`に`、`を`、`が` のような助詞として使われやすい入力を誤って漢字化しないように、1文字だけの未確定文字列ではライブ変換を行いません。
 
 たとえば:
 
 - `kyouha` と入力
-- Space を押す前に、未確定文字列が `今日は` のように表示される
+- デバウンス時間の経過後、Space を押す前に未確定文字列が `今日は` のように表示される
 - 続けて文字を入力しても途中の変換結果は確定されず、同じ未確定文字列として再変換される
+- Backspace / Delete では、削除後の状態をすぐにライブ変換結果へ反映する
 - Enter で現在のライブ変換結果を確定する
 
 ライブ変換中は、変換後の文字を表示しながら元の読みも分かるように、未確定文字の上付近に Mozc 独自のルビ風 overlay window を表示します。
 
-ライブ変換は設定画面から ON/OFF を切り替えられます。
+ライブ変換は設定画面から ON/OFF を切り替えられます。また、変換開始までの遅延時間も設定画面から変更できます。
 
 ### Direct commit for punctuations/symbols
 

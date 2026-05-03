@@ -38,6 +38,10 @@
 #include <cstdint>
 
 namespace mozc {
+namespace commands {
+class SessionCommand;
+}  // namespace commands
+
 namespace win32 {
 namespace tsf {
 
@@ -60,6 +64,12 @@ class TipTextService : public IUnknown {
 
   // Sends UI update message to the renderer.
   virtual void PostUIUpdateMessage() = 0;
+
+  // Posts a delayed SessionCommand callback requested by Output::Callback.
+  virtual void PostDelayedSessionCommand(
+    ITfContext* context,
+    const mozc::commands::SessionCommand& command,
+    uint32_t delay_millisec) = 0;
 
   // Returns the GUID atom for the display attributes.
   virtual TfGuidAtom input_attribute() const = 0;

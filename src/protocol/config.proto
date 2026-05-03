@@ -319,6 +319,10 @@ message Config {
   // input without committing the previous live conversion result.
   optional bool use_live_conversion = 69 [default = false];
 
+  // Delay in milliseconds before applying live conversion after character input.
+  // If this value is 0, live conversion is applied immediately.
+  optional uint32 live_conversion_delay_msec = 70 [default = 228];
+
   //////////////////////////////////////////////////////////////
   //
   // Dictionary (80-99)

@@ -115,10 +115,17 @@ bool FillVisibility(ITfUIElementMgr* ui_element_manager,
 
   bool suggest_window_visible = false;
   bool candidate_window_visible = false;
+  bool ruby_window_visible = false;
+
+  // Live conversion uses the renderer for the ruby overlay even when there is
+  // no candidate_window. Pending live conversion intentionally clears
+  // candidate_window, so visibility must not depend only on candidate_window.
+  if (output.live_conversion() && output.has_preedit()) {
+    ruby_window_visible = true;
+  }
 
   // Check if suggest window and candidate window are actually visible.
-  if (output.has_candidate_window() &&
-      output.candidate_window().has_category()) {
+  if (output.has_candidate_window() && output.candidate_window().has_category()) {
     switch (output.candidate_window().category()) {
       case commands::SUGGESTION:
         suggest_window_visible = show_suggest_window;
@@ -133,7 +140,8 @@ bool FillVisibility(ITfUIElementMgr* ui_element_manager,
     }
   }
 
-  if (candidate_window_visible || suggest_window_visible) {
+  if (candidate_window_visible || suggest_window_visible ||
+      ruby_window_visible) {
     command->set_visible(true);
   }
 

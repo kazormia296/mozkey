@@ -111,6 +111,7 @@ volatile bool g_module_unloaded = false;
 volatile DWORD g_tls_index = TLS_OUT_OF_INDEXES;
 
 constexpr UINT kUpdateUIMessage = WM_USER;
+constexpr UINT_PTR kDelayedSessionCommandTimerId = 1;
 
 #ifdef GOOGLE_JAPANESE_INPUT_BUILD
 
@@ -419,7 +420,8 @@ class TipTextServiceImpl
         converted_attribute_(TF_INVALID_GUIDATOM),
         thread_context_(nullptr),
         task_window_handle_(nullptr),
-        renderer_callback_window_handle_(nullptr) {}
+        renderer_callback_window_handle_(nullptr),
+        has_pending_delayed_session_command_(false) {}
 
   static bool OnDllProcessAttach(HMODULE module_handle) {
     if (!RegisterWindowClass(module_handle, kTaskWindowClassName,
@@ -973,6 +975,28 @@ class TipTextServiceImpl
     PostMessageW(task_window_handle_, kUpdateUIMessage, 0, 0);
   }
 
+  void PostDelayedSessionCommand(
+      ITfContext* context,
+      const commands::SessionCommand& command,
+      uint32_t delay_millisec) override {
+    if (!::IsWindow(task_window_handle_) || context == nullptr) {
+      return;
+    }
+
+    pending_delayed_session_context_ = context;
+    pending_delayed_session_command_ = command;
+    has_pending_delayed_session_command_ = true;
+
+    ::KillTimer(task_window_handle_, kDelayedSessionCommandTimerId);
+
+    const UINT delay =
+        delay_millisec == 0 ? 1 : static_cast<UINT>(delay_millisec);
+    ::SetTimer(task_window_handle_,
+              kDelayedSessionCommandTimerId,
+              delay,
+              nullptr);
+  }
+
   void UpdateLangbar(bool enabled, uint32_t mozc_mode) override {
     langbar_.UpdateMenu(enabled, mozc_mode);
   }
@@ -1332,13 +1356,21 @@ class TipTextServiceImpl
     if (!::IsWindow(task_window_handle_)) {
       return S_FALSE;
     }
+
+    ::KillTimer(task_window_handle_, kDelayedSessionCommandTimerId);
+    has_pending_delayed_session_command_ = false;
+    pending_delayed_session_command_.Clear();
+    pending_delayed_session_context_.reset();
+
     ::DestroyWindow(task_window_handle_);
     task_window_handle_ = nullptr;
     return S_OK;
   }
 
-  static LRESULT WINAPI TaskWindowProc(HWND window_handle, UINT message,
-                                       WPARAM wparam, LPARAM lparam) {
+  static LRESULT WINAPI TaskWindowProc(HWND window_handle,
+                                      UINT message,
+                                      WPARAM wparam,
+                                      LPARAM lparam) {
     TipTextServiceImpl* self = Self();
     if (self == nullptr) {
       return ::DefWindowProcW(window_handle, message, wparam, lparam);
@@ -1349,8 +1381,41 @@ class TipTextServiceImpl
         self->OnUpdateUI();
         return 0;
       }
+
+      if (message == WM_TIMER &&
+          wparam == kDelayedSessionCommandTimerId) {
+        self->OnDelayedSessionCommandTimer();
+        return 0;
+      }
     }
+
     return ::DefWindowProcW(window_handle, message, wparam, lparam);
+  }
+
+  void OnDelayedSessionCommandTimer() {
+    if (!::IsWindow(task_window_handle_)) {
+      return;
+    }
+
+    ::KillTimer(task_window_handle_, kDelayedSessionCommandTimerId);
+
+    if (!has_pending_delayed_session_command_) {
+      return;
+    }
+
+    commands::SessionCommand command = pending_delayed_session_command_;
+    wil::com_ptr_nothrow<ITfContext> context =
+        pending_delayed_session_context_;
+
+    has_pending_delayed_session_command_ = false;
+    pending_delayed_session_command_.Clear();
+    pending_delayed_session_context_.reset();
+
+    if (!context) {
+      return;
+    }
+
+    TipEditSession::SendSessionCommandAsync(this, context.get(), command);
   }
 
   void OnUpdateUI() {
@@ -1482,6 +1547,10 @@ class TipTextServiceImpl
   std::unique_ptr<TipThreadContext> thread_context_;
   HWND task_window_handle_;
   HWND renderer_callback_window_handle_;
+
+  bool has_pending_delayed_session_command_;
+  commands::SessionCommand pending_delayed_session_command_;
+  wil::com_ptr_nothrow<ITfContext> pending_delayed_session_context_;
 };
 
 }  // namespace

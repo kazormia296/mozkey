@@ -99,6 +99,11 @@ class TipEditSession {
   static bool SelectCandidateAsync(TipTextService* text_service,
                                    ITfContext* context, int candidate_id);
 
+  static bool SendSessionCommandAsync(
+      TipTextService* text_service,
+      ITfContext* context,
+      const commands::SessionCommand& session_command);
+
   // Begins an async edit session to change input mode specified by
   // |native_mode|.
   static bool SwitchInputModeAsync(TipTextService* text_service,

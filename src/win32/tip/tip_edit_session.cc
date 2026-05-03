@@ -486,26 +486,39 @@ enum EditSessionMode {
   kSync,
 };
 
-bool OnOutputReceivedImpl(TipTextService* text_service, ITfContext* context,
-                          Output new_output, EditSessionMode mode) {
+bool OnOutputReceivedImpl(TipTextService* text_service,
+                          ITfContext* context,
+                          Output new_output,
+                          EditSessionMode mode) {
   if (new_output.has_callback() &&
       new_output.callback().has_session_command() &&
       new_output.callback().session_command().has_type()) {
-    // Callback exists.
-    const SessionCommand::CommandType& type =
-        new_output.callback().session_command().type();
-    switch (type) {
-      case SessionCommand::CONVERT_REVERSE:
-        return TurnOnImeAndTryToReconvertFromIme(text_service, context);
-      case SessionCommand::UNDO:
-        return UndoCommint(text_service, context);
-      default:
-        break;
+    const Output::Callback& callback = new_output.callback();
+    const SessionCommand& session_command = callback.session_command();
+    const SessionCommand::CommandType type = session_command.type();
+
+    if (callback.has_delay_millisec() && callback.delay_millisec() > 0) {
+      text_service->PostDelayedSessionCommand(
+        context, session_command, callback.delay_millisec());
+
+      // The current output itself must still be applied immediately.
+      // Only the callback is delayed.
+      new_output.clear_callback();
+    } else {
+      switch (type) {
+        case SessionCommand::CONVERT_REVERSE:
+          return TurnOnImeAndTryToReconvertFromIme(text_service, context);
+        case SessionCommand::UNDO:
+          return UndoCommint(text_service, context);
+        default:
+          break;
+      }
     }
   }
 
-  auto edit_session = MakeComPtr<SyncEditSessionImpl>(text_service, context,
-                                                      std::move(new_output));
+  auto edit_session =
+      MakeComPtr<SyncEditSessionImpl>(
+          text_service, context, std::move(new_output));
 
   TipThreadContext* thread_context = text_service->GetThreadContext();
 
@@ -741,6 +754,13 @@ bool TipEditSession::OnRendererCallbackAsync(TipTextService* text_service,
     default:
       return false;
   }
+}
+
+bool TipEditSession::SendSessionCommandAsync(
+    TipTextService* text_service,
+    ITfContext* context,
+    const commands::SessionCommand& session_command) {
+  return OnSessionCommandAsync(text_service, context, session_command);
 }
 
 bool TipEditSession::SubmitAsync(TipTextService* text_service,

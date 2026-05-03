@@ -98,8 +98,9 @@ void RubyWindow::Hide() {
   }
 }
 
-bool RubyWindow::BuildReadingText(const commands::RendererCommand& command,
-                                  std::string* reading) const {
+bool RubyWindow::BuildReadingText(
+    const commands::RendererCommand& command,
+    std::string* reading) const {
   reading->clear();
 
   if (!command.has_output()) {

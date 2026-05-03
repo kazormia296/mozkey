@@ -169,6 +169,11 @@ ConfigDialog::ConfigDialog()
 
   suggestionsSizeSpinBox->setRange(1, 9);
 
+  liveConversionDelaySpinBox->setRange(0, 1000);
+  liveConversionDelaySpinBox->setSingleStep(5);
+  liveConversionDelaySpinBox->setSuffix(QString::fromUtf8(" ms"));
+  liveConversionDelaySpinBox->setSpecialValueText(QString::fromUtf8("即時"));
+
   punctuationsSettingComboBox->addItem(QString::fromUtf8("、。"));
   punctuationsSettingComboBox->addItem(QString::fromUtf8("，．"));
   punctuationsSettingComboBox->addItem(QString::fromUtf8("、．"));
@@ -750,6 +755,9 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   SET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
+  liveConversionDelaySpinBox->setValue(
+    static_cast<int>(
+        std::clamp(config.live_conversion_delay_msec(), 0u, 1000u)));
   SET_CHECKBOX(useAutoConversion, use_auto_conversion);
   kutenCheckBox->setChecked(config.auto_conversion_key() &
                             config::Config::AUTO_CONVERSION_KUTEN);
@@ -906,6 +914,8 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   GET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
+  config->set_live_conversion_delay_msec(
+      static_cast<uint32_t>(liveConversionDelaySpinBox->value()));
   GET_CHECKBOX(useAutoConversion, use_auto_conversion);
   GET_CHECKBOX(useDirectCommit, use_direct_commit);
   GET_CHECKBOX(useJapaneseLayout, use_japanese_layout);
