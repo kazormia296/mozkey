@@ -49,10 +49,24 @@ class KeyInfoUtil {
   static std::vector<KeyInformation> ExtractSortedDirectModeKeys(
       const config::Config& config);
 
+  // Returns a sorted list of keys bound to IMEOff in Direct/DirectInput mode.
+  static std::vector<KeyInformation> ExtractSortedDirectModeImeOffKeys(
+      const config::Config& config);
+
+  // Returns a sorted list of keys bound to IMEOn in active IME modes.
+  static std::vector<KeyInformation> ExtractSortedActiveModeImeOnKeys(
+      const config::Config& config);
+
   // Returns true if |sorted_keys| contains |key_event|. |sorted_keys| must be
   // sorted.
   static bool ContainsKey(absl::Span<const KeyInformation> sorted_keys,
                           const commands::KeyEvent& key_event);
+
+  // Returns true if |sorted_keys| contains |key_info|. |sorted_keys| must be
+  // sorted.
+  static bool ContainsKeyInformation(
+      absl::Span<const KeyInformation> sorted_keys,
+      KeyInformation key_info);
 };
 
 }  // namespace mozc

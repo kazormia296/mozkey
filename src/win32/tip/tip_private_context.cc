@@ -60,6 +60,9 @@ class TipPrivateContext::InternalState {
   SurrogatePairObserver surrogate_pair_observer_;
   commands::Output last_output_;
   VirtualKey last_down_key_;
+  bool has_pending_mode_indicator_key_ = false;
+  KeyInformation pending_mode_indicator_key_ = 0;
+  bool pending_mode_indicator_shown_on_test_key_ = false;
   InputBehavior input_behavior_;
   TipUiElementManager ui_element_manager_;
   VKBackBasedDeleter deleter_;
@@ -94,6 +97,8 @@ void TipPrivateContext::EnsureInitialized() {
         snapshot.use_keyboard_to_change_preedit_method;
     behavior->use_mode_indicator = snapshot.use_mode_indicator;
     behavior->direct_mode_keys = snapshot.direct_mode_keys;
+    behavior->direct_mode_ime_off_keys = snapshot.direct_mode_ime_off_keys;
+    behavior->active_mode_ime_on_keys = snapshot.active_mode_ime_on_keys;
     behavior->initialized = true;
   }
 }
@@ -124,6 +129,34 @@ const VirtualKey& TipPrivateContext::last_down_key() const {
 
 VirtualKey* TipPrivateContext::mutable_last_down_key() {
   return &state_->last_down_key_;
+}
+
+void TipPrivateContext::SetPendingModeIndicatorKey(KeyInformation key) {
+  state_->has_pending_mode_indicator_key_ = true;
+  state_->pending_mode_indicator_key_ = key;
+  state_->pending_mode_indicator_shown_on_test_key_ = false;
+}
+
+void TipPrivateContext::ClearPendingModeIndicatorKey() {
+  state_->has_pending_mode_indicator_key_ = false;
+  state_->pending_mode_indicator_key_ = 0;
+  state_->pending_mode_indicator_shown_on_test_key_ = false;
+}
+
+bool TipPrivateContext::IsPendingModeIndicatorKey(KeyInformation key) const {
+  return state_->has_pending_mode_indicator_key_ &&
+         state_->pending_mode_indicator_key_ == key;
+}
+
+void TipPrivateContext::MarkPendingModeIndicatorShownOnTestKey() {
+  if (state_->has_pending_mode_indicator_key_) {
+    state_->pending_mode_indicator_shown_on_test_key_ = true;
+  }
+}
+
+bool TipPrivateContext::IsPendingModeIndicatorShownOnTestKey() const {
+  return state_->has_pending_mode_indicator_key_ &&
+         state_->pending_mode_indicator_shown_on_test_key_;
 }
 
 const InputBehavior& TipPrivateContext::input_behavior() const {

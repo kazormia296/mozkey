@@ -45,6 +45,7 @@ namespace {
 using ::mozc::config::Config;
 
 constexpr size_t kMaxDirectModeKeys = 128;
+constexpr size_t kMaxModeSwitchKeys = 128;
 
 struct StaticConfigSnapshot {
   bool use_kana_input;
@@ -52,7 +53,22 @@ struct StaticConfigSnapshot {
   bool use_mode_indicator;
   size_t num_direct_mode_keys;
   KeyInformation direct_mode_keys[kMaxDirectModeKeys];
+
+  size_t num_direct_mode_ime_off_keys;
+  KeyInformation direct_mode_ime_off_keys[kMaxModeSwitchKeys];
+
+  size_t num_active_mode_ime_on_keys;
+  KeyInformation active_mode_ime_on_keys[kMaxModeSwitchKeys];
 };
+
+void CopyKeys(const std::vector<KeyInformation>& keys, size_t max_size,
+              size_t* num_keys, KeyInformation* dest) {
+  const size_t size_to_be_copied = std::min(keys.size(), max_size);
+  *num_keys = size_to_be_copied;
+  for (size_t i = 0; i < size_to_be_copied; ++i) {
+    dest[i] = keys[i];
+  }
+}
 
 StaticConfigSnapshot GetConfigSnapshotImpl() {
   std::shared_ptr<const Config> config =
@@ -64,14 +80,22 @@ StaticConfigSnapshot GetConfigSnapshotImpl() {
       config->use_keyboard_to_change_preedit_method();
   snapshot.use_mode_indicator = config->use_mode_indicator();
 
-  const auto& direct_mode_keys =
+  const auto direct_mode_keys =
       KeyInfoUtil::ExtractSortedDirectModeKeys(*config);
-  const size_t size_to_be_copied =
-      std::min(direct_mode_keys.size(), kMaxDirectModeKeys);
-  snapshot.num_direct_mode_keys = size_to_be_copied;
-  for (size_t i = 0; i < size_to_be_copied; ++i) {
-    snapshot.direct_mode_keys[i] = direct_mode_keys[i];
-  }
+  CopyKeys(direct_mode_keys, kMaxDirectModeKeys,
+          &snapshot.num_direct_mode_keys, snapshot.direct_mode_keys);
+
+  const auto direct_mode_ime_off_keys =
+      KeyInfoUtil::ExtractSortedDirectModeImeOffKeys(*config);
+  CopyKeys(direct_mode_ime_off_keys, kMaxModeSwitchKeys,
+          &snapshot.num_direct_mode_ime_off_keys,
+          snapshot.direct_mode_ime_off_keys);
+
+  const auto active_mode_ime_on_keys =
+      KeyInfoUtil::ExtractSortedActiveModeImeOnKeys(*config);
+  CopyKeys(active_mode_ime_on_keys, kMaxModeSwitchKeys,
+          &snapshot.num_active_mode_ime_on_keys,
+          snapshot.active_mode_ime_on_keys);
 
   return snapshot;
 }
@@ -95,6 +119,21 @@ bool ConfigSnapshot::Get(Info* info) {
   for (size_t i = 0; i < cached_snapshot.num_direct_mode_keys; ++i) {
     info->direct_mode_keys[i] = cached_snapshot.direct_mode_keys[i];
   }
+
+  info->direct_mode_ime_off_keys.resize(
+      cached_snapshot.num_direct_mode_ime_off_keys);
+  for (size_t i = 0; i < cached_snapshot.num_direct_mode_ime_off_keys; ++i) {
+    info->direct_mode_ime_off_keys[i] =
+        cached_snapshot.direct_mode_ime_off_keys[i];
+  }
+
+  info->active_mode_ime_on_keys.resize(
+      cached_snapshot.num_active_mode_ime_on_keys);
+  for (size_t i = 0; i < cached_snapshot.num_active_mode_ime_on_keys; ++i) {
+    info->active_mode_ime_on_keys[i] =
+        cached_snapshot.active_mode_ime_on_keys[i];
+  }
+
   return true;
 }
 

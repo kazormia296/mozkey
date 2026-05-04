@@ -60,6 +60,17 @@ struct InputBehavior {
   bool use_mode_indicator = false;
   bool use_romaji_key_to_toggle_input_style = false;
   std::vector<KeyInformation> direct_mode_keys;
+
+  // Keys bound to IMEOff in Direct/DirectInput mode.
+  // Used to show the mode indicator when IMEOff is explicitly pressed while
+  // IME is already off.
+  std::vector<KeyInformation> direct_mode_ime_off_keys;
+
+  // Keys bound to IMEOn in active IME modes such as Precomposition,
+  // Composition, Conversion, etc.
+  // Used to show the mode indicator when IMEOn is explicitly pressed while
+  // IME is already on.
+  std::vector<KeyInformation> active_mode_ime_on_keys;
 };
 
 }  // namespace win32

@@ -32,6 +32,8 @@
 
 #include <windows.h>
 
+#include "composer/key_event_util.h"
+
 namespace mozc {
 namespace client {
 class ClientInterface;
@@ -55,6 +57,9 @@ struct KeyEventHandlerResult {
   bool should_be_eaten;
   bool should_be_sent_to_server;
   bool succeeded;
+  bool has_key_information;
+  KeyInformation key_information;
+
   KeyEventHandlerResult();
 };
 

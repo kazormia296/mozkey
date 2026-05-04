@@ -715,7 +715,9 @@ bool ConvertToKeyEventMain(const VirtualKey& virtual_key, UINT scan_code,
 KeyEventHandlerResult::KeyEventHandlerResult()
     : should_be_eaten(false),
       should_be_sent_to_server(false),
-      succeeded(false) {}
+      succeeded(false),
+      has_key_information(false),
+      key_information(0) {}
 
 KeyEventHandlerResult KeyEventHandler::HandleKey(
     const VirtualKey& virtual_key, UINT scan_code, bool is_key_down,
@@ -754,6 +756,10 @@ KeyEventHandlerResult KeyEventHandler::HandleKey(
     result.should_be_eaten = false;
     result.should_be_sent_to_server = false;
     return result;
+  }
+
+  if (KeyEventUtil::GetKeyInformation(*key, &result.key_information)) {
+    result.has_key_information = true;
   }
 
   // We do not handle key message unless the key is one of force activation

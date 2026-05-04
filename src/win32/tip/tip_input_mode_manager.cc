@@ -163,6 +163,11 @@ TipInputModeManager::Action TipInputModeManager::OnMoveFocusedWindow() {
   }
 }
 
+TipInputModeManager::Action TipInputModeManager::ShowModeIndicator() {
+  indicator_visibility_tracker_.OnChangeInputMode();
+  return kUpdateUI;
+}
+
 TipInputModeManager::NotifyActionSet TipInputModeManager::OnReceiveCommand(
     bool mozc_open_close_mode, DWORD mozc_logical_mode,
     DWORD mozc_visible_mode) {

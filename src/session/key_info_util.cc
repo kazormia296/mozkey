@@ -54,11 +54,41 @@ namespace {
 
 using ::mozc::config::Config;
 
-std::vector<KeyInformation> ExtractSortedDirectModeKeysFromStream(
-    std::istream* ifs) {
-  constexpr absl::string_view kModeDirect = "Direct";
-  constexpr absl::string_view kModeDirectInput = "DirectInput";
+enum class ExtractKeyType {
+  kDirectModeKey,
+  kDirectModeImeOffKey,
+  kActiveModeImeOnKey,
+};
 
+bool IsDirectModeStatus(absl::string_view status) {
+  return status == "Direct" || status == "DirectInput";
+}
+
+bool ShouldExtractKey(absl::string_view status, absl::string_view command,
+                      ExtractKeyType type) {
+  switch (type) {
+    case ExtractKeyType::kDirectModeKey:
+      return IsDirectModeStatus(status);
+
+    case ExtractKeyType::kDirectModeImeOffKey:
+      return IsDirectModeStatus(status) && command == "IMEOff";
+
+    case ExtractKeyType::kActiveModeImeOnKey:
+      return !IsDirectModeStatus(status) && command == "IMEOn";
+  }
+  return false;
+}
+
+void AddKeyInformation(const commands::KeyEvent& key_event,
+                       std::vector<KeyInformation>* result) {
+  KeyInformation info;
+  if (KeyEventUtil::GetKeyInformation(key_event, &info)) {
+    result->push_back(info);
+  }
+}
+
+std::vector<KeyInformation> ExtractSortedKeysFromStream(
+    std::istream* ifs, ExtractKeyType type) {
   std::vector<KeyInformation> result;
 
   std::string line;
@@ -67,45 +97,47 @@ std::vector<KeyInformation> ExtractSortedDirectModeKeysFromStream(
     std::getline(*ifs, line);
     Util::ChopReturns(&line);
     if (line.empty() || line[0] == '#') {
-      // empty or comment
       continue;
     }
-    std::vector<absl::string_view> rules =
+
+    std::vector<std::string> rules =
         absl::StrSplit(line, '\t', absl::SkipEmpty());
     if (rules.size() != 3) {
       LOG(ERROR) << "Invalid format: " << line;
       continue;
     }
-    if (!(rules[0] == kModeDirect || rules[0] == kModeDirectInput)) {
+
+    const absl::string_view status = rules[0];
+    const absl::string_view key = rules[1];
+    const absl::string_view command = rules[2];
+
+    if (!ShouldExtractKey(status, command, type)) {
       continue;
     }
+
     commands::KeyEvent key_event;
-    if (KeyParser::ParseKey(rules[1], &key_event)) {
-      KeyInformation info;
-      if (KeyEventUtil::GetKeyInformation(key_event, &info)) {
-        result.push_back(info);
-      }
+    if (KeyParser::ParseKey(key, &key_event)) {
+      AddKeyInformation(key_event, &result);
     }
   }
 
   std::sort(result.begin(), result.end());
+  result.erase(std::unique(result.begin(), result.end()), result.end());
   return result;
 }
 
-std::vector<KeyInformation> ExtractSortedDirectModeKeysFromFile(
-    const std::string& filename) {
+std::vector<KeyInformation> ExtractSortedKeysFromFile(
+    const std::string& filename, ExtractKeyType type) {
   std::unique_ptr<std::istream> ifs(ConfigFileStream::LegacyOpen(filename));
   if (ifs == nullptr) {
     DLOG(FATAL) << "could not open file: " << filename;
     return std::vector<KeyInformation>();
   }
-  return ExtractSortedDirectModeKeysFromStream(ifs.get());
+  return ExtractSortedKeysFromStream(ifs.get(), type);
 }
 
-}  // namespace
-
-std::vector<KeyInformation> KeyInfoUtil::ExtractSortedDirectModeKeys(
-    const config::Config& config) {
+std::vector<KeyInformation> ExtractSortedKeysFromConfig(
+    const config::Config& config, ExtractKeyType type) {
   const config::Config::SessionKeymap& keymap = config.session_keymap();
   if (keymap == Config::CUSTOM) {
     const std::string& custom_keymap_table = config.custom_keymap_table();
@@ -113,13 +145,33 @@ std::vector<KeyInformation> KeyInfoUtil::ExtractSortedDirectModeKeys(
       LOG(WARNING) << "custom_keymap_table is empty. use default setting";
       const char* default_keymapfile = keymap::KeyMapManager::GetKeyMapFileName(
           config::ConfigHandler::GetDefaultKeyMap());
-      return ExtractSortedDirectModeKeysFromFile(default_keymapfile);
+      return ExtractSortedKeysFromFile(default_keymapfile, type);
     }
     std::istringstream ifs(custom_keymap_table);
-    return ExtractSortedDirectModeKeysFromStream(&ifs);
+    return ExtractSortedKeysFromStream(&ifs, type);
   }
+
   const char* keymap_file = keymap::KeyMapManager::GetKeyMapFileName(keymap);
-  return ExtractSortedDirectModeKeysFromFile(keymap_file);
+  return ExtractSortedKeysFromFile(keymap_file, type);
+}
+
+}  // namespace
+
+std::vector<KeyInformation> KeyInfoUtil::ExtractSortedDirectModeKeys(
+    const config::Config& config) {
+  return ExtractSortedKeysFromConfig(config, ExtractKeyType::kDirectModeKey);
+}
+
+std::vector<KeyInformation> KeyInfoUtil::ExtractSortedDirectModeImeOffKeys(
+    const config::Config& config) {
+  return ExtractSortedKeysFromConfig(config,
+                                     ExtractKeyType::kDirectModeImeOffKey);
+}
+
+std::vector<KeyInformation> KeyInfoUtil::ExtractSortedActiveModeImeOnKeys(
+    const config::Config& config) {
+  return ExtractSortedKeysFromConfig(config,
+                                     ExtractKeyType::kActiveModeImeOnKey);
 }
 
 bool KeyInfoUtil::ContainsKey(absl::Span<const KeyInformation> sorted_keys,
@@ -136,6 +188,12 @@ bool KeyInfoUtil::ContainsKey(absl::Span<const KeyInformation> sorted_keys,
     return false;
   }
 
+  return std::binary_search(sorted_keys.begin(), sorted_keys.end(), key_info);
+}
+
+bool KeyInfoUtil::ContainsKeyInformation(
+    absl::Span<const KeyInformation> sorted_keys,
+    KeyInformation key_info) {
   return std::binary_search(sorted_keys.begin(), sorted_keys.end(), key_info);
 }
 

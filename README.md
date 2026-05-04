@@ -81,7 +81,7 @@ Download / Install
 
 Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mozc/releases) からダウンロードできます。
 
-- 通常の 64-bit Windows では `Mozc64_myproduct_v0.4.1_offline_x64.msi` を使用してください。
+- 通常の 64-bit Windows では `Mozc64_myproduct_v0.4.2_offline_x64.msi` を使用してください。
 - 本 fork のリリースは個人用の experimental build として公開しています。
 
 > [!WARNING]
@@ -110,6 +110,7 @@ Main branches
 - ライブ変換は入力直後の不要な変換ちらつきを抑えるため、文字入力後に短いデバウンスを挟んで実行
 - 1文字だけの未確定文字列では、助詞などの誤変換を避けるためライブ変換を実行しない
 - Windows 版で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を個別キーとして設定画面から割り当て可能
+- Windows 版で IMEOn / IMEOff に割り当てたキーを押した場合、すでに同じ状態でも IME モードインジケータを表示
 - Windows 版の候補ウィンドウにダークモード切り替えを追加
 - Windows 版で未確定文字の文字色・背景色・下線色を設定画面からカスタマイズ可能
 - Windows 版の候補ウィンドウや IME 切り替えインジケータの配色・余白・角丸などの見た目を調整
@@ -273,6 +274,12 @@ This allows assigning different IME actions to the left and right Shift/Ctrl key
 
 Generic Ctrl key bindings such as `Ctrl j` continue to work with either left or right Ctrl.
 
+When a key is explicitly assigned to `IMEOn` or `IMEOff`, the mode indicator is
+also shown even if Mozc is already in the requested state.  For example, pressing
+an `IMEOff` key while IME is already off still shows the direct-input indicator.
+This makes mode-confirmation keys useful as explicit visual feedback, not only
+as state-changing toggles.
+
 Windows 版では、キー設定エディタ上で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を別々のキーとして扱えます。
 
 `Ctrl j` のような従来の汎用 Ctrl キーバインドは、左 Ctrl / 右 Ctrl のどちらでも従来どおり動作します。
@@ -287,6 +294,13 @@ Windows 版では、キー設定エディタ上で左 Shift / 右 Shift / 左 Ct
 - `Precomposition + LeftCtrl -> IMEOff`
 
 のように設定でき、左右の Shift / Ctrl に別々の IME 操作を割り当てられます。
+
+`IMEOn` または `IMEOff` に明示的に割り当てたキーを押した場合は、すでにその状態であっても
+IME モードインジケータを表示します。たとえば、IME がすでに無効の状態で `IMEOff` キーを
+押しても、直接入力状態のインジケータを表示します。
+
+これにより、IME 有効化・無効化キーを「状態を切り替えるキー」としてだけでなく、
+現在状態を視覚的に確認するためのキーとしても使えます。
 
 ### Windows candidate window theme
 

@@ -44,6 +44,9 @@ class ConfigSnapshot {
     bool use_keyboard_to_change_preedit_method;
     bool use_mode_indicator;
     std::vector<KeyInformation> direct_mode_keys;
+    std::vector<KeyInformation> direct_mode_ime_off_keys;
+    std::vector<KeyInformation> active_mode_ime_on_keys;
+
     Info();
   };
 

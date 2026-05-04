@@ -35,6 +35,7 @@
 #include <memory>
 
 #include "client/client_interface.h"
+#include "composer/key_event_util.h"
 #include "protocol/commands.pb.h"
 #include "win32/base/config_snapshot.h"
 #include "win32/base/deleter.h"
@@ -66,6 +67,13 @@ class TipPrivateContext {
   commands::Output* mutable_last_output();
   const VirtualKey& last_down_key() const;
   VirtualKey* mutable_last_down_key();
+
+  void SetPendingModeIndicatorKey(KeyInformation key);
+  void ClearPendingModeIndicatorKey();
+  bool IsPendingModeIndicatorKey(KeyInformation key) const;
+  void MarkPendingModeIndicatorShownOnTestKey();
+  bool IsPendingModeIndicatorShownOnTestKey() const;
+
   const InputBehavior& input_behavior() const;
   InputBehavior* mutable_input_behavior();
 

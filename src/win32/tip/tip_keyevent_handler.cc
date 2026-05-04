@@ -42,6 +42,7 @@
 #include "base/win32/wide_char.h"
 #include "client/client_interface.h"
 #include "protocol/commands.pb.h"
+#include "session/key_info_util.h"
 #include "win32/base/conversion_mode_util.h"
 #include "win32/base/deleter.h"
 #include "win32/base/input_state.h"
@@ -102,6 +103,70 @@ VirtualKey GetVK(WPARAM wparam, const KeyboardStatus& keyboad_status) {
 
   // Emulate IME_PROP_ACCEPT_WIDE_VKEY.
   return VirtualKey::FromCombinedVirtualKey(ucs2 << 16 | VK_PACKET);
+}
+
+void ShowModeIndicatorAndUpdateUI(TipTextService* text_service,
+                                  TipInputModeManager* input_mode_manager) {
+  const TipInputModeManager::Action show_action =
+      input_mode_manager->ShowModeIndicator();
+  if (show_action == TipInputModeManager::Action::kUpdateUI) {
+    text_service->PostUIUpdateMessage();
+  }
+}
+
+bool IsNoOpModeIndicatorKey(const InputBehavior& behavior,
+                            const InputState& current_state,
+                            const KeyEventHandlerResult& result) {
+  if (!result.has_key_information) {
+    return false;
+  }
+
+  if (current_state.open) {
+    return KeyInfoUtil::ContainsKeyInformation(
+        behavior.active_mode_ime_on_keys, result.key_information);
+  }
+
+  return KeyInfoUtil::ContainsKeyInformation(
+      behavior.direct_mode_ime_off_keys, result.key_information);
+}
+
+bool UpdateNoOpModeIndicatorKeyState(
+    TipTextService* text_service, TipPrivateContext* private_context,
+    TipInputModeManager* input_mode_manager, bool is_key_down,
+    const InputBehavior& behavior, const InputState& current_state,
+    const KeyEventHandlerResult& result, bool is_on_key) {
+  if (!result.has_key_information) {
+    if (is_key_down) {
+      private_context->ClearPendingModeIndicatorKey();
+    }
+    return false;
+  }
+
+  if (is_key_down) {
+    if (IsNoOpModeIndicatorKey(behavior, current_state, result)) {
+      private_context->SetPendingModeIndicatorKey(result.key_information);
+    } else {
+      private_context->ClearPendingModeIndicatorKey();
+    }
+    return false;
+  }
+
+  if (!private_context->IsPendingModeIndicatorKey(result.key_information)) {
+    return false;
+  }
+
+  if (!is_on_key) {
+    ShowModeIndicatorAndUpdateUI(text_service, input_mode_manager);
+    private_context->MarkPendingModeIndicatorShownOnTestKey();
+    return true;
+  }
+
+  if (!private_context->IsPendingModeIndicatorShownOnTestKey()) {
+    ShowModeIndicatorAndUpdateUI(text_service, input_mode_manager);
+  }
+
+  private_context->ClearPendingModeIndicatorKey();
+  return true;
 }
 
 bool GetOpenAndMode(TipTextService* text_service, ITfContext* context,
@@ -268,12 +333,23 @@ HRESULT OnTestKey(TipTextService* text_service, ITfContext* context,
   if (result.should_be_sent_to_server && temporal_output.has_consumed()) {
     *private_context->mutable_last_output() = temporal_output;
   }
+
+  TipInputModeManager* input_mode_manager =
+      text_service->GetThreadContext()->GetInputModeManager();
   const TipInputModeManager::Action action =
-      text_service->GetThreadContext()->GetInputModeManager()->OnTestKey(
-          vk, is_key_down, result.should_be_eaten);
+      input_mode_manager->OnTestKey(vk, is_key_down, result.should_be_eaten);
   if (action == TipInputModeManager::kUpdateUI) {
     text_service->PostUIUpdateMessage();
   }
+
+  if (UpdateNoOpModeIndicatorKeyState(
+          text_service, private_context, input_mode_manager, is_key_down,
+          behavior, input_state, result,
+          /*is_on_key=*/false)) {
+    *eaten = TRUE;
+    return S_OK;
+  }
+
   *eaten = result.should_be_eaten ? TRUE : FALSE;
   return S_OK;
 }
@@ -442,20 +518,29 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
 
     *private_context->mutable_last_down_key() = next_state.last_down_key;
 
+    TipInputModeManager* input_mode_manager =
+        text_service->GetThreadContext()->GetInputModeManager();
     const TipInputModeManager::Action action =
-        text_service->GetThreadContext()->GetInputModeManager()->OnKey(
-            vk, is_key_down, result.should_be_eaten);
+        input_mode_manager->OnKey(vk, is_key_down, result.should_be_eaten);
     if (action == TipInputModeManager::Action::kUpdateUI) {
       text_service->PostUIUpdateMessage();
     }
 
+    const bool handled_noop_mode_indicator_key =
+        UpdateNoOpModeIndicatorKeyState(
+            text_service, private_context, input_mode_manager, is_key_down,
+            behavior, ime_state, result,
+            /*is_on_key=*/true);
+
     if (!result.should_be_sent_to_server) {
       // no message generated.
-      *eaten = FALSE;
+      *eaten = handled_noop_mode_indicator_key ? TRUE : FALSE;
       return S_OK;
     }
 
-    ignore_this_keyevent = !result.should_be_eaten;
+    ignore_this_keyevent = handled_noop_mode_indicator_key
+                               ? false
+                               : !result.should_be_eaten;
   }
 
   // TSF spec guarantees that key event handling can always be a synchronous

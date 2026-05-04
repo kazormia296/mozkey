@@ -109,6 +109,7 @@ class TipInputModeManager : public TipInputModeManagerImpl {
   Action OnKey(const VirtualKey& key, bool is_down, bool eaten);
   Action OnMoveFocusedWindow();
   bool IsIndicatorVisible() const;
+  Action ShowModeIndicator();
 
   void OnInitialize(bool system_open_close_mode, DWORD system_conversion_mode);
   NotifyActionSet OnReceiveCommand(bool mozc_open_close_mode,
