@@ -36,9 +36,9 @@ exports_files([
 filegroup(
     name = "dictionary_manual",
     srcs = [
-        "places.tsv",
-        "words.tsv",
         "koyasi_core_developer.tsv",
         "koyasi_core_general.tsv",
+        "places.tsv",
+        "words.tsv",
     ],
 )

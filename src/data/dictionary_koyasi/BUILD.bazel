@@ -8,8 +8,8 @@ filegroup(
 filegroup(
     name = "mozcdic_ut_daily_local",
     srcs = [
-        "generated/profiled/mozcdic-ut-daily.txt",
         "generated/profiled/dic-nico-pixiv-delta.txt",
+        "generated/profiled/mozcdic-ut-daily.txt",
     ],
 )
 
