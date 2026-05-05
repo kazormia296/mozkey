@@ -1,20 +1,27 @@
 ﻿param(
-    [ValidateSet("safe")]
-    [string]$Profile = "safe",
+    [ValidateSet("sample", "safe", "daily", "rich", "max")]
+    [string]$Profile = "sample",
 
     [int]$SampleLines = 5000
 )
 
 $ErrorActionPreference = "Stop"
 
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $WorkRoot = Join-Path $RepoRoot "dist\dictionary\merge-ut"
 $OutDir = Join-Path $RepoRoot "src\data\dictionary_koyasi\generated"
 $MergeRepo = Join-Path $WorkRoot "merge-ut-dictionaries"
 
+if ($Profile -eq "safe") {
+    $EffectiveProfile = "sample"
+} else {
+    $EffectiveProfile = $Profile
+}
+
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Work root: $WorkRoot"
 Write-Host "Output dir: $OutDir"
+Write-Host "Profile: $EffectiveProfile"
 
 New-Item -ItemType Directory -Force $WorkRoot | Out-Null
 New-Item -ItemType Directory -Force $OutDir | Out-Null
@@ -55,32 +62,104 @@ if (-not (Test-Path $MakePath)) {
     throw "make.sh was not found: $MakePath"
 }
 
-Write-Host "Patching make.sh for profile: $Profile"
+$Flags = @{
+    alt_cannadic   = $false
+    edict2         = $false
+    jawiki         = $false
+    neologd        = $false
+    personal_names = $false
+    place_names    = $false
+    skk_jisyo      = $false
+    sudachidict    = $false
+    generate_latest = $false
+}
+
+switch ($EffectiveProfile) {
+    "sample" {
+        # Minimal and reproducible first profile.
+        $Flags.place_names = $true
+        $Flags.sudachidict = $true
+    }
+
+    "daily" {
+        # Current daily baseline.
+        # Keep this conservative until we add cost profiling.
+        $Flags.place_names = $true
+        $Flags.sudachidict = $true
+    }
+
+    "rich" {
+        # Broad recall profile, but not full legacy/GPL-heavy set.
+        $Flags.jawiki = $true
+        $Flags.neologd = $true
+        $Flags.personal_names = $true
+        $Flags.place_names = $true
+        $Flags.sudachidict = $true
+    }
+
+    "max" {
+        # Experimental full-recall profile.
+        $Flags.alt_cannadic = $true
+        $Flags.edict2 = $true
+        $Flags.jawiki = $true
+        $Flags.neologd = $true
+        $Flags.personal_names = $true
+        $Flags.place_names = $true
+        $Flags.skk_jisyo = $true
+        $Flags.sudachidict = $true
+    }
+
+    default {
+        throw "Unknown profile: $EffectiveProfile"
+    }
+}
+
+Write-Host "Enabled dictionaries:"
+foreach ($Key in $Flags.Keys | Sort-Object) {
+    if ($Key -eq "generate_latest") {
+        continue
+    }
+
+    if ($Flags[$Key]) {
+        Write-Host "  + $Key"
+    }
+}
+
+Write-Host "Disabled dictionaries:"
+foreach ($Key in $Flags.Keys | Sort-Object) {
+    if ($Key -eq "generate_latest") {
+        continue
+    }
+
+    if (-not $Flags[$Key]) {
+        Write-Host "  - $Key"
+    }
+}
+
+function Set-MakeFlag {
+    param(
+        [string]$Content,
+        [string]$Name,
+        [bool]$Enabled
+    )
+
+    if ($Enabled) {
+        $Replacement = "$Name=`"true`""
+    } else {
+        $Replacement = "#$Name=`"true`""
+    }
+
+    $Pattern = "(?m)^#?" + [System.Text.RegularExpressions.Regex]::Escape("$Name=`"true`"")
+    return [System.Text.RegularExpressions.Regex]::Replace($Content, $Pattern, $Replacement)
+}
+
+Write-Host "Patching make.sh for profile: $EffectiveProfile"
 
 $Content = Get-Content -Raw -Encoding UTF8 $MakePath
 
-# Safe profile:
-#   enable:
-#     - place_names
-#     - sudachidict
-#   disable:
-#     - alt_cannadic
-#     - edict2
-#     - jawiki
-#     - neologd
-#     - personal_names
-#     - skk_jisyo
-#
-# This keeps the first import conservative.
-$Content = $Content -replace '#?alt_cannadic="true"', '#alt_cannadic="true"'
-$Content = $Content -replace '#?edict2="true"', '#edict2="true"'
-$Content = $Content -replace '#?jawiki="true"', '#jawiki="true"'
-$Content = $Content -replace '#?neologd="true"', '#neologd="true"'
-$Content = $Content -replace '#?personal_names="true"', '#personal_names="true"'
-$Content = $Content -replace '#?skk_jisyo="true"', '#skk_jisyo="true"'
-$Content = $Content -replace '#?place_names="true"', 'place_names="true"'
-$Content = $Content -replace '#?sudachidict="true"', 'sudachidict="true"'
-$Content = $Content -replace '#?generate_latest="true"', '#generate_latest="true"'
+foreach ($Key in $Flags.Keys) {
+    $Content = Set-MakeFlag -Content $Content -Name $Key -Enabled $Flags[$Key]
+}
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($MakePath, $Content, $Utf8NoBom)
@@ -103,18 +182,24 @@ if (-not (Test-Path $Generated)) {
     throw "mozcdic-ut.txt was not generated."
 }
 
-$OutFile = Join-Path $OutDir "mozcdic-ut-safe.txt"
+if ($EffectiveProfile -eq "sample") {
+    # Keep legacy file names used in the previous step.
+    $OutFile = Join-Path $OutDir "mozcdic-ut-safe.txt"
+    $SampleFile = Join-Path $OutDir "mozcdic-ut-sample.txt"
+} else {
+    $OutFile = Join-Path $OutDir "mozcdic-ut-$EffectiveProfile.txt"
+    $SampleFile = Join-Path $OutDir "mozcdic-ut-$EffectiveProfile-sample.txt"
+}
+
 Copy-Item $Generated $OutFile -Force
 
-$SampleFile = Join-Path $OutDir "mozcdic-ut-sample.txt"
-$Sample = Get-Content -Encoding UTF8 $OutFile -TotalCount $SampleLines
-[System.IO.File]::WriteAllLines($SampleFile, $Sample, $Utf8NoBom)
+if ($SampleLines -gt 0) {
+    $Sample = Get-Content -Encoding UTF8 $OutFile -TotalCount $SampleLines
+    [System.IO.File]::WriteAllLines($SampleFile, $Sample, $Utf8NoBom)
+}
 
 $LineCount = (Get-Content -Encoding UTF8 $OutFile | Measure-Object -Line).Lines
 $Size = (Get-Item $OutFile).Length
-
-$SampleLineCount = (Get-Content -Encoding UTF8 $SampleFile | Measure-Object -Line).Lines
-$SampleSize = (Get-Item $SampleFile).Length
 
 Write-Host ""
 Write-Host "Generated full dictionary:"
@@ -124,13 +209,18 @@ Write-Host "  $LineCount"
 Write-Host "Bytes:"
 Write-Host "  $Size"
 
-Write-Host ""
-Write-Host "Generated sample dictionary:"
-Write-Host "  $SampleFile"
-Write-Host "Lines:"
-Write-Host "  $SampleLineCount"
-Write-Host "Bytes:"
-Write-Host "  $SampleSize"
+if ($SampleLines -gt 0) {
+    $SampleLineCount = (Get-Content -Encoding UTF8 $SampleFile | Measure-Object -Line).Lines
+    $SampleSize = (Get-Item $SampleFile).Length
+
+    Write-Host ""
+    Write-Host "Generated sample dictionary:"
+    Write-Host "  $SampleFile"
+    Write-Host "Lines:"
+    Write-Host "  $SampleLineCount"
+    Write-Host "Bytes:"
+    Write-Host "  $SampleSize"
+}
 
 Write-Host ""
 Write-Host "Done."
