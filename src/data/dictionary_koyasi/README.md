@@ -121,3 +121,51 @@ git status --short
 ```
 
 `src/data/dictionary_oss/BUILD.bazel` should not appear unless you intentionally changed it.
+
+## Nico/Pixiv dictionary workflow
+
+`dic-nico-intersection-pixiv` is imported as an additional delta dictionary for the daily local profile.
+
+The generated delta is compared against the generated daily dictionary and the base Mozc dictionaries. Existing key/value pairs are skipped.
+
+### 1. Download source dictionary
+
+```powershell
+.\tools\dictionary\import_nico_pixiv.ps1
+```
+
+### 2. Convert to Mozc system dictionary delta
+
+```powershell
+python tools/dictionary/convert_nico_pixiv.py
+```
+
+The generated file is:
+
+```text
+src/data/dictionary_koyasi/generated/profiled/dic-nico-pixiv-delta.txt
+```
+
+This file is ignored by Git.
+
+### 3. Build daily with Nico/Pixiv delta
+
+```powershell
+.\tools\dictionary\import_merge_ut.ps1 -Profile sample -SampleLines 5000
+python tools/dictionary/profile_merge_ut.py --profile daily
+.\tools\dictionary\import_nico_pixiv.ps1
+python tools/dictionary/convert_nico_pixiv.py
+python tools/dictionary/check_merge_ut_profile.py --profile daily
+.\tools\dictionary\use_merge_ut_profile.ps1 -Profile daily
+
+cd src
+bazelisk build --config oss_windows --config release_build package
+python build_tools/open.py bazel-bin/win32/installer/Mozc64.msi
+cd ..
+```
+
+Before committing unrelated work, return to the sample profile:
+
+```powershell
+.\tools\dictionary\use_merge_ut_profile.ps1 -Profile sample
+```
