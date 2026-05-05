@@ -39,6 +39,25 @@ if (-not (Test-Path $KoyasiBuild)) {
     throw "BUILD.bazel was not found: $KoyasiBuild"
 }
 
+$AdditionalRequiredFiles = @()
+
+if ($Profile -eq "daily") {
+    $AdditionalRequiredFiles += Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\dic-nico-pixiv-delta.txt"
+}
+
+foreach ($AdditionalRequiredFile in $AdditionalRequiredFiles) {
+    if (-not (Test-Path $AdditionalRequiredFile)) {
+        Write-Host ""
+        Write-Host "Additional required dictionary file does not exist:"
+        Write-Host "  $AdditionalRequiredFile"
+        Write-Host ""
+        Write-Host "Generate it with:"
+        Write-Host "  .\tools\dictionary\import_nico_pixiv.ps1"
+        Write-Host "  python tools/dictionary/convert_nico_pixiv.py"
+        throw "Cannot switch to profile '$Profile' because an additional dictionary file is missing."
+    }
+}
+
 if (-not (Test-Path $RequiredFile)) {
     Write-Host ""
     Write-Host "Required dictionary file does not exist:"
