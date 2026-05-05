@@ -27,7 +27,78 @@ class SystemEntry:
     value: str
 
 
+@dataclasses.dataclass(frozen=True)
+class CostDecision:
+    cost: int
+    tier: str
+    modifiers: tuple[str, ...]
+
+
 URL_RE = re.compile(r"^(https?://|www\.)", re.IGNORECASE)
+
+# Readings ending with these suffixes often collide with ordinary Japanese
+# syntax, especially verb/adjective phrases:
+#
+#   とうちたいのに -> 統治体 + の + 二
+#   〜したい
+#   〜してる
+#   〜について
+#
+# They should remain available, but should not beat normal sentence parses.
+DANGEROUS_READING_SUFFIXES = (
+    "したい",
+    "について",
+    "において",
+    "によって",
+    "として",
+    "ように",
+    "ために",
+    "られる",
+    "ました",
+    "ません",
+    "たい",
+    "ない",
+    "ます",
+    "てる",
+    "でる",
+    "れる",
+    "のに",
+)
+
+# Short contemporary compounds that users often expect as one word.
+# This is intentionally pattern-based, not a one-word hand patch.
+MODERN_COMPOUND_SUFFIXES = (
+    "活",      # ママ活, 推し活, オタ活
+    "系",      # 地雷系, 量産型系 variants
+    "勢",      # ガチ勢
+    "民",      # ○○民
+    "厨",      # ○○厨
+    "回",      # 神回
+    "化",      # 擬人化, 映画化
+    "沼",      # ○○沼
+    "推し",    # 箱推し, 単推し
+    "テロ",    # 飯テロ
+)
+
+# Values containing these characters are often phrases, meme quotes, titles
+# with punctuation, or long expressive strings. They can be useful, but should
+# stay weaker than compact proper nouns in the daily profile.
+PHRASE_MARKER_CHARS = set(
+    " \t\r\n"
+    "!！?？"
+    "、。，．"
+    "…"
+    "^~"
+    "「」『』"
+    "()（）"
+    "[]［］"
+    "{}｛｝"
+    "【】"
+    "<>＜＞"
+    "・"
+    "♪♫"
+    "※"
+)
 
 
 def repo_root() -> pathlib.Path:
@@ -56,6 +127,85 @@ def is_symbol_only(s: str) -> bool:
 
 def is_ascii(s: str) -> bool:
     return bool(s) and all(ord(ch) < 128 for ch in s)
+
+
+def has_phrase_marker(s: str) -> bool:
+    return any(ch in PHRASE_MARKER_CHARS for ch in s)
+
+
+def has_symbol_or_punctuation(s: str) -> bool:
+    for ch in s:
+        cat = unicodedata.category(ch)
+        if cat.startswith("P") or cat.startswith("S"):
+            return True
+    return False
+
+
+def has_dangerous_reading_suffix(key: str) -> bool:
+    # Do not treat the suffix itself as dangerous. For example, "たい" alone
+    # can be a legitimate short reading. The dangerous case is a longer noun
+    # reading that *looks like* ordinary syntax.
+    for suffix in DANGEROUS_READING_SUFFIXES:
+        if key.endswith(suffix) and len(key) >= len(suffix) + 2:
+            return True
+    return False
+
+
+def is_modern_compound(entry: UserEntry) -> bool:
+    # Compact contemporary words should be allowed to win more often:
+    #   ままかつ -> ママ活
+    #   おしかつ -> 推し活
+    #   かみかい -> 神回
+    #
+    # Keep the rule fairly conservative:
+    # - no ASCII value
+    # - no phrase markers
+    # - compact key/value
+    # - known modern compound suffix
+    if is_ascii(entry.value):
+        return False
+
+    if has_phrase_marker(entry.value):
+        return False
+
+    if has_symbol_or_punctuation(entry.value):
+        return False
+
+    if not (4 <= len(entry.key) <= 12):
+        return False
+
+    if not (2 <= len(entry.value) <= 10):
+        return False
+
+    return entry.value.endswith(MODERN_COMPOUND_SUFFIXES)
+
+
+def is_phrase_or_meme(entry: UserEntry) -> bool:
+    # Long quotes, meme phrases, and punctuation-heavy titles are useful but
+    # should be weaker in daily use.
+    if has_phrase_marker(entry.value):
+        return True
+
+    if len(entry.value) >= 18:
+        return True
+
+    if len(entry.key) >= 24:
+        return True
+
+    return False
+
+
+def classify_entry(entry: UserEntry) -> str:
+    if is_modern_compound(entry):
+        return "modern_compound"
+
+    if is_phrase_or_meme(entry):
+        return "phrase_or_meme"
+
+    if is_ascii(entry.value) or entry.pos == "アルファベット":
+        return "ascii_or_alphabet"
+
+    return "proper_noun"
 
 
 def find_noun_general_id(id_def: pathlib.Path) -> int:
@@ -162,27 +312,57 @@ def reject_reason(entry: UserEntry) -> str | None:
     return None
 
 
-def cost_for(entry: UserEntry, base_cost: int) -> int:
-    cost = base_cost
+def cost_for(entry: UserEntry, base_cost: int) -> CostDecision:
+    tier = classify_entry(entry)
+    modifiers: list[str] = []
+
+    if tier == "modern_compound":
+        # Strong enough to beat common decompositions such as:
+        #   まま + 勝つ
+        cost = 7600
+
+    elif tier == "phrase_or_meme":
+        # Useful but should not appear too aggressively in daily conversion.
+        cost = 13500
+
+    elif tier == "ascii_or_alphabet":
+        # English/ASCII names are useful, but ASCII + Japanese particles can
+        # destabilize segmentation, so keep them weaker.
+        cost = 11800
+
+    elif tier == "proper_noun":
+        # Normal nico/pixiv proper nouns. This is intentionally weaker than
+        # typical compact daily words but not so weak that they disappear.
+        cost = base_cost
+
+    else:
+        raise ValueError(f"unknown tier: {tier}")
+
     key_len = len(entry.key)
 
-    # nico/pixiv entries are useful proper nouns, but they should not displace
-    # common daily conversions. Keep them available but weak by default.
-    if key_len <= 2:
+    if tier != "modern_compound":
+        if key_len <= 2:
+            cost += 4000
+            modifiers.append("short_reading_len_1_2")
+        elif key_len == 3:
+            cost += 2500
+            modifiers.append("short_reading_len_3")
+        elif key_len == 4:
+            cost += 1200
+            modifiers.append("short_reading_len_4")
+
+    if has_dangerous_reading_suffix(entry.key):
         cost += 4000
-    elif key_len == 3:
-        cost += 2500
-    elif key_len == 4:
-        cost += 1200
+        modifiers.append("dangerous_reading_suffix")
 
-    if is_ascii(entry.value):
-        cost += 1000
-
-    # If the source says "アルファベット", keep it even weaker.
+    # Extra guard for alphabet entries.
     if entry.pos == "アルファベット":
         cost += 800
+        modifiers.append("alphabet_pos")
 
-    return min(cost, 20000)
+    cost = max(0, min(cost, 20000))
+
+    return CostDecision(cost=cost, tier=tier, modifiers=tuple(modifiers))
 
 
 def convert(
@@ -241,11 +421,16 @@ def convert(
 
             seen_new.add(signature)
 
+            decision = cost_for(user_entry, base_cost)
+            stats[f"tier_{decision.tier}"] += 1
+            for modifier in decision.modifiers:
+                stats[f"modifier_{modifier}"] += 1
+
             system_entry = SystemEntry(
                 key=user_entry.key,
                 lid=noun_general_id,
                 rid=noun_general_id,
-                cost=cost_for(user_entry, base_cost),
+                cost=decision.cost,
                 value=user_entry.value,
             )
 
@@ -281,6 +466,16 @@ def convert(
     print("Cost:")
     print(f"  noun_general_id: {noun_general_id}")
     print(f"  base_cost:       {base_cost}")
+    print("")
+    print("Tier policy:")
+    print("  modern_compound:  9200")
+    print("  proper_noun:      base_cost")
+    print("  ascii_or_alphabet:11800")
+    print("  phrase_or_meme:   13500")
+    print("  dangerous suffix: +4000")
+    print("  short len <= 2:   +4000 unless modern_compound")
+    print("  short len == 3:   +2500 unless modern_compound")
+    print("  short len == 4:   +1200 unless modern_compound")
 
     print("")
     print(f"Watch keys, strong cost <= {strong_cost_threshold}:")
