@@ -75,3 +75,5 @@ MODULE.bazel.lock
 /src/android/resources/res
 /src/android/tests/AndroidManifest.xml
 /src/android/tests/libs/
+
+dist/
