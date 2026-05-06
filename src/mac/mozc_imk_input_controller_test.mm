@@ -87,6 +87,7 @@
   NSRect expectedCursor;
   NSRange expectedRange;
   NSDictionary *expectedAttributes;
+  int lastCharacterIndex_;
   std::string selectedMode_;
   NSString *insertedText_;
   NSString *overriddenLayout_;
@@ -97,6 +98,7 @@
 @property(readwrite, assign) NSRect expectedCursor;
 @property(readwrite) NSDictionary *expectedAttributes;
 @property(readwrite, assign) NSRange expectedRange;
+@property(readonly) int lastCharacterIndex;
 @property(readonly) std::string selectedMode;
 @property(readonly) NSString *insertedText;
 @property(readonly) NSString *overriddenLayout;
@@ -107,6 +109,7 @@
 @synthesize expectedCursor;
 @synthesize expectedAttributes;
 @synthesize expectedRange;
+@synthesize lastCharacterIndex = lastCharacterIndex_;
 @synthesize selectedMode = selectedMode_;
 @synthesize insertedText = insertedText_;
 @synthesize overriddenLayout = overriddenLayout_;
@@ -115,6 +118,7 @@
   self = [super init];
   self.bundleIdentifier = @"com.google.exampleBundle";
   expectedRange = NSMakeRange(NSNotFound, NSNotFound);
+  lastCharacterIndex_ = NSNotFound;
   return self;
 }
 
@@ -131,6 +135,7 @@
 
 - (NSDictionary *)attributesForCharacterIndex:(int)index lineHeightRectangle:(NSRect *)rect {
   counters_["attributesForCharacterIndex:lineHeightRectangle:"]++;
+  lastCharacterIndex_ = index;
   *rect = expectedCursor;
   return expectedAttributes;
 }
@@ -486,6 +491,119 @@ TEST_F(MozcImkInputControllerTest, UpdateCandidates) {
   EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 1);
   EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 4);
   EXPECT_FALSE(rendererCommand.visible());
+}
+
+TEST_F(MozcImkInputControllerTest,
+       SuppressCandidateWindowWhileLiveConversionEnabledUntilSpace) {
+  controller_.useLiveConversionForTest = true;
+  controller_.allowCandidateWindowForLiveConversionForTest = false;
+
+  commands::Output output;
+  commands::CandidateWindow *candidate_window = output.mutable_candidate_window();
+  candidate_window->set_focused_index(0);
+  candidate_window->set_size(1);
+  commands::CandidateWindow::Candidate *candidate = candidate_window->add_candidate();
+  candidate->set_index(0);
+  candidate->set_value("abc");
+
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 1);
+  EXPECT_FALSE(controller_.rendererCommand.visible());
+}
+
+TEST_F(MozcImkInputControllerTest,
+       AllowCandidateWindowAfterExplicitSpaceDuringLiveConversion) {
+  controller_.useLiveConversionForTest = true;
+  controller_.allowCandidateWindowForLiveConversionForTest = true;
+
+  commands::Output output;
+  commands::CandidateWindow *candidate_window = output.mutable_candidate_window();
+  candidate_window->set_focused_index(0);
+  candidate_window->set_size(1);
+  commands::CandidateWindow::Candidate *candidate = candidate_window->add_candidate();
+  candidate->set_index(0);
+  candidate->set_value("abc");
+
+  mock_client_.expectedCursor = NSMakeRect(50, 50, 1, 10);
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 718)]};
+
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 1);
+  EXPECT_TRUE(controller_.rendererCommand.visible());
+}
+
+TEST_F(MozcImkInputControllerTest, UpdateCandidatesForLiveConversionWithoutCandidateWindow) {
+  commands::Output output;
+  output.set_live_conversion(true);
+
+  commands::Preedit *preedit = output.mutable_preedit();
+  preedit->set_cursor(2);
+  commands::Preedit::Segment *segment = preedit->add_segment();
+  segment->set_annotation(commands::Preedit::Segment::HIGHLIGHT);
+  segment->set_key("あい");
+  segment->set_value("愛");
+  segment->set_value_length(1);
+
+  mock_client_.expectedCursor = NSMakeRect(50, 50, 1, 10);
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 718)]};
+
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+
+  const commands::RendererCommand &rendererCommand = controller_.rendererCommand;
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 1);
+  EXPECT_EQ(mock_client_.lastCharacterIndex, 0);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 1);
+  EXPECT_TRUE(rendererCommand.visible());
+  EXPECT_EQ(rendererCommand.output().preedit().cursor(), 2);
+
+  const commands::RendererCommand::Rectangle &preedit_rectangle =
+      rendererCommand.preedit_rectangle();
+  EXPECT_EQ(preedit_rectangle.left(), 50);
+  EXPECT_EQ(preedit_rectangle.top(), 708);
+  EXPECT_EQ(preedit_rectangle.right(), 51);
+  EXPECT_EQ(preedit_rectangle.bottom(), 718);
+}
+
+TEST_F(MozcImkInputControllerTest, LiveConversionRecalculatesRendererPosition) {
+  commands::Output output;
+  output.set_live_conversion(true);
+
+  commands::Preedit *preedit = output.mutable_preedit();
+  preedit->set_cursor(1);
+  commands::Preedit::Segment *segment = preedit->add_segment();
+  segment->set_annotation(commands::Preedit::Segment::HIGHLIGHT);
+  segment->set_key("か");
+  segment->set_value("蚊");
+  segment->set_value_length(1);
+
+  mock_client_.expectedCursor = NSMakeRect(50, 50, 1, 10);
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 718)]};
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 1);
+  EXPECT_TRUE(controller_.rendererCommand.visible());
+  EXPECT_EQ(controller_.rendererCommand.preedit_rectangle().left(), 50);
+
+  mock_client_.expectedCursor = NSMakeRect(70, 50, 1, 10);
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(70, 718)]};
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 2);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 2);
+  EXPECT_TRUE(controller_.rendererCommand.visible());
+  EXPECT_EQ(controller_.rendererCommand.preedit_rectangle().left(), 50);
+  EXPECT_EQ(controller_.rendererCommand.preedit_rectangle().right(), 51);
 }
 
 TEST_F(MozcImkInputControllerTest, OpenLink) {

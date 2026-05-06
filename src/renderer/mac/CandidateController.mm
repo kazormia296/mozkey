@@ -29,11 +29,14 @@
 
 #import "renderer/mac/CandidateView.h"
 
+#include <algorithm>
+
 #include "base/coordinates.h"
 #include "protocol/commands.pb.h"
 #include "renderer/mac/CandidateController.h"
 #include "renderer/mac/CandidateWindow.h"
 #include "renderer/mac/InfolistWindow.h"
+#include "renderer/mac/RubyWindow.h"
 #include "renderer/mac/mac_view_util.h"
 #include "renderer/table_layout.h"
 #include "renderer/window_util.h"
@@ -48,6 +51,7 @@ namespace mac {
 namespace {
 const int kHideWindowDelay = 500;  // msec
 const int kWindowMargin = 10;      // pixel
+const int kRubyWindowGap = 8;      // pixel
 
 // In Cocoa's coordinate system the origin point is left-bottom and the Y-axis
 // points up. But in Mozc's coordinate system the Y-axis points down. So we use
@@ -107,18 +111,21 @@ int GetBaseScreenHeight() {
 CandidateController::CandidateController()
     : candidate_window_(new mac::CandidateWindow),
       cascading_window_(new mac::CandidateWindow),
-      infolist_window_(new mac::InfolistWindow) {
+      infolist_window_(new mac::InfolistWindow),
+      ruby_window_(new mac::RubyWindow) {
   candidate_window_->SetWindowLevel(NSPopUpMenuWindowLevel);
   // Cascading window should be over the normal candidate window.
   cascading_window_->SetWindowLevel(NSPopUpMenuWindowLevel + 1);
   // Infolist window should be under the normal candidate window.
   infolist_window_->SetWindowLevel(NSPopUpMenuWindowLevel - 1);
+  ruby_window_->SetWindowLevel(NSPopUpMenuWindowLevel + 2);
 }
 
 CandidateController::~CandidateController() {
   delete candidate_window_;
   delete cascading_window_;
   delete infolist_window_;
+  delete ruby_window_;
 }
 
 bool CandidateController::Activate() {
@@ -144,8 +151,24 @@ bool CandidateController::ExecCommand(const RendererCommand &command) {
     candidate_window_->Hide();
     cascading_window_->Hide();
     infolist_window_->Hide();
+    ruby_window_->Hide();
     return true;
   }
+
+  if (command_.has_output() && command_.output().live_conversion()) {
+    candidate_window_->Hide();
+    cascading_window_->Hide();
+    infolist_window_->Hide();
+    if (!ruby_window_->Update(command_)) {
+      ruby_window_->Hide();
+      return true;
+    }
+    AlignRubyWindow();
+    ruby_window_->Show();
+    return true;
+  }
+
+  ruby_window_->Hide();
 
   candidate_window_->SetCandidateWindow(command_.output().candidate_window());
 
@@ -199,7 +222,6 @@ void CandidateController::AlignWindows() {
   if (!command_.has_preedit_rectangle()) {
     return;
   }
-
   const mozc::Size preedit_size(
       command_.preedit_rectangle().right() - command_.preedit_rectangle().left(),
       command_.preedit_rectangle().bottom() - command_.preedit_rectangle().top());
@@ -269,6 +291,41 @@ void CandidateController::AlignWindows() {
   const mozc::Rect cascading_rect = WindowUtil::GetWindowRectForCascadingWindow(
       focused_rect, cascading_window_->GetWindowSize(), mozc::Point(0, 0), display_rect);
   cascading_window_->MoveWindow(OriginPointInCocoaCoord(cascading_rect));
+}
+
+void CandidateController::AlignRubyWindow() {
+  if (!command_.has_preedit_rectangle()) {
+    return;
+  }
+
+  const mozc::Size ruby_size = ruby_window_->GetWindowSize();
+  if (ruby_size.width <= 0 || ruby_size.height <= 0) {
+    return;
+  }
+
+  const mozc::Size preedit_size(
+      command_.preedit_rectangle().right() - command_.preedit_rectangle().left(),
+      command_.preedit_rectangle().bottom() - command_.preedit_rectangle().top());
+  mozc::Rect preedit_rect(
+      mozc::Point(command_.preedit_rectangle().left(),
+                  command_.preedit_rectangle().top() - GetBaseScreenHeight()),
+      preedit_size);
+  const mozc::Rect display_rect = GetNearestDisplayRect(preedit_rect);
+
+  const int max_left = std::max(display_rect.Left(),
+                                display_rect.Right() - ruby_size.width);
+  const int left = std::clamp(preedit_rect.Left(), display_rect.Left(), max_left);
+
+  int top = preedit_rect.Top() - ruby_size.height - kRubyWindowGap;
+  if (top < display_rect.Top()) {
+    top = preedit_rect.Bottom() + kRubyWindowGap;
+  }
+  const int max_top = std::max(display_rect.Top(),
+                               display_rect.Bottom() - ruby_size.height);
+  top = std::clamp(top, display_rect.Top(), max_top);
+
+  ruby_window_->MoveWindow(
+      OriginPointInCocoaCoord(mozc::Rect(left, top, ruby_size.width, ruby_size.height)));
 }
 
 }  // namespace mozc::renderer::mac

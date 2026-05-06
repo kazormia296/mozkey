@@ -176,6 +176,55 @@ bool CanSurroundingText(absl::string_view bundle_id) {
   // because calling attributedSubstringFromRange to it is very heavy.
   return bundle_id != "com.evernote.Evernote";
 }
+
+bool ShouldDisplayRendererForOutput(const Output &output) {
+  return (output.has_candidate_window() &&
+          output.candidate_window().candidate_size() > 0) ||
+         (output.live_conversion() && output.has_preedit());
+}
+
+bool ShouldSuppressCandidateWindowForLiveConversion(const Output &output,
+                                                   bool use_live_conversion,
+                                                   bool allow_candidate_window) {
+  return use_live_conversion && !allow_candidate_window &&
+         output.has_candidate_window() &&
+         output.candidate_window().candidate_size() > 0 &&
+         !output.live_conversion();
+}
+
+bool ShouldRecalculateRendererPosition(const RendererCommand &command) {
+  return !command.visible() ||
+         (command.has_output() && command.output().live_conversion());
+}
+
+uint32_t GetPreeditCharLength(const Preedit &preedit) {
+  uint32_t length = 0;
+  for (int i = 0; i < preedit.segment_size(); ++i) {
+    const Preedit::Segment &segment = preedit.segment(i);
+    if (segment.has_value_length()) {
+      length += segment.value_length();
+    } else {
+      length += mozc::Util::CharsLen(segment.value());
+    }
+  }
+  return length;
+}
+
+int32_t GetRendererAnchorPosition(const Output &output) {
+  if (output.live_conversion() && output.has_preedit()) {
+    const Preedit &preedit = output.preedit();
+    const uint32_t length = GetPreeditCharLength(preedit);
+    if (length == 0) {
+      return 0;
+    }
+    const uint32_t cursor = std::min(preedit.cursor(), length);
+    return (cursor == 0) ? 0 : static_cast<int32_t>(cursor - 1);
+  }
+  if (output.has_candidate_window()) {
+    return output.candidate_window().position();
+  }
+  return 0;
+}
 }  // namespace
 
 @implementation MozcImkInputController
@@ -186,6 +235,9 @@ bool CanSurroundingText(absl::string_view bundle_id) {
 @synthesize rendererCommand = rendererCommand_;
 @synthesize replacementRange = replacementRange_;
 @synthesize imkClientForTest = imkClientForTest_;
+@synthesize useLiveConversionForTest = useLiveConversion_;
+@synthesize allowCandidateWindowForLiveConversionForTest =
+    allowCandidateWindowForLiveConversion_;
 - (mozc::client::ClientInterface *)mozcClient {
   return mozcClient_.get();
 }
@@ -223,6 +275,10 @@ bool CanSurroundingText(absl::string_view bundle_id) {
   mode_ = mozc::commands::DIRECT;
   suppressSuggestion_ = false;
   yenSignCharacter_ = mozc::config::Config::YEN_SIGN;
+  liveConversionAnchorLeft_ = 0;
+  hasLiveConversionAnchorLeft_ = false;
+  useLiveConversion_ = false;
+  allowCandidateWindowForLiveConversion_ = false;
   mozcRenderer_ = mozc::renderer::RendererClient::Create();
   mozcClient_ = mozc::client::ClientFactory::NewClient();
   lastKeyDownTime_ = 0;
@@ -361,6 +417,7 @@ bool CanSurroundingText(absl::string_view bundle_id) {
   }
   [keyCodeMap_ setInputMode:input_mode];
   yenSignCharacter_ = config.yen_sign_character();
+  useLiveConversion_ = config.use_live_conversion();
 
   if (config.use_japanese_layout()) {
     // Apple does not have "Japanese" layout actually -- here sets
@@ -707,6 +764,8 @@ bool CanSurroundingText(absl::string_view bundle_id) {
 }
 
 - (void)clearCandidates {
+  hasLiveConversionAnchorLeft_ = false;
+  allowCandidateWindowForLiveConversion_ = false;
   rendererCommand_.set_type(RendererCommand::UPDATE);
   rendererCommand_.set_visible(false);
   rendererCommand_.clear_output();
@@ -732,11 +791,16 @@ bool CanSurroundingText(absl::string_view bundle_id) {
     return;
   }
 
-  // If there is no candidate, the candidate window is closed.
-  if (rendererCommand_.output().candidate_window().candidate_size() == 0) {
+  if (!rendererCommand_.has_output() ||
+      !ShouldDisplayRendererForOutput(rendererCommand_.output())) {
+    hasLiveConversionAnchorLeft_ = false;
     rendererCommand_.set_visible(false);
     mozcRenderer_->ExecCommand(rendererCommand_);
     return;
+  }
+
+  if (!rendererCommand_.output().live_conversion()) {
+    hasLiveConversionAnchorLeft_ = false;
   }
 
   // The candidate window position is not recalculated if the
@@ -747,7 +811,7 @@ bool CanSurroundingText(absl::string_view bundle_id) {
   //    cursor position correctly.  The candidate window moves
   //    frequently with those application, which irritates users.
   //  - Kotoeri does this too.
-  if (rendererCommand_.visible()) {
+  if (!ShouldRecalculateRendererPosition(rendererCommand_)) {
     // Call ExecCommand anyway to update other information like candidate words.
     mozcRenderer_->ExecCommand(rendererCommand_);
     return;
@@ -756,7 +820,7 @@ bool CanSurroundingText(absl::string_view bundle_id) {
   rendererCommand_.set_visible(true);
 
   NSRect preeditRect = NSZeroRect;
-  const int32_t position = rendererCommand_.output().candidate_window().position();
+  const int32_t position = GetRendererAnchorPosition(rendererCommand_.output());
   // Some applications throws error when we call attributesForCharacterIndex.
   DLOG(INFO) << "attributesForCharacterIndex: " << position;
   @try {
@@ -772,10 +836,18 @@ bool CanSurroundingText(absl::string_view bundle_id) {
 
     const int right_offset = preeditRect.size.width;
     const int top_offset = -preeditRect.size.height;
+    int left = baseline.x;
+    if (rendererCommand_.output().live_conversion()) {
+      if (!hasLiveConversionAnchorLeft_) {
+        liveConversionAnchorLeft_ = baseline.x;
+        hasLiveConversionAnchorLeft_ = true;
+      }
+      left = liveConversionAnchorLeft_;
+    }
 
     RendererCommand::Rectangle *rect = rendererCommand_.mutable_preedit_rectangle();
-    rect->set_left(baseline.x);
-    rect->set_right(baseline.x + right_offset);
+    rect->set_left(left);
+    rect->set_right(left + right_offset);
     rect->set_top(baseline.y + top_offset);
     rect->set_bottom(baseline.y);
 
@@ -791,6 +863,17 @@ bool CanSurroundingText(absl::string_view bundle_id) {
   if (output == nullptr) {
     [self clearCandidates];
     return;
+  }
+
+  if (ShouldSuppressCandidateWindowForLiveConversion(
+          *output, useLiveConversion_, allowCandidateWindowForLiveConversion_)) {
+    [self clearCandidates];
+    return;
+  }
+
+  if (output->live_conversion() || !output->has_candidate_window() ||
+      output->candidate_window().candidate_size() == 0) {
+    allowCandidateWindowForLiveConversion_ = false;
   }
 
   rendererCommand_.set_type(RendererCommand::UPDATE);
@@ -931,6 +1014,12 @@ bool CanSurroundingText(absl::string_view bundle_id) {
     context.add_experimental_features("google_search_box");
   }
   keyEvent.set_mode(mode_);
+
+  if (useLiveConversion_) {
+    allowCandidateWindowForLiveConversion_ =
+        keyEvent.has_special_key() &&
+      keyEvent.special_key() == mozc::commands::KeyEvent::SPACE;
+  }
 
   if ([composedString_ length] == 0 && CanSelectedRange(clientBundle_) &&
       CanSurroundingText(clientBundle_)) {

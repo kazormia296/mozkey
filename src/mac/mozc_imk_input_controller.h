@@ -94,6 +94,16 @@
   /** |rendererCommand_| stores the command sent to |mozcRenderer_| */
   mozc::commands::RendererCommand rendererCommand_;
 
+  /** Frozen left edge of the live-conversion ruby anchor while composition stays active. */
+  int liveConversionAnchorLeft_;
+  bool hasLiveConversionAnchorLeft_;
+
+  /** True when the current config enables live conversion. */
+  bool useLiveConversion_;
+
+  /** True after explicit conversion request so candidate UI may be shown. */
+  bool allowCandidateWindowForLiveConversion_;
+
   /** |mozcClient_| manages connection to the mozc server. */
   std::unique_ptr<mozc::client::ClientInterface> mozcClient_;
 
@@ -113,6 +123,8 @@
 @property(readonly) const mozc::commands::RendererCommand &rendererCommand;
 @property(readwrite, assign) NSRange replacementRange;
 @property(readwrite, retain) id imkClientForTest;
+@property(readwrite, assign) bool useLiveConversionForTest;
+@property(readwrite, assign) bool allowCandidateWindowForLiveConversionForTest;
 
 /** Sets the RendererReceiver used by all instances of the controller.
  * the RendererReceiver is a singleton object used as a proxy to receive messages from

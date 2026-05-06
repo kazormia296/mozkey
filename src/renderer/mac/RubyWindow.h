@@ -27,57 +27,40 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef MOZC_RENDERER_MAC_CANDIDATE_CONTROLLER_H_
-#define MOZC_RENDERER_MAC_CANDIDATE_CONTROLLER_H_
+#ifndef MOZC_RENDERER_MAC_RUBY_WINDOW_H_
+#define MOZC_RENDERER_MAC_RUBY_WINDOW_H_
 
-#include "protocol/renderer_command.pb.h"
-#include "renderer/renderer_interface.h"
+#include <string>
+
+#include "renderer/mac/RendererBaseWindow.h"
 
 namespace mozc {
-namespace client {
-class SendCommandInterface;
-}  // namespace client
+namespace commands {
+class RendererCommand;
+}  // namespace commands
 
 namespace renderer {
 namespace mac {
-class CandidateWindow;
-class InfolistWindow;
-class RubyWindow;
 
-// CandidateController implements the renderer interface for Mac.  For
-// the detailed information of renderer interface, see
-// renderer/renderer_interface.h.
-class CandidateController : public RendererInterface {
+class RubyWindow : public RendererBaseWindow {
  public:
-  CandidateController();
-  CandidateController(const CandidateController &) = delete;
-  CandidateController &operator=(const CandidateController &) = delete;
-  ~CandidateController();
-  virtual bool Activate();
-  virtual bool IsAvailable() const;
-  virtual bool ExecCommand(const commands::RendererCommand &command);
-  virtual void SetSendCommandInterface(
-      client::SendCommandInterface *send_command_interface);
+  RubyWindow();
+  RubyWindow(const RubyWindow &) = delete;
+  RubyWindow &operator=(const RubyWindow &) = delete;
+  ~RubyWindow() override;
+
+  bool Update(const commands::RendererCommand &command);
 
  private:
-  // Relocate windows to prevent overlaps.
-  void AlignWindows();
-  void AlignRubyWindow();
+  void InitWindow() override;
+  void ResetView() override;
 
-  // We don't use std::unique_ptr<> for those two pointers because we don't
-  // want to include CandidateWindow.h when the user of this class
-  // includes this file.  Because CandidateWindow.h and InfolistWindow.h are in
-  // Objective-C++, the user file must be .mm files if we use
-  // std::unique_ptr<>.
-  CandidateWindow *candidate_window_;
-  CandidateWindow *cascading_window_;
-  InfolistWindow *infolist_window_;
-  RubyWindow *ruby_window_;
-  mozc::commands::RendererCommand command_;
+  bool BuildReadingText(const commands::RendererCommand &command,
+                        std::string *reading) const;
 };
 
 }  // namespace mac
 }  // namespace renderer
 }  // namespace mozc
 
-#endif  // MOZC_RENDERER_MAC_CANDIDATE_CONTROLLER_H_
+#endif  // MOZC_RENDERER_MAC_RUBY_WINDOW_H_
