@@ -117,6 +117,11 @@ class ImmutableConverter : public ImmutableConverterInterface {
                                 absl::string_view conversion_key,
                                 Lattice* lattice) const;
 
+  // Penalizes one-kana one-kanji nodes that steal a natural functional-kana
+  // path such as "に/は" or "た/の".
+  void ApplyFunctionalKanaGuard(absl::string_view history_key,
+      Lattice* lattice) const;
+
   bool Viterbi(const Segments& segments, Lattice* lattice) const;
 
   bool PredictionViterbi(const Segments& segments, Lattice* lattice) const;

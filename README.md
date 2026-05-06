@@ -81,7 +81,7 @@ Download / Install
 
 Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mozc/releases) からダウンロードできます。
 
-- 通常の 64-bit Windows では `Mozc64_myproduct_v0.5.0_offline_x64.msi` を使用してください。
+- 通常の 64-bit Windows では `Mozc64_myproduct_v0.5.1_offline_x64.msi` を使用してください。
 - 本 fork のリリースは個人用の experimental build として公開しています。
 
 > [!WARNING]
@@ -119,6 +119,7 @@ Main branches
 - dic-nico-intersection-pixiv 由来のネット・サブカル系固有名詞を、既存辞書との差分として daily 辞書に追加可能
 - 文節区切り崩れを抑えるための syntax guard 辞書を daily 辞書生成パイプラインに追加
 - 大規模な生成辞書は Git に含めず、ローカルで再生成して Bazel の辞書入力へ切り替える運用に
+- `には` や `してたの` のような自然な機能語かな列が、`二は` や `して他の` のような 1 文字漢字候補に過剰変換される挙動を抑制
 - 自分の Windows 開発環境向けのビルド調整
 
 Examples

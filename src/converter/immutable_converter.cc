@@ -279,6 +279,230 @@ class FirstInnerSegmentCandidateChecker {
   Trie<bool> trie_;
 };
 
+bool IsOneKanaOneKanjiNode(const dictionary::PosMatcher& pos_matcher,
+                           const Node& node) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+
+  if ((node.attributes & Node::USER_DICTIONARY) != 0) {
+    return false;
+  }
+
+  if (node.key.empty() || node.value.empty()) {
+    return false;
+  }
+
+  if (node.key == node.value) {
+    return false;
+  }
+
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+
+  if (Util::CharsLen(node.key) != 1) {
+    return false;
+  }
+
+  if (Util::CharsLen(node.value) != 1) {
+    return false;
+  }
+
+  if (!Util::ContainsScriptType(node.value, Util::KANJI)) {
+    return false;
+  }
+
+  // Do not suppress proper nouns such as names.
+  if (pos_matcher.IsUniqueNoun(node.lid) ||
+      pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool IsKanaFunctionalNode(const dictionary::PosMatcher& pos_matcher,
+                          const Node& node) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+
+  if (node.key.empty()) {
+    return false;
+  }
+
+  if (node.key != node.value) {
+    return false;
+  }
+
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+
+  return pos_matcher.IsFunctional(node.lid) ||
+         pos_matcher.IsFunctional(node.rid);
+}
+
+bool HasSameSpanKanaFunctionalNode(const dictionary::PosMatcher& pos_matcher,
+                                   const Lattice& lattice,
+                                   const Node& target) {
+  for (const Node* node : lattice.begin_nodes(target.begin_pos)) {
+    if (node == &target) {
+      continue;
+    }
+
+    if (node->end_pos != target.end_pos) {
+      continue;
+    }
+
+    if (IsKanaFunctionalNode(pos_matcher, *node)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+using FunctionalReachability = std::vector<std::vector<bool>>;
+
+FunctionalReachability BuildFunctionalReachability(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    size_t begin_pos) {
+  const size_t key_size = lattice.key().size();
+
+  FunctionalReachability reachable(
+      key_size + 1, std::vector<bool>(key_size + 1, false));
+
+  for (size_t i = begin_pos; i <= key_size; ++i) {
+    reachable[i][i] = true;
+  }
+
+  for (size_t start = begin_pos; start < key_size; ++start) {
+    for (size_t pos = start; pos < key_size; ++pos) {
+      if (!reachable[start][pos]) {
+        continue;
+      }
+
+      for (const Node* node : lattice.begin_nodes(pos)) {
+        if (node->end_pos > key_size) {
+          continue;
+        }
+
+        if (node->end_pos == pos) {
+          continue;
+        }
+
+        if (!IsKanaFunctionalNode(pos_matcher, *node)) {
+          continue;
+        }
+
+        reachable[start][node->end_pos] = true;
+      }
+    }
+  }
+
+  return reachable;
+}
+
+bool HasFunctionalContinuation(const FunctionalReachability& reachable,
+                               const Node& node,
+                               size_t key_size) {
+  for (size_t end_pos = node.end_pos + 1; end_pos <= key_size; ++end_pos) {
+    if (reachable[node.begin_pos][end_pos]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool IsKanjiNumberNode(const dictionary::PosMatcher& pos_matcher,
+                       const Node& node) {
+  return pos_matcher.IsKanjiNumber(node.lid) ||
+         pos_matcher.IsKanjiNumber(node.rid);
+}
+
+bool IsNumericEvidenceNode(const dictionary::PosMatcher& pos_matcher,
+                           const Node& node) {
+  if (pos_matcher.IsNumber(node.lid) || pos_matcher.IsNumber(node.rid)) {
+    return true;
+  }
+
+  if (pos_matcher.IsKanjiNumber(node.lid) ||
+      pos_matcher.IsKanjiNumber(node.rid)) {
+    return true;
+  }
+
+  if (pos_matcher.IsCounterSuffixWord(node.lid) ||
+      pos_matcher.IsCounterSuffixWord(node.rid)) {
+    return true;
+  }
+
+  return false;
+}
+
+bool HasNumericEvidenceAfterFunctionalPrefix(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    const FunctionalReachability& reachable,
+    const Node& node) {
+  if (!IsKanjiNumberNode(pos_matcher, node)) {
+    return false;
+  }
+
+  const size_t key_size = lattice.key().size();
+
+  // Look after zero or more functional-kana nodes following this number.
+  // Example:
+  //   に は ぐうすう
+  //   二 は 偶数
+  //
+  // From node.end_pos, "は" is functional.  After that, "偶数" is numeric
+  // evidence, so the penalty should be reduced.
+  for (size_t pos = node.end_pos; pos <= key_size; ++pos) {
+    if (!reachable[node.end_pos][pos]) {
+      continue;
+    }
+
+    for (const Node* next : lattice.begin_nodes(pos)) {
+      if (next == &node) {
+        continue;
+      }
+
+      if (IsNumericEvidenceNode(pos_matcher, *next)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+int GetFunctionalKanaGuardPenalty(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    const FunctionalReachability& reachable,
+    const Node& node) {
+  constexpr int kBasePenalty = 3500;
+  constexpr int kKanjiNumberDiscount = 700;
+  constexpr int kNumericEvidenceDiscount = 1800;
+
+  int penalty = kBasePenalty;
+
+  if (IsKanjiNumberNode(pos_matcher, node)) {
+    penalty -= kKanjiNumberDiscount;
+  }
+
+  if (HasNumericEvidenceAfterFunctionalPrefix(
+          pos_matcher, lattice, reachable, node)) {
+    penalty -= kNumericEvidenceDiscount;
+  }
+
+  return std::max(0, penalty);
+}
+
 }  // namespace
 
 ImmutableConverter::ImmutableConverter(const engine::Modules& modules)
@@ -1213,6 +1437,10 @@ bool ImmutableConverter::MakeLattice(const ConversionRequest& request,
     Resegment(*segments, history_key, conversion_key, lattice);
   }
 
+  if (!is_reverse && !conversion_key.empty()) {
+    ApplyFunctionalKanaGuard(history_key, lattice);
+  }
+
   return true;
 }
 
@@ -1422,6 +1650,42 @@ void ImmutableConverter::ApplyPrefixSuffixPenalty(
 
   for (Node* node : lattice->end_nodes(key.size())) {
     node->wcost += segmenter_.GetSuffixPenalty(node->rid);
+  }
+}
+
+void ImmutableConverter::ApplyFunctionalKanaGuard(
+    absl::string_view history_key, Lattice* lattice) const {
+  if (lattice == nullptr) {
+    return;
+  }
+
+  const size_t key_size = lattice->key().size();
+  const size_t conversion_begin_pos = history_key.size();
+
+  if (conversion_begin_pos >= key_size) {
+    return;
+  }
+
+  const FunctionalReachability reachable =
+      BuildFunctionalReachability(pos_matcher_, *lattice, conversion_begin_pos);
+
+  for (size_t pos = conversion_begin_pos; pos < key_size; ++pos) {
+    for (Node* node : lattice->begin_nodes(pos)) {
+      if (!IsOneKanaOneKanjiNode(pos_matcher_, *node)) {
+        continue;
+      }
+
+      if (!HasSameSpanKanaFunctionalNode(pos_matcher_, *lattice, *node)) {
+        continue;
+      }
+
+      if (!HasFunctionalContinuation(reachable, *node, key_size)) {
+        continue;
+      }
+
+      node->wcost += GetFunctionalKanaGuardPenalty(
+          pos_matcher_, *lattice, reachable, *node);
+    }
   }
 }
 
