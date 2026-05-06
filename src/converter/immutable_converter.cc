@@ -406,13 +406,120 @@ FunctionalReachability BuildFunctionalReachability(
   return reachable;
 }
 
-bool HasFunctionalContinuation(const FunctionalReachability& reachable,
-                               const Node& node,
-                               size_t key_size) {
-  for (size_t end_pos = node.end_pos + 1; end_pos <= key_size; ++end_pos) {
-    if (reachable[node.begin_pos][end_pos]) {
+bool StartsWithStringView(absl::string_view text, absl::string_view prefix) {
+  return text.size() >= prefix.size() &&
+         text.substr(0, prefix.size()) == prefix;
+}
+
+bool HasFunctionalPathInRange(const FunctionalReachability& reachable,
+                              size_t begin_pos, size_t end_pos) {
+  if (begin_pos >= reachable.size()) {
+    return false;
+  }
+  if (end_pos >= reachable[begin_pos].size()) {
+    return false;
+  }
+  return reachable[begin_pos][end_pos];
+}
+
+bool HasKanaFunctionalPredecessor(const dictionary::PosMatcher& pos_matcher,
+                                  const Lattice& lattice,
+                                  const Node& target,
+                                  size_t conversion_begin_pos) {
+  if (target.begin_pos <= conversion_begin_pos) {
+    return false;
+  }
+
+  for (const Node* prev : lattice.end_nodes(target.begin_pos)) {
+    if (prev->end_pos != target.begin_pos) {
+      continue;
+    }
+    if (IsKanaFunctionalNode(pos_matcher, *prev)) {
       return true;
     }
+  }
+
+  return false;
+}
+
+// Returns true only when the target content node competes with a known
+// functional-kana path such as "に+は" or "た+の".
+//
+// The important distinction is this:
+//
+//   Bad target:
+//     に は  -> 二 は
+//     て た の -> て 他 の
+//
+//   Not a target:
+//     じ を -> 字 を
+//     せ が -> 背 が
+//     き に -> 気 に
+//     で ましたら -> 出 ましたら
+//     み も -> 身 も
+//
+// In Japanese, "content word + functional word" is normal.  Therefore,
+// the guard must not fire merely because a one-kana one-kanji node is
+// followed by a functional node.
+bool HasKnownFunctionalKanaHijackPath(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    const FunctionalReachability& reachable,
+    const Node& node,
+    size_t conversion_begin_pos) {
+  const absl::string_view full_key = lattice.key();
+  if (node.begin_pos >= full_key.size()) {
+    return false;
+  }
+
+  const absl::string_view rest = full_key.substr(node.begin_pos);
+
+  // Keep this list deliberately small.  These are not "all functional
+  // expressions"; they are functional-kana paths that are especially likely
+  // to be hijacked by a short one-kanji content word.
+  //
+  // Add new entries only with both positive and negative regression tests.
+  const absl::string_view kHijackPhrases[] = {
+      "には",
+      "にも",
+      "では",
+      "とは",
+      "たの",
+  };
+
+  for (const absl::string_view phrase : kHijackPhrases) {
+    if (!StartsWithStringView(rest, phrase)) {
+      continue;
+    }
+
+    // The content node must cover the first functional morpheme.
+    // Example:
+    //   node.key == "に", phrase == "には"
+    //   node.key == "た", phrase == "たの"
+    if (!StartsWithStringView(phrase, node.key)) {
+      continue;
+    }
+
+    if (phrase.size() <= node.key.size()) {
+      continue;
+    }
+
+    const size_t phrase_end_pos = node.begin_pos + phrase.size();
+    if (!HasFunctionalPathInRange(reachable, node.begin_pos, phrase_end_pos)) {
+      continue;
+    }
+
+    // "たの" is dangerous if applied globally because "田の..." and "他の..."
+    // can be legitimate content-word paths.  In this guard, suppress "た"
+    // only when it appears after an already functional-kana context, such as
+    // "してたの".
+    if (node.key == "た" &&
+        !HasKanaFunctionalPredecessor(
+            pos_matcher, lattice, node, conversion_begin_pos)) {
+      continue;
+    }
+
+    return true;
   }
 
   return false;
@@ -1675,11 +1782,20 @@ void ImmutableConverter::ApplyFunctionalKanaGuard(
         continue;
       }
 
+      // There must be a functional-kana node with the same span.
+      // Otherwise this is just an ordinary short content word such as
+      // "字", "背", "気", "出", "見", or "身".
       if (!HasSameSpanKanaFunctionalNode(pos_matcher_, *lattice, *node)) {
         continue;
       }
 
-      if (!HasFunctionalContinuation(reachable, *node, key_size)) {
+      // Do not penalize merely because a functional word follows.
+      // Japanese normally has "content word + particle/auxiliary".
+      // Penalize only when the same input range has a known competing
+      // functional-kana path.
+      if (!HasKnownFunctionalKanaHijackPath(
+              pos_matcher_, *lattice, reachable, *node,
+              conversion_begin_pos)) {
         continue;
       }
 
