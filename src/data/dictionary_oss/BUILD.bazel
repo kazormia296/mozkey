@@ -71,7 +71,7 @@ filegroup(
         "dictionary07.txt",
         "dictionary08.txt",
         "dictionary09.txt",
-        "//data/dictionary_koyasi:mozcdic_ut_sample",
+        "//data/dictionary_koyasi:mozcdic_ut_daily_local",
         "//dictionary:zip_code_data",
     ],
     visibility = ["//visibility:private"],

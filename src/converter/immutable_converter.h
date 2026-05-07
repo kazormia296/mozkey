@@ -122,6 +122,31 @@ class ImmutableConverter : public ImmutableConverterInterface {
   void ApplyFunctionalKanaGuard(absl::string_view history_key,
       Lattice* lattice) const;
 
+  // Penalizes content nodes that steal a natural adverbial "Xに + は/も/..."
+  // phrase, such as:
+  //
+  //   とく | には -> 得 | には
+  //
+  // when a same-start adverbial candidate such as:
+  //
+  //   とくに -> 特に
+  //
+  // exists in the lattice.  This keeps generated daily entries from breaking
+  // high-frequency grammar-like phrases while still keeping those candidates
+  // available.
+  void ApplyAdverbialNiGuard(absl::string_view history_key,
+                             Lattice* lattice) const;
+
+  // Penalizes full-span dictionary proper nouns whose readings look like
+  // ordinary inflected Japanese phrases.
+  //
+  // Note: generated daily/nico-pixiv entries may be emitted as 名詞,一般 rather
+  // than unique nouns.  Those entries are primarily controlled by dictionary
+  // generation cost policy.  This guard protects runtime lattice cases where
+  // the node is actually tagged as a unique noun.
+  void ApplyGrammarLikeProperNounGuard(absl::string_view history_key,
+                                       Lattice* lattice) const;
+
   // Penalizes fragile adjacent short content splits such as:
   //
   //   に | じ -> 二 | 時

@@ -34,6 +34,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -717,6 +718,254 @@ int GetShortCompoundSplitPenalty(
   }
 
   return std::max(0, penalty);
+}
+
+bool StartsWithLiteral(absl::string_view text, absl::string_view prefix) {
+  return text.size() >= prefix.size() &&
+         text.substr(0, prefix.size()) == prefix;
+}
+
+bool EndsWithLiteral(absl::string_view text, absl::string_view suffix) {
+  return text.size() >= suffix.size() &&
+         text.substr(text.size() - suffix.size()) == suffix;
+}
+
+bool HasAnyPrefix(absl::string_view text,
+                  std::initializer_list<absl::string_view> prefixes) {
+  for (absl::string_view prefix : prefixes) {
+    if (StartsWithLiteral(text, prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool HasAnySuffix(absl::string_view text,
+                  std::initializer_list<absl::string_view> suffixes) {
+  for (absl::string_view suffix : suffixes) {
+    if (EndsWithLiteral(text, suffix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool IsGrammarLikeReading(absl::string_view key) {
+  return HasAnySuffix(key, {
+      "るな",
+      "ない",
+      "ます",
+      "ました",
+      "ません",
+      "した",
+      "して",
+      "してる",
+      "してた",
+      "たい",
+      "のに",
+      "ように",
+      "には",
+      "にも",
+      "では",
+      "とは",
+  });
+}
+
+bool IsShortAllKanjiValue(absl::string_view value) {
+  if (value.empty()) {
+    return false;
+  }
+  if (Util::CharsLen(value) > 3) {
+    return false;
+  }
+  return Util::GetScriptType(value) == Util::KANJI;
+}
+
+bool IsContentKanjiNodeForAdverbialGuard(
+    const dictionary::PosMatcher& pos_matcher,
+    const Node& node) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+  if (node.key.empty() || node.value.empty()) {
+    return false;
+  }
+  if (node.key == node.value) {
+    return false;
+  }
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+  if (!Util::ContainsScriptType(node.value, Util::KANJI)) {
+    return false;
+  }
+
+  const size_t key_chars = Util::CharsLen(node.key);
+  if (key_chars < 2 || key_chars > 4) {
+    return false;
+  }
+
+  // Proper nouns are handled by ApplyGrammarLikeProperNounGuard().
+  if (pos_matcher.IsUniqueNoun(node.lid) ||
+      pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool HasSameStartAdverbialNiCandidate(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    const Node& node) {
+  const std::string target_key = absl::StrCat(node.key, "に");
+  const std::string self_adverbial_value = absl::StrCat(node.value, "に");
+
+  for (const Node* candidate : lattice.begin_nodes(node.begin_pos)) {
+    if (candidate == &node) {
+      continue;
+    }
+    if (candidate->end_pos <= node.end_pos) {
+      continue;
+    }
+    if (candidate->key != target_key) {
+      continue;
+    }
+    if (!EndsWithLiteral(candidate->value, "に")) {
+      continue;
+    }
+
+    // Do not count the same content word with "に" appended as evidence.
+    //
+    // Bad evidence:
+    //   得 + に -> 得に
+    //
+    // Good evidence:
+    //   とくに -> 特に
+    if (candidate->value == self_adverbial_value) {
+      continue;
+    }
+
+    if (pos_matcher.IsUniqueNoun(candidate->lid) ||
+        pos_matcher.IsUniqueNoun(candidate->rid)) {
+      continue;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+bool IsRiskyAdverbialVariantValue(absl::string_view value) {
+  return value.find("無碍") != absl::string_view::npos ||
+         value.find("無礙") != absl::string_view::npos ||
+         value.find("彼方") != absl::string_view::npos ||
+         value.find("此方") != absl::string_view::npos ||
+         value.find("其方") != absl::string_view::npos;
+}
+
+bool IsRiskyAdverbialVariantContentNode(
+    const dictionary::PosMatcher& pos_matcher,
+    const Node& node) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+  if (node.key.empty() || node.value.empty()) {
+    return false;
+  }
+  if (node.key == node.value) {
+    return false;
+  }
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+  if (!Util::ContainsScriptType(node.value, Util::KANJI)) {
+    return false;
+  }
+
+  const size_t key_chars = Util::CharsLen(node.key);
+  if (key_chars < 2 || key_chars > 4) {
+    return false;
+  }
+
+  if (!IsRiskyAdverbialVariantValue(node.value)) {
+    return false;
+  }
+
+  if (pos_matcher.IsUniqueNoun(node.lid) ||
+      pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool HasSaferSameSpanContentCandidate(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    const Node& node) {
+  for (const Node* candidate : lattice.begin_nodes(node.begin_pos)) {
+    if (candidate == &node) {
+      continue;
+    }
+    if (candidate->end_pos != node.end_pos) {
+      continue;
+    }
+    if (candidate->key != node.key) {
+      continue;
+    }
+    if (candidate->value == node.value) {
+      continue;
+    }
+    if (!Util::ContainsScriptType(candidate->value, Util::KANJI)) {
+      continue;
+    }
+    if (IsRiskyAdverbialVariantValue(candidate->value)) {
+      continue;
+    }
+    if (pos_matcher.IsUniqueNoun(candidate->lid) ||
+        pos_matcher.IsUniqueNoun(candidate->rid)) {
+      continue;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+bool IsFullSpanGrammarLikeProperNoun(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    const Node& node,
+    size_t conversion_begin_pos) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+  if (node.begin_pos != conversion_begin_pos ||
+      node.end_pos != lattice.key().size()) {
+    return false;
+  }
+  if (!pos_matcher.IsUniqueNoun(node.lid) &&
+      !pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+  if (!IsGrammarLikeReading(node.key)) {
+    return false;
+  }
+
+  // Very short proper nouns should be handled by ordinary cost ranking.
+  if (Util::CharsLen(node.key) < 4) {
+    return false;
+  }
+
+  // Short all-kanji place-like values such as "音根内" / "温根内" may have
+  // readings ending with grammar-like suffixes such as "ない", but they are
+  // not ordinary inflected phrases.  Do not suppress them here.
+  if (IsShortAllKanjiValue(node.value)) {
+    return false;
+  }
+
+  return true;
 }
 
 bool IsTwoHiraganaCharSpan(absl::string_view text) {
@@ -1660,6 +1909,8 @@ bool ImmutableConverter::MakeLattice(const ConversionRequest& request,
 
   if (!is_reverse && !conversion_key.empty()) {
     ApplyFunctionalKanaGuard(history_key, lattice);
+    ApplyAdverbialNiGuard(history_key, lattice);
+    ApplyGrammarLikeProperNounGuard(history_key, lattice);
 
     // Apply only to normal conversion and only before the user explicitly
     // resizes segments.  Manual segment resizing is a stronger signal than
@@ -1900,30 +2151,133 @@ void ImmutableConverter::ApplyFunctionalKanaGuard(
 
   for (size_t pos = conversion_begin_pos; pos < key_size; ++pos) {
     for (Node* node : lattice->begin_nodes(pos)) {
-      if (!IsOneKanaOneKanjiNode(pos_matcher_, *node)) {
+      if (IsRiskyAdverbialVariantContentNode(pos_matcher_, *node)) {
+        if (node->end_pos <= node->begin_pos || node->end_pos >= key_size) {
+          continue;
+        }
+
+        const absl::string_view rest = lattice->key().substr(node->end_pos);
+
+        if (HasAnyPrefix(rest, {
+                "にはありません",
+                "にはございません",
+                "にはできない",
+                "にはいかない",
+                "にもかかわらず",
+            }) &&
+            HasSaferSameSpanContentCandidate(
+                pos_matcher_, *lattice, *node)) {
+          constexpr int kAdverbialContentVariantPenalty = 8000;
+          node->wcost += kAdverbialContentVariantPenalty;
+        }
+
         continue;
       }
 
-      // There must be a functional-kana node with the same span.
-      // Otherwise this is just an ordinary short content word such as
-      // "字", "背", "気", "出", "見", or "身".
-      if (!HasSameSpanKanaFunctionalNode(pos_matcher_, *lattice, *node)) {
+      if (!IsContentKanjiNodeForAdverbialGuard(pos_matcher_, *node)) {
         continue;
       }
 
-      // Do not penalize merely because a functional word follows.
-      // Japanese normally has "content word + particle/auxiliary".
-      // Penalize only when the same input range has a known competing
-      // functional-kana path.
-      if (!HasKnownFunctionalKanaHijackPath(
-              pos_matcher_, *lattice, reachable, *node,
-              conversion_begin_pos)) {
+      if (node->end_pos <= node->begin_pos || node->end_pos >= key_size) {
         continue;
       }
 
-      node->wcost += GetFunctionalKanaGuardPenalty(
-          pos_matcher_, *lattice, reachable, *node);
+      const absl::string_view rest = lattice->key().substr(node->end_pos);
+
+      // High-precision contexts.  Avoid broad "には" demotion because phrases
+      // such as "得にはならない" can be valid.
+      if (!HasAnyPrefix(rest, {
+              "にはありません",
+              "にはございません",
+              "にはできない",
+              "にはいかない",
+              "にもかかわらず",
+          })) {
+        continue;
+      }
+
+      if (!HasSameStartAdverbialNiCandidate(
+              pos_matcher_, *lattice, *node)) {
+        continue;
+      }
+
+      constexpr int kAdverbialNiGuardPenalty = 4500;
+      node->wcost += kAdverbialNiGuardPenalty;
     }
+  }
+}
+
+void ImmutableConverter::ApplyAdverbialNiGuard(
+    absl::string_view history_key, Lattice* lattice) const {
+  if (lattice == nullptr) {
+    return;
+  }
+
+  const size_t key_size = lattice->key().size();
+  const size_t conversion_begin_pos = history_key.size();
+
+  if (conversion_begin_pos >= key_size) {
+    return;
+  }
+
+  for (size_t pos = conversion_begin_pos; pos < key_size; ++pos) {
+    for (Node* node : lattice->begin_nodes(pos)) {
+      if (!IsContentKanjiNodeForAdverbialGuard(pos_matcher_, *node)) {
+        continue;
+      }
+
+      if (node->end_pos <= node->begin_pos || node->end_pos >= key_size) {
+        continue;
+      }
+
+      const absl::string_view rest = lattice->key().substr(node->end_pos);
+
+      // High-precision contexts.  Avoid broad "には" demotion because phrases
+      // such as "得にはならない" can be valid.
+      if (!HasAnyPrefix(rest, {
+              "にはありません",
+              "にはございません",
+              "にはできない",
+              "にはいかない",
+              "にもかかわらず",
+          })) {
+        continue;
+      }
+
+      if (!HasSameStartAdverbialNiCandidate(
+              pos_matcher_, *lattice, *node)) {
+        continue;
+      }
+
+      constexpr int kAdverbialNiGuardPenalty = 4500;
+      node->wcost += kAdverbialNiGuardPenalty;
+    }
+  }
+}
+
+void ImmutableConverter::ApplyGrammarLikeProperNounGuard(
+    absl::string_view history_key, Lattice* lattice) const {
+  if (lattice == nullptr) {
+    return;
+  }
+
+  const size_t key_size = lattice->key().size();
+  const size_t conversion_begin_pos = history_key.size();
+
+  if (conversion_begin_pos >= key_size) {
+    return;
+  }
+
+  for (Node* node : lattice->begin_nodes(conversion_begin_pos)) {
+    if (!IsFullSpanGrammarLikeProperNoun(
+            pos_matcher_, *lattice, *node, conversion_begin_pos)) {
+      continue;
+    }
+
+    // Generated long-tail proper nouns should remain available, but should not
+    // consume an ordinary grammar-like full input without contextual evidence.
+    constexpr int kGrammarLikeProperNounPenalty = 6500;
+    node->wcost += kGrammarLikeProperNounPenalty;
   }
 }
 

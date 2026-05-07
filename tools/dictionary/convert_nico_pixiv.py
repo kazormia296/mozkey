@@ -10,6 +10,18 @@ import unicodedata
 from collections import Counter
 
 
+def configure_stdio() -> None:
+    # GitHub Actions Windows runners can expose cp1252 stdout/stderr.
+    # This script prints Japanese watch keys, so force UTF-8 when possible.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+configure_stdio()
+
+
 @dataclasses.dataclass(frozen=True)
 class UserEntry:
     key: str
@@ -56,12 +68,24 @@ DANGEROUS_READING_SUFFIXES = (
     "られる",
     "ました",
     "ません",
+    "るな",
     "たい",
     "ない",
     "ます",
+    "した",
+    "して",
+    "してる",
+    "してた",
     "てる",
     "でる",
     "れる",
+    "には",
+    "にも",
+    "では",
+    "とは",
+    "から",
+    "まで",
+    "より",
     "のに",
 )
 
@@ -129,6 +153,14 @@ def is_ascii(s: str) -> bool:
     return bool(s) and all(ord(ch) < 128 for ch in s)
 
 
+def is_hiragana_text(s: str) -> bool:
+    return bool(s) and all("HIRAGANA" in unicodedata.name(ch, "") for ch in s)
+
+
+def is_katakana_text(s: str) -> bool:
+    return bool(s) and all("KATAKANA" in unicodedata.name(ch, "") for ch in s)
+
+
 def has_phrase_marker(s: str) -> bool:
     return any(ch in PHRASE_MARKER_CHARS for ch in s)
 
@@ -149,6 +181,26 @@ def has_dangerous_reading_suffix(key: str) -> bool:
         if key.endswith(suffix) and len(key) >= len(suffix) + 2:
             return True
     return False
+
+
+def looks_like_cjk_name_or_title(value: str) -> bool:
+    if not value:
+        return False
+    if has_phrase_marker(value):
+        return False
+    if has_symbol_or_punctuation(value):
+        return False
+    if is_ascii(value):
+        return False
+    # Compact CJK-heavy values from nico/pixiv are usually names, titles, or
+    # long-tail proper nouns.  These are useful but should not consume ordinary
+    # Japanese grammar-like readings.
+    cjk_count = 0
+    for ch in value:
+        name = unicodedata.name(ch, "")
+        if "CJK UNIFIED IDEOGRAPH" in name or "HIRAGANA" in name or "KATAKANA" in name:
+            cjk_count += 1
+    return len(value) >= 3 and cjk_count >= len(value) - 1
 
 
 def is_modern_compound(entry: UserEntry) -> bool:
@@ -355,6 +407,26 @@ def cost_for(entry: UserEntry, base_cost: int) -> CostDecision:
         cost += 4000
         modifiers.append("dangerous_reading_suffix")
 
+        # Stronger demotion for proper-name/title-like entries whose reading looks
+        # like an ordinary Japanese sentence or inflected phrase.
+        if tier == "proper_noun" and looks_like_cjk_name_or_title(entry.value):
+            cost += 4000
+            modifiers.append("grammar_like_proper_noun")
+
+    # Compact katakana strings generated from hiragana readings are often
+    # titles, handles, or long-tail proper nouns.  They are useful as
+    # candidates, but should not beat ordinary kana/idiom parses by default:
+    #
+    #   のるかそるか -> ノルカソルカ
+    if (
+        tier == "proper_noun"
+        and len(entry.key) >= 5
+        and is_hiragana_text(entry.key)
+        and is_katakana_text(entry.value)
+    ):
+        cost = max(cost + 7000, 19000)
+        modifiers.append("katakana_transliteration_like")
+
     # Extra guard for alphabet entries.
     if entry.pos == "アルファベット":
         cost += 800
@@ -468,14 +540,14 @@ def convert(
     print(f"  base_cost:       {base_cost}")
     print("")
     print("Tier policy:")
-    print("  modern_compound:  9200")
+    print("  modern_compound:  7600")
     print("  proper_noun:      base_cost")
     print("  ascii_or_alphabet:11800")
     print("  phrase_or_meme:   13500")
     print("  dangerous suffix: +4000")
+    print("  grammar-like proper noun: +4000")
+    print("  katakana transliteration-like: max(+7000, 19000)")
     print("  short len <= 2:   +4000 unless modern_compound")
-    print("  short len == 3:   +2500 unless modern_compound")
-    print("  short len == 4:   +1200 unless modern_compound")
 
     print("")
     print(f"Watch keys, strong cost <= {strong_cost_threshold}:")
