@@ -610,6 +610,120 @@ int GetFunctionalKanaGuardPenalty(
   return std::max(0, penalty);
 }
 
+bool IsShortWholeSpanCandidate(const dictionary::PosMatcher& pos_matcher,
+                               const Node& node) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+
+  if ((node.attributes & Node::USER_DICTIONARY) != 0) {
+    return false;
+  }
+
+  if (node.key.empty() || node.value.empty()) {
+    return false;
+  }
+
+  if (node.key == node.value) {
+    return false;
+  }
+
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+
+  const size_t key_chars = Util::CharsLen(node.key);
+  if (key_chars != 2) {
+    return false;
+  }
+
+  if (!Util::ContainsScriptType(node.value, Util::KANJI)) {
+    return false;
+  }
+
+  // Do not use proper nouns as general evidence for suppressing short splits.
+  if (pos_matcher.IsUniqueNoun(node.lid) ||
+      pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool HasCompetitiveShortWholeSpanCandidate(
+    const dictionary::PosMatcher& pos_matcher,
+    const Connector& connector,
+    const Lattice& lattice,
+    const Node& left,
+    const Node& right) {
+  if (left.end_pos != right.begin_pos) {
+    return false;
+  }
+
+  const absl::string_view span_key =
+      lattice.key().substr(left.begin_pos, right.end_pos - left.begin_pos);
+
+  if (Util::CharsLen(span_key) != 2) {
+    return false;
+  }
+
+  const int split_cost =
+      left.wcost + connector.GetTransitionCost(left.rid, right.lid) +
+      right.wcost;
+
+  int best_whole_cost = kMaxCost;
+
+  for (const Node* whole : lattice.begin_nodes(left.begin_pos)) {
+    if (whole == &left || whole == &right) {
+      continue;
+    }
+
+    if (whole->end_pos != right.end_pos) {
+      continue;
+    }
+
+    if (!IsShortWholeSpanCandidate(pos_matcher, *whole)) {
+      continue;
+    }
+
+    best_whole_cost = std::min(best_whole_cost, whole->wcost);
+  }
+
+  if (best_whole_cost == kMaxCost) {
+    return false;
+  }
+
+  // 500 * log(100).  This value is already used elsewhere in this file as a
+  // reasonable candidate-cost gap, so keep the new guard on the same scale.
+  constexpr int kMaxWholeSpanCostGap = 2302;
+
+  return best_whole_cost - split_cost <= kMaxWholeSpanCostGap;
+}
+
+int GetShortCompoundSplitPenalty(
+    const dictionary::PosMatcher& pos_matcher,
+    const Node& node) {
+  constexpr int kBasePenalty = 1600;
+  constexpr int kNumericDiscount = 700;
+
+  int penalty = kBasePenalty;
+
+  // Kanji numbers and numeric/counter-like words are legitimate in short
+  // expressions such as "二時", "五分", "三個".  Penalize them less, but do not
+  // completely exempt them; otherwise "に|じ" still wins too easily.
+  if (IsKanjiNumberNode(pos_matcher, node) ||
+      IsNumericEvidenceNode(pos_matcher, node)) {
+    penalty -= kNumericDiscount;
+  }
+
+  return std::max(0, penalty);
+}
+
+bool IsTwoHiraganaCharSpan(absl::string_view text) {
+  return Util::GetScriptType(text) == Util::HIRAGANA &&
+         Util::CharsLen(text) == 2;
+}
+
 }  // namespace
 
 ImmutableConverter::ImmutableConverter(const engine::Modules& modules)
@@ -1546,6 +1660,14 @@ bool ImmutableConverter::MakeLattice(const ConversionRequest& request,
 
   if (!is_reverse && !conversion_key.empty()) {
     ApplyFunctionalKanaGuard(history_key, lattice);
+
+    // Apply only to normal conversion and only before the user explicitly
+    // resizes segments.  Manual segment resizing is a stronger signal than
+    // this automatic guard.
+    if (request.request_type() == ConversionRequest::CONVERSION &&
+        !segments->resized()) {
+      ApplyShortCompoundSplitGuard(history_key, lattice);
+    }
   }
 
   return true;
@@ -1801,6 +1923,83 @@ void ImmutableConverter::ApplyFunctionalKanaGuard(
 
       node->wcost += GetFunctionalKanaGuardPenalty(
           pos_matcher_, *lattice, reachable, *node);
+    }
+  }
+}
+
+void ImmutableConverter::ApplyShortCompoundSplitGuard(
+    absl::string_view history_key, Lattice* lattice) const {
+  if (lattice == nullptr) {
+    return;
+  }
+
+  const size_t key_size = lattice->key().size();
+  const size_t conversion_begin_pos = history_key.size();
+
+  if (conversion_begin_pos >= key_size) {
+    return;
+  }
+
+  const absl::string_view conversion_key =
+      lattice->key().substr(conversion_begin_pos);
+
+  // Keep this guard extremely narrow for now.
+  //
+  // It is intended to fix cases where the entire short input is split too
+  // eagerly:
+  //
+  //   にじ -> に | じ -> 二 | 時
+  //
+  // Do not apply it to internal two-kana spans inside longer input such as:
+  //
+  //   ひとこない
+  //   みたことないとりいる
+  //   おきてねがおみてた
+  //
+  // Penalizing internal short content nodes can suppress useful verbs such as
+  // "来" and "見".
+  if (!IsTwoHiraganaCharSpan(conversion_key)) {
+    return;
+  }
+
+  absl::flat_hash_set<Node*> penalized;
+
+  const size_t pos = conversion_begin_pos;
+  for (Node* left : lattice->begin_nodes(pos)) {
+    if (!IsOneKanaOneKanjiNode(pos_matcher_, *left)) {
+      continue;
+    }
+
+    if (left->end_pos <= left->begin_pos || left->end_pos > key_size) {
+      continue;
+    }
+
+    for (Node* right : lattice->begin_nodes(left->end_pos)) {
+      if (!IsOneKanaOneKanjiNode(pos_matcher_, *right)) {
+        continue;
+      }
+
+      if (right->end_pos <= right->begin_pos ||
+          right->end_pos > key_size) {
+        continue;
+      }
+
+      if (right->end_pos != key_size) {
+        continue;
+      }
+
+      if (!HasCompetitiveShortWholeSpanCandidate(
+              pos_matcher_, connector_, *lattice, *left, *right)) {
+        continue;
+      }
+
+      if (penalized.insert(left).second) {
+        left->wcost += GetShortCompoundSplitPenalty(pos_matcher_, *left);
+      }
+
+      if (penalized.insert(right).second) {
+        right->wcost += GetShortCompoundSplitPenalty(pos_matcher_, *right);
+      }
     }
   }
 }

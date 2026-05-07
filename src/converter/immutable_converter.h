@@ -122,6 +122,20 @@ class ImmutableConverter : public ImmutableConverterInterface {
   void ApplyFunctionalKanaGuard(absl::string_view history_key,
       Lattice* lattice) const;
 
+  // Penalizes fragile adjacent short content splits such as:
+  //
+  //   に | じ -> 二 | 時
+  //
+  // when the same two-kana span has a competitive whole-span candidate such as:
+  //
+  //   にじ -> 虹 / 二字 / 二時
+  //
+  // This guard is intentionally narrow.  It does not rewrite candidates and it
+  // does not special-case any word.  It only adjusts lattice costs before
+  // Viterbi so that an overly short split is not selected too eagerly.
+  void ApplyShortCompoundSplitGuard(absl::string_view history_key,
+                                    Lattice* lattice) const;
+
   bool Viterbi(const Segments& segments, Lattice* lattice) const;
 
   bool PredictionViterbi(const Segments& segments, Lattice* lattice) const;
