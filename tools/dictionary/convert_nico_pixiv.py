@@ -10,6 +10,18 @@ import unicodedata
 from collections import Counter
 
 
+def configure_stdio() -> None:
+    # GitHub Actions Windows runners can expose cp1252 stdout/stderr.
+    # This script prints Japanese watch keys, so force UTF-8 when possible.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+configure_stdio()
+
+
 @dataclasses.dataclass(frozen=True)
 class UserEntry:
     key: str
@@ -532,8 +544,6 @@ def convert(
     print("  proper_noun:      base_cost")
     print("  ascii_or_alphabet:11800")
     print("  phrase_or_meme:   13500")
-    print("  dangerous suffix: +4000")
-    print("  grammar-like proper noun: +4000")
     print("  dangerous suffix: +4000")
     print("  grammar-like proper noun: +4000")
     print("  katakana transliteration-like: max(+7000, 19000)")

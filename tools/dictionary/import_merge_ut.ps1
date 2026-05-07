@@ -26,21 +26,50 @@ Write-Host "Profile: $EffectiveProfile"
 New-Item -ItemType Directory -Force $WorkRoot | Out-Null
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 
-$GitBashCandidates = @(
-    "C:\Program Files\Git\bin\bash.exe",
-    "C:\Program Files\Git\usr\bin\bash.exe",
-    "C:\Program Files (x86)\Git\bin\bash.exe",
-    "C:\Program Files (x86)\Git\usr\bin\bash.exe"
-)
+function Find-Bash {
+    if ($IsWindows) {
+        $GitBashCandidates = @(
+            "C:\Program Files\Git\bin\bash.exe",
+            "C:\Program Files\Git\usr\bin\bash.exe",
+            "C:\Program Files (x86)\Git\bin\bash.exe",
+            "C:\Program Files (x86)\Git\usr\bin\bash.exe"
+        )
 
-$BashPath = $GitBashCandidates |
-    Where-Object { Test-Path $_ } |
-    Select-Object -First 1
+        $BashPath = $GitBashCandidates |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
 
-if (-not $BashPath) {
-    throw "Git Bash was not found. Install Git for Windows and make sure C:\Program Files\Git\bin\bash.exe exists."
+        if ($BashPath) {
+            return $BashPath
+        }
+
+        $Command = Get-Command bash.exe -ErrorAction SilentlyContinue
+        if ($Command) {
+            return $Command.Source
+        }
+
+        throw "Git Bash was not found. Install Git for Windows or make sure bash.exe is available in PATH."
+    }
+
+    $Command = Get-Command bash -ErrorAction SilentlyContinue
+    if ($Command) {
+        return $Command.Source
+    }
+
+    if (Test-Path "/bin/bash") {
+        return "/bin/bash"
+    }
+
+    if (Test-Path "/usr/bin/bash") {
+        return "/usr/bin/bash"
+    }
+
+    throw "bash was not found. Install bash or make sure it is available in PATH."
 }
 
+$BashPath = Find-Bash
+
+Write-Host "Using bash: $BashPath"
 Write-Host "Using bash: $BashPath"
 
 if (-not (Test-Path $MergeRepo)) {
