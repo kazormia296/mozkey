@@ -43,6 +43,7 @@
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "base/clock.h"
@@ -63,12 +64,41 @@
 #include <TargetConditionals.h>  // for TARGET_OS_IPHONE
 #endif                           // __APPLE__
 
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+#include <windows.h>
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+
 namespace mozc {
 namespace session {
 namespace {
 
 using ::mozc::engine::ConversionPreferences;
 using ::mozc::engine::EngineConverterInterface;
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+std::wstring Utf8ToWideForDebug(absl::string_view s) {
+  if (s.empty()) {
+    return std::wstring();
+  }
+
+  const int input_size = static_cast<int>(s.size());
+  const int wide_size =
+      ::MultiByteToWideChar(CP_UTF8, 0, s.data(), input_size, nullptr, 0);
+  if (wide_size <= 0) {
+    return L"<invalid utf8>";
+  }
+
+  std::wstring w(wide_size, L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, s.data(), input_size, w.data(), wide_size);
+  return w;
+}
+
+void MozcLeftContextDebugOutput(absl::string_view message) {
+  std::wstring w = Utf8ToWideForDebug(message);
+  w.push_back(L'\n');
+  ::OutputDebugStringW(w.c_str());
+}
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
 
 // Maximum size of multiple undo stack.
 const size_t kMultipleUndoMaxSize = 10;
@@ -731,8 +761,25 @@ bool Session::SendKeyPrecompositionState(commands::Command* command) {
   // client context once a conversion starts (mainly for performance reasons).
   if (command->has_input() && command->input().has_context()) {
     *context_->mutable_client_context() = command->input().context();
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+    const commands::Context& client_context = command->input().context();
+    if (client_context.has_preceding_text()) {
+      MozcLeftContextDebugOutput(absl::StrCat(
+          "[mozc-left-context] session preceding_text=[",
+          client_context.preceding_text(), "]"));
+    } else {
+      MozcLeftContextDebugOutput(
+          "[mozc-left-context] session context has no preceding_text");
+    }
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+
   } else {
     context_->mutable_client_context()->Clear();
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+    MozcLeftContextDebugOutput("[mozc-left-context] session no context");
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
   }
 
   switch (key_command) {

@@ -71,6 +71,8 @@ TEST(HistoryReconstructorTest, GetLastConnectivePart) {
         reconstructor_peer.GetLastConnectivePart(" ", &key, &value, &id));
     EXPECT_FALSE(
         reconstructor_peer.GetLastConnectivePart("  ", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("　", &key, &value, &id));
   }
 
   {
@@ -83,18 +85,14 @@ TEST(HistoryReconstructorTest, GetLastConnectivePart) {
     EXPECT_EQ(value, "a");
     EXPECT_EQ(id, pos_matcher.GetUniqueNounId());
 
-    EXPECT_TRUE(
+    EXPECT_FALSE(
         reconstructor_peer.GetLastConnectivePart("a ", &key, &value, &id));
-    EXPECT_EQ(key, "a");
-    EXPECT_EQ(value, "a");
-
     EXPECT_FALSE(
         reconstructor_peer.GetLastConnectivePart("a  ", &key, &value, &id));
-
-    EXPECT_TRUE(
-        reconstructor_peer.GetLastConnectivePart("a ", &key, &value, &id));
-    EXPECT_EQ(key, "a");
-    EXPECT_EQ(value, "a");
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("a.", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("a。", &key, &value, &id));
 
     EXPECT_TRUE(
         reconstructor_peer.GetLastConnectivePart("a10a", &key, &value, &id));
@@ -118,6 +116,12 @@ TEST(HistoryReconstructorTest, GetLastConnectivePart) {
     EXPECT_EQ(id, pos_matcher.GetNumberId());
 
     EXPECT_TRUE(
+        reconstructor_peer.GetLastConnectivePart("C60", &key, &value, &id));
+    EXPECT_EQ(key, "60");
+    EXPECT_EQ(value, "60");
+    EXPECT_EQ(id, pos_matcher.GetNumberId());
+
+    EXPECT_TRUE(
         reconstructor_peer.GetLastConnectivePart("10a10", &key, &value, &id));
     EXPECT_EQ(key, "10");
     EXPECT_EQ(value, "10");
@@ -132,8 +136,68 @@ TEST(HistoryReconstructorTest, GetLastConnectivePart) {
     std::string key;
     std::string value;
     uint16_t id = 0;
+
     EXPECT_FALSE(
         reconstructor_peer.GetLastConnectivePart("あ", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("に", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("して", &key, &value, &id));
+  }
+
+  {
+    std::string key;
+    std::string value;
+    uint16_t id = 0;
+
+    EXPECT_TRUE(
+        reconstructor_peer.GetLastConnectivePart("東京", &key, &value, &id));
+    EXPECT_EQ(key, "東京");
+    EXPECT_EQ(value, "東京");
+    EXPECT_EQ(id, pos_matcher.GetGeneralNounId());
+
+    EXPECT_TRUE(
+        reconstructor_peer.GetLastConnectivePart("ファイル", &key, &value, &id));
+    EXPECT_EQ(key, "ファイル");
+    EXPECT_EQ(value, "ファイル");
+    EXPECT_EQ(id, pos_matcher.GetGeneralNounId());
+
+    EXPECT_TRUE(
+        reconstructor_peer.GetLastConnectivePart("山田さん", &key, &value, &id));
+    EXPECT_EQ(key, "山田さん");
+    EXPECT_EQ(value, "山田さん");
+    EXPECT_EQ(id, pos_matcher.GetGeneralNounId());
+
+    EXPECT_TRUE(
+        reconstructor_peer.GetLastConnectivePart("Issue番号", &key, &value, &id));
+    EXPECT_EQ(key, "Issue番号");
+    EXPECT_EQ(value, "Issue番号");
+    EXPECT_EQ(id, pos_matcher.GetGeneralNounId());
+
+    EXPECT_TRUE(
+        reconstructor_peer.GetLastConnectivePart("〇〇", &key, &value, &id));
+    EXPECT_EQ(key, "〇〇");
+    EXPECT_EQ(value, "〇〇");
+    EXPECT_EQ(id, pos_matcher.GetGeneralNounId());
+  }
+
+  {
+    std::string key;
+    std::string value;
+    uint16_t id = 0;
+
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("東京 ", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("東京　", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("東京。", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("東京、", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("東京)", &key, &value, &id));
+    EXPECT_FALSE(
+        reconstructor_peer.GetLastConnectivePart("東京）", &key, &value, &id));
   }
 }
 
@@ -144,21 +208,65 @@ TEST(HistoryReconstructorTest, ReconstructHistory) {
 
   constexpr absl::string_view kTen = "１０";
 
-  Segments segments;
-  EXPECT_TRUE(reconstructor.ReconstructHistory(kTen, &segments));
-  EXPECT_EQ(segments.segments_size(), 1);
-  const Segment& segment = segments.segment(0);
-  EXPECT_EQ(segment.segment_type(), Segment::HISTORY);
-  EXPECT_EQ(segment.key(), "10");
-  EXPECT_EQ(segment.candidates_size(), 1);
-  const Candidate& candidate = segment.candidate(0);
-  EXPECT_EQ(candidate.attributes, Attribute::NO_LEARNING);
-  EXPECT_EQ(candidate.content_key, "10");
-  EXPECT_EQ(candidate.key, "10");
-  EXPECT_EQ(candidate.content_value, kTen);
-  EXPECT_EQ(candidate.value, kTen);
-  EXPECT_NE(candidate.lid, 0);
-  EXPECT_NE(candidate.rid, 0);
+  {
+    Segments segments;
+    EXPECT_TRUE(reconstructor.ReconstructHistory(kTen, &segments));
+    EXPECT_EQ(segments.segments_size(), 1);
+    const Segment& segment = segments.segment(0);
+    EXPECT_EQ(segment.segment_type(), Segment::HISTORY);
+    EXPECT_EQ(segment.key(), "10");
+    EXPECT_EQ(segment.candidates_size(), 1);
+    const Candidate& candidate = segment.candidate(0);
+    EXPECT_EQ(candidate.attributes, Attribute::NO_LEARNING);
+    EXPECT_EQ(candidate.content_key, "10");
+    EXPECT_EQ(candidate.key, "10");
+    EXPECT_EQ(candidate.content_value, kTen);
+    EXPECT_EQ(candidate.value, kTen);
+    EXPECT_NE(candidate.lid, 0);
+    EXPECT_NE(candidate.rid, 0);
+  }
+
+  {
+    Segments segments;
+    EXPECT_TRUE(reconstructor.ReconstructHistory("東京", &segments));
+    EXPECT_EQ(segments.segments_size(), 1);
+    const Segment& segment = segments.segment(0);
+    EXPECT_EQ(segment.segment_type(), Segment::HISTORY);
+    EXPECT_EQ(segment.key(), "東京");
+    EXPECT_EQ(segment.candidates_size(), 1);
+    const Candidate& candidate = segment.candidate(0);
+    EXPECT_EQ(candidate.attributes, Attribute::NO_LEARNING);
+    EXPECT_EQ(candidate.content_key, "東京");
+    EXPECT_EQ(candidate.key, "東京");
+    EXPECT_EQ(candidate.content_value, "東京");
+    EXPECT_EQ(candidate.value, "東京");
+    EXPECT_EQ(candidate.lid, pos_matcher.GetGeneralNounId());
+    EXPECT_EQ(candidate.rid, pos_matcher.GetGeneralNounId());
+  }
+
+  {
+    Segments segments;
+    EXPECT_TRUE(reconstructor.ReconstructHistory("〇〇", &segments));
+    EXPECT_EQ(segments.segments_size(), 1);
+    const Segment& segment = segments.segment(0);
+    EXPECT_EQ(segment.segment_type(), Segment::HISTORY);
+    EXPECT_EQ(segment.key(), "〇〇");
+    EXPECT_EQ(segment.candidates_size(), 1);
+    const Candidate& candidate = segment.candidate(0);
+    EXPECT_EQ(candidate.attributes, Attribute::NO_LEARNING);
+    EXPECT_EQ(candidate.content_key, "〇〇");
+    EXPECT_EQ(candidate.key, "〇〇");
+    EXPECT_EQ(candidate.content_value, "〇〇");
+    EXPECT_EQ(candidate.value, "〇〇");
+    EXPECT_EQ(candidate.lid, pos_matcher.GetGeneralNounId());
+    EXPECT_EQ(candidate.rid, pos_matcher.GetGeneralNounId());
+  }
+
+  {
+    Segments segments;
+    EXPECT_FALSE(reconstructor.ReconstructHistory("東京。", &segments));
+    EXPECT_EQ(segments.segments_size(), 0);
+  }
 }
 
 }  // namespace converter

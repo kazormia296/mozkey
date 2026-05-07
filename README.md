@@ -109,6 +109,7 @@ Main branches
 - ライブ変換は設定画面から ON/OFF と変換開始までの遅延時間を変更可能
 - ライブ変換は入力直後の不要な変換ちらつきを抑えるため、文字入力後に短いデバウンスを挟んで実行
 - 1文字だけの未確定文字列では、助詞などの誤変換を避けるためライブ変換を実行しない
+- 確定済みの左文脈を参照し、`mainにマージしました` のような文脈で助詞が同音漢字・数字候補に負ける挙動を抑制
 - Windows 版で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を個別キーとして設定画面から割り当て可能
 - Windows 版で IMEOn / IMEOff に割り当てたキーを押した場合、すでに同じ状態でも IME モードインジケータを表示
 - Windows 版の候補ウィンドウにダークモード切り替えを追加
@@ -201,6 +202,48 @@ The live conversion feature can be enabled or disabled from the config dialog. T
 ライブ変換中は、変換後の文字を表示しながら元の読みも分かるように、未確定文字の上付近に Mozc 独自のルビ風 overlay window を表示します。
 
 ライブ変換は設定画面から ON/OFF を切り替えられます。また、変換開始までの遅延時間も設定画面から変更できます。
+
+### Context-aware conversion after committed text
+
+This fork uses committed text immediately before the current composition as
+left context when possible.
+
+For example, after committing `main`, typing `にまーじしました`
+is more likely to produce:
+
+- `mainにマージしました`
+
+instead of unnatural homophone results such as:
+
+- `main二マージしました`
+
+The left context is ignored after hard boundaries such as spaces, newlines,
+punctuation, or brackets.
+
+Internally, this fork reconstructs noun-like preceding text as a history segment
+and reranks short particle candidates such as `に`, `を`, `が`, `へ`, and `で`
+against homophone kanji, numeric, symbol, or dakuten-kana candidates.
+
+### 確定済み左文脈を使った変換補正
+
+この fork では、現在の未確定文字列の直前にある確定済みテキストを、可能な範囲で
+左文脈として参照します。
+
+たとえば、`main` を確定した直後に `にまーじしました` と入力した場合、
+
+- `mainにマージしました`
+
+のような結果を優先し、
+
+- `main二マージしました`
+
+のように助詞 `に` が同音の漢字・数字候補へ過剰に変換される挙動を抑制します。
+
+空白、改行、句読点、括弧などの強い区切りの直後では、左文脈は接続しません。
+
+内部的には、名詞相当の確定済み左文脈を history segment として復元し、`に`、`を`、
+`が`、`へ`、`で` などの短い助詞候補が、同音の漢字・数字・記号・濁点付き仮名候補に
+負けにくくなるように候補順位を補正します。
 
 ### Direct commit for punctuations/symbols
 

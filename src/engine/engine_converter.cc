@@ -54,6 +54,7 @@
 #include "converter/converter_interface.h"
 #include "converter/segments.h"
 #include "engine/candidate_list.h"
+#include "engine/contextual_candidate_reranker.h"
 #include "engine/engine_converter_interface.h"
 #include "engine/engine_output.h"
 #include "protocol/candidate_window.pb.h"
@@ -62,12 +63,41 @@
 #include "request/conversion_request.h"
 #include "transliteration/transliteration.h"
 
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+#include <windows.h>
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+
 namespace mozc {
 namespace engine {
 namespace {
 
 using ::mozc::commands::Request;
 using ::mozc::config::Config;
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+std::wstring Utf8ToWideForDebug(absl::string_view s) {
+  if (s.empty()) {
+    return std::wstring();
+  }
+
+  const int input_size = static_cast<int>(s.size());
+  const int wide_size =
+      ::MultiByteToWideChar(CP_UTF8, 0, s.data(), input_size, nullptr, 0);
+  if (wide_size <= 0) {
+    return L"<invalid utf8>";
+  }
+
+  std::wstring w(wide_size, L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, s.data(), input_size, w.data(), wide_size);
+  return w;
+}
+
+void MozcLeftContextDebugOutput(absl::string_view message) {
+  std::wstring w = Utf8ToWideForDebug(message);
+  w.push_back(L'\n');
+  ::OutputDebugStringW(w.c_str());
+}
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
 
 absl::string_view GetCandidateShortcuts(
     config::Config::SelectionShortcut selection_shortcut) {
@@ -170,6 +200,15 @@ bool EngineConverter::ConvertWithPreferences(
     ResetState();
     return false;
   }
+
+  ContextualCandidateReranker contextual_candidate_reranker;
+  contextual_candidate_reranker.Rerank(&segments_);
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+  MozcLeftContextDebugOutput(absl::StrCat(
+      "[mozc-left-context] after contextual rerank segments=",
+      segments_.DebugString()));
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
 
   segment_index_ = 0;
   state_ = CONVERSION;
@@ -1761,6 +1800,18 @@ void EngineConverter::OnStartComposition(const commands::Context& context) {
     revision_changed = (context.revision() != client_revision_);
     client_revision_ = context.revision();
   }
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+  if (context.has_preceding_text()) {
+    MozcLeftContextDebugOutput(absl::StrCat(
+        "[mozc-left-context] engine preceding_text=[",
+        context.preceding_text(), "]"));
+  } else {
+    MozcLeftContextDebugOutput(
+        "[mozc-left-context] engine context has no preceding_text");
+  }
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+
   if (!context.has_preceding_text()) {
     // In this case, reset history segments when the revision is mismatched.
     if (revision_changed) {
@@ -1774,6 +1825,12 @@ void EngineConverter::OnStartComposition(const commands::Context& context) {
   // calling ResetConversion.
   if (preceding_text.empty()) {
     converter_->ResetConversion(&segments_);
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+    MozcLeftContextDebugOutput(
+        "[mozc-left-context] engine preceding_text is empty; reset history");
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+
     return;
   }
 
@@ -1798,11 +1855,21 @@ void EngineConverter::OnStartComposition(const commands::Context& context) {
     if (preceding_text.size() > history_text.size()) {
       if (preceding_text.ends_with(history_text)) {
         // History segments seem to be consistent with preceding text.
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+        MozcLeftContextDebugOutput(absl::StrCat(
+            "[mozc-left-context] engine keep existing history=[",
+            history_text, "]"));
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
         return;
       }
     } else {
       if (history_text.ends_with(preceding_text)) {
         // History segments seem to be consistent with preceding text.
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+        MozcLeftContextDebugOutput(absl::StrCat(
+            "[mozc-left-context] engine keep existing history=[",
+            history_text, "]"));
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
         return;
       }
     }
@@ -1814,7 +1881,31 @@ void EngineConverter::OnStartComposition(const commands::Context& context) {
     LOG(WARNING) << "ReconstructHistory failed.";
     DLOG(WARNING) << "preceding_text: " << preceding_text
                   << ", segments: " << segments_.DebugString();
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+    MozcLeftContextDebugOutput(absl::StrCat(
+        "[mozc-left-context] engine reconstruct failed preceding_text=[",
+        preceding_text, "]"));
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+
+    return;
   }
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+  std::string reconstructed_history;
+  for (const Segment& segment : segments_) {
+    if (segment.segment_type() != Segment::HISTORY) {
+      break;
+    }
+    if (segment.candidates_size() == 0) {
+      break;
+    }
+    reconstructed_history.append(segment.candidate(0).value);
+  }
+  MozcLeftContextDebugOutput(absl::StrCat(
+      "[mozc-left-context] engine reconstructed history=[",
+      reconstructed_history, "]"));
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
 }
 
 void EngineConverter::UpdateSelectedCandidateIndex() {
