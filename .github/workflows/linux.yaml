@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  prepare_daily_dictionary:
     # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -25,6 +25,43 @@ jobs:
           submodules: false
           persist-credentials: false
 
+      - name: Prepare daily dictionary
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./tools/dictionary/prepare_daily_dictionary.ps1
+
+      - name: Upload daily dictionary
+        uses: actions/upload-artifact@v6
+        with:
+          name: daily-dictionary
+          path: |
+            src/data/dictionary_koyasi/generated/**
+            dist/dictionary/**
+          if-no-files-found: error
+
+  build:
+    needs: prepare_daily_dictionary
+    # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Download daily dictionary
+        uses: actions/download-artifact@v6
+        with:
+          name: daily-dictionary
+          path: .
+
       - name: Setup
         run: |
           sudo apt-get update
@@ -32,12 +69,6 @@ jobs:
           #
           # Unset the Android NDK setting to skip the unnecessary configuration.
           echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
-
-      - name: Prepare daily dictionary
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          ./tools/dictionary/prepare_daily_dictionary.ps1
 
       - name: bazel build
         working-directory: ./src
@@ -52,6 +83,7 @@ jobs:
           if-no-files-found: warn
 
   test:
+    needs: prepare_daily_dictionary
     # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -63,6 +95,12 @@ jobs:
           submodules: false
           persist-credentials: false
 
+      - name: Download daily dictionary
+        uses: actions/download-artifact@v6
+        with:
+          name: daily-dictionary
+          path: .
+
       - name: Setup
         run: |
           sudo apt-get update
@@ -70,12 +108,6 @@ jobs:
           #
           # Unset the Android NDK setting to skip the unnecessary configuration.
           echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
-
-      - name: Prepare daily dictionary
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          ./tools/dictionary/prepare_daily_dictionary.ps1
 
       - name: bazel test
         working-directory: ./src

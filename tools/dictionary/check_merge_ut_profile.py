@@ -9,6 +9,18 @@ import sys
 from typing import Iterable
 
 
+def configure_stdio() -> None:
+    # GitHub Actions Windows runners can expose cp1252 stdout/stderr.
+    # This script prints Japanese watch keys, so force UTF-8 when possible.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+configure_stdio()
+
+
 @dataclasses.dataclass(frozen=True)
 class Entry:
     key: str

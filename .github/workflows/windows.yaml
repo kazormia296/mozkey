@@ -13,7 +13,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare_daily_dictionary:
+    # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
+    runs-on: windows-2025
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Prepare daily dictionary
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\tools\dictionary\prepare_daily_dictionary.ps1
+
+      - name: upload daily dictionary
+        uses: actions/upload-artifact@v6
+        with:
+          name: daily-dictionary
+          path: |
+            src/data/dictionary_koyasi/generated/**
+            dist/dictionary/**
+          if-no-files-found: error
+
   build_x64:
+    needs: prepare_daily_dictionary
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 120
@@ -24,6 +55,12 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+
+      - name: download daily dictionary
+        uses: actions/download-artifact@v6
+        with:
+          name: daily-dictionary
+          path: .
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -37,12 +74,6 @@ jobs:
         # This command uses src/third_party_cache as the download cache.
         run: |
           python build_tools/update_deps.py
-
-      - name: Prepare daily dictionary
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          .\tools\dictionary\prepare_daily_dictionary.ps1
 
       - name: Build Qt
         shell: cmd
@@ -128,6 +159,7 @@ jobs:
           if-no-files-found: warn
 
   build_universal:
+    needs: prepare_daily_dictionary
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 120
@@ -138,6 +170,12 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+
+      - name: download daily dictionary
+        uses: actions/download-artifact@v6
+        with:
+          name: daily-dictionary
+          path: .
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -151,12 +189,6 @@ jobs:
         # This command uses src/third_party_cache as the download cache.
         run: |
           python build_tools/update_deps.py
-
-      - name: Prepare daily dictionary
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          .\tools\dictionary\prepare_daily_dictionary.ps1
 
       - name: Build Qt
         shell: cmd
@@ -242,6 +274,7 @@ jobs:
           if-no-files-found: warn
 
   build_arm64:
+    needs: prepare_daily_dictionary
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 120
@@ -252,6 +285,12 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+
+      - name: download daily dictionary
+        uses: actions/download-artifact@v6
+        with:
+          name: daily-dictionary
+          path: .
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -265,12 +304,6 @@ jobs:
         # This command uses src/third_party_cache as the download cache.
         run: |
           python build_tools/update_deps.py
-
-      - name: Prepare daily dictionary
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          .\tools\dictionary\prepare_daily_dictionary.ps1
 
       - name: Build Qt (arm64)
         shell: cmd
@@ -356,6 +389,7 @@ jobs:
           if-no-files-found: warn
 
   test:
+    needs: prepare_daily_dictionary
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 120
@@ -366,6 +400,12 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+
+      - name: download daily dictionary
+        uses: actions/download-artifact@v6
+        with:
+          name: daily-dictionary
+          path: .
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -379,12 +419,6 @@ jobs:
         # This command uses src/third_party_cache as the download cache.
         run: |
           python build_tools/update_deps.py
-
-      - name: Prepare daily dictionary
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          .\tools\dictionary\prepare_daily_dictionary.ps1
 
       - name: runtests
         shell: cmd
