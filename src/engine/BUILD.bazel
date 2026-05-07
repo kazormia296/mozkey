@@ -403,12 +403,24 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "contextual_candidate_reranker",
+    srcs = ["contextual_candidate_reranker.cc"],
+    hdrs = ["contextual_candidate_reranker.h"],
+    deps = [
+        "//base:util",
+        "//converter:segments",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
     name = "engine_converter",
     srcs = ["engine_converter.cc"],
     hdrs = ["engine_converter.h"],
     visibility = ["//session:__pkg__"],
     deps = [
         ":candidate_list",
+        ":contextual_candidate_reranker",
         ":engine_converter_interface",
         ":engine_output",
         "//base:text_normalizer",
@@ -427,6 +439,18 @@ mozc_cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_test(
+    name = "contextual_candidate_reranker_test",
+    size = "small",
+    srcs = ["contextual_candidate_reranker_test.cc"],
+    deps = [
+        ":contextual_candidate_reranker",
+        "//converter:segments",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
