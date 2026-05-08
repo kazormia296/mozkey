@@ -118,6 +118,32 @@ void ExpectParticlePromotedAfterHistory(absl::string_view particle_key,
   EXPECT_EQ(segments.conversion_segment(0).candidate(0).value, particle_key);
 }
 
+void ExpectFunctionalParticleExpressionPromotedAfterHistory(
+    absl::string_view expression_key, absl::string_view bad_value) {
+  Segments segments;
+  AddHistorySegment(&segments, "github", "github");
+
+  Segment* segment = AddConversionSegment(&segments, expression_key);
+
+  // Bad homophone/numeric candidate is initially on top.
+  AddCandidate(segment, expression_key, bad_value, 5200);
+
+  // Plain functional expression is initially worse by cost.
+  AddCandidate(segment, expression_key, expression_key, 6000);
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  ASSERT_EQ(segments.conversion_segment(0).key(), expression_key);
+  ASSERT_EQ(segments.conversion_segment(0).candidate(0).value, bad_value);
+
+  ContextualCandidateReranker reranker;
+  reranker.Rerank(&segments);
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  EXPECT_EQ(segments.conversion_segment(0).key(), expression_key);
+  EXPECT_EQ(segments.conversion_segment(0).candidate(0).value,
+            expression_key);
+}
+
 TEST(ContextualCandidateRerankerTest, PromotesNiParticleAfterHistory) {
   ExpectParticlePromotedAfterHistory("に", "二");
 }
@@ -154,6 +180,31 @@ TEST(ContextualCandidateRerankerTest, PromotesMoParticleAfterHistory) {
   ExpectParticlePromotedAfterHistory("も", "藻");
 }
 
+TEST(ContextualCandidateRerankerTest,
+     PromotesNihaFunctionalExpressionAfterAsciiHistory) {
+  ExpectFunctionalParticleExpressionPromotedAfterHistory("には", "二は");
+}
+
+TEST(ContextualCandidateRerankerTest,
+     PromotesNimoFunctionalExpressionAfterAsciiHistory) {
+  ExpectFunctionalParticleExpressionPromotedAfterHistory("にも", "二も");
+}
+
+TEST(ContextualCandidateRerankerTest,
+     PromotesDehaFunctionalExpressionAfterAsciiHistory) {
+  ExpectFunctionalParticleExpressionPromotedAfterHistory("では", "出は");
+}
+
+TEST(ContextualCandidateRerankerTest,
+     PromotesDemoFunctionalExpressionAfterAsciiHistory) {
+  ExpectFunctionalParticleExpressionPromotedAfterHistory("でも", "出も");
+}
+
+TEST(ContextualCandidateRerankerTest,
+     PromotesTohaFunctionalExpressionAfterAsciiHistory) {
+  ExpectFunctionalParticleExpressionPromotedAfterHistory("とは", "戸は");
+}
+
 TEST(ContextualCandidateRerankerTest, DoesNotPromoteWithoutHistory) {
   Segments segments;
   AddParticleSegmentWithBadTopCandidate(&segments, "に", "二");
@@ -166,6 +217,23 @@ TEST(ContextualCandidateRerankerTest, DoesNotPromoteWithoutHistory) {
   reranker.Rerank(&segments);
 
   EXPECT_EQ(segments.conversion_segment(0).candidate(0).value, "二");
+}
+
+TEST(ContextualCandidateRerankerTest,
+     DoesNotPromoteFunctionalParticleExpressionWithoutHistory) {
+  Segments segments;
+
+  Segment* segment = AddConversionSegment(&segments, "には");
+  AddCandidate(segment, "には", "二は", 5200);
+  AddCandidate(segment, "には", "には", 6000);
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  ASSERT_EQ(segments.conversion_segment(0).candidate(0).value, "二は");
+
+  ContextualCandidateReranker reranker;
+  reranker.Rerank(&segments);
+
+  EXPECT_EQ(segments.conversion_segment(0).candidate(0).value, "二は");
 }
 
 TEST(ContextualCandidateRerankerTest, PromotesAfterPreviousConversionSegment) {
@@ -185,6 +253,45 @@ TEST(ContextualCandidateRerankerTest, PromotesAfterPreviousConversionSegment) {
   reranker.Rerank(&segments);
 
   EXPECT_EQ(segments.conversion_segment(1).candidate(0).value, "に");
+}
+
+TEST(ContextualCandidateRerankerTest,
+     PromotesFunctionalParticleExpressionAfterKanjiHistory) {
+  Segments segments;
+  AddHistorySegment(&segments, "とうきょう", "東京");
+
+  Segment* segment = AddConversionSegment(&segments, "には");
+  AddCandidate(segment, "には", "二は", 5200);
+  AddCandidate(segment, "には", "には", 6000);
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  ASSERT_EQ(segments.conversion_segment(0).candidate(0).value, "二は");
+
+  ContextualCandidateReranker reranker;
+  reranker.Rerank(&segments);
+
+  EXPECT_EQ(segments.conversion_segment(0).candidate(0).value, "には");
+}
+
+TEST(ContextualCandidateRerankerTest,
+     PromotesFunctionalParticleExpressionAfterPreviousConversionSegment) {
+  Segments segments;
+
+  Segment* previous = AddConversionSegment(&segments, "とうきょう");
+  AddCandidate(previous, "とうきょう", "東京", 4000);
+
+  Segment* segment = AddConversionSegment(&segments, "には");
+  AddCandidate(segment, "には", "二は", 5200);
+  AddCandidate(segment, "には", "には", 6000);
+
+  ASSERT_EQ(segments.conversion_segments_size(), 2);
+  ASSERT_EQ(segments.conversion_segment(1).key(), "には");
+  ASSERT_EQ(segments.conversion_segment(1).candidate(0).value, "二は");
+
+  ContextualCandidateReranker reranker;
+  reranker.Rerank(&segments);
+
+  EXPECT_EQ(segments.conversion_segment(1).candidate(0).value, "には");
 }
 
 TEST(ContextualCandidateRerankerTest, DoesNotTouchNonParticleSegment) {

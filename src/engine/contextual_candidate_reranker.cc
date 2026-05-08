@@ -100,6 +100,20 @@ bool IsParticleReading(absl::string_view key) {
          key == "も";
 }
 
+bool IsFunctionalParticleExpressionKey(absl::string_view key) {
+  // Compound functional particles that should usually stay in kana after
+  // noun-like or ASCII-like context:
+  //   githubには
+  //   mainにも
+  //   東京では
+  //   PRとは
+  //
+  // Keep this list conservative. Longer expressions such as "について" and
+  // "として" have wider contextual behavior and should be handled separately.
+  return key == "には" || key == "にも" || key == "では" ||
+         key == "でも" || key == "とは";
+}
+
 bool IsPlainParticleSurfaceCandidate(const Segment& segment,
                                      const Candidate& candidate) {
   if (!IsParticleReading(segment.key())) {
@@ -125,6 +139,38 @@ bool IsSuspiciousHomophoneForParticle(const Segment& segment,
   // Do not try to classify by script type here. "に゛" can look hiragana-like
   // depending on Unicode/script classification, but it must not beat "に".
   return !IsPlainParticleSurfaceCandidate(segment, candidate);
+}
+
+bool IsFunctionalParticleExpressionCandidate(const Segment& segment,
+                                             const Candidate& candidate) {
+  if (!IsFunctionalParticleExpressionKey(segment.key())) {
+    return false;
+  }
+
+  // Surface form is what matters here. Some duplicate candidates may differ
+  // in POS IDs or internal costs, but "には" should beat "二は", "2は",
+  // "弐は", etc. after noun-like context.
+  return candidate.value == segment.key() &&
+         candidate.content_value == segment.key();
+}
+
+bool IsSuspiciousCandidateForFunctionalParticleExpression(
+    const Segment& segment, const Candidate& candidate) {
+  if (!IsFunctionalParticleExpressionKey(segment.key())) {
+    return false;
+  }
+
+  if (IsFunctionalParticleExpressionCandidate(segment, candidate)) {
+    return false;
+  }
+
+  // In a compound functional-particle segment, anything other than the plain
+  // kana expression is suspicious after noun-like context:
+  //   には -> 二は, 弐は, 2は, 似は, 荷は
+  //   にも -> 二も, 弐も, 2も
+  //   では -> 出は, デハ
+  //   とは -> 戸は
+  return true;
 }
 
 bool HasHistorySegment(const Segments& segments) {
@@ -388,6 +434,22 @@ int ParticleBonus(absl::string_view key) {
   return 0;
 }
 
+int FunctionalParticleExpressionBonus(absl::string_view key) {
+  if (key == "には" || key == "にも") {
+    return 5000;
+  }
+
+  if (key == "では" || key == "でも") {
+    return 4000;
+  }
+
+  if (key == "とは") {
+    return 3500;
+  }
+
+  return 0;
+}
+
 struct CandidateScore {
   int index = 0;
   int adjusted_cost = 0;
@@ -441,6 +503,78 @@ void RerankParticleSegmentAfterContext(const Segments& segments,
     if (IsPlainParticleSurfaceCandidate(*segment, candidate)) {
       adjusted_cost -= bonus;
     } else if (IsSuspiciousHomophoneForParticle(*segment, candidate)) {
+      adjusted_cost += bonus;
+    }
+
+    scores.push_back({i, adjusted_cost});
+  }
+
+  std::stable_sort(scores.begin(), scores.end(),
+                   [](const CandidateScore& lhs, const CandidateScore& rhs) {
+                     return lhs.adjusted_cost < rhs.adjusted_cost;
+                   });
+
+  // If the top candidate does not change, avoid unnecessary mutation.
+  if (scores.empty() || scores[0].index == 0) {
+    return;
+  }
+
+  std::vector<Candidate> reordered;
+  reordered.reserve(segment->candidates_size());
+  for (const CandidateScore& score : scores) {
+    reordered.push_back(segment->candidate(score.index));
+  }
+
+  for (int i = 0; i < static_cast<int>(reordered.size()); ++i) {
+    *segment->mutable_candidate(i) = reordered[i];
+  }
+}
+
+void RerankFunctionalParticleExpressionAfterContext(
+    const Segments& segments, size_t conversion_index, Segment* segment) {
+  if (segment == nullptr) {
+    return;
+  }
+
+  if (!IsFunctionalParticleExpressionKey(segment->key())) {
+    return;
+  }
+
+  if (segment->candidates_size() <= 1) {
+    return;
+  }
+
+  if (!PreviousContextLooksNounLike(segments, conversion_index)) {
+    return;
+  }
+
+  int functional_candidate_index = -1;
+  for (int i = 0; i < segment->candidates_size(); ++i) {
+    if (IsFunctionalParticleExpressionCandidate(*segment,
+                                                segment->candidate(i))) {
+      functional_candidate_index = i;
+      break;
+    }
+  }
+
+  if (functional_candidate_index < 0) {
+    return;
+  }
+
+  std::vector<CandidateScore> scores;
+  scores.reserve(segment->candidates_size());
+
+  const int bonus = FunctionalParticleExpressionBonus(segment->key());
+
+  for (int i = 0; i < segment->candidates_size(); ++i) {
+    const Candidate& candidate = segment->candidate(i);
+
+    int adjusted_cost = candidate.cost;
+
+    if (IsFunctionalParticleExpressionCandidate(*segment, candidate)) {
+      adjusted_cost -= bonus;
+    } else if (IsSuspiciousCandidateForFunctionalParticleExpression(
+                   *segment, candidate)) {
       adjusted_cost += bonus;
     }
 
@@ -551,6 +685,7 @@ void ContextualCandidateReranker::Rerank(Segments* segments) const {
   for (size_t i = 0; i < segments->conversion_segments_size(); ++i) {
     Segment* segment = segments->mutable_conversion_segment(i);
     RerankParticleSegmentAfterContext(*segments, i, segment);
+    RerankFunctionalParticleExpressionAfterContext(*segments, i, segment);
     RerankShikaNegativeExpressionAfterContext(*segments, i, segment);
   }
 }
