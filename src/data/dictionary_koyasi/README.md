@@ -22,10 +22,13 @@ src/data/dictionary_koyasi/generated/mozcdic-ut-rich.txt
 src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-daily.txt
 src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-rich.txt
 src/data/dictionary_koyasi/generated/profiled/dic-nico-pixiv-delta.txt
-src/data/dictionary_koyasi/generated/profiled/koyasi-syntax-guard.txt
+src/data/dictionary_koyasi/koyasi-syntax-guard.txt
 ```
 
-These files are generated locally and are not committed.
+These generated dictionary files are created locally and are not committed.
+
+The small syntax guard dictionary is committed separately:
+src/data/dictionary_koyasi/koyasi-syntax-guard.txt
 
 ## Notes for Windows PowerShell
 
