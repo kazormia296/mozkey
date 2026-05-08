@@ -412,14 +412,21 @@ bool StartsWithStringView(absl::string_view text, absl::string_view prefix) {
          text.substr(0, prefix.size()) == prefix;
 }
 
+bool EndsWithStringView(absl::string_view text, absl::string_view suffix) {
+  return text.size() >= suffix.size() &&
+         text.substr(text.size() - suffix.size()) == suffix;
+}
+
 bool HasFunctionalPathInRange(const FunctionalReachability& reachable,
                               size_t begin_pos, size_t end_pos) {
   if (begin_pos >= reachable.size()) {
     return false;
   }
+
   if (end_pos >= reachable[begin_pos].size()) {
     return false;
   }
+
   return reachable[begin_pos][end_pos];
 }
 
@@ -432,15 +439,87 @@ bool HasKanaFunctionalPredecessor(const dictionary::PosMatcher& pos_matcher,
   }
 
   for (const Node* prev : lattice.end_nodes(target.begin_pos)) {
+    if (prev == nullptr) {
+      continue;
+    }
+
     if (prev->end_pos != target.begin_pos) {
       continue;
     }
+
     if (IsKanaFunctionalNode(pos_matcher, *prev)) {
       return true;
     }
   }
 
   return false;
+}
+
+bool HasTeDeTailPredecessor(const dictionary::PosMatcher& pos_matcher,
+                            const Lattice& lattice,
+                            const Node& target,
+                            size_t conversion_begin_pos) {
+  if (target.begin_pos <= conversion_begin_pos) {
+    return false;
+  }
+
+  for (const Node* prev : lattice.end_nodes(target.begin_pos)) {
+    if (prev == nullptr) {
+      continue;
+    }
+
+    if (prev->end_pos != target.begin_pos) {
+      continue;
+    }
+
+    if (prev->node_type != Node::NOR_NODE) {
+      continue;
+    }
+
+    if (prev->key.empty()) {
+      continue;
+    }
+
+    if (Util::GetScriptType(prev->key) != Util::HIRAGANA) {
+      continue;
+    }
+
+    // Do not reject nodes whose key and value differ.
+    //
+    // In inputs such as:
+    //   じっこうできてたの
+    //   あるけてたの
+    //   さがしてたの
+    //   しつもんしてたの
+    //
+    // the preceding node can be a predicate-like chunk such as
+    // "じっこうできて" -> "実行できて", not an independent kana node "て".
+    if (!EndsWithStringView(prev->key, "て") &&
+        !EndsWithStringView(prev->key, "で")) {
+      continue;
+    }
+
+    // Proper nouns ending with て/で are more likely to be lexical content.
+    // The "たの" guard is intended for predicate + て/で + た + の.
+    if (pos_matcher.IsUniqueNoun(prev->lid) ||
+        pos_matcher.IsUniqueNoun(prev->rid)) {
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+bool HasTaNoFunctionalPredecessor(const dictionary::PosMatcher& pos_matcher,
+                                  const Lattice& lattice,
+                                  const Node& target,
+                                  size_t conversion_begin_pos) {
+  return HasKanaFunctionalPredecessor(pos_matcher, lattice, target,
+                                      conversion_begin_pos) ||
+         HasTeDeTailPredecessor(pos_matcher, lattice, target,
+                                conversion_begin_pos);
 }
 
 // Returns true only when the target content node competes with a known
@@ -511,11 +590,21 @@ bool HasKnownFunctionalKanaHijackPath(
     }
 
     // "たの" is dangerous if applied globally because "田の..." and "他の..."
-    // can be legitimate content-word paths.  In this guard, suppress "た"
-    // only when it appears after an already functional-kana context, such as
-    // "してたの".
+    // can be legitimate content-word paths.
+    //
+    // Suppress "た" only when it appears after a functional or predicate-like
+    // te/de context, such as:
+    //
+    //   してたの
+    //   実行できてたの
+    //   歩けてたの
+    //   探してたの
+    //   質問してたの
+    //
+    // The preceding "て" is not always an independent kana-functional node.
+    // It can be folded into the previous node as in "実行できて".
     if (node.key == "た" &&
-        !HasKanaFunctionalPredecessor(
+        !HasTaNoFunctionalPredecessor(
             pos_matcher, lattice, node, conversion_begin_pos)) {
       continue;
     }
@@ -2151,58 +2240,22 @@ void ImmutableConverter::ApplyFunctionalKanaGuard(
 
   for (size_t pos = conversion_begin_pos; pos < key_size; ++pos) {
     for (Node* node : lattice->begin_nodes(pos)) {
-      if (IsRiskyAdverbialVariantContentNode(pos_matcher_, *node)) {
-        if (node->end_pos <= node->begin_pos || node->end_pos >= key_size) {
-          continue;
-        }
-
-        const absl::string_view rest = lattice->key().substr(node->end_pos);
-
-        if (HasAnyPrefix(rest, {
-                "にはありません",
-                "にはございません",
-                "にはできない",
-                "にはいかない",
-                "にもかかわらず",
-            }) &&
-            HasSaferSameSpanContentCandidate(
-                pos_matcher_, *lattice, *node)) {
-          constexpr int kAdverbialContentVariantPenalty = 8000;
-          node->wcost += kAdverbialContentVariantPenalty;
-        }
-
+      if (!IsOneKanaOneKanjiNode(pos_matcher_, *node)) {
         continue;
       }
 
-      if (!IsContentKanjiNodeForAdverbialGuard(pos_matcher_, *node)) {
+      if (node->end_pos <= node->begin_pos || node->end_pos > key_size) {
         continue;
       }
 
-      if (node->end_pos <= node->begin_pos || node->end_pos >= key_size) {
+      if (!HasKnownFunctionalKanaHijackPath(
+              pos_matcher_, *lattice, reachable, *node,
+              conversion_begin_pos)) {
         continue;
       }
 
-      const absl::string_view rest = lattice->key().substr(node->end_pos);
-
-      // High-precision contexts.  Avoid broad "には" demotion because phrases
-      // such as "得にはならない" can be valid.
-      if (!HasAnyPrefix(rest, {
-              "にはありません",
-              "にはございません",
-              "にはできない",
-              "にはいかない",
-              "にもかかわらず",
-          })) {
-        continue;
-      }
-
-      if (!HasSameStartAdverbialNiCandidate(
-              pos_matcher_, *lattice, *node)) {
-        continue;
-      }
-
-      constexpr int kAdverbialNiGuardPenalty = 4500;
-      node->wcost += kAdverbialNiGuardPenalty;
+      node->wcost += GetFunctionalKanaGuardPenalty(
+          pos_matcher_, *lattice, reachable, *node);
     }
   }
 }
