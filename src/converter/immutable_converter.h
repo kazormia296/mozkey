@@ -120,7 +120,10 @@ class ImmutableConverter : public ImmutableConverterInterface {
   // Penalizes one-kana one-kanji nodes that steal a natural functional-kana
   // path such as "に/は" or "た/の".
   void ApplyFunctionalKanaGuard(absl::string_view history_key,
-      Lattice* lattice) const;
+                                Lattice* lattice) const;
+
+  void ApplySahenShitaiGuard(absl::string_view history_key,
+                             Lattice* lattice) const;
 
   // Penalizes content nodes that steal a natural adverbial "Xに + は/も/..."
   // phrase, such as:

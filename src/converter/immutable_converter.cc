@@ -870,6 +870,76 @@ bool IsShortAllKanjiValue(absl::string_view value) {
   return Util::GetScriptType(value) == Util::KANJI;
 }
 
+bool IsSahenNounLikeId(const dictionary::PosMatcher& pos_matcher,
+                       uint16_t id) {
+  // In pos_matcher_rule.def, "Unknown" corresponds to 名詞,サ変接続.
+  // The name is historical; use this wrapper to express the actual intent.
+  return pos_matcher.IsUnknown(id);
+}
+
+bool HasSahenNounHistoryPredecessor(
+    const dictionary::PosMatcher& pos_matcher,
+    const Lattice& lattice,
+    size_t conversion_begin_pos) {
+  if (conversion_begin_pos == 0) {
+    return false;
+  }
+
+  for (const Node* prev : lattice.end_nodes(conversion_begin_pos)) {
+    if (prev == nullptr) {
+      continue;
+    }
+
+    if (prev->end_pos != conversion_begin_pos) {
+      continue;
+    }
+
+    if (prev->node_type != Node::HIS_NODE) {
+      continue;
+    }
+
+    if (IsSahenNounLikeId(pos_matcher, prev->lid) ||
+        IsSahenNounLikeId(pos_matcher, prev->rid)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool IsShitaiContentNounHijackNode(
+    const dictionary::PosMatcher& pos_matcher,
+    const Node& node) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+
+  if (node.key != "したい") {
+    return false;
+  }
+
+  // Keep the grammatical/kana "したい" candidate intact.
+  if (node.value == "したい") {
+    return false;
+  }
+
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+
+  if (!Util::ContainsScriptType(node.value, Util::KANJI)) {
+    return false;
+  }
+
+  // Do not suppress proper nouns.
+  if (pos_matcher.IsUniqueNoun(node.lid) ||
+      pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+
+  return true;
+}
+
 bool IsContentKanjiNodeForAdverbialGuard(
     const dictionary::PosMatcher& pos_matcher,
     const Node& node) {
@@ -1998,6 +2068,7 @@ bool ImmutableConverter::MakeLattice(const ConversionRequest& request,
 
   if (!is_reverse && !conversion_key.empty()) {
     ApplyFunctionalKanaGuard(history_key, lattice);
+    ApplySahenShitaiGuard(history_key, lattice);
     ApplyAdverbialNiGuard(history_key, lattice);
     ApplyGrammarLikeProperNounGuard(history_key, lattice);
 
@@ -2257,6 +2328,46 @@ void ImmutableConverter::ApplyFunctionalKanaGuard(
       node->wcost += GetFunctionalKanaGuardPenalty(
           pos_matcher_, *lattice, reachable, *node);
     }
+  }
+}
+
+void ImmutableConverter::ApplySahenShitaiGuard(
+    absl::string_view history_key, Lattice* lattice) const {
+  if (lattice == nullptr) {
+    return;
+  }
+
+  if (history_key.empty()) {
+    return;
+  }
+
+  const size_t key_size = lattice->key().size();
+  const size_t conversion_begin_pos = history_key.size();
+
+  if (conversion_begin_pos >= key_size) {
+    return;
+  }
+
+  const absl::string_view conversion_key =
+      lattice->key().substr(conversion_begin_pos);
+
+  if (!StartsWithStringView(conversion_key, "したい")) {
+    return;
+  }
+
+  if (!HasSahenNounHistoryPredecessor(
+          pos_matcher_, *lattice, conversion_begin_pos)) {
+    return;
+  }
+
+  constexpr int kSahenShitaiHijackPenalty = 1800;
+
+  for (Node* node : lattice->begin_nodes(conversion_begin_pos)) {
+    if (!IsShitaiContentNounHijackNode(pos_matcher_, *node)) {
+      continue;
+    }
+
+    node->wcost += kSahenShitaiHijackPenalty;
   }
 }
 
