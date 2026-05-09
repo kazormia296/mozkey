@@ -31,7 +31,7 @@ OK:	しかってほしいときもある	叱ってほしいときもある	Conve
 OK:	しかられてないている	叱られて泣いている	Conversion Not Match	テイル	2.30.5432
 OK:	あれたしょうがっこうだ	荒れた小学校だ	Conversion Match	荒れた	2.30.5432
 OK:	もどかしいおもいです	もどかしい思いです	Conversion Not Match	重い	2.26.4423
-FAILED:	おれかかったえだをもとにもどす	俺か買った枝を下に戻す	Conversion Match	折れかかった	2.29.5268
+FAILED:	おれかかったえだをもとにもどす	俺か買った枝を元に戻す	Conversion Match	折れかかった	3.33.6143
 OK:	どんかんなのできづいてないようだ	鈍感なので気づいてないようだ	Conversion Match	ようだ	2.26.4423
 OK:	おばあちゃんのはなしはいつもながい	おばあちゃんの話はいつも長い	Conversion Match	話は	2.26.4423
 OK:	えんこーどってそんなにむつかしいか	エンコードってそんなに難しいか	Conversion Match	エンコード	2.26.4423
@@ -47,7 +47,7 @@ OK:	ありのすのようにのびている	アリの巣のように伸びてい
 OK:	ふめんをよめないのがじゃくてんです	譜面を読めないのが弱点です	Conversion Match	譜面	2.26.4423
 OK:	せがずいぶんたかい	背がずいぶん高い	Conversion Match	背が	2.28.5050
 OK:	かいさつぐちでてをふった	改札口で手を振った	Conversion Match	振った	2.30.5432
-FAILED:	ぜいたくをいえばきりがないけど	贅沢を言えば霧がないけど	Conversion Not Match	霧	2.29.5268
+OK:	ぜいたくをいえばきりがないけど	贅沢を言えばきりがないけど	Conversion Not Match	霧	3.33.6143
 OK:	じかんにおわれている	時間に追われている	Conversion Not Match	負われて	2.26.4465
 OK:	きんじて	禁じて	Conversion Expected 2	禁じ手	2.26.4465
 OK:	じょしこうせい	女子高生	Conversion Expected 2	女子高生	2.26.4465
