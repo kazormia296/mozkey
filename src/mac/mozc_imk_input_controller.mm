@@ -79,7 +79,6 @@ using SetOfString = std::set<std::string, std::less<>>;
 @interface MozcImkInputController ()
 - (void)cancelDelayedSessionCommand;
 - (void)delayedInvokeSessionCommandFromTimer:(NSTimer *)timer;
-- (void)delayedInvokeSessionCommand;
 - (void)dispatchSessionCommand:(const SessionCommand *)command client:(id)sender;
 @end
 
@@ -245,10 +244,6 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 @synthesize useLiveConversionForTest = useLiveConversion_;
 @synthesize allowCandidateWindowForLiveConversionForTest =
     allowCandidateWindowForLiveConversion_;
-- (bool)hasDelayedSessionCommandForTest {
-  return delayedSessionCommand_ != nullptr;
-}
-
 - (mozc::client::ClientInterface *)mozcClient {
   return mozcClient_.get();
 }
@@ -290,9 +285,6 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   hasLiveConversionAnchorLeft_ = false;
   useLiveConversion_ = false;
   allowCandidateWindowForLiveConversion_ = false;
-  delayedSessionCommand_ = nullptr;
-  delayedSessionCommandClient_ = nil;
-  delayedSessionCommandTimer_ = nil;
   mozcRenderer_ = mozc::renderer::RendererClient::Create();
   mozcClient_ = mozc::client::ClientFactory::NewClient();
   lastKeyDownTime_ = 0;
@@ -725,10 +717,6 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   if (timer != delayedSessionCommandTimer_) {
     return;
   }
-  [self delayedInvokeSessionCommand];
-}
-
-- (void)delayedInvokeSessionCommand {
   if (!delayedSessionCommand_) {
     return;
   }

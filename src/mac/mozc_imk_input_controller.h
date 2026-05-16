@@ -130,7 +130,6 @@
 @property(readwrite, retain) id imkClientForTest;
 @property(readwrite, assign) bool useLiveConversionForTest;
 @property(readwrite, assign) bool allowCandidateWindowForLiveConversionForTest;
-@property(readonly, assign) bool hasDelayedSessionCommandForTest;
 
 /** Sets the RendererReceiver used by all instances of the controller.
  * the RendererReceiver is a singleton object used as a proxy to receive messages from
