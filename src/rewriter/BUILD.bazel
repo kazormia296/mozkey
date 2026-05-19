@@ -145,6 +145,40 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
+mozc_cc_library(
+    name = "zenz_feedback_candidate_rewriter",
+    srcs = ["zenz_feedback_candidate_rewriter.cc"],
+    hdrs = ["zenz_feedback_candidate_rewriter.h"],
+    deps = [
+        ":rewriter_interface",
+        "//base:util",
+        "//converter:attribute",
+        "//converter:inner_segment",
+        "//converter:segments",
+        "//protocol:config_cc_proto",
+        "//request:conversion_request",
+        "//session:zenz_feedback_store",
+        "@com_google_absl//absl/strings",
+    ],
+    alwayslink = 1,
+)
+
+mozc_cc_test(
+    name = "zenz_feedback_candidate_rewriter_test",
+    size = "small",
+    srcs = ["zenz_feedback_candidate_rewriter_test.cc"],
+    deps = [
+        ":rewriter_interface",
+        ":zenz_feedback_candidate_rewriter",
+        "//converter:attribute",
+        "//converter:segments",
+        "//protocol:config_cc_proto",
+        "//request:conversion_request",
+        "//session:zenz_feedback_store",
+        "//testing:gunit_main",
+    ],
+)
+
 mozc_cc_test(
     name = "user_segment_history_rewriter_test",
     size = "small",
@@ -1547,6 +1581,7 @@ mozc_cc_library(
         ":user_segment_history_rewriter",
         ":variants_rewriter",
         ":version_rewriter",
+        ":zenz_feedback_candidate_rewriter",
         ":zipcode_rewriter",
         "//converter:converter_interface",
         "//data_manager",

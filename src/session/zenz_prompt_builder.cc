@@ -1,0 +1,148 @@
+#include "session/zenz_prompt_builder.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
+namespace mozc {
+namespace session {
+namespace {
+
+constexpr char kZenzContextBegin[] = "\xEE\xB8\x82";  // U+EE02
+constexpr char kZenzReadingBegin[] = "\xEE\xB8\x80";  // U+EE00
+constexpr char kZenzOutputBegin[] = "\xEE\xB8\x81";   // U+EE01
+
+}  // namespace
+
+bool ZenzPromptBuilder::DecodeOneUtf8(absl::string_view input, size_t* index,
+                                      char32_t* codepoint) {
+  if (*index >= input.size()) {
+    return false;
+  }
+
+  const unsigned char c0 = static_cast<unsigned char>(input[*index]);
+
+  if (c0 < 0x80) {
+    *codepoint = c0;
+    ++(*index);
+    return true;
+  }
+
+  if ((c0 & 0xE0) == 0xC0) {
+    if (*index + 1 >= input.size()) {
+      return false;
+    }
+    const unsigned char c1 = static_cast<unsigned char>(input[*index + 1]);
+    if ((c1 & 0xC0) != 0x80) {
+      return false;
+    }
+    *codepoint = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
+    *index += 2;
+    return true;
+  }
+
+  if ((c0 & 0xF0) == 0xE0) {
+    if (*index + 2 >= input.size()) {
+      return false;
+    }
+    const unsigned char c1 = static_cast<unsigned char>(input[*index + 1]);
+    const unsigned char c2 = static_cast<unsigned char>(input[*index + 2]);
+    if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80) {
+      return false;
+    }
+    *codepoint = ((c0 & 0x0F) << 12) |
+                 ((c1 & 0x3F) << 6) |
+                 (c2 & 0x3F);
+    *index += 3;
+    return true;
+  }
+
+  if ((c0 & 0xF8) == 0xF0) {
+    if (*index + 3 >= input.size()) {
+      return false;
+    }
+    const unsigned char c1 = static_cast<unsigned char>(input[*index + 1]);
+    const unsigned char c2 = static_cast<unsigned char>(input[*index + 2]);
+    const unsigned char c3 = static_cast<unsigned char>(input[*index + 3]);
+    if ((c1 & 0xC0) != 0x80 ||
+        (c2 & 0xC0) != 0x80 ||
+        (c3 & 0xC0) != 0x80) {
+      return false;
+    }
+    *codepoint = ((c0 & 0x07) << 18) |
+                 ((c1 & 0x3F) << 12) |
+                 ((c2 & 0x3F) << 6) |
+                 (c3 & 0x3F);
+    *index += 4;
+    return true;
+  }
+
+  return false;
+}
+
+void ZenzPromptBuilder::AppendUtf8(char32_t codepoint, std::string* output) {
+  if (codepoint <= 0x7F) {
+    output->push_back(static_cast<char>(codepoint));
+  } else if (codepoint <= 0x7FF) {
+    output->push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
+    output->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  } else if (codepoint <= 0xFFFF) {
+    output->push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
+    output->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+    output->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  } else {
+    output->push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
+    output->push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+    output->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+    output->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  }
+}
+
+std::string ZenzPromptBuilder::HiraganaToKatakana(
+    absl::string_view input) const {
+  std::string output;
+  output.reserve(input.size());
+
+  size_t index = 0;
+  while (index < input.size()) {
+    const size_t old_index = index;
+    char32_t cp = 0;
+    if (!DecodeOneUtf8(input, &index, &cp)) {
+      output.append(input.substr(old_index));
+      break;
+    }
+
+    // Hiragana U+3041..U+3096 -> Katakana U+30A1..U+30F6
+    if (0x3041 <= cp && cp <= 0x3096) {
+      cp += 0x60;
+    }
+
+    AppendUtf8(cp, &output);
+  }
+
+  return output;
+}
+
+std::string ZenzPromptBuilder::Build(
+    absl::string_view left_context,
+    absl::string_view reading_hiragana) const {
+  std::string prompt;
+  const std::string reading_katakana = HiraganaToKatakana(reading_hiragana);
+
+  prompt.reserve(sizeof(kZenzContextBegin) - 1 +
+                 left_context.size() +
+                 sizeof(kZenzReadingBegin) - 1 +
+                 reading_katakana.size() +
+                 sizeof(kZenzOutputBegin) - 1);
+
+  prompt.append(kZenzContextBegin);
+  prompt.append(left_context.data(), left_context.size());
+  prompt.append(kZenzReadingBegin);
+  prompt.append(reading_katakana);
+  prompt.append(kZenzOutputBegin);
+
+  return prompt;
+}
+
+}  // namespace session
+}  // namespace mozc

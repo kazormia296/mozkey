@@ -340,6 +340,89 @@ void Converter::FinishConversion(const ConversionRequest& request,
   }
 }
 
+bool Converter::LearnExternalConversionResult(
+    const ConversionRequest& request,
+    absl::string_view key,
+    absl::string_view value) const {
+  key = absl::StripAsciiWhitespace(key);
+  value = absl::StripAsciiWhitespace(value);
+
+  constexpr size_t kMinKeyChars = 2;
+  constexpr size_t kMaxKeyChars = 128;
+  constexpr size_t kMaxValueChars = 128;
+  constexpr size_t kMaxValueBytes = 512;
+
+  if (key.empty() || value.empty()) {
+    return false;
+  }
+
+  if (!Util::IsValidUtf8(key) || !Util::IsValidUtf8(value)) {
+    return false;
+  }
+
+  if (Util::CharsLen(key) < kMinKeyChars ||
+      Util::CharsLen(key) > kMaxKeyChars ||
+      Util::CharsLen(value) > kMaxValueChars ||
+      value.size() > kMaxValueBytes) {
+    return false;
+  }
+
+  // Do not persist multi-line or TSV-breaking generated text.
+  if (key.find('\t') != absl::string_view::npos ||
+      key.find('\r') != absl::string_view::npos ||
+      key.find('\n') != absl::string_view::npos ||
+      value.find('\t') != absl::string_view::npos ||
+      value.find('\r') != absl::string_view::npos ||
+      value.find('\n') != absl::string_view::npos) {
+    return false;
+  }
+
+  if (request.request_type() != ConversionRequest::CONVERSION) {
+    return false;
+  }
+
+  if (request.incognito_mode()) {
+    return false;
+  }
+
+  if (!request.options().enable_user_history_for_conversion) {
+    return false;
+  }
+
+  if (request.config().history_learning_level() !=
+      config::Config::DEFAULT_HISTORY) {
+    return false;
+  }
+
+  Segments learning_segments;
+  learning_segments.InitForCommit(key, value);
+
+  if (learning_segments.conversion_segments_size() != 1) {
+    return false;
+  }
+
+  Segment* segment = learning_segments.mutable_conversion_segment(0);
+  if (segment->candidates_size() == 0) {
+    return false;
+  }
+
+  segment->set_segment_type(Segment::FIXED_VALUE);
+
+  Candidate* candidate = segment->mutable_candidate(0);
+  candidate->key.assign(key.data(), key.size());
+  candidate->content_key.assign(key.data(), key.size());
+  candidate->value.assign(value.data(), value.size());
+  candidate->content_value.assign(value.data(), value.size());
+
+  // Mark this as a user-selected non-default result.  UserSegmentHistoryRewriter
+  // uses RERANKED to force trigger-key insertion, which is important for
+  // recalling an externally generated candidate later.
+  candidate->attributes |= Attribute::RERANKED;
+
+  FinishConversion(request, &learning_segments);
+  return true;
+}
+
 void Converter::CancelConversion(Segments* segments) const {
   segments->clear_conversion_segments();
 }

@@ -170,6 +170,18 @@
       <ComponentRef Id="SysProcs" />
       <ComponentRef Id="PrelaunchProcesses" />
       <ComponentRef Id="CreditsEn" />
+
+      <ComponentRef Id="ZenzScorer" />
+      <ComponentRef Id="ZenzLlamaServer" />
+      <ComponentRef Id="ZenzGgmlDll" />
+      <ComponentRef Id="ZenzGgmlBaseDll" />
+      <ComponentRef Id="ZenzGgmlCpuDll" />
+      <ComponentRef Id="ZenzLlamaDll" />
+      <ComponentRef Id="ZenzModel" />
+      <ComponentRef Id="ZenzThirdPartyNotices" />
+      <ComponentRef Id="ZenzApacheLicense" />
+      <ComponentRef Id="ZenzLlamaCppMitLicense" />
+      <ComponentRef Id="ZenzModelNotice" />
     </Feature>
 
     <Binary Id="mozc_installer_helper.dll" SourceFile="$(var.CustomActions64Path)" />
@@ -239,7 +251,7 @@
       <Custom Action="InstallMozcFirewallRules" Before="InitialInstallationCommit" Condition="(NOT (REMOVE=&quot;ALL&quot;))" />
       <Custom Action="InitialInstallationCommit" Before="FixupConfigFilePermission" Condition="(NOT (REMOVE=&quot;ALL&quot;)) AND (NOT UPGRADING)" />
       <Custom Action="FixupConfigFilePermission" Before="EnableTipProfile" Condition="NOT (REMOVE=&quot;ALL&quot;)" />
-      <Custom Action="EnableTipProfile" Before="InstallFinalize" Condition="(NOT (REMOVE=&quot;ALL&quot;)) AND (NOT UPGRADING)" />
+      <Custom Action="EnableTipProfile" Before="InstallFinalize" Condition="NOT (REMOVE=&quot;ALL&quot;)" />
       <!-- show reboot dialog to execute pending file opartions -->
       <?if ($(var.VSConfigurationName) = "Release") ?>
         <ScheduleReboot After="InstallFinalize" Condition="(REMOVE=&quot;ALL&quot;)" />
@@ -249,9 +261,10 @@
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="MozcDir" Name="Mozc">
         <Component Id="MozcConverter">
-          <File Id="mozc_server.exe" Name="mozc_server.exe" DiskId="1" Checksum="yes" Source="$(var.MozcServer64Path)" Vital="yes" />
+          <File Id="mozc_server.exe" Name="mozc_server.exe" DiskId="1" Checksum="yes" Source="$(var.MozcServer64Path)" Vital="yes" KeyPath="yes" />
         </Component>
         <Component Id="MozcCacheService">
+          <!-- Always overwrite runtime binary during install/reinstall. -->
           <File Id="mozc_cache_service.exe" Name="mozc_cache_service.exe" DiskId="1" Checksum="yes" Source="$(var.MozcCacheService64Path)" Vital="yes" KeyPath="yes" />
           <!--
             To use localized description, set Description as follows:
@@ -301,14 +314,55 @@
           </Component>
         <?endif?>
         <Component Id="MozcBroker" Permanent="no">
-          <File Id="mozc_broker.exe" Name="mozc_broker.exe" DiskId="1" Checksum="yes" Source="$(var.MozcBroker64Path)" Vital="yes" />
+          <File Id="mozc_broker.exe" Name="mozc_broker.exe" DiskId="1" Checksum="yes" Source="$(var.MozcBroker64Path)" Vital="yes" KeyPath="yes" />
         </Component>
         <Component Id="MozcRenderer">
-          <File Id="mozc_renderer.exe" Name="mozc_renderer.exe" DiskId="1" Vital="yes" Checksum="yes" Source="$(var.MozcRenderer64Path)" />
+          <File Id="mozc_renderer.exe" Name="mozc_renderer.exe" DiskId="1" Vital="yes" Checksum="yes" Source="$(var.MozcRenderer64Path)" KeyPath="yes" />
         </Component>
         <Component Id="MozcTool">
-          <File Id="mozc_tool.exe" Name="mozc_tool.exe" DiskId="1" Checksum="yes" Source="$(var.MozcToolPath)" Vital="yes" />
+          <File Id="mozc_tool.exe" Name="mozc_tool.exe" DiskId="1" Checksum="yes" Source="$(var.MozcToolPath)" Vital="yes" KeyPath="yes" />
         </Component>
+
+        <Component Id="ZenzScorer">
+          <File Id="mozc_zenz_scorer_exe" Name="mozc_zenz_scorer.exe" DiskId="1" Checksum="yes" Source="$(var.ZenzScorerPath)" Vital="yes" KeyPath="yes" />
+        </Component>
+        <Component Id="ZenzLlamaServer">
+          <File Id="llama_server_exe" Name="llama-server.exe" DiskId="1" Checksum="yes" Source="$(var.ZenzLlamaServerPath)" Vital="yes" KeyPath="yes" />
+        </Component>
+        <Component Id="ZenzGgmlDll">
+          <File Id="ggml_dll" Name="ggml.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzGgmlDllPath)" Vital="yes" KeyPath="yes" />
+        </Component>
+        <Component Id="ZenzGgmlBaseDll">
+          <File Id="ggml_base_dll" Name="ggml-base.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzGgmlBaseDllPath)" Vital="yes" KeyPath="yes" />
+        </Component>
+        <Component Id="ZenzGgmlCpuDll">
+          <File Id="ggml_cpu_dll" Name="ggml-cpu.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzGgmlCpuDllPath)" Vital="yes" KeyPath="yes" />
+        </Component>
+        <Component Id="ZenzLlamaDll">
+          <File Id="llama_dll" Name="llama.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzLlamaDllPath)" Vital="yes" KeyPath="yes" />
+        </Component>
+
+        <Directory Id="ZenzModelsDir" Name="models">
+          <Component Id="ZenzModel">
+            <File Id="zenz_v3_2_small_Q5_K_M_gguf" Name="zenz-v3.2-small-Q5_K_M.gguf" DiskId="1" Source="$(var.ZenzModelPath)" Vital="yes" KeyPath="yes" />
+          </Component>
+        </Directory>
+
+        <Directory Id="ZenzLicensesDir" Name="licenses">
+          <Component Id="ZenzThirdPartyNotices">
+            <File Id="zenz_third_party_notices_md" Name="THIRD_PARTY_NOTICES.md" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\THIRD_PARTY_NOTICES.md" Vital="yes" KeyPath="yes" />
+          </Component>
+          <Component Id="ZenzApacheLicense">
+            <File Id="zenz_apache_2_0_txt" Name="Apache-2.0.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\Apache-2.0.txt" Vital="yes" KeyPath="yes" />
+          </Component>
+          <Component Id="ZenzLlamaCppMitLicense">
+            <File Id="zenz_llama_cpp_mit_txt" Name="llama.cpp-MIT.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\llama.cpp-MIT.txt" Vital="yes" KeyPath="yes" />
+          </Component>
+          <Component Id="ZenzModelNotice">
+            <File Id="zenz_model_notice_txt" Name="zenz-v3.2-small-gguf.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\zenz-v3.2-small-gguf.txt" Vital="yes" KeyPath="yes" />
+          </Component>
+        </Directory>
+
         <?if $(var.VSConfigurationName) = "Release" ?>
           <Component Id="msvcp140">
             <File Id="msvcp140.dll" Name="msvcp140.dll" DiskId="1" Checksum="yes" Source="$(var.ReleaseRedistCrt64Dir)/msvcp140.dll" />

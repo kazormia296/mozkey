@@ -73,6 +73,10 @@
 #include "testing/test_peer.h"
 #include "transliteration/transliteration.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 namespace mozc {
 
 namespace session {
@@ -84,9 +88,29 @@ class SessionTestPeer : testing::TestPeer<Session> {
 
   PEER_METHOD(IsFullWidthInsertSpace);
   PEER_METHOD(PushUndoContext);
+  PEER_METHOD(MaybeApplyZenzFeedbackLiveCorrection);
+  PEER_METHOD(SetPendingZenzFeedbackAccepted);
+  PEER_METHOD(SetPendingZenzFeedbackRejected);
+  PEER_METHOD(DiscardPendingZenzFeedback);
+  PEER_METHOD(HandlePendingZenzFeedbackForKeyEvent);
+  PEER_METHOD(SetPendingDirectCommitLearningFromCommittedResult);
+  PEER_METHOD(ConfirmPendingDirectCommitLearning);
+  PEER_METHOD(DiscardPendingDirectCommitLearning);
+  PEER_METHOD(HandlePendingDirectCommitLearningForKeyEvent);
+  PEER_METHOD(HandlePendingDirectCommitLearningForSessionCommand);
 
   PEER_VARIABLE(context_);
   PEER_VARIABLE(undo_contexts_);
+  PEER_VARIABLE(live_conversion_active_);
+  PEER_VARIABLE(live_conversion_key_);
+  PEER_VARIABLE(live_conversion_value_);
+  PEER_VARIABLE(zenz_live_key_);
+  PEER_VARIABLE(zenz_live_value_);
+  PEER_VARIABLE(zenz_live_mozc_value_);
+  PEER_VARIABLE(zenz_live_context_class_);
+  PEER_VARIABLE(zenz_feedback_store_);
+  PEER_VARIABLE(pending_zenz_feedback_);
+  PEER_VARIABLE(pending_direct_commit_learning_);
 };
 
 namespace {
@@ -96,6 +120,98 @@ using ::testing::DoAll;
 using ::testing::Mock;
 using ::testing::Return;
 using ::testing::SetArgPointee;
+
+#if defined(_WIN32)
+
+std::wstring JoinPathForZenzFeedbackSessionTest(
+    const std::wstring& lhs,
+    const std::wstring& rhs) {
+  if (lhs.empty()) {
+    return rhs;
+  }
+  if (lhs.back() == L'\\') {
+    return lhs + rhs;
+  }
+  return lhs + L"\\" + rhs;
+}
+
+bool EnsureDirectoryForZenzFeedbackSessionTest(const std::wstring& path) {
+  if (::CreateDirectoryW(path.c_str(), nullptr)) {
+    return true;
+  }
+  return ::GetLastError() == ERROR_ALREADY_EXISTS;
+}
+
+class ScopedUserProfileForZenzFeedbackSessionTest {
+ public:
+  ScopedUserProfileForZenzFeedbackSessionTest() {
+    wchar_t old_profile[32767] = {};
+    const DWORD old_len =
+        ::GetEnvironmentVariableW(L"USERPROFILE", old_profile, 32767);
+    if (old_len > 0 && old_len < 32767) {
+      has_old_profile_ = true;
+      old_profile_.assign(old_profile, old_len);
+    }
+
+    wchar_t temp_path[MAX_PATH] = {};
+    const DWORD temp_len = ::GetTempPathW(MAX_PATH, temp_path);
+    if (temp_len == 0 || temp_len >= MAX_PATH) {
+      return;
+    }
+
+    profile_dir_ =
+        std::wstring(temp_path, temp_len) +
+        L"mozc_zenz_feedback_session_test_" +
+        std::to_wstring(::GetCurrentProcessId()) + L"_" +
+        std::to_wstring(::GetTickCount64());
+
+    const std::wstring app_data_dir =
+        JoinPathForZenzFeedbackSessionTest(profile_dir_, L"AppData");
+    const std::wstring local_low_dir =
+        JoinPathForZenzFeedbackSessionTest(app_data_dir, L"LocalLow");
+
+    if (!EnsureDirectoryForZenzFeedbackSessionTest(profile_dir_) ||
+        !EnsureDirectoryForZenzFeedbackSessionTest(app_data_dir) ||
+        !EnsureDirectoryForZenzFeedbackSessionTest(local_low_dir)) {
+      return;
+    }
+
+    ok_ = ::SetEnvironmentVariableW(L"USERPROFILE", profile_dir_.c_str());
+  }
+
+  ~ScopedUserProfileForZenzFeedbackSessionTest() {
+    if (has_old_profile_) {
+      ::SetEnvironmentVariableW(L"USERPROFILE", old_profile_.c_str());
+    } else {
+      ::SetEnvironmentVariableW(L"USERPROFILE", nullptr);
+    }
+
+    const std::wstring app_data_dir =
+        JoinPathForZenzFeedbackSessionTest(profile_dir_, L"AppData");
+    const std::wstring local_low_dir =
+        JoinPathForZenzFeedbackSessionTest(app_data_dir, L"LocalLow");
+    const std::wstring mozc_dir =
+        JoinPathForZenzFeedbackSessionTest(local_low_dir, L"Mozc");
+    const std::wstring feedback_path =
+        JoinPathForZenzFeedbackSessionTest(mozc_dir, L"zenz_feedback.tsv");
+
+    ::DeleteFileW(feedback_path.c_str());
+    ::RemoveDirectoryW(mozc_dir.c_str());
+    ::RemoveDirectoryW(local_low_dir.c_str());
+    ::RemoveDirectoryW(app_data_dir.c_str());
+    ::RemoveDirectoryW(profile_dir_.c_str());
+  }
+
+  bool ok() const { return ok_; }
+
+ private:
+  bool ok_ = false;
+  bool has_old_profile_ = false;
+  std::wstring old_profile_;
+  std::wstring profile_dir_;
+};
+
+#endif  // defined(_WIN32)
 
 void SetSendKeyCommandWithKeyString(const absl::string_view key_string,
                                     commands::Command* command) {
@@ -524,6 +640,24 @@ class SessionTest : public testing::TestWithTempUserProfile {
     return mock_converter;
   }
 
+  void EnableZenzFeedbackLearning(Session* session) {
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_zenz_feedback_learning(true);
+    session->SetConfig(config);
+  }
+
+  void EnableZenzLiveCorrectionWithFeedbackLearning(Session* session) {
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_use_zenz_live_correction(true);
+    config.set_use_zenz_feedback_learning(true);
+    config.set_use_zenz_synthetic_candidate(true);
+    config.set_zenz_live_correction_min_key_length(2);
+    session->SetConfig(config);
+  }
+
   // TODO(matsuzakit): Set the session's state to PRECOMPOSITION.
   // Though the method name asserts "ToPrecomposition",
   // this method doesn't change session's state.
@@ -765,6 +899,329 @@ TEST_F(SessionTest, TestOfTestForSetup) {
     EXPECT_SINGLE_SEGMENT("あ", command)
         << "Global Romaji table should be initialized for each test fixture.";
   }
+}
+
+TEST_F(SessionTest, PendingZenzFeedbackIsConfirmedByNextTextInput) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かれはてんてきです", "", "彼は天敵です");
+
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+
+  commands::Command command;
+  SendKey("a", &session, &command);
+
+  EXPECT_FALSE(session_peer.pending_zenz_feedback_().pending);
+}
+
+TEST_F(SessionTest, PendingZenzFeedbackIsDiscardedByBackspace) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かれはてんてきです", "", "彼は天敵です");
+
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+
+  commands::Command command;
+  SendSpecialKey(commands::KeyEvent::BACKSPACE, &session, &command);
+
+  EXPECT_FALSE(session_peer.pending_zenz_feedback_().pending);
+}
+
+TEST_F(SessionTest, PendingZenzFeedbackSurvivesPureModifierKey) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かれはてんてきです", "", "彼は天敵です");
+
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+
+  commands::Command command;
+  SendKey("Shift", &session, &command);
+
+  EXPECT_TRUE(session_peer.pending_zenz_feedback_().pending);
+}
+
+TEST_F(SessionTest, PendingZenzFeedbackStoresContextClassOnly) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かれはてんてきです", "sensitive_like", "彼は天敵です");
+
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+  EXPECT_EQ(session_peer.pending_zenz_feedback_().context_class,
+            "sensitive_like");
+  EXPECT_EQ(session_peer.pending_zenz_feedback_().key,
+            "かれはてんてきです");
+  EXPECT_EQ(session_peer.pending_zenz_feedback_().value,
+            "彼は天敵です");
+
+  EXPECT_EQ(
+      session_peer.pending_zenz_feedback_().context_class.find("hunter2"),
+      std::string::npos);
+}
+
+#if defined(_WIN32)
+
+TEST_F(SessionTest,
+       ZenzFeedbackFastPathAppliesAcceptedCandidateAsLiveCorrection) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzLiveCorrectionWithFeedbackLearning(&session);
+
+  session_peer.zenz_feedback_store_().RecordAccepted(
+      "かれはてんてきです",
+      "japanese_only",
+      "彼は天敵です");
+  ASSERT_FALSE(session_peer.zenz_feedback_store_().ListEntries().empty());
+
+  session_peer.context_()->set_state(ImeContext::CONVERSION);
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "かれはてんてきです";
+  session_peer.live_conversion_value_() = "彼は点滴です";
+
+  commands::Command command;
+  EXPECT_TRUE(session_peer.MaybeApplyZenzFeedbackLiveCorrection(&command));
+
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_FALSE(command.output().live_conversion_pending());
+  EXPECT_FALSE(command.output().zenz_live_correction_pending());
+  EXPECT_TRUE(command.output().zenz_live_correction_applied());
+  EXPECT_FALSE(command.output().has_callback());
+  EXPECT_SINGLE_SEGMENT_AND_KEY("彼は天敵です",
+                                "かれはてんてきです",
+                                command);
+
+  EXPECT_EQ(session_peer.zenz_live_key_(), "かれはてんてきです");
+  EXPECT_EQ(session_peer.zenz_live_value_(), "彼は天敵です");
+  EXPECT_EQ(session_peer.zenz_live_mozc_value_(), "彼は点滴です");
+  EXPECT_EQ(session_peer.zenz_live_context_class_(), "empty");
+}
+
+TEST_F(SessionTest,
+       ZenzFeedbackFastPathDoesNotApplySameValueAsMozc) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzLiveCorrectionWithFeedbackLearning(&session);
+
+  session_peer.zenz_feedback_store_().RecordAccepted(
+      "かれはてんてきです",
+      "japanese_only",
+      "彼は点滴です");
+  ASSERT_FALSE(session_peer.zenz_feedback_store_().ListEntries().empty());
+
+  session_peer.context_()->set_state(ImeContext::CONVERSION);
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "かれはてんてきです";
+  session_peer.live_conversion_value_() = "彼は点滴です";
+
+  commands::Command command;
+  EXPECT_FALSE(session_peer.MaybeApplyZenzFeedbackLiveCorrection(&command));
+
+  EXPECT_FALSE(command.output().zenz_live_correction_applied());
+  EXPECT_TRUE(session_peer.zenz_live_key_().empty());
+  EXPECT_TRUE(session_peer.zenz_live_value_().empty());
+}
+
+TEST_F(SessionTest,
+       ZenzFeedbackFastPathDoesNotPromoteSensitiveLikeFeedback) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzLiveCorrectionWithFeedbackLearning(&session);
+
+  session_peer.zenz_feedback_store_().RecordAccepted(
+      "かれはてんてきです",
+      "sensitive_like",
+      "彼は天敵です");
+  session_peer.zenz_feedback_store_().RecordAccepted(
+      "かれはてんてきです",
+      "sensitive_like",
+      "彼は天敵です");
+  session_peer.zenz_feedback_store_().RecordAccepted(
+      "かれはてんてきです",
+      "sensitive_like",
+      "彼は天敵です");
+  ASSERT_FALSE(session_peer.zenz_feedback_store_().ListEntries().empty());
+
+  session_peer.context_()->set_state(ImeContext::CONVERSION);
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "かれはてんてきです";
+  session_peer.live_conversion_value_() = "彼は点滴です";
+
+  commands::Command command;
+  EXPECT_FALSE(session_peer.MaybeApplyZenzFeedbackLiveCorrection(&command));
+
+  EXPECT_FALSE(command.output().zenz_live_correction_applied());
+  EXPECT_TRUE(session_peer.zenz_live_key_().empty());
+  EXPECT_TRUE(session_peer.zenz_live_value_().empty());
+}
+
+#endif  // defined(_WIN32)
+
+TEST_F(SessionTest, PendingDirectCommitLearningIsConfirmedByNextTextInput) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  EXPECT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+  EXPECT_EQ(session_peer.pending_direct_commit_learning_().key, "あめ");
+  EXPECT_EQ(session_peer.pending_direct_commit_learning_().value, "雨");
+  EXPECT_EQ(session_peer.pending_direct_commit_learning_().reason,
+            "test_direct_commit");
+  EXPECT_NE(session_peer.pending_direct_commit_learning_().revert_context,
+            nullptr);
+
+  commands::KeyEvent key;
+  key.set_key_code('a');
+
+  session_peer.HandlePendingDirectCommitLearningForKeyEvent(key);
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest, PendingDirectCommitLearningIsDiscardedByBackspace) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  EXPECT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  commands::KeyEvent key;
+  key.set_special_key(commands::KeyEvent::BACKSPACE);
+
+  session_peer.HandlePendingDirectCommitLearningForKeyEvent(key);
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest, PendingDirectCommitLearningIsDiscardedByEscape) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  EXPECT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  commands::KeyEvent key;
+  key.set_special_key(commands::KeyEvent::ESCAPE);
+
+  session_peer.HandlePendingDirectCommitLearningForKeyEvent(key);
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest, PendingDirectCommitLearningIsDiscardedBySessionCommand) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  EXPECT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  session_peer.HandlePendingDirectCommitLearningForSessionCommand(
+      commands::SessionCommand::REVERT);
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest, PendingDirectCommitLearningIgnoresEmptyResult) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+
+  EXPECT_FALSE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
 }
 
 TEST_F(SessionTest, TestSendKey) {

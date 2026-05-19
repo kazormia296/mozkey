@@ -45,9 +45,47 @@ load("//bazel:run_build_tool.bzl", "mozc_run_build_tool")
 package(default_visibility = ["//visibility:private"])
 
 mozc_cc_library(
+    name = "zenz_feedback_store",
+    srcs = ["zenz_feedback_store.cc"],
+    hdrs = ["zenz_feedback_store.h"],
+    visibility = [
+        "//gui/config_dialog:__pkg__",
+        "//rewriter:__pkg__",
+        "//session:__pkg__",
+    ],
+    deps = [
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_test(
+    name = "zenz_feedback_store_test",
+    size = "small",
+    srcs = ["zenz_feedback_store_test.cc"],
+    deps = [
+        ":zenz_feedback_store",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_library(
     name = "session",
-    srcs = ["session.cc"],
-    hdrs = ["session.h"],
+    srcs = [
+        "session.cc",
+        "zenz_context_sanitizer.cc",
+        "zenz_live_corrector.cc",
+        "zenz_named_pipe_client.cc",
+        "zenz_output_validator.cc",
+        "zenz_prompt_builder.cc",
+    ],
+    hdrs = [
+        "session.h",
+        "zenz_context_sanitizer.h",
+        "zenz_live_corrector.h",
+        "zenz_named_pipe_client.h",
+        "zenz_output_validator.h",
+        "zenz_prompt_builder.h",
+    ],
     visibility = [
         "//evaluation/candidates_diff_checker:__pkg__",
     ],
@@ -55,6 +93,7 @@ mozc_cc_library(
         ":ime_context",
         ":key_event_transformer",
         ":keymap",
+        ":zenz_feedback_store",
         "//base:clock",
         "//base:util",
         "//composer",

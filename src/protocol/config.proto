@@ -323,6 +323,41 @@ message Config {
   // If this value is 0, live conversion is applied immediately.
   optional uint32 live_conversion_delay_msec = 70 [default = 228];
 
+  // Experimental: use asynchronous zenz live correction after normal live
+  // conversion. This is intentionally default-off until the feature is verified.
+  optional bool use_zenz_live_correction = 1003 [default = false];
+
+  // Debounce in milliseconds before submitting a zenz live correction request
+  // after normal live conversion has become visible.
+  optional uint32 zenz_live_correction_delay_msec = 1004 [default = 1000];
+
+  // Timeout in milliseconds for one zenz live correction request.
+  optional uint32 zenz_live_correction_timeout_msec = 1005 [default = 180];
+
+  // Minimum reading length in Unicode characters before zenz is allowed to run.
+  optional uint32 zenz_live_correction_min_key_length = 1006 [default = 2];
+
+  // Maximum left context length in Unicode characters.
+  // The runtime sanitizer may further drop this context when it looks sensitive.
+  optional uint32 zenz_live_correction_left_context_length = 1007 [default = 24];
+
+  // Allow zenz output not found in Mozc candidates to be shown as a synthetic
+  // live preedit. v0 uses this only for live preedit display, not dictionary
+  // registration.
+  optional bool use_zenz_synthetic_candidate = 1008 [default = true];
+
+  // Windows named pipe endpoint for zenz_scorer.exe.
+  optional string zenz_live_correction_pipe_name = 1009
+      [default = "\\\\.\\pipe\\mozc_zenz_scorer"];
+
+  // Debug logging for zenz live correction.
+  optional bool zenz_live_correction_debug = 1010 [default = false];
+
+  // Experimental: record and reuse local feedback for zenz live correction.
+  // This stores only local TSV data and never sends feedback outside the machine.
+  // Raw left context is not stored.
+  optional bool use_zenz_feedback_learning = 1011 [default = false];
+
   //////////////////////////////////////////////////////////////
   //
   // Dictionary (80-99)

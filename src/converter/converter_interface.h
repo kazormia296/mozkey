@@ -86,6 +86,17 @@ class ConverterInterface {
   virtual void FinishConversion(const ConversionRequest& request,
                                 Segments* segments) const = 0;
 
+  // Learns an externally committed conversion result, such as a Zenz-generated
+  // candidate accepted by the user.  The default implementation is a no-op so
+  // lightweight converter implementations are not forced to support it.
+  [[nodiscard]]
+  virtual bool LearnExternalConversionResult(
+      const ConversionRequest& request,
+      absl::string_view key,
+      absl::string_view value) const {
+    return false;
+  }
+
   // Clear segments and keep the context
   virtual void CancelConversion(Segments* segments) const = 0;
 

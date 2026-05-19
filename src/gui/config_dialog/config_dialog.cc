@@ -30,7 +30,19 @@
 // Qt component of configure dialog for Mozc
 #include "gui/config_dialog/config_dialog.h"
 
+#include <QAbstractItemView>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFileDialog>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QTableWidget>
+#include <QTableWidgetItem>
+#include <QVBoxLayout>
 #include <algorithm>
 #include <cstdint>
 #include <istream>
@@ -38,6 +50,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #include <msctf.h>
@@ -46,11 +59,11 @@
 
 #include <QColor>
 #include <QColorDialog>
-#include <QPushButton>
 #include <QScrollArea>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/strings/string_view.h"
 #include "base/config_file_stream.h"
 #include "client/client.h"
 #include "config/config_handler.h"
@@ -59,6 +72,7 @@
 #include "gui/config_dialog/roman_table_editor.h"
 #include "protocol/config.pb.h"
 #include "session/keymap.h"
+#include "session/zenz_feedback_store.h"
 
 #if defined(__ANDROID__) || defined(__wasm__)
 #error "This platform is not supported."
@@ -174,6 +188,15 @@ ConfigDialog::ConfigDialog()
   liveConversionDelaySpinBox->setSuffix(QString::fromUtf8(" ms"));
   liveConversionDelaySpinBox->setSpecialValueText(QString::fromUtf8("即時"));
 
+  zenzLiveCorrectionDelaySpinBox->setRange(0, 5000);
+  zenzLiveCorrectionDelaySpinBox->setSingleStep(100);
+  zenzLiveCorrectionDelaySpinBox->setSuffix(QString::fromUtf8(" ms"));
+  zenzLiveCorrectionDelaySpinBox->setSpecialValueText(QString::fromUtf8("即時"));
+
+  zenzLiveCorrectionMinKeyLengthSpinBox->setRange(2, 20);
+  zenzLiveCorrectionMinKeyLengthSpinBox->setSingleStep(1);
+  zenzLiveCorrectionMinKeyLengthSpinBox->setSuffix(QString::fromUtf8(" 文字"));
+
   punctuationsSettingComboBox->addItem(QString::fromUtf8("、。"));
   punctuationsSettingComboBox->addItem(QString::fromUtf8("，．"));
   punctuationsSettingComboBox->addItem(QString::fromUtf8("、．"));
@@ -264,6 +287,8 @@ ConfigDialog::ConfigDialog()
                    SLOT(ClearUserPrediction()));
   QObject::connect(clearUnusedUserPredictionButton, SIGNAL(clicked()), this,
                    SLOT(ClearUnusedUserPrediction()));
+  QObject::connect(editZenzFeedbackButton, SIGNAL(clicked()), this,
+                   SLOT(EditZenzFeedback()));
   QObject::connect(editUserDictionaryButton, SIGNAL(clicked()), this,
                    SLOT(EditUserDictionary()));
   QObject::connect(editKeymapButton, SIGNAL(clicked()), this,
@@ -274,6 +299,10 @@ ConfigDialog::ConfigDialog()
                    SLOT(EditRomanTable()));
   QObject::connect(inputModeComboBox, SIGNAL(currentIndexChanged(int)), this,
                    SLOT(SelectInputModeSetting(int)));
+  QObject::connect(liveConversionCheckBox, SIGNAL(stateChanged(int)), this,
+                   SLOT(SelectLiveConversionSetting(int)));
+  QObject::connect(zenzLiveCorrectionCheckBox, SIGNAL(stateChanged(int)), this,
+                   SLOT(SelectZenzLiveCorrectionSetting(int)));
   QObject::connect(useAutoConversion, SIGNAL(stateChanged(int)), this,
                    SLOT(SelectAutoConversionSetting(int)));
   QObject::connect(useDirectCommit, SIGNAL(stateChanged(int)), this,
@@ -403,6 +432,8 @@ void ConfigDialog::Reload() {
   }
   ConvertFromProto(config);
 
+  SelectLiveConversionSetting(
+      static_cast<int>(liveConversionCheckBox->isChecked()));
   SelectAutoConversionSetting(static_cast<int>(useAutoConversion->isChecked()));
   SelectDirectCommitSetting(static_cast<int>(useDirectCommit->isChecked()));
   initial_preedit_method_ = static_cast<int>(config.preedit_method());
@@ -602,6 +633,14 @@ namespace {
 
 static constexpr int kPreeditMethodSize = 2;
 
+constexpr uint32_t kDefaultLiveConversionDelayMsec = 228;
+constexpr uint32_t kMaxLiveConversionDelayMsec = 1000;
+constexpr uint32_t kDefaultZenzLiveCorrectionDelayMsec = 1000;
+constexpr uint32_t kMaxZenzLiveCorrectionDelayMsec = 5000;
+constexpr uint32_t kDefaultZenzLiveCorrectionMinKeyLength = 2;
+constexpr uint32_t kMinZenzLiveCorrectionMinKeyLength = 2;
+constexpr uint32_t kMaxZenzLiveCorrectionMinKeyLength = 20;
+
 constexpr uint32_t kDefaultInputPreeditTextColor = 0xff5000;
 constexpr uint32_t kDefaultInputPreeditBackgroundColor = 0xffffcc;
 constexpr uint32_t kDefaultInputPreeditUnderlineColor = 0xff0000;
@@ -657,6 +696,375 @@ uint32_t GetColorButtonRgb(const QPushButton *button,
   }
 
   return value.toUInt();
+}
+
+QString ToQString(absl::string_view s) {
+  return QString::fromUtf8(s.data(), static_cast<int>(s.size()));
+}
+
+QString FeedbackReasonLabel(absl::string_view reason) {
+  if (reason == "feedback_preferred") {
+    return QString::fromUtf8("優先");
+  }
+  if (reason == "feedback_rejected") {
+    return QString::fromUtf8("却下優勢");
+  }
+  return QString::fromUtf8("中立");
+}
+
+void SetTableItem(QTableWidget* table,
+                  int row,
+                  int column,
+                  const QString& text) {
+  QTableWidgetItem* item = new QTableWidgetItem(text);
+  item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+  table->setItem(row, column, item);
+}
+
+void ShowJapaneseInformation(QWidget* parent,
+                             const QString& title,
+                             const QString& text) {
+  QMessageBox message_box(parent);
+  message_box.setWindowTitle(title);
+  message_box.setIcon(QMessageBox::Information);
+  message_box.setText(text);
+
+  QPushButton* ok_button =
+      message_box.addButton(QString::fromUtf8("OK"),
+                            QMessageBox::AcceptRole);
+  message_box.setDefaultButton(ok_button);
+  message_box.exec();
+}
+
+void ShowJapaneseCritical(QWidget* parent,
+                          const QString& title,
+                          const QString& text) {
+  QMessageBox message_box(parent);
+  message_box.setWindowTitle(title);
+  message_box.setIcon(QMessageBox::Critical);
+  message_box.setText(text);
+
+  QPushButton* ok_button =
+      message_box.addButton(QString::fromUtf8("OK"),
+                            QMessageBox::AcceptRole);
+  message_box.setDefaultButton(ok_button);
+  message_box.exec();
+}
+
+void ShowZenzFeedbackManagementDialog(QWidget* parent) {
+  QDialog dialog(parent);
+  dialog.setWindowTitle(QString::fromUtf8("Zenz 学習データの管理"));
+  dialog.resize(760, 440);
+
+  session::ZenzFeedbackStore store;
+
+  QVBoxLayout* root_layout = new QVBoxLayout(&dialog);
+
+  QLabel* description_label = new QLabel(
+      QString::fromUtf8(
+          "Zenz 補正結果のローカル学習データを管理します。"
+          "TSV ファイルを直接開かず、安全な操作だけを行います。"),
+      &dialog);
+  description_label->setWordWrap(true);
+  root_layout->addWidget(description_label);
+
+  QHBoxLayout* search_layout = new QHBoxLayout;
+  QLabel* search_label = new QLabel(QString::fromUtf8("検索:"), &dialog);
+  QLineEdit* search_edit = new QLineEdit(&dialog);
+  search_edit->setPlaceholderText(
+      QString::fromUtf8("読み、候補、文脈クラスで絞り込み"));
+  search_layout->addWidget(search_label);
+  search_layout->addWidget(search_edit);
+  root_layout->addLayout(search_layout);
+
+  QTableWidget* table = new QTableWidget(&dialog);
+  table->setColumnCount(6);
+  table->setHorizontalHeaderLabels(QStringList()
+                                   << QString::fromUtf8("読み")
+                                   << QString::fromUtf8("候補")
+                                   << QString::fromUtf8("文脈クラス")
+                                   << QString::fromUtf8("採用")
+                                   << QString::fromUtf8("却下")
+                                   << QString::fromUtf8("判定"));
+  table->setSelectionBehavior(QAbstractItemView::SelectRows);
+  table->setSelectionMode(QAbstractItemView::SingleSelection);
+  table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  table->horizontalHeader()->setStretchLastSection(true);
+  root_layout->addWidget(table);
+
+  QLabel* status_label = new QLabel(&dialog);
+  root_layout->addWidget(status_label);
+
+  QHBoxLayout* button_layout = new QHBoxLayout;
+  QPushButton* import_button =
+      new QPushButton(QString::fromUtf8("インポート..."), &dialog);
+  QPushButton* export_button =
+      new QPushButton(QString::fromUtf8("エクスポート..."), &dialog);
+  QPushButton* delete_button =
+      new QPushButton(QString::fromUtf8("選択項目を削除"), &dialog);
+  QPushButton* clear_button =
+      new QPushButton(QString::fromUtf8("すべて削除"), &dialog);
+  QDialogButtonBox* close_buttons =
+      new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+
+  if (QPushButton* close_button =
+          close_buttons->button(QDialogButtonBox::Close)) {
+    close_button->setText(QString::fromUtf8("閉じる"));
+  }
+
+  button_layout->addWidget(import_button);
+  button_layout->addWidget(export_button);
+  button_layout->addWidget(delete_button);
+  button_layout->addWidget(clear_button);
+  button_layout->addStretch();
+  button_layout->addWidget(close_buttons);
+  root_layout->addLayout(button_layout);
+
+  auto reload_table = [&]() {
+    const QString filter = search_edit->text();
+    const std::vector<session::ZenzFeedbackEntry> entries =
+        store.ListEntries();
+
+    table->setRowCount(0);
+
+    int visible_count = 0;
+    for (const session::ZenzFeedbackEntry& entry : entries) {
+      const QString key = ToQString(entry.key);
+      const QString value = ToQString(entry.value);
+      const QString context_class = ToQString(entry.context_class);
+
+      if (!filter.isEmpty() &&
+          !key.contains(filter, Qt::CaseInsensitive) &&
+          !value.contains(filter, Qt::CaseInsensitive) &&
+          !context_class.contains(filter, Qt::CaseInsensitive)) {
+        continue;
+      }
+
+      const int row = table->rowCount();
+      table->insertRow(row);
+
+      SetTableItem(table, row, 0, key);
+      SetTableItem(table, row, 1, value);
+      SetTableItem(table, row, 2, context_class);
+      SetTableItem(table, row, 3, QString::number(entry.accepted_count));
+      SetTableItem(table, row, 4, QString::number(entry.rejected_count));
+      SetTableItem(table, row, 5, FeedbackReasonLabel(entry.reason));
+
+      table->item(row, 0)->setData(Qt::UserRole, key);
+      table->item(row, 1)->setData(Qt::UserRole, value);
+      table->item(row, 2)->setData(Qt::UserRole, context_class);
+
+      ++visible_count;
+    }
+
+    table->resizeColumnsToContents();
+
+    status_label->setText(
+        QString::fromUtf8("表示 %1 件 / 全 %2 件")
+            .arg(visible_count)
+            .arg(static_cast<int>(entries.size())));
+
+    const bool has_visible_row = table->rowCount() > 0;
+    delete_button->setEnabled(has_visible_row);
+    export_button->setEnabled(!entries.empty());
+    clear_button->setEnabled(!entries.empty());
+  };
+
+  QObject::connect(search_edit, &QLineEdit::textChanged,
+                   &dialog, [&](const QString&) {
+                     reload_table();
+                   });
+
+  QObject::connect(close_buttons, &QDialogButtonBox::rejected,
+                   &dialog, &QDialog::reject);
+
+  QObject::connect(export_button, &QPushButton::clicked,
+                   &dialog, [&]() {
+                     const QString path = QFileDialog::getSaveFileName(
+                         &dialog,
+                         QString::fromUtf8("Zenz 学習データをエクスポート"),
+                         QStringLiteral("zenz_feedback.tsv"),
+                         QString::fromUtf8(
+                             "TSV ファイル (*.tsv);;すべてのファイル (*)"));
+                     if (path.isEmpty()) {
+                       return;
+                     }
+
+                     if (!store.ExportToFile(path.toStdWString())) {
+                       ShowJapaneseCritical(
+                           &dialog, dialog.windowTitle(),
+                           QString::fromUtf8(
+                               "Zenz 学習データをエクスポートできませんでした。"));
+                       return;
+                     }
+
+                     ShowJapaneseInformation(
+                         &dialog, dialog.windowTitle(),
+                         QString::fromUtf8(
+                             "Zenz 学習データをエクスポートしました。"));
+                   });
+
+  QObject::connect(import_button, &QPushButton::clicked,
+                   &dialog, [&]() {
+                     const QString path = QFileDialog::getOpenFileName(
+                         &dialog,
+                         QString::fromUtf8("Zenz 学習データをインポート"),
+                         QString(),
+                         QString::fromUtf8(
+                             "TSV ファイル (*.tsv);;すべてのファイル (*)"));
+                     if (path.isEmpty()) {
+                       return;
+                     }
+
+                     QMessageBox message_box(&dialog);
+                     message_box.setWindowTitle(dialog.windowTitle());
+                     message_box.setIcon(QMessageBox::Question);
+                     message_box.setText(
+                         QString::fromUtf8("Zenz 学習データをインポートします。"));
+                     message_box.setInformativeText(
+                         QString::fromUtf8(
+                             "既存の Zenz 学習データに追加しますか？\n\n"
+                             "「追加」: 既存データに追加\n"
+                             "「置き換え」: 既存データを削除してから取り込み\n"
+                             "「キャンセル」: 中止"));
+
+                     QPushButton* append_button =
+                         message_box.addButton(QString::fromUtf8("追加"),
+                                               QMessageBox::AcceptRole);
+                     QPushButton* replace_button =
+                         message_box.addButton(QString::fromUtf8("置き換え"),
+                                               QMessageBox::DestructiveRole);
+                     QPushButton* cancel_button =
+                         message_box.addButton(QString::fromUtf8("キャンセル"),
+                                               QMessageBox::RejectRole);
+
+                     message_box.setDefaultButton(append_button);
+                     message_box.exec();
+
+                     if (message_box.clickedButton() == cancel_button) {
+                       return;
+                     }
+
+                     const session::ZenzFeedbackImportMode import_mode =
+                         message_box.clickedButton() == replace_button
+                             ? session::ZenzFeedbackImportMode::kReplace
+                             : session::ZenzFeedbackImportMode::kAppend;
+
+                     if (!store.ImportFromFile(path.toStdWString(),
+                                               import_mode)) {
+                       ShowJapaneseCritical(
+                           &dialog, dialog.windowTitle(),
+                           QString::fromUtf8(
+                               "Zenz 学習データをインポートできませんでした。\n"
+                               "ファイル形式が壊れているか、未対応の行が含まれています。"));
+                       return;
+                     }
+
+                     reload_table();
+
+                     ShowJapaneseInformation(
+                         &dialog, dialog.windowTitle(),
+                         QString::fromUtf8(
+                             "Zenz 学習データをインポートしました。"));
+                   });
+
+  QObject::connect(delete_button, &QPushButton::clicked,
+                   &dialog, [&]() {
+                     const int row = table->currentRow();
+                     if (row < 0) {
+                       return;
+                     }
+
+                     QTableWidgetItem* key_item = table->item(row, 0);
+                     QTableWidgetItem* value_item = table->item(row, 1);
+                     QTableWidgetItem* context_item = table->item(row, 2);
+                     if (key_item == nullptr ||
+                         value_item == nullptr ||
+                         context_item == nullptr) {
+                       return;
+                     }
+
+                     const QString key =
+                         key_item->data(Qt::UserRole).toString();
+                     const QString value =
+                         value_item->data(Qt::UserRole).toString();
+                     const QString context_class =
+                         context_item->data(Qt::UserRole).toString();
+
+                     QMessageBox message_box(&dialog);
+                     message_box.setWindowTitle(dialog.windowTitle());
+                     message_box.setIcon(QMessageBox::Warning);
+                     message_box.setText(
+                         QString::fromUtf8("選択した Zenz 学習エントリを削除しますか？"));
+                     message_box.setInformativeText(
+                         QString::fromUtf8("読み: %1\n候補: %2\n文脈クラス: %3")
+                             .arg(key, value, context_class));
+
+                     QPushButton* delete_confirm_button =
+                         message_box.addButton(QString::fromUtf8("削除"),
+                                               QMessageBox::DestructiveRole);
+                     QPushButton* cancel_button =
+                         message_box.addButton(QString::fromUtf8("キャンセル"),
+                                               QMessageBox::RejectRole);
+
+                     message_box.setDefaultButton(cancel_button);
+                     message_box.exec();
+
+                     if (message_box.clickedButton() != delete_confirm_button) {
+                       return;
+                     }
+
+                     if (!store.DeleteEntry(
+                             key.toUtf8().constData(),
+                             context_class.toUtf8().constData(),
+                             value.toUtf8().constData())) {
+                       ShowJapaneseCritical(
+                           &dialog, dialog.windowTitle(),
+                           QString::fromUtf8(
+                               "Zenz 学習エントリを削除できませんでした。"));
+                       return;
+                     }
+
+                     reload_table();
+                   });
+
+  QObject::connect(clear_button, &QPushButton::clicked,
+                   &dialog, [&]() {
+                     QMessageBox message_box(&dialog);
+                     message_box.setWindowTitle(dialog.windowTitle());
+                     message_box.setIcon(QMessageBox::Warning);
+                     message_box.setText(
+                         QString::fromUtf8("Zenz 学習データをすべて削除しますか？"));
+                     message_box.setInformativeText(
+                         QString::fromUtf8("この操作は元に戻せません。"));
+
+                     QPushButton* clear_confirm_button =
+                         message_box.addButton(QString::fromUtf8("すべて削除"),
+                                              QMessageBox::DestructiveRole);
+                     QPushButton* cancel_button =
+                         message_box.addButton(QString::fromUtf8("キャンセル"),
+                                               QMessageBox::RejectRole);
+
+                     message_box.setDefaultButton(cancel_button);
+                     message_box.exec();
+
+                     if (message_box.clickedButton() != clear_confirm_button) {
+                       return;
+                     }
+
+                     if (!store.ClearAll()) {
+                       ShowJapaneseCritical(
+                           &dialog, dialog.windowTitle(),
+                           QString::fromUtf8(
+                               "Zenz 学習データを削除できませんでした。"));
+                       return;
+                     }
+
+                     reload_table();
+                   });
+
+  reload_table();
+  dialog.exec();
 }
 
 #ifdef _WIN32
@@ -755,9 +1163,41 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   SET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
+
+  const uint32_t live_conversion_delay_msec =
+      config.has_live_conversion_delay_msec()
+          ? config.live_conversion_delay_msec()
+          : kDefaultLiveConversionDelayMsec;
   liveConversionDelaySpinBox->setValue(
-    static_cast<int>(
-        std::clamp(config.live_conversion_delay_msec(), 0u, 1000u)));
+      static_cast<int>(
+          std::clamp(live_conversion_delay_msec,
+                     0u,
+                     kMaxLiveConversionDelayMsec)));
+
+  SET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
+
+  const uint32_t zenz_live_correction_delay_msec =
+      config.has_zenz_live_correction_delay_msec()
+          ? config.zenz_live_correction_delay_msec()
+          : kDefaultZenzLiveCorrectionDelayMsec;
+  zenzLiveCorrectionDelaySpinBox->setValue(
+      static_cast<int>(
+          std::clamp(zenz_live_correction_delay_msec,
+                     0u,
+                     kMaxZenzLiveCorrectionDelayMsec)));
+
+  const uint32_t zenz_live_correction_min_key_length =
+      config.has_zenz_live_correction_min_key_length()
+          ? config.zenz_live_correction_min_key_length()
+          : kDefaultZenzLiveCorrectionMinKeyLength;
+  zenzLiveCorrectionMinKeyLengthSpinBox->setValue(
+      static_cast<int>(
+          std::clamp(zenz_live_correction_min_key_length,
+                     kMinZenzLiveCorrectionMinKeyLength,
+                     kMaxZenzLiveCorrectionMinKeyLength)));
+
+  SET_CHECKBOX(zenzFeedbackLearningCheckBox, use_zenz_feedback_learning);
+
   SET_CHECKBOX(useAutoConversion, use_auto_conversion);
   kutenCheckBox->setChecked(config.auto_conversion_key() &
                             config::Config::AUTO_CONVERSION_KUTEN);
@@ -916,6 +1356,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
   config->set_live_conversion_delay_msec(
       static_cast<uint32_t>(liveConversionDelaySpinBox->value()));
+
+  GET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
+  config->set_zenz_live_correction_delay_msec(
+      static_cast<uint32_t>(zenzLiveCorrectionDelaySpinBox->value()));
+  config->set_zenz_live_correction_min_key_length(
+      static_cast<uint32_t>(
+          zenzLiveCorrectionMinKeyLengthSpinBox->value()));
+
+  GET_CHECKBOX(zenzFeedbackLearningCheckBox, use_zenz_feedback_learning);
+
   GET_CHECKBOX(useAutoConversion, use_auto_conversion);
   GET_CHECKBOX(useDirectCommit, use_direct_commit);
   GET_CHECKBOX(useJapaneseLayout, use_japanese_layout);
@@ -1133,6 +1583,10 @@ void ConfigDialog::ClearUnusedUserPrediction() {
   }
 }
 
+void ConfigDialog::EditZenzFeedback() {
+  ShowZenzFeedbackManagementDialog(this);
+}
+
 void ConfigDialog::EditUserDictionary() {
   client_->LaunchTool("dictionary_tool", "");
 }
@@ -1173,6 +1627,28 @@ void ConfigDialog::EditRomanTable() {
 void ConfigDialog::SelectInputModeSetting(int index) {
   // enable "EDIT" button if roman mode is selected
   editRomanTableButton->setEnabled((index == 0));
+}
+
+void ConfigDialog::SelectLiveConversionSetting(int state) {
+  const bool enabled = static_cast<bool>(state);
+
+  liveConversionDelayLabel->setEnabled(enabled);
+  liveConversionDelaySpinBox->setEnabled(enabled);
+
+  zenzLiveCorrectionCheckBox->setEnabled(enabled);
+  SelectZenzLiveCorrectionSetting(
+      enabled ? static_cast<int>(zenzLiveCorrectionCheckBox->isChecked()) : 0);
+}
+
+void ConfigDialog::SelectZenzLiveCorrectionSetting(int state) {
+  const bool enabled =
+      liveConversionCheckBox->isChecked() && static_cast<bool>(state);
+
+  zenzLiveCorrectionDelayLabel->setEnabled(enabled);
+  zenzLiveCorrectionDelaySpinBox->setEnabled(enabled);
+  zenzLiveCorrectionMinKeyLengthLabel->setEnabled(enabled);
+  zenzLiveCorrectionMinKeyLengthSpinBox->setEnabled(enabled);
+  zenzFeedbackLearningCheckBox->setEnabled(enabled);
 }
 
 void ConfigDialog::SelectAutoConversionSetting(int state) {

@@ -33,6 +33,7 @@
 #include <windows.h>
 #include <atlbase.h>
 #include <msiquery.h>
+#include <tlhelp32.h>
 // clang-format on
 
 #if defined(MOZC_ENABLE_WIN_UNIVERSAL_INSTALLER)
@@ -95,6 +96,92 @@ HMODULE g_module = nullptr;
 std::wstring GetMozcComponentPath(const absl::string_view filename) {
   return mozc::win32::Utf8ToWide(
       absl::StrCat(mozc::SystemUtil::GetServerDirectory(), "\\", filename));
+}
+
+bool StringEqualsIgnoreCase(std::wstring_view lhs, std::wstring_view rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+
+  return ::CompareStringOrdinal(
+             lhs.data(),
+             static_cast<int>(lhs.size()),
+             rhs.data(),
+             static_cast<int>(rhs.size()),
+             TRUE) == CSTR_EQUAL;
+}
+
+std::wstring GetProcessImagePath(DWORD process_id) {
+  HANDLE process = ::OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION,
+      FALSE,
+      process_id);
+  if (process == nullptr) {
+    return L"";
+  }
+
+  wchar_t path[MAX_PATH] = {};
+  DWORD size = std::size(path);
+  if (!::QueryFullProcessImageNameW(process, 0, path, &size)) {
+    ::CloseHandle(process);
+    return L"";
+  }
+
+  ::CloseHandle(process);
+  return std::wstring(path, size);
+}
+
+void TerminateMozcProcessByImageName(const wchar_t* image_name,
+                                     const char* mozc_filename) {
+  HANDLE snapshot = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  const std::wstring expected_path = GetMozcComponentPath(mozc_filename);
+
+  PROCESSENTRY32W entry = {};
+  entry.dwSize = sizeof(entry);
+
+  if (!::Process32FirstW(snapshot, &entry)) {
+    ::CloseHandle(snapshot);
+    return;
+  }
+
+  do {
+    if (!StringEqualsIgnoreCase(entry.szExeFile, image_name)) {
+      continue;
+    }
+
+    const std::wstring actual_path = GetProcessImagePath(entry.th32ProcessID);
+    if (actual_path.empty() ||
+        !StringEqualsIgnoreCase(actual_path, expected_path)) {
+      continue;
+    }
+
+    HANDLE process = ::OpenProcess(
+        PROCESS_TERMINATE | SYNCHRONIZE,
+        FALSE,
+        entry.th32ProcessID);
+    if (process == nullptr) {
+      continue;
+    }
+
+    ::TerminateProcess(process, 0);
+    ::WaitForSingleObject(process, 3000);
+    ::CloseHandle(process);
+  } while (::Process32NextW(snapshot, &entry));
+
+  ::CloseHandle(snapshot);
+}
+
+void ShutdownZenzRuntimeProcesses() {
+  TerminateMozcProcessByImageName(
+      L"mozc_zenz_scorer.exe",
+      "mozc_zenz_scorer.exe");
+  TerminateMozcProcessByImageName(
+      L"llama-server.exe",
+      "llama-server.exe");
 }
 
 // Retrieves the value for an installer property.
@@ -365,6 +452,9 @@ UINT __stdcall OpenUninstallSurveyPage(MSIHANDLE msi_handle) {
 
 UINT __stdcall ShutdownServer(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
+
+  ShutdownZenzRuntimeProcesses();
+
   std::unique_ptr<mozc::client::ClientInterface> server_client(
       mozc::client::ClientFactory::NewClient());
   if (server_client->PingServer()) {
@@ -374,6 +464,7 @@ UINT __stdcall ShutdownServer(MSIHANDLE msi_handle) {
       LOG_ERROR_FOR_OMAHA();
     }
   }
+
   std::unique_ptr<mozc::renderer::RendererClient> renderer_client =
       mozc::renderer::RendererClient::Create();
   if (!renderer_client->Shutdown(true)) {
@@ -381,6 +472,9 @@ UINT __stdcall ShutdownServer(MSIHANDLE msi_handle) {
     // they are still running. Just log error then go ahead.
     LOG_ERROR_FOR_OMAHA();
   }
+
+  ShutdownZenzRuntimeProcesses();
+
   return ERROR_SUCCESS;
 }
 
@@ -437,21 +531,25 @@ UINT __stdcall EnableTipProfile(MSIHANDLE msi_handle) {
   wchar_t clsid[64] = {};
   if (!::StringFromGUID2(::mozc::win32::TsfProfile::GetTextServiceGuid(), clsid,
                          std::size(clsid))) {
-    // Do not care about errors.
-    return ERROR_SUCCESS;
+    LOG_ERROR_FOR_OMAHA();
+    return ERROR_INSTALL_FAILURE;
   }
+
   wchar_t profile_id[64] = {};
   if (!::StringFromGUID2(::mozc::win32::TsfProfile::GetProfileGuid(),
                          profile_id, std::size(profile_id))) {
-    // Do not care about errors.
-    return ERROR_SUCCESS;
+    LOG_ERROR_FOR_OMAHA();
+    return ERROR_INSTALL_FAILURE;
   }
 
   // 0x0411 == MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN)
   const auto desc = ::mozc::win32::StrCatW(L"0x0411:", clsid, profile_id);
 
-  // Do not care about errors.
-  ::InstallLayoutOrTip(desc.c_str(), 0);
+  if (!::InstallLayoutOrTip(desc.c_str(), 0)) {
+    LOG_ERROR_FOR_OMAHA();
+    return ERROR_INSTALL_FAILURE;
+  }
+
   return ERROR_SUCCESS;
 }
 

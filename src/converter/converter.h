@@ -104,6 +104,13 @@ class Converter final : public ConverterInterface {
 
   void FinishConversion(const ConversionRequest& request,
                         Segments* segments) const override;
+
+  [[nodiscard]]
+  bool LearnExternalConversionResult(
+      const ConversionRequest& request,
+      absl::string_view key,
+      absl::string_view value) const override;
+
   void CancelConversion(Segments* segments) const override;
   void ResetConversion(Segments* segments) const override;
   void RevertConversion(Segments* segments) const override;

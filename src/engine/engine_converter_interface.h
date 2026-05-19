@@ -140,6 +140,17 @@ class EngineConverterInterface {
   virtual void CommitContext(const composer::Composer& composer,
                              const commands::Context& context) = 0;
 
+  // Learns an externally committed conversion result without changing the
+  // current session-visible conversion state.  This is used for delayed
+  // confirmation of Zenz accepted feedback.
+  [[nodiscard]]
+  virtual bool LearnExternalConversionResult(
+      absl::string_view key,
+      absl::string_view value,
+      const commands::Context& context) {
+    return false;
+  }
+
   // Fix the suggestion candidate.  True is returned if the selected
   // candidate is successfully committed.
   virtual bool CommitSuggestionByIndex(size_t index,

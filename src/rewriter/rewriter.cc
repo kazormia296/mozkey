@@ -62,6 +62,7 @@
 #include "rewriter/user_segment_history_rewriter.h"
 #include "rewriter/variants_rewriter.h"
 #include "rewriter/version_rewriter.h"
+#include "rewriter/zenz_feedback_candidate_rewriter.h"
 #include "rewriter/zipcode_rewriter.h"
 
 #ifdef __APPLE__
@@ -162,6 +163,7 @@ Rewriter::Rewriter(const engine::Modules& modules) {
     AddRewriter(std::make_unique<UserBoundaryHistoryRewriter>());
     AddRewriter(
         std::make_unique<UserSegmentHistoryRewriter>(pos_matcher, pos_group));
+    AddRewriter(std::make_unique<ZenzFeedbackCandidateRewriter>());
   }
 
 #ifdef MOZC_DATE_REWRITER

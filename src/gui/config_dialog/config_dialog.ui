@@ -669,7 +669,7 @@
          <x>0</x>
          <y>0</y>
          <width>485</width>
-         <height>805</height>
+         <height>895</height>
         </rect>
        </property>
        <widget class="QWidget" name="horizontalLayoutWidget_2">
@@ -710,11 +710,11 @@
           <x>30</x>
           <y>40</y>
           <width>441</width>
-          <height>260</height>
+          <height>350</height>
          </rect>
         </property>
         <layout class="QGridLayout" name="gridLayout_9">
-         <item row="0" column="0" colspan="8">
+         <item row="7" column="0" colspan="8">
           <widget class="QCheckBox" name="autoSwitchCompositionMode">
            <property name="text">
             <string>Automatically switch to halfwidth</string>
@@ -722,7 +722,7 @@
           </widget>
          </item>
 
-         <item row="1" column="0" colspan="8">
+         <item row="8" column="0" colspan="8">
           <widget class="QCheckBox" name="liveConversionCheckBox">
            <property name="toolTip">
             <string>入力中の未確定文字列を、文字が入力されるたびに自動で変換します。</string>
@@ -733,7 +733,7 @@
           </widget>
          </item>
 
-         <item row="2" column="0" colspan="3">
+         <item row="9" column="0" colspan="3">
           <widget class="QLabel" name="liveConversionDelayLabel">
            <property name="toolTip">
             <string>文字入力後、ライブ変換を開始するまでの待ち時間です。0 ms にすると即時変換します。</string>
@@ -743,7 +743,7 @@
            </property>
           </widget>
          </item>
-         <item row="2" column="3" colspan="5">
+         <item row="9" column="3" colspan="5">
           <widget class="QSpinBox" name="liveConversionDelaySpinBox">
            <property name="toolTip">
             <string>文字入力後、ライブ変換を開始するまでの待ち時間です。0 ms にすると即時変換します。</string>
@@ -769,14 +769,14 @@
           </widget>
          </item>
 
-         <item row="3" column="0" colspan="3">
+         <item row="0" column="0" colspan="3">
           <widget class="QCheckBox" name="useAutoConversion">
            <property name="text">
             <string>Convert at punctuations</string>
            </property>
           </widget>
          </item>
-         <item row="3" column="3">
+         <item row="0" column="3">
           <widget class="QCheckBox" name="kutenCheckBox">
            <property name="maximumSize">
             <size>
@@ -789,7 +789,7 @@
            </property>
           </widget>
          </item>
-         <item row="3" column="4">
+         <item row="0" column="4">
           <widget class="QCheckBox" name="toutenCheckBox">
            <property name="maximumSize">
             <size>
@@ -802,7 +802,7 @@
            </property>
           </widget>
          </item>
-         <item row="3" column="5">
+         <item row="0" column="5">
           <widget class="QCheckBox" name="questionMarkCheckBox">
            <property name="maximumSize">
             <size>
@@ -815,7 +815,7 @@
            </property>
           </widget>
          </item>
-         <item row="3" column="6">
+         <item row="0" column="6">
           <widget class="QCheckBox" name="exclamationMarkCheckBox">
            <property name="maximumSize">
             <size>
@@ -829,14 +829,14 @@
           </widget>
          </item>
 
-         <item row="4" column="0" colspan="3">
+         <item row="1" column="0" colspan="3">
           <widget class="QCheckBox" name="useDirectCommit">
            <property name="text">
             <string>句読点・記号の単打確定を有効にする</string>
            </property>
           </widget>
          </item>
-         <item row="4" column="3">
+         <item row="1" column="3">
           <widget class="QCheckBox" name="directCommitKutenCheckBox">
            <property name="maximumSize">
             <size>
@@ -849,7 +849,7 @@
            </property>
           </widget>
          </item>
-         <item row="4" column="4">
+         <item row="1" column="4">
           <widget class="QCheckBox" name="directCommitToutenCheckBox">
            <property name="maximumSize">
             <size>
@@ -862,7 +862,7 @@
            </property>
           </widget>
          </item>
-         <item row="4" column="5">
+         <item row="1" column="5">
           <widget class="QCheckBox" name="directCommitQuestionMarkCheckBox">
            <property name="maximumSize">
             <size>
@@ -875,7 +875,7 @@
            </property>
           </widget>
          </item>
-         <item row="4" column="6">
+         <item row="1" column="6">
           <widget class="QCheckBox" name="directCommitExclamationMarkCheckBox">
            <property name="maximumSize">
             <size>
@@ -889,7 +889,7 @@
           </widget>
          </item>
 
-         <item row="5" column="0" colspan="3">
+         <item row="2" column="0" colspan="3">
           <spacer name="horizontalSpacer_directCommit">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -902,7 +902,7 @@
            </property>
           </spacer>
          </item>
-         <item row="5" column="3">
+         <item row="2" column="3">
           <widget class="QCheckBox" name="directCommitOpenParenthesisCheckBox">
            <property name="maximumSize">
             <size>
@@ -915,7 +915,7 @@
            </property>
           </widget>
          </item>
-         <item row="5" column="4">
+         <item row="2" column="4">
           <widget class="QCheckBox" name="directCommitCloseParenthesisCheckBox">
            <property name="maximumSize">
             <size>
@@ -928,7 +928,7 @@
            </property>
           </widget>
          </item>
-         <item row="5" column="5">
+         <item row="2" column="5">
           <widget class="QCheckBox" name="directCommitOpenBracketCheckBox">
            <property name="maximumSize">
             <size>
@@ -941,7 +941,7 @@
            </property>
           </widget>
          </item>
-         <item row="5" column="6">
+         <item row="2" column="6">
           <widget class="QCheckBox" name="directCommitCloseBracketCheckBox">
            <property name="maximumSize">
             <size>
@@ -955,14 +955,14 @@
           </widget>
          </item>
 
-         <item row="6" column="0" colspan="3">
+         <item row="3" column="0" colspan="3">
           <widget class="QLabel" name="autoCorrectionLable_3">
            <property name="text">
             <string>Shift key mode switch</string>
            </property>
           </widget>
          </item>
-         <item row="6" column="3" colspan="5">
+         <item row="3" column="3" colspan="5">
           <widget class="QComboBox" name="shiftKeyModeSwitchComboBox">
            <property name="minimumSize">
             <size>
@@ -973,7 +973,7 @@
           </widget>
          </item>
 
-         <item row="7" column="0" colspan="8">
+         <item row="4" column="0" colspan="8">
           <widget class="QCheckBox" name="useJapaneseLayout">
            <property name="enabled">
             <bool>true</bool>
@@ -983,7 +983,7 @@
            </property>
           </widget>
          </item>
-         <item row="8" column="0" colspan="8">
+         <item row="5" column="0" colspan="8">
           <widget class="QCheckBox" name="useModeIndicator">
            <property name="enabled">
             <bool>true</bool>
@@ -993,7 +993,7 @@
            </property>
           </widget>
          </item>
-         <item row="9" column="0" colspan="8">
+         <item row="6" column="0" colspan="8">
           <widget class="QCheckBox" name="useDarkModeCandidateWindow">
            <property name="enabled">
             <bool>true</bool>
@@ -1003,13 +1003,121 @@
            </property>
           </widget>
          </item>
+
+         <item row="10" column="0" colspan="8">
+          <widget class="QCheckBox" name="zenzLiveCorrectionCheckBox">
+           <property name="toolTip">
+            <string>ライブ変換結果に対して、ローカルの Zenz モデルで文脈補正を行います。</string>
+           </property>
+           <property name="text">
+            <string>Zenz ライブ補正を有効にする</string>
+           </property>
+          </widget>
+         </item>
+
+         <item row="11" column="0" colspan="3">
+          <widget class="QLabel" name="zenzLiveCorrectionDelayLabel">
+           <property name="toolTip">
+            <string>ライブ変換後、Zenz 推論を開始するまでの待ち時間です。</string>
+           </property>
+           <property name="text">
+            <string>Zenz 推論開始の遅延</string>
+           </property>
+          </widget>
+         </item>
+         <item row="11" column="3" colspan="5">
+          <widget class="QSpinBox" name="zenzLiveCorrectionDelaySpinBox">
+           <property name="toolTip">
+            <string>ライブ変換後、Zenz 推論を開始するまでの待ち時間です。0 ms にすると即時推論します。</string>
+           </property>
+           <property name="minimum">
+            <number>0</number>
+           </property>
+           <property name="maximum">
+            <number>5000</number>
+           </property>
+           <property name="singleStep">
+            <number>100</number>
+           </property>
+           <property name="value">
+            <number>1000</number>
+           </property>
+           <property name="suffix">
+            <string> ms</string>
+           </property>
+           <property name="specialValueText">
+            <string>即時</string>
+           </property>
+          </widget>
+         </item>
+         <item row="12" column="0" colspan="3">
+          <widget class="QLabel" name="zenzLiveCorrectionMinKeyLengthLabel">
+           <property name="toolTip">
+            <string>Zenz 推論を許可する最小読み長です。短くすると補正機会は増えますが、誤補正も増える可能性があります。</string>
+           </property>
+           <property name="text">
+            <string>Zenz 最小読み長</string>
+           </property>
+          </widget>
+         </item>
+         <item row="12" column="3" colspan="5">
+          <widget class="QSpinBox" name="zenzLiveCorrectionMinKeyLengthSpinBox">
+           <property name="toolTip">
+            <string>Zenz 推論を許可する最小読み長です。</string>
+           </property>
+           <property name="minimum">
+            <number>2</number>
+           </property>
+           <property name="maximum">
+            <number>20</number>
+           </property>
+           <property name="singleStep">
+            <number>1</number>
+           </property>
+           <property name="value">
+            <number>2</number>
+           </property>
+           <property name="suffix">
+            <string> 文字</string>
+           </property>
+          </widget>
+         </item>
+
+         <item row="13" column="0" colspan="8">
+          <widget class="QCheckBox" name="zenzFeedbackLearningCheckBox">
+           <property name="toolTip">
+            <string>Zenz 補正結果の採用/却下をローカル TSV に記録し、次回以降の補正判断に使用します。</string>
+           </property>
+           <property name="text">
+            <string>Zenz 補正結果をローカル学習する</string>
+           </property>
+          </widget>
+         </item>
+
+         <item row="14" column="0" colspan="3">
+          <widget class="QLabel" name="zenzFeedbackDataLabel">
+           <property name="text">
+            <string>Zenz 学習データ</string>
+           </property>
+          </widget>
+         </item>
+         <item row="14" column="3" colspan="5">
+          <widget class="QPushButton" name="editZenzFeedbackButton">
+           <property name="toolTip">
+            <string>Zenz 学習データを安全な管理画面で表示し、インポート、エクスポート、エントリ削除を行います。</string>
+           </property>
+           <property name="text">
+            <string>管理...</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </widget>
        <widget class="QWidget" name="horizontalLayoutWidget_3">
         <property name="geometry">
          <rect>
           <x>20</x>
-          <y>320</y>
+          <y>410</y>
           <width>461</width>
           <height>21</height>
          </rect>
@@ -1041,7 +1149,7 @@
         <property name="geometry">
          <rect>
           <x>30</x>
-          <y>350</y>
+          <y>440</y>
           <width>441</width>
           <height>141</height>
          </rect>
@@ -1051,7 +1159,7 @@
         <property name="geometry">
          <rect>
           <x>30</x>
-          <y>515</y>
+          <y>605</y>
           <width>441</width>
           <height>270</height>
          </rect>
@@ -2208,9 +2316,6 @@
   <tabstop>numberConversionCheckBox</tabstop>
   <tabstop>calculatorCheckBox</tabstop>
   <tabstop>spellingCorrectionCheckBox</tabstop>
-  <tabstop>autoSwitchCompositionMode</tabstop>
-  <tabstop>liveConversionCheckBox</tabstop>
-  <tabstop>liveConversionDelaySpinBox</tabstop>
   <tabstop>useAutoConversion</tabstop>
   <tabstop>kutenCheckBox</tabstop>
   <tabstop>toutenCheckBox</tabstop>
@@ -2229,6 +2334,15 @@
   <tabstop>useJapaneseLayout</tabstop>
   <tabstop>useModeIndicator</tabstop>
   <tabstop>useDarkModeCandidateWindow</tabstop>
+  <tabstop>autoSwitchCompositionMode</tabstop>
+  <tabstop>liveConversionCheckBox</tabstop>
+  <tabstop>liveConversionDelaySpinBox</tabstop>
+  <tabstop>zenzLiveCorrectionCheckBox</tabstop>
+  <tabstop>zenzLiveCorrectionDelaySpinBox</tabstop>
+  <tabstop>zenzLiveCorrectionMinKeyLengthSpinBox</tabstop>
+  <tabstop>zenzFeedbackLearningCheckBox</tabstop>
+  <tabstop>editZenzFeedbackButton</tabstop>
+  <tabstop>characterFormEditor</tabstop>
   <tabstop>inputPreeditTextColorCheckBox</tabstop>
   <tabstop>inputPreeditTextColorButton</tabstop>
   <tabstop>inputPreeditBackgroundColorCheckBox</tabstop>
@@ -2241,7 +2355,6 @@
   <tabstop>targetPreeditBackgroundColorButton</tabstop>
   <tabstop>targetPreeditUnderlineColorCheckBox</tabstop>
   <tabstop>targetPreeditUnderlineColorButton</tabstop>
-  <tabstop>characterFormEditor</tabstop>
   <tabstop>historySuggestCheckBox</tabstop>
   <tabstop>clearUnusedUserPredictionButton</tabstop>
   <tabstop>clearUserPredictionButton</tabstop>

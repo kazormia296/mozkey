@@ -48,6 +48,10 @@
 #include "protocol/config.pb.h"
 #include "session/ime_context.h"
 #include "session/keymap.h"
+#include "session/zenz_context_sanitizer.h"
+#include "session/zenz_feedback_store.h"
+#include "session/zenz_live_corrector.h"
+#include "session/zenz_output_validator.h"
 #include "transliteration/transliteration.h"
 
 namespace mozc {
@@ -311,6 +315,67 @@ class Session {
   // to avoid display-attribute flicker.
   commands::Preedit live_conversion_preedit_output_;
 
+  struct PendingZenzLiveCorrection {
+    uint32_t generation = 0;
+    std::string key;
+    std::string left_context;
+    std::string context_class;
+    std::string mozc_value;
+    std::string prompt;
+    absl::Time issued_at;
+    bool pending = false;
+    bool submitted = false;
+    uint32_t poll_count = 0;
+  };
+
+  uint32_t zenz_live_generation_ = 0;
+  PendingZenzLiveCorrection pending_zenz_live_;
+
+  struct PendingZenzFeedback {
+    enum class Action {
+      kNone,
+      kAccepted,
+      kRejected,
+    };
+
+    bool pending = false;
+    Action action = Action::kNone;
+    std::string key;
+    std::string context_class;
+    std::string value;
+    std::string reason;
+  };
+
+  PendingZenzFeedback pending_zenz_feedback_;
+
+  struct PendingDirectCommitLearning {
+    bool pending = false;
+    std::string key;
+    std::string value;
+    std::string reason;
+
+    // Snapshot immediately after normal CommitInternal().
+    // It preserves the converter's revert_id and committed Segments so that
+    // delayed cancellation can revert the original rich Mozc learning even
+    // after the current converter is reset by CommitStringDirectly().
+    std::unique_ptr<ImeContext> revert_context;
+  };
+
+  PendingDirectCommitLearning pending_direct_commit_learning_;
+
+  uint32_t zenz_live_visible_generation_ = 0;
+  std::string zenz_live_key_;
+  std::string zenz_live_value_;
+  std::string zenz_live_mozc_value_;
+  std::string zenz_live_context_class_;
+  std::string zenz_live_left_context_;
+  commands::Preedit zenz_live_preedit_output_;
+
+  ZenzContextSanitizer zenz_context_sanitizer_;
+  ZenzOutputValidator zenz_output_validator_;
+  ZenzFeedbackStore zenz_feedback_store_;
+  std::unique_ptr<ZenzLiveCorrector> zenz_live_corrector_;
+
   // Undo stack. *begin is the oldest, and *back is the newest.
   std::deque<std::unique_ptr<ImeContext>> undo_contexts_;
 
@@ -408,6 +473,69 @@ class Session {
   bool OutputPendingLiveConversion(mozc::commands::Command* command) const;
   void AttachDelayedLiveConversionCallback(
       mozc::commands::Command* command) const;
+
+  // zenz live correction.
+  bool MaybeApplyZenzFeedbackLiveCorrection(
+      mozc::commands::Command* command);
+  bool MaybeScheduleZenzLiveCorrection(mozc::commands::Command* command);
+  void AttachZenzLiveCorrectionStartCallback(
+      mozc::commands::Command* command) const;
+  void AttachZenzLiveCorrectionPollCallback(
+      mozc::commands::Command* command) const;
+  bool ApplyZenzLiveCorrection(mozc::commands::Command* command);
+  bool IsCurrentZenzLiveCorrectionCallback(
+      const mozc::commands::Command& command) const;
+  bool OutputCurrentLiveConversionWithZenzPending(
+      mozc::commands::Command* command);
+  bool OutputCurrentLiveConversionAfterZenzStop(
+      mozc::commands::Command* command,
+      absl::string_view debug);
+  ZenzLiveCorrector* EnsureZenzLiveCorrector();
+  bool ApplyZenzLiveCorrectionResult(
+      const ZenzLiveResponse& response,
+      mozc::commands::Command* command);
+  bool OutputZenzLiveCorrection(
+      absl::string_view value,
+      mozc::commands::Command* command);
+  bool CommitZenzLiveCorrectionResult(mozc::commands::Command* command);
+
+  std::string BuildZenzFeedbackContextClass(
+      absl::string_view left_context) const;
+  void RecordZenzLiveCorrectionAccepted(
+      absl::string_view key,
+      absl::string_view left_context,
+      absl::string_view value);
+
+  bool MaybeLearnZenzCandidateToMozcHistory(
+      absl::string_view key,
+      absl::string_view value);
+
+  bool SetPendingDirectCommitLearningFromCommittedResult(
+      const mozc::commands::Command& command,
+      absl::string_view reason);
+  void ConfirmPendingDirectCommitLearning(absl::string_view reason);
+  void DiscardPendingDirectCommitLearning(absl::string_view reason);
+  void HandlePendingDirectCommitLearningForKeyEvent(
+      const mozc::commands::KeyEvent& key);
+  void HandlePendingDirectCommitLearningForSessionCommand(
+      mozc::commands::SessionCommand::CommandType type);
+
+  bool HasVisibleZenzLiveCorrection() const;
+  void SetPendingZenzFeedbackAccepted(
+      absl::string_view key,
+      absl::string_view context_class,
+      absl::string_view value);
+  void SetPendingZenzFeedbackRejected(absl::string_view reason);
+  void ConfirmPendingZenzFeedback();
+  void DiscardPendingZenzFeedback(absl::string_view reason);
+  void HandlePendingZenzFeedbackForKeyEvent(
+      const mozc::commands::KeyEvent& key);
+  void HandlePendingZenzFeedbackForSessionCommand(
+      mozc::commands::SessionCommand::CommandType type);
+
+  void CancelPendingZenzLiveCorrection();
+  void ClearZenzLiveCorrectionState();
+  std::string ExtractZenzLeftContext(uint32_t max_chars) const;
 
   // Fill command's output according to the current state.
   void OutputFromState(mozc::commands::Command* command);

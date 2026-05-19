@@ -67,11 +67,14 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   virtual void ClearUserHistory();
   virtual void ClearUserPrediction();
   virtual void ClearUnusedUserPrediction();
+  virtual void EditZenzFeedback();
   virtual void EditUserDictionary();
   virtual void EditKeymap();
   virtual void EditRomanTable();
   virtual void ResetToDefaults();
   virtual void SelectInputModeSetting(int index);
+  virtual void SelectLiveConversionSetting(int state);
+  virtual void SelectZenzLiveCorrectionSetting(int state);
   virtual void SelectAutoConversionSetting(int state);
   virtual void SelectDirectCommitSetting(int state);
   virtual void SelectSuggestionSetting(int state);

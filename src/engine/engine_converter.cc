@@ -803,6 +803,38 @@ void EngineConverter::CommitContext(const composer::Composer& composer,
   converter_->CommitContext(conversion_request);
 }
 
+bool EngineConverter::LearnExternalConversionResult(
+    absl::string_view key,
+    absl::string_view value,
+    const commands::Context& context) {
+  if (key.empty() || value.empty()) {
+    return false;
+  }
+
+  DCHECK(request_);
+  DCHECK(config_);
+
+  if (!conversion_preferences_.use_history) {
+    return false;
+  }
+
+  ConversionRequest::Options options;
+  options.request_type = ConversionRequest::CONVERSION;
+  options.enable_user_history_for_conversion = true;
+
+  const ConversionRequest conversion_request =
+      ConversionRequestBuilder()
+          .SetRequestView(*request_)
+          .SetContextView(context)
+          .SetConfigView(*config_)
+          .SetOptions(std::move(options))
+          .SetKey(key)
+          .Build();
+
+  return converter_->LearnExternalConversionResult(
+      conversion_request, key, value);
+}
+
 bool EngineConverter::CommitSuggestionInternal(
     const composer::Composer& composer, const commands::Context& context,
     size_t* consumed_key_size) {

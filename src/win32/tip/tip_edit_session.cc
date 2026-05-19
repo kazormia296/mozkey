@@ -288,6 +288,29 @@ class AsyncSessionCommandEditSessionImpl final
     if (!private_context->GetClient()->SendCommand(session_command_, &output)) {
       return E_FAIL;
     }
+
+    // A delayed session command may produce another delayed callback.
+    // Example:
+    //   APPLY_LIVE_CONVERSION -> output callback APPLY_ZENZ_LIVE_CORRECTION
+    //
+    // The normal key-event path handles this in OnOutputReceivedImpl(), but
+    // this edit session is used by timer-fired callbacks and bypasses that
+    // function.  Therefore delayed callback chaining must be handled here too.
+    if (output.has_callback() &&
+        output.callback().has_session_command() &&
+        output.callback().session_command().has_type()) {
+      const Output::Callback& callback = output.callback();
+      if (callback.has_delay_millisec() && callback.delay_millisec() > 0) {
+        text_service_->PostDelayedSessionCommand(
+            context_.get(),
+            callback.session_command(),
+            callback.delay_millisec());
+
+        // Apply the current output immediately.  Only the callback is delayed.
+        output.clear_callback();
+      }
+    }
+
     return TipEditSessionImpl::UpdateContext(
         text_service_.get(), context_.get(), write_cookie, output);
   }
