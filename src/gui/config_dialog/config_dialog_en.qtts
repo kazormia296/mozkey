@@ -196,11 +196,6 @@
         <translation></translation>
     </message>
     <message>
-        <location filename="config_dialog.ui" line="1051"/>
-        <source>Usage statistics and crash reports</source>
-        <translation></translation>
-    </message>
-    <message>
         <location filename="config_dialog.ui" line="57"/>
         <source>General</source>
         <translation></translation>
@@ -338,11 +333,6 @@
     <message>
         <location filename="config_dialog.ui" line="989"/>
         <source>Use realtime conversion</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="config_dialog.ui" line="1032"/>
-        <source>Help make [ProductName] better by automatically sending usage statistics and crash reports to Google (changes will take effect after you log out and log back in)</source>
         <translation></translation>
     </message>
     <message>
@@ -684,15 +674,6 @@
     <message>
         <location filename="config_dialog.cc" line="776"/>
         <source>[ProductName] Converter is not running. Operation was not executed.</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="config_dialog.cc" line="849"/>
-        <source>When you reset [ProductName] settings, any changes you&apos;ve made will be reverted to the default settings. Do you want to reset settings? The following items are not reset with this operation.
- - Personalization data
- - Input history
- - Usage statistics and crash reports
- - Administrator settings</source>
         <translation></translation>
     </message>
 </context>

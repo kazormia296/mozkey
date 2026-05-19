@@ -9,11 +9,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="administration_dialog.ui" line="60"/>
-        <source>Help make [ProductName] better by automatically sending usage statistics and crash reports to Google (changes will take effect after you log out and log back in)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="administration_dialog.ui" line="108"/>
         <source>Disable [ProductName] for UAC-elevated applications</source>
         <translation type="unfinished"></translation>
