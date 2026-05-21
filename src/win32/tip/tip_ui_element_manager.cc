@@ -267,7 +267,7 @@ HRESULT TipUiElementManager::OnUpdate(TipTextService* text_service,
                             &new_indicator_ui_id))) {
         ui_element_map_[kIndicatorWindow].element = std::move(indicator_ui);
         ui_element_map_[kIndicatorWindow].id = new_indicator_ui_id;
-        candidate_ui_id = new_indicator_ui_id;
+        indicator_ui_id = new_indicator_ui_id;
       }
     }
   }
