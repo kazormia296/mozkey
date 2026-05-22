@@ -494,6 +494,15 @@ std::string CleanGeneratedText(std::string text, uint32_t max_output_chars) {
       "\xEE\xB8\x84",  // U+EE04
       "\xEE\xB8\x85",  // U+EE05
       "\xEE\xB8\x86",  // U+EE06
+      "\xEE\xB8\x87",  // U+EE07
+      "\xEE\xB8\x88",  // U+EE08
+      "\xEE\xB8\x89",  // U+EE09
+      "\xEE\xB8\x8A",  // U+EE0A
+      "\xEE\xB8\x8B",  // U+EE0B
+      "\xEE\xB8\x8C",  // U+EE0C
+      "\xEE\xB8\x8D",  // U+EE0D
+      "\xEE\xB8\x8E",  // U+EE0E
+      "\xEE\xB8\x8F",  // U+EE0F
       "<s>",
       "</s>",
       "<unk>",
@@ -863,7 +872,26 @@ bool HttpPostCompletion(
   body += "\"top_p\":1.0,";
   body += "\"stream\":false,";
   body += "\"cache_prompt\":true,";
-  body += "\"stop\":[\"\\uee00\",\"\\uee01\",\"\\uee02\",\"\\uee03\",\"\\uee04\",\"\\uee05\",\"\\uee06\",\"\\n\"]";
+  body += "\"stop\":["
+          "\"\\uee00\","
+          "\"\\uee01\","
+          "\"\\uee02\","
+          "\"\\uee03\","
+          "\"\\uee04\","
+          "\"\\uee05\","
+          "\"\\uee06\","
+          "\"\\uee07\","
+          "\"\\uee08\","
+          "\"\\uee09\","
+          "\"\\uee0a\","
+          "\"\\uee0b\","
+          "\"\\uee0c\","
+          "\"\\uee0d\","
+          "\"\\uee0e\","
+          "\"\\uee0f\","
+          "\"\\n\","
+          "\"\\r\""
+          "]";
   body += "}";
 
   const wchar_t headers[] = L"Content-Type: application/json; charset=utf-8\r\n";
