@@ -1,15 +1,32 @@
-Mozc fork by koyasi777
-======================
+<p align="center">
+  <img src="src/data/images/icon.svg" width="112" height="112" alt="Mozkey icon">
+</p>
 
-このリポジトリは [google/mozc](https://github.com/google/mozc) の非公式フォークです。
+<h1 align="center">Mozkey（もずきー）</h1>
+
+<p align="center">
+  <strong>Mozc をベースに、ライブ変換・文脈補正・ローカル Zenz 補正を加えた日本語入力 fork です。</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/koyasi777/mozkey/releases">
+    <img alt="Releases" src="https://img.shields.io/github/v/release/koyasi777/mozkey?include_prereleases&label=release">
+  </a>
+  <img alt="Based on Mozc" src="https://img.shields.io/badge/based%20on-Mozc-88A2DD">
+  <img alt="Local first" src="https://img.shields.io/badge/local--first-Zenz-53D4C7">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-178B8B">
+</p>
+
+Mozkey（もずきー）は [google/mozc](https://github.com/google/mozc) をベースにした非公式フォークです。
 
 本 fork は、主に自分の Windows 環境で日常的に使うために、Mozc に入力補助・ライブ変換・文脈補正・ローカル Zenz 補正・オフライン配布向けの調整を加えたものです。
 
-このプロジェクトは、v1.0.0 で **Mozkey** に改名する予定です。
-
-このビルドは google/mozc の公式配布物ではありません。
 本プロジェクトは Google 日本語入力ではありません。
+Google または google/mozc の公式配布物ではありません。
 Google によるサポートや品質保証の対象ではありません。
+
+upstream Mozc との追従性および既存インストールとの互換性を保つため、
+一部の内部実行ファイル名、パス、実装上の識別子には `mozc` / `Mozc` 名が残ります。
 
 プライバシー / ネットワークアクセス
 ------------------------------------
@@ -44,7 +61,7 @@ Windows 版では、追加のオフライン防御層として、インストー
 ダウンロード / インストール
 --------------------------
 
-Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mozc/releases) からダウンロードできます。
+Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mozkey/releases) からダウンロードできます。
 
 - 通常の 64-bit Windows では、Releases にある最新の `Mozc64_*_x64.msi` を使用してください。
 - 本 fork のリリースは個人用の experimental build として公開しています。
@@ -374,7 +391,7 @@ See also:
 Download / Install
 ------------------
 
-Windows MSI packages are available from [Releases](https://github.com/koyasi777/mozc/releases).
+Windows MSI packages are available from [Releases](https://github.com/koyasi777/mozkey/releases).
 
 - On ordinary 64-bit Windows, use the latest `Mozc64_*_x64.msi` from Releases.
 - For the Zenz-bundled build, choose an MSI whose file name contains `zenz` or `zenz_offline`.
