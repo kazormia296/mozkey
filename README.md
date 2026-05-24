@@ -5,7 +5,7 @@
 <h1 align="center">Mozkey（もずきー）</h1>
 
 <p align="center">
-  <strong>Mozc をベースに、遅延付きライブ変換・ローカル Zenz 補正・句読点単打確定・文脈を見た変換補正などを統合した、ローカルファーストな日本語入力 fork です。</strong>
+  <strong>Mozc をベースに、遅延付きライブ変換・ローカル Zenz 補正・ダークテーマ対応<br>句読点単打確定・文脈を見た変換補正などを統合した、ローカルファーストな日本語入力 fork です。</strong>
 </p>
 
 <p align="center">
@@ -14,6 +14,8 @@
   <img alt="Local first" src="https://img.shields.io/badge/local--first-Zenz-53D4C7">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-178B8B">
 </p>
+
+<br>
 
 Mozkey（もずきー）は [google/mozc](https://github.com/google/mozc) をベースにした非公式フォークです。
 
@@ -26,35 +28,7 @@ Google によるサポートや品質保証の対象ではありません。
 upstream Mozc との追従性および既存インストールとの互換性を保つため、
 一部の内部実行ファイル名、パス、実装上の識別子には `mozc` / `Mozc` 名が残ります。
 
-プライバシー / ネットワークアクセス
-------------------------------------
-
-この fork は、通常の IME 利用時に Mozc の実行時プロセスがネットワーク通信を行わない構成を目指しています。
-
-upstream 由来の使用統計・クラッシュレポート送信オプションは、管理ダイアログおよび設定ダイアログから削除しています。
-
-この fork では `StatsConfigUtil` のデフォルト実装を Null 実装に固定しており、通常の実行経路から使用統計を有効化できません。
-
-Windows 向けリリースバイナリについては、Mozc core runtime executable が `winhttp.dll`, `wininet.dll`, `urlmon.dll` などの代表的なネットワーク関連 DLL を import していないことを検査します。
-
-この fork では、llama.cpp ベースのローカル Zenz 推論 runtime を同梱する場合があります。同梱される `llama-server.exe` はローカル推論用の server として使用され、`127.0.0.1` のみに bind することを前提としています。外部ネットワークサービスを公開したり、入力内容を外部サーバーへ送信したりする目的のものではありません。
-
-Zenz helper process は、同梱された `llama-server.exe` と localhost endpoint のみで通信します。この local HTTP endpoint は推論処理を分離するための内部的なプロセス境界であり、外部ネットワークアクセスを目的としたものではありません。
-
-Zenz feedback learning は、読み、候補、粗い文脈クラス、採用/却下回数、理由 marker などのローカル学習情報だけを保存します。生の左文脈は保存しません。feedback に使う文脈は、`empty`、`japanese_only`、`japanese_with_punctuation`、`mixed_japanese_ascii`、`sensitive_like` などの非可逆な context class に落とします。
-
-さらに、リリース時には Mozc core runtime binaries にテレメトリ、アップデータ、クラッシュアップロード、使用統計関連の危険な marker が含まれないことを確認します。
-
-`http://`, `https://`, `googleapis.com` などの汎用的な URL 風 marker は、manifest、XML namespace、コメント、license file、ライブラリ metadata に由来する場合があるため、監査用に表示しますが hard failure にはしていません。
-
-ソースからビルドする場合、ビルド依存関係の取得にネットワーク接続が必要になる場合があります。これは、インストール済み IME の実行時通信とは別です。
-
-Windows 版では、追加のオフライン防御層として、インストーラーが Mozc の実行ファイルに outbound 通信をブロックする Windows Firewall rule を追加します。これらの rule はアンインストール時に削除されます。
-
-関連ドキュメント:
-
-- [Secure Offline Guarantee](docs/security/offline_guarantee.md)
-- [Secure Offline Release Checklist](docs/security/release_checklist.md)
+<br>
 
 ダウンロード / インストール
 --------------------------
@@ -70,12 +44,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 > 個人用 fork の experimental / pre-release build です。
 > MSI は署名されていないため、Windows の警告が表示される場合があります。
 
-主なブランチ
-------------
-
-- `main`: 日常利用向けの main branch
-- `master`: upstream tracking branch
-- `pr/*`: upstream 提案向けの作業 branch
+<br>
 
 主な追加機能
 ---------------------------
@@ -123,7 +92,41 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - Zenz model / llama.cpp runtime の third-party license notice を MSI に同梱
 - 自分の Windows 開発環境向けのビルド調整
 
-使用例
+<br>
+
+プライバシー / ネットワークアクセス
+------------------------------------
+
+この fork は、通常の IME 利用時に Mozc の実行時プロセスがネットワーク通信を行わない構成を目指しています。
+
+upstream 由来の使用統計・クラッシュレポート送信オプションは、管理ダイアログおよび設定ダイアログから削除しています。
+
+この fork では `StatsConfigUtil` のデフォルト実装を Null 実装に固定しており、通常の実行経路から使用統計を有効化できません。
+
+Windows 向けリリースバイナリについては、Mozc core runtime executable が `winhttp.dll`, `wininet.dll`, `urlmon.dll` などの代表的なネットワーク関連 DLL を import していないことを検査します。
+
+この fork では、llama.cpp ベースのローカル Zenz 推論 runtime を同梱する場合があります。同梱される `llama-server.exe` はローカル推論用の server として使用され、`127.0.0.1` のみに bind することを前提としています。外部ネットワークサービスを公開したり、入力内容を外部サーバーへ送信したりする目的のものではありません。
+
+Zenz helper process は、同梱された `llama-server.exe` と localhost endpoint のみで通信します。この local HTTP endpoint は推論処理を分離するための内部的なプロセス境界であり、外部ネットワークアクセスを目的としたものではありません。
+
+Zenz feedback learning は、読み、候補、粗い文脈クラス、採用/却下回数、理由 marker などのローカル学習情報だけを保存します。生の左文脈は保存しません。feedback に使う文脈は、`empty`、`japanese_only`、`japanese_with_punctuation`、`mixed_japanese_ascii`、`sensitive_like` などの非可逆な context class に落とします。
+
+さらに、リリース時には Mozc core runtime binaries にテレメトリ、アップデータ、クラッシュアップロード、使用統計関連の危険な marker が含まれないことを確認します。
+
+`http://`, `https://`, `googleapis.com` などの汎用的な URL 風 marker は、manifest、XML namespace、コメント、license file、ライブラリ metadata に由来する場合があるため、監査用に表示しますが hard failure にはしていません。
+
+ソースからビルドする場合、ビルド依存関係の取得にネットワーク接続が必要になる場合があります。これは、インストール済み IME の実行時通信とは別です。
+
+Windows 版では、追加のオフライン防御層として、インストーラーが Mozc の実行ファイルに outbound 通信をブロックする Windows Firewall rule を追加します。これらの rule はアンインストール時に削除されます。
+
+関連ドキュメント:
+
+- [Secure Offline Guarantee](docs/security/offline_guarantee.md)
+- [Secure Offline Release Checklist](docs/security/release_checklist.md)
+
+<br>
+
+修正詳細
 ------
 
 ### 曖昧なローマ字規則の途中表示
@@ -325,6 +328,8 @@ Upstream-oriented changes are organized in `pr/*` branches.
 
 この fork は主に個人利用向けに保守しています。
 upstream 提案向けの変更は `pr/*` branches に整理しています。
+
+<br>
 
 # English
 
