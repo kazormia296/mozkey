@@ -3344,156 +3344,30 @@ void Session::ClearZenzLiveCorrectionState() {
 
 bool Session::MaybeApplyZenzFeedbackLiveCorrection(
     commands::Command* command) {
-  const config::Config& config = context_->GetConfig();
+  (void)command;
 
-  if (!UseZenzFeedbackLearning(config)) {
-    return false;
-  }
-
-  if (!config.use_zenz_live_correction()) {
-    return false;
-  }
-
-  if (!config.use_live_conversion()) {
-    return false;
-  }
-
-  if (!live_conversion_active_) {
-    return false;
-  }
-
-  if (context_->state() != ImeContext::CONVERSION) {
-    return false;
-  }
-
-  if (context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
-    return false;
-  }
-
-  if (live_conversion_key_.empty() || live_conversion_value_.empty()) {
-    return false;
-  }
-
-  const ZenzTextPrivacyDecision key_privacy =
-      EvaluateZenzLiveKeyPrivacy(live_conversion_key_);
-  if (!key_privacy.allow) {
-    ZenzDebugOutput(absl::StrCat(
-        "[zenz-feedback] fast path skip key_privacy reason=",
-        key_privacy.reason,
-        " ",
-        ZenzRedactedTextStats("key", live_conversion_key_)));
-    return false;
-  }
-
-  const ZenzTextPrivacyDecision mozc_value_privacy =
-      EvaluateZenzLiveValuePrivacy(live_conversion_value_);
-  if (!mozc_value_privacy.allow) {
-    ZenzDebugOutput(absl::StrCat(
-        "[zenz-feedback] fast path skip mozc_value_privacy reason=",
-        mozc_value_privacy.reason,
-        " ",
-        ZenzRedactedTextStats("value", live_conversion_value_)));
-    return false;
-  }
-
-  const uint32_t min_key_len = GetZenzLiveCorrectionMinKeyLength(config);
-  if (Util::CharsLen(live_conversion_key_) < min_key_len) {
-    return false;
-  }
-
-  const uint32_t left_context_len =
-      GetZenzLiveCorrectionLeftContextLength(config);
-
-  const std::string raw_left_context =
-      ExtractZenzLeftContext(left_context_len);
-  const ZenzContextSanitizationResult context_result =
-      zenz_context_sanitizer_.SanitizeForZenz(
-          raw_left_context, left_context_len);
-
-  const std::string left_context_for_validation =
-      context_result.allowed_for_prompt
-          ? context_result.sanitized_context
-          : std::string();
-
-  const std::string context_class =
-      context_result.context_class.empty()
-          ? std::string("empty")
-          : context_result.context_class;
-
-  const std::vector<ZenzFeedbackCandidate> feedback_candidates =
-      zenz_feedback_store_.GetAcceptedCandidates(
-          live_conversion_key_, context_class);
-
-  if (feedback_candidates.empty()) {
-    return false;
-  }
-
-  for (const ZenzFeedbackCandidate& feedback_candidate :
-       feedback_candidates) {
-    const std::string& feedback_value = feedback_candidate.value;
-
-    const ZenzTextPrivacyDecision feedback_value_privacy =
-        EvaluateZenzLiveValuePrivacy(feedback_value);
-    if (!feedback_value_privacy.allow) {
-      ZenzDebugOutput(absl::StrCat(
-          "[zenz-feedback] fast path candidate rejected reason=value_privacy_",
-          feedback_value_privacy.reason,
-          " ",
-          ZenzRedactedTextStats("key", live_conversion_key_),
-          " ",
-          ZenzRedactedTextStats("value", feedback_value),
-          " context_class=", context_class,
-          " accepted_count=", feedback_candidate.accepted_count,
-          " rejected_count=", feedback_candidate.rejected_count));
-      continue;
-    }
-
-    ZenzValidationInput validation_input;
-    validation_input.key = live_conversion_key_;
-    validation_input.mozc_value = live_conversion_value_;
-    validation_input.zenz_value = feedback_value;
-    validation_input.left_context = left_context_for_validation;
-    validation_input.min_key_length = min_key_len;
-    validation_input.allow_synthetic_candidate =
-        config.use_zenz_synthetic_candidate();
-
-    const ZenzValidationResult validation =
-        zenz_output_validator_.Validate(validation_input);
-
-    if (!validation.accept) {
-      ZenzDebugOutput(absl::StrCat(
-          "[zenz-feedback] fast path candidate rejected reason=",
-          validation.reason,
-          " ", ZenzRedactedTextStats("key", live_conversion_key_),
-          " ", ZenzRedactedTextStats("value", feedback_value),
-          " context_class=", context_class,
-          " accepted_count=", feedback_candidate.accepted_count,
-          " rejected_count=", feedback_candidate.rejected_count));
-      continue;
-    }
-
-    ++zenz_live_generation_;
-    pending_zenz_live_ = PendingZenzLiveCorrection();
-
-    zenz_live_visible_generation_ = zenz_live_generation_;
-    zenz_live_key_ = live_conversion_key_;
-    zenz_live_value_ = feedback_value;
-    zenz_live_mozc_value_ = live_conversion_value_;
-    zenz_live_context_class_ = context_class;
-    zenz_live_left_context_ = left_context_for_validation;
-
-    ZenzDebugOutput(absl::StrCat(
-        "[zenz-feedback] fast path applied ",
-        ZenzRedactedTextStats("key", zenz_live_key_),
-        " ", ZenzRedactedTextStats("value", zenz_live_value_),
-        " ", ZenzRedactedTextStats("mozc_value", zenz_live_mozc_value_),
-        " context_class=", zenz_live_context_class_,
-        " accepted_count=", feedback_candidate.accepted_count,
-        " rejected_count=", feedback_candidate.rejected_count));
-
-    return OutputZenzLiveCorrection(feedback_value, command);
-  }
-
+  // Do not replay accepted Zenz feedback as a session-level live correction.
+  //
+  // Zenz feedback is already applied in the converter rewriter chain by
+  // ZenzFeedbackCandidateRewriter.  The rewriter order is:
+  //
+  //   ZenzFeedbackCandidateRewriter
+  //   UserSegmentHistoryRewriter
+  //
+  // This lets accepted Zenz feedback participate in candidate ranking while
+  // still allowing explicit user segment history to decide the final order.
+  //
+  // Keeping this session-level fast path would make Zenz feedback always win
+  // after the visible Mozc live-conversion result has already been generated.
+  // That breaks the "last learned result wins" rule.
+  //
+  // Example:
+  //   Existing Zenz feedback: たなべ -> 田辺
+  //   Later user selection:   たなべ -> 田邊
+  //
+  // UserSegmentHistoryRewriter correctly promotes 田邊, but this fast path
+  // would replay the stale Zenz feedback 田辺 afterwards and record it as
+  // accepted again.
   return false;
 }
 

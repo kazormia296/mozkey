@@ -989,7 +989,7 @@ TEST_F(SessionTest, PendingZenzFeedbackStoresContextClassOnly) {
 #if defined(_WIN32)
 
 TEST_F(SessionTest,
-       ZenzFeedbackFastPathAppliesAcceptedCandidateAsLiveCorrection) {
+       ZenzFeedbackFastPathDoesNotOverrideLiveConversionResult) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
 
@@ -1013,21 +1013,16 @@ TEST_F(SessionTest,
   session_peer.live_conversion_value_() = "彼は点滴です";
 
   commands::Command command;
-  EXPECT_TRUE(session_peer.MaybeApplyZenzFeedbackLiveCorrection(&command));
+  EXPECT_FALSE(session_peer.MaybeApplyZenzFeedbackLiveCorrection(&command));
 
-  EXPECT_TRUE(command.output().live_conversion());
-  EXPECT_FALSE(command.output().live_conversion_pending());
-  EXPECT_FALSE(command.output().zenz_live_correction_pending());
-  EXPECT_TRUE(command.output().zenz_live_correction_applied());
+  EXPECT_FALSE(command.output().zenz_live_correction_applied());
   EXPECT_FALSE(command.output().has_callback());
-  EXPECT_SINGLE_SEGMENT_AND_KEY("彼は天敵です",
-                                "かれはてんてきです",
-                                command);
+  EXPECT_FALSE(command.output().has_preedit());
 
-  EXPECT_EQ(session_peer.zenz_live_key_(), "かれはてんてきです");
-  EXPECT_EQ(session_peer.zenz_live_value_(), "彼は天敵です");
-  EXPECT_EQ(session_peer.zenz_live_mozc_value_(), "彼は点滴です");
-  EXPECT_EQ(session_peer.zenz_live_context_class_(), "empty");
+  EXPECT_TRUE(session_peer.zenz_live_key_().empty());
+  EXPECT_TRUE(session_peer.zenz_live_value_().empty());
+  EXPECT_TRUE(session_peer.zenz_live_mozc_value_().empty());
+  EXPECT_TRUE(session_peer.zenz_live_context_class_().empty());
 }
 
 TEST_F(SessionTest,
