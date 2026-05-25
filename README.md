@@ -109,6 +109,8 @@ Windows 向けリリースバイナリについては、Mozc core runtime execut
 
 Zenz helper process は、同梱された `llama-server.exe` と localhost endpoint のみで通信します。この local HTTP endpoint は推論処理を分離するための内部的なプロセス境界であり、外部ネットワークアクセスを目的としたものではありません。
 
+Zenz の localhost 通信は、固定 endpoint に依存しないようにし、内部 request も誤接続を避けるための保護を加えています。
+
 Zenz feedback learning は、読み、候補、粗い文脈クラス、採用/却下回数、理由 marker などのローカル学習情報だけを保存します。生の左文脈は保存しません。feedback に使う文脈は、`empty`、`japanese_only`、`japanese_with_punctuation`、`mixed_japanese_ascii`、`sensitive_like` などの非可逆な context class に落とします。
 
 さらに、リリース時には Mozc core runtime binaries にテレメトリ、アップデータ、クラッシュアップロード、使用統計関連の危険な marker が含まれないことを確認します。
@@ -173,7 +175,7 @@ Windows 版では、追加のオフライン防御層として、インストー
 
 ライブ変換と Zenz ライブ補正の両方を有効にすると、まず通常の Mozc ライブ変換結果を表示し、その後でローカルの Zenz runtime に非同期で補正を依頼します。
 
-Zenz request は `mozc_server` から Windows named pipe 経由で `mozc_zenz_scorer.exe` に送られます。scorer は同梱された `llama-server.exe` の localhost endpoint を呼び出し、ローカル推論を行います。
+Zenz request は `mozc_server` から Windows named pipe 経由で `mozc_zenz_scorer.exe` に送られます。scorer は同梱された `llama-server.exe` の localhost endpoint を呼び出し、ローカル推論を行います。この localhost 通信は固定 endpoint に依存しないようにし、内部 request も誤接続を避けるための保護を加えています。
 
 Zenz 補正は設定可能なデバウンス時間の後に実行されます。デフォルトは 1000 ms です。Zenz 結果が返る前に入力内容が変わった場合、古い結果は generation / key の検査により破棄されます。
 
@@ -365,6 +367,10 @@ The Zenz helper process communicates with the bundled `llama-server.exe` only
 through a localhost endpoint. This local HTTP endpoint is used as an internal
 process boundary for inference and is not intended for external network access.
 
+The Zenz localhost transport is hardened so that it does not rely on a fixed
+endpoint, and internal requests include protection against accidental or stale
+local endpoint mismatches.
+
 Zenz feedback learning stores only local learning records such as reading,
 candidate, coarse context class, accepted/rejected counts, and reason markers.
 Raw left context is not stored. Context used for feedback is reduced to a
@@ -512,7 +518,9 @@ Zenz runtime to refine the visible preedit.
 
 The Zenz request is sent from `mozc_server` to `mozc_zenz_scorer.exe` through a
 Windows named pipe. The scorer then calls the bundled `llama-server.exe` on a
-localhost endpoint for local inference.
+localhost endpoint for local inference. The localhost transport is hardened so
+that it does not rely on a fixed endpoint, and internal requests include
+protection against accidental or stale local endpoint mismatches.
 
 Zenz correction is delayed by a configurable debounce interval. The default
 delay is 1000 ms. If the current composition changes before the Zenz result
