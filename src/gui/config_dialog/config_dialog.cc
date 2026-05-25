@@ -547,7 +547,7 @@ bool ConfigDialog::Update() {
   if (use_dark_mode_candidate_window_changed) {
     QMessageBox::information(
         this, windowTitle(),
-        tr("Candidate window dark mode setting is enabled from"
+        tr("Candidate window and ruby overlay dark mode setting is enabled from"
            " new applications."));
     initial_use_dark_mode_candidate_window_ =
         config.use_dark_mode_candidate_window();
