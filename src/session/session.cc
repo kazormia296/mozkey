@@ -5768,55 +5768,38 @@ bool IsValidDirectCommitTriggerKey(const config::Config& config,
            config::Config::DIRECT_COMMIT_CLOSE_BRACKET));
 }
 
-bool IsValidDirectCommitKey(const config::Config& config,
-                            const commands::KeyEvent& key_event,
-                            absl::string_view last_char) {
+bool IsValidDirectCommitChar(const config::Config& config,
+                             absl::string_view last_char) {
   return
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>('.'),
-                       {".", "．", "。", "｡"}) &&
-       MatchesString(last_char, {".", "．", "。", "｡"}) &&
+      (MatchesString(last_char, {".", "．", "。", "｡"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_KUTEN)) ||
 
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>(','),
-                       {",", "，", "、", "､"}) &&
-       MatchesString(last_char, {",", "，", "、", "､"}) &&
+      (MatchesString(last_char, {",", "，", "、", "､"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_TOUTEN)) ||
 
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>('?'),
-                       {"?", "？"}) &&
-       MatchesString(last_char, {"?", "？"}) &&
+      (MatchesString(last_char, {"?", "？"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_QUESTION_MARK)) ||
 
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>('!'),
-                       {"!", "！"}) &&
-       MatchesString(last_char, {"!", "！"}) &&
+      (MatchesString(last_char, {"!", "！"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_EXCLAMATION_MARK)) ||
 
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>('('),
-                       {"(", "（"}) &&
-       MatchesString(last_char, {"(", "（"}) &&
+      (MatchesString(last_char, {"(", "（"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_OPEN_PARENTHESIS)) ||
 
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>(')'),
-                       {")", "）"}) &&
-       MatchesString(last_char, {")", "）"}) &&
+      (MatchesString(last_char, {")", "）"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_CLOSE_PARENTHESIS)) ||
 
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>('['),
-                       {"[", "［", "「"}) &&
-       MatchesString(last_char, {"[", "［", "「"}) &&
+      (MatchesString(last_char, {"[", "［", "「"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_OPEN_BRACKET)) ||
 
-      (MatchesKeyEvent(key_event, static_cast<uint32_t>(']'),
-                       {"]", "］", "」"}) &&
-       MatchesString(last_char, {"]", "］", "」"}) &&
+      (MatchesString(last_char, {"]", "］", "」"}) &&
        (config.direct_commit_key() &
         config::Config::DIRECT_COMMIT_CLOSE_BRACKET));
 }
@@ -5955,7 +5938,7 @@ bool Session::CanDirectCommitAfterPunctuation(
     return false;
   }
 
-  return IsValidDirectCommitKey(config, key_event, last_char);
+  return IsValidDirectCommitChar(config, last_char);
 }
 
 void Session::UpdateTime() {

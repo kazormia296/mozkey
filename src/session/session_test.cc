@@ -7899,6 +7899,130 @@ TEST_F(SessionTest, AutoConversion) {
   }
 }
 
+TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuation) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  config::Config config;
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(
+      config::Config::DIRECT_COMMIT_KUTEN |
+      config::Config::DIRECT_COMMIT_TOUTEN |
+      config::Config::DIRECT_COMMIT_QUESTION_MARK |
+      config::Config::DIRECT_COMMIT_EXCLAMATION_MARK);
+
+  auto table = std::make_shared<composer::Table>();
+  table->AddRule("te", "て", "");
+  table->AddRule("su", "す", "");
+  table->AddRule("to", "と", "");
+  table->AddRule("zz", "。", "");
+  table->AddRule("cc", "、", "");
+  table->AddRule("qq", "？", "");
+  table->AddRule("ee", "！", "");
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutozz", &session, &command);
+
+    EXPECT_RESULT("てすと。", command);
+    EXPECT_FALSE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutocc", &session, &command);
+
+    EXPECT_RESULT("てすと、", command);
+    EXPECT_FALSE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutoqq", &session, &command);
+
+    EXPECT_RESULT("てすと？", command);
+    EXPECT_FALSE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutoee", &session, &command);
+
+    EXPECT_RESULT("てすと！", command);
+    EXPECT_FALSE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+}
+
+TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuationRespectsConfig) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  config::Config config;
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_TOUTEN);
+
+  auto table = std::make_shared<composer::Table>();
+  table->AddRule("te", "て", "");
+  table->AddRule("su", "す", "");
+  table->AddRule("to", "と", "");
+  table->AddRule("zz", "。", "");
+  table->AddRule("cc", "、", "");
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutozz", &session, &command);
+
+    EXPECT_SINGLE_SEGMENT("てすと。", command);
+    EXPECT_FALSE(command.output().has_result());
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  }
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutocc", &session, &command);
+
+    EXPECT_RESULT("てすと、", command);
+    EXPECT_FALSE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+}
+
 TEST_F(SessionTest, InputSpaceWithKatakanaMode) {
   // This is a unittest against http://b/3203944.
   // Input mode should not be changed when a space key is typed.
