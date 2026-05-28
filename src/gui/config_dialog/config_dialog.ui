@@ -1854,19 +1854,35 @@
               <number>0</number>
              </property>
              <item>
-              <widget class="QCheckBox" name="checkDefaultCheckBox">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="text">
-                <string>Check if [ProductName] is the default IME on startup</string>
-               </property>
-               <property name="tristate">
-                <bool>false</bool>
-               </property>
+              <widget class="QWidget" name="defaultImeButtonsWidget" native="true">
+               <layout class="QHBoxLayout" name="defaultImeButtonsLayout">
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="QPushButton" name="setDefaultImeButton">
+                  <property name="text">
+                   <string>Set [ProductName] as the Windows default IME...</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="restoreDefaultImeButton">
+                  <property name="text">
+                   <string>Restore previous Windows default IME setting...</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
               </widget>
              </item>
              <item>
@@ -2366,7 +2382,8 @@
   <tabstop>suggestionsSizeSpinBox</tabstop>
   <tabstop>incognitoModeCheckBox</tabstop>
   <tabstop>presentationModeCheckBox</tabstop>
-  <tabstop>checkDefaultCheckBox</tabstop>
+  <tabstop>setDefaultImeButton</tabstop>
+  <tabstop>restoreDefaultImeButton</tabstop>
   <tabstop>IMEHotKeyDisabledCheckBox</tabstop>
   <tabstop>launchAdministrationDialogButton</tabstop>
   <tabstop>startupCheckBox</tabstop>
