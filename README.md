@@ -69,6 +69,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - 確定済みの左文脈や直前の文節、限定的な右文脈を参照し、`mainにマージしました`、`githubには`、`2名しかいない`、`追記したい`、`山梨県立美術館`、`滋賀方面` のような文脈で、助詞・複合機能語・機能表現・接尾的な語構成・地名接尾構成が同音漢字候補に負ける挙動を抑制
 - Windows 版で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を個別キーとして設定画面から割り当て可能
 - Windows 版で IMEOn / IMEOff に割り当てたキーを押した場合、すでに同じ状態でも IME モードインジケータを表示
+- Windows 版の設定画面から、Mozkey を Windows の既定 IME として明示的に設定し、変更前の既定 IME 設定へ戻せるボタンを追加
 - Windows 版の候補ウィンドウ/ルビ表示にダークモード切り替えを追加
 - Windows 版で未確定文字の文字色・背景色・下線色を設定画面からカスタマイズ可能
 - Windows 版の候補ウィンドウや IME 切り替えインジケータの配色・余白・角丸などの見た目を調整
@@ -288,6 +289,16 @@ Windows 版では、キー設定エディタ上で左 Shift / 右 Shift / 左 Ct
 
 これにより、IME 有効化・無効化キーを「状態を切り替えるキー」としてだけでなく、現在状態を視覚的に確認するためのキーとしても使えます。
 
+### Windows 既定 IME 設定
+
+Windows 版では、設定画面の「その他の設定」→「既定の IME」から、Mozkey を Windows の既定 IME として明示的に設定できます。
+
+この操作はログオン時に自動実行されるものではなく、ユーザーが設定ボタンを押した場合だけ実行されます。
+
+設定時には、変更前の Windows 既定 IME の上書き設定と、日本語入力方式リストの順序を保存します。「以前の Windows 既定 IME 設定に戻す...」ボタンを押すと、保存していた設定へ戻します。
+
+すでに Mozkey が既定 IME として設定されている場合や、未復元のバックアップが残っている場合は、変更前の復元点を上書きしないようにしています。
+
 ### Windows 候補ウィンドウと IME インジケータの表示テーマ
 
 Windows 版では、設定画面から候補ウィンドウの通常テーマとダークテーマを切り替えられます。
@@ -459,6 +470,7 @@ Main features added in this fork
 - Uses committed left context, previous segments, and limited right context to reduce unnatural homophone results in cases such as `mainにマージしました`, `githubには`, `2名しかいない`, `追記したい`, `山梨県立美術館`, and `滋賀方面`
 - Allows assigning left/right Shift and left/right Ctrl separately on Windows
 - Shows the IME mode indicator even when a key assigned to IMEOn or IMEOff is pressed while Mozc is already in that state
+- Adds explicit Windows default IME controls to the config dialog, with restore support for the previous default IME setting
 - Adds a dark-mode switch for the Windows candidate window
 - Allows customizing Windows preedit text color, background color, and underline color from the config dialog
 - Adjusts the appearance of the Windows candidate window and IME mode indicator, including colors, spacing, rounded corners, and layout
@@ -689,6 +701,16 @@ also shown even if Mozc is already in the requested state. For example, pressing
 an `IMEOff` key while IME is already off still shows the direct-input indicator.
 This makes mode-confirmation keys useful as explicit visual feedback, not only
 as state-changing toggles.
+
+### Windows default IME setting
+
+On Windows, the config dialog can explicitly set Mozkey as the Windows default IME.
+
+This operation is not performed automatically at login. It is executed only when the user presses the setting button.
+
+Before changing the setting, Mozkey saves the previous Windows default input method override and the Japanese input method order. The restore button restores those saved values.
+
+If Mozkey is already the default IME, or if an active restore point already exists, Mozkey does not overwrite the previous restore point.
 
 ### Windows candidate window and IME indicator themes
 
