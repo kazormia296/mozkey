@@ -524,6 +524,18 @@ void SwitchCompositionMode(commands::CompositionMode mode, Session* session) {
   EXPECT_TRUE(SwitchCompositionModeCommand(mode, session, &command));
 }
 
+void SetCustomKeymapForSession(absl::string_view custom_keymap_table,
+                               Session* session) {
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_session_keymap(config::Config::CUSTOM);
+  config.set_custom_keymap_table(std::string(custom_keymap_table));
+
+  auto key_map_manager = std::make_shared<keymap::KeyMapManager>(config);
+  session->SetConfig(config);
+  session->SetKeyMapManager(key_map_manager);
+}
+
 }  // namespace
 
 class SessionTest : public testing::TestWithTempUserProfile {
@@ -900,6 +912,84 @@ TEST_F(SessionTest, TestOfTestForSetup) {
     EXPECT_SINGLE_SEGMENT("あ", command)
         << "Global Romaji table should be initialized for each test fixture.";
   }
+}
+
+TEST_F(SessionTest, KeymapCommandSequenceCommitAndImeOffFromComposition) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SetCustomKeymapForSession(
+      "status\tkey\tcommand\n"
+      "Composition\tCtrl Enter\tCommit|IMEOff\n",
+      &session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  SendKey("a", &session, &command);
+  EXPECT_SINGLE_SEGMENT("あ", command);
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  command.Clear();
+  EXPECT_TRUE(SendKey("Ctrl Enter", &session, &command));
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_RESULT("あ", command);
+  EXPECT_EQ(session.context().state(), ImeContext::DIRECT);
+  EXPECT_EQ(command.output().mode(), commands::DIRECT);
+}
+
+TEST_F(SessionTest, KeymapCommandSequenceCrossesCompositionToConversion) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SetCustomKeymapForSession(
+      "status\tkey\tcommand\n"
+      "Composition\tCtrl Enter\tConvert|ConvertNext\n",
+      &session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterChars("aiueo", &session, &command);
+  EXPECT_SINGLE_SEGMENT_AND_KEY("あいうえお", "あいうえお", command);
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  const ConversionRequest request = CreateConversionRequest(session);
+  Segments segments;
+  SetAiueo(&segments);
+  FillT13Ns(request, &segments);
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  command.Clear();
+  EXPECT_TRUE(SendKey("Ctrl Enter", &session, &command));
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  // Convert selects the first candidate, then ConvertNext advances to the
+  // second candidate.
+  EXPECT_SINGLE_SEGMENT("アイウエオ", command);
+
+  Mock::VerifyAndClearExpectations(converter.get());
+}
+
+TEST_F(SessionTest, KeymapCommandSequenceCommitAndImeOffFromConversion) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SetCustomKeymapForSession(
+      "status\tkey\tcommand\n"
+      "Conversion\tCtrl Enter\tCommit|IMEOff\n",
+      &session);
+  InitSessionToConversionWithAiueo(&session, converter.get());
+
+  commands::Command command;
+  EXPECT_TRUE(SendKey("Ctrl Enter", &session, &command));
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_RESULT("あいうえお", command);
+  EXPECT_EQ(session.context().state(), ImeContext::DIRECT);
+  EXPECT_EQ(command.output().mode(), commands::DIRECT);
 }
 
 TEST_F(SessionTest, PendingZenzFeedbackIsConfirmedByNextTextInput) {

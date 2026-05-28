@@ -1513,13 +1513,130 @@ bool Session::UpdateComposition(commands::Command* command) {
   return result;
 }
 
-bool Session::SendKeyDirectInputState(commands::Command* command) {
-  keymap::DirectInputState::Commands key_command;
-  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
-  if (!keymap->GetCommandDirect(command->input().key(), &key_command)) {
-    return EchoBackAndClearUndoContext(command);
+bool Session::ExecuteCommandSequence(
+    const keymap::CommandSequence& command_sequence,
+    commands::Command* command) {
+  bool executed = false;
+  bool consumed = false;
+  bool has_accumulated_result = false;
+  commands::Result accumulated_result;
+  commands::Output final_output;
+
+  const auto merge_result = [](const commands::Result& step_result,
+                               commands::Result* accumulated_result) {
+    if (!accumulated_result->has_key() && !accumulated_result->has_value()) {
+      *accumulated_result = step_result;
+      return;
+    }
+
+    if (step_result.has_key()) {
+      accumulated_result->set_key(
+          absl::StrCat(accumulated_result->key(), step_result.key()));
+    }
+    if (step_result.has_value()) {
+      accumulated_result->set_value(
+          absl::StrCat(accumulated_result->value(), step_result.value()));
+    }
+  };
+
+  for (const std::string& command_name : command_sequence) {
+    if (command_name.empty()) {
+      continue;
+    }
+
+    command->mutable_output()->Clear();
+
+    if (!ExecuteCommandName(command_name, command)) {
+      if (!executed) {
+        return DoNothing(command);
+      }
+
+      final_output.set_consumed(consumed);
+      if (has_accumulated_result) {
+        *final_output.mutable_result() = accumulated_result;
+      }
+      *command->mutable_output() = final_output;
+      return true;
+    }
+
+    executed = true;
+
+    const commands::Output step_output = command->output();
+    consumed = consumed || step_output.consumed();
+
+    final_output = step_output;
+
+    if (step_output.has_result()) {
+      merge_result(step_output.result(), &accumulated_result);
+      has_accumulated_result = true;
+    }
+
+    final_output.set_consumed(consumed);
+    if (has_accumulated_result) {
+      *final_output.mutable_result() = accumulated_result;
+    }
   }
 
+  if (!executed) {
+    return DoNothing(command);
+  }
+
+  final_output.set_consumed(consumed);
+  if (has_accumulated_result) {
+    *final_output.mutable_result() = accumulated_result;
+  }
+  *command->mutable_output() = final_output;
+  return true;
+}
+
+bool Session::ExecuteCommandName(const std::string& command_name,
+                                 commands::Command* command) {
+  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
+
+  switch (context_->state()) {
+    case ImeContext::DIRECT: {
+      keymap::DirectInputState::Commands key_command;
+      if (!keymap->ResolveDirectCommandName(command_name, &key_command)) {
+        return false;
+      }
+      return ExecuteDirectInputCommand(key_command, command);
+    }
+
+    case ImeContext::PRECOMPOSITION: {
+      keymap::PrecompositionState::Commands key_command;
+      if (!keymap->ResolvePrecompositionCommandName(command_name,
+                                                    &key_command)) {
+        return false;
+      }
+      return ExecutePrecompositionCommand(key_command, command);
+    }
+
+    case ImeContext::COMPOSITION: {
+      keymap::CompositionState::Commands key_command;
+      if (!keymap->ResolveCompositionCommandName(command_name, &key_command)) {
+        return false;
+      }
+      return ExecuteCompositionCommand(key_command, command);
+    }
+
+    case ImeContext::CONVERSION: {
+      keymap::ConversionState::Commands key_command;
+      if (!keymap->ResolveConversionCommandName(command_name, &key_command)) {
+        return false;
+      }
+      return ExecuteConversionCommand(key_command, command);
+    }
+
+    case ImeContext::NONE:
+      return false;
+  }
+
+  return false;
+}
+
+bool Session::ExecuteDirectInputCommand(
+    keymap::DirectInputState::Commands key_command,
+    commands::Command* command) {
   switch (key_command) {
     case keymap::DirectInputState::IME_ON:
       return IMEOn(command);
@@ -1538,53 +1655,13 @@ bool Session::SendKeyDirectInputState(commands::Command* command) {
     case keymap::DirectInputState::RECONVERT:
       return RequestConvertReverse(command);
   }
+
   return false;
 }
 
-bool Session::SendKeyPrecompositionState(commands::Command* command) {
-  keymap::PrecompositionState::Commands key_command;
-  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
-  const bool result =
-      context_->converter().CheckState(EngineConverterInterface::SUGGESTION)
-          ? keymap->GetCommandZeroQuerySuggestion(command->input().key(),
-                                                  &key_command)
-          : keymap->GetCommandPrecomposition(command->input().key(),
-                                             &key_command);
-
-  if (!result) {
-    if (HasUndoContext() &&
-        IsCancelKeyForCompositionOrConversion(command->input().key())) {
-      return Revert(command);
-    }
-    return EchoBackAndClearUndoContext(command);
-  }
-
-  // Update the client context (if any) for later use. Note that the client
-  // context is updated only here. In other words, we will stop updating the
-  // client context once a conversion starts (mainly for performance reasons).
-  if (command->has_input() && command->input().has_context()) {
-    *context_->mutable_client_context() = command->input().context();
-
-#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
-    const commands::Context& client_context = command->input().context();
-    if (client_context.has_preceding_text()) {
-      MozcLeftContextDebugOutput(absl::StrCat(
-          "[mozc-left-context] session preceding_text=[",
-          client_context.preceding_text(), "]"));
-    } else {
-      MozcLeftContextDebugOutput(
-          "[mozc-left-context] session context has no preceding_text");
-    }
-#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
-
-  } else {
-    context_->mutable_client_context()->Clear();
-
-#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
-    MozcLeftContextDebugOutput("[mozc-left-context] session no context");
-#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
-  }
-
+bool Session::ExecutePrecompositionCommand(
+    keymap::PrecompositionState::Commands key_command,
+    commands::Command* command) {
   switch (key_command) {
     case keymap::PrecompositionState::INSERT_CHARACTER:
       return InsertCharacter(command);
@@ -1627,19 +1704,12 @@ bool Session::SendKeyPrecompositionState(commands::Command* command) {
     case keymap::PrecompositionState::LAUNCH_WORD_REGISTER_DIALOG:
       return LaunchWordRegisterDialog(command);
 
-    // For zero query suggestion
     case keymap::PrecompositionState::CANCEL:
-      // It is a little kind of abuse of the EditCancel command.  It
-      // would be nice to make a new command when EditCancel is
-      // extended or the requirement of this command is added.
       return EditCancel(command);
     case keymap::PrecompositionState::CANCEL_AND_IME_OFF:
-      // The same to keymap::PrecompositionState::CANCEL.
       return EditCancelAndIMEOff(command);
-    // For zero query suggestion
     case keymap::PrecompositionState::COMMIT_FIRST_SUGGESTION:
       return CommitFirstSuggestion(command);
-    // For zero query suggestion
     case keymap::PrecompositionState::PREDICT_AND_CONVERT:
       return PredictAndConvert(command);
 
@@ -1655,21 +1725,13 @@ bool Session::SendKeyPrecompositionState(commands::Command* command) {
     case keymap::PrecompositionState::IME_ACTION:
       return ImeAction(command);
   }
+
   return false;
 }
 
-bool Session::SendKeyCompositionState(commands::Command* command) {
-  keymap::CompositionState::Commands key_command;
-  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
-  const bool result =
-      context_->converter().CheckState(EngineConverterInterface::SUGGESTION)
-          ? keymap->GetCommandSuggestion(command->input().key(), &key_command)
-          : keymap->GetCommandComposition(command->input().key(), &key_command);
-
-  if (!result) {
-    return DoNothing(command);
-  }
-
+bool Session::ExecuteCompositionCommand(
+    keymap::CompositionState::Commands key_command,
+    commands::Command* command) {
   switch (key_command) {
     case keymap::CompositionState::INSERT_CHARACTER:
       return InsertCharacter(command);
@@ -1794,94 +1856,13 @@ bool Session::SendKeyCompositionState(commands::Command* command) {
     case keymap::CompositionState::NONE:
       return DoNothing(command);
   }
+
   return false;
 }
 
-bool Session::SendKeyConversionState(commands::Command* command) {
-  keymap::ConversionState::Commands key_command;
-  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
-  const bool result =
-      context_->converter().CheckState(EngineConverterInterface::PREDICTION)
-          ? keymap->GetCommandPrediction(command->input().key(), &key_command)
-          : keymap->GetCommandConversion(command->input().key(), &key_command);
-
-  if (!result) {
-    return DoNothing(command);
-  }
-
-  const commands::KeyEvent& input_key = command->input().key();
-
-  ZenzDebugOutput(absl::StrCat(
-      "[zenz-feedback] SendKeyConversionState"
-      " key_command=", static_cast<int>(key_command),
-      " live_conversion_active=", ZenzBool(live_conversion_active_),
-      " ", ZenzRedactedTextStats("live_key", live_conversion_key_),
-      " ", ZenzRedactedTextStats("live_value", live_conversion_value_),
-      " pending_zenz_pending=", ZenzBool(pending_zenz_live_.pending),
-      " pending_zenz_gen=", pending_zenz_live_.generation,
-      " pending_context_class=", pending_zenz_live_.context_class,
-      " ", ZenzRedactedTextStats("pending_key", pending_zenz_live_.key),
-      " ", ZenzRedactedTextStats("pending_value",
-                                  pending_zenz_live_.mozc_value),
-      " ", ZenzRedactedTextStats("zenz_key", zenz_live_key_),
-      " ", ZenzRedactedTextStats("zenz_value", zenz_live_value_),
-      " state=", static_cast<int>(context_->state()),
-      " has_special_key=", ZenzBool(input_key.has_special_key()),
-      " special_key=",
-      input_key.has_special_key()
-          ? static_cast<int>(input_key.special_key())
-          : -1,
-      " has_key_code=", ZenzBool(input_key.has_key_code()),
-      " key_code=", input_key.has_key_code() ? input_key.key_code() : 0,
-      " has_key_string=", ZenzBool(input_key.has_key_string()),
-      " key_string_bytes=",
-      input_key.has_key_string() ? input_key.key_string().size() : 0,
-      " modifier_count=", input_key.modifier_keys_size(),
-      " has_mode=", ZenzBool(input_key.has_mode()),
-      " mode=", input_key.has_mode() ? static_cast<int>(input_key.mode()) : -1,
-      " input_style=", static_cast<int>(input_key.input_style())));
-
-  if (live_conversion_active_) {
-    // During live conversion, Backspace should edit the underlying
-    // composition instead of cancelling conversion.
-    if (IsPlainBackspaceKey(command->input().key())) {
-      DiscardPendingZenzFeedback("backspace_after_zenz");
-      ClearZenzLiveCorrectionState();
-      return Backspace(command);
-    }
-
-    // If a zenz correction is visible, Enter should commit the zenz value
-    // immediately. Do not route this through normal Commit(), because some client
-    // paths may promote the live conversion state before Commit() observes the
-    // zenz state.
-    if (key_command == keymap::ConversionState::COMMIT &&
-        HasVisibleZenzLiveCorrection()) {
-      ZenzDebugOutput(absl::StrCat(
-          "[zenz-feedback] commit key while zenz visible ",
-          ZenzRedactedTextStats("key", zenz_live_key_),
-          " ", ZenzRedactedTextStats("value", zenz_live_value_)));
-
-      return CommitZenzLiveCorrectionResult(command);
-    }
-
-    // Explicit conversion operations such as Space, candidate movement, or Cancel
-    // promote live conversion back to normal conversion behavior.
-    if (key_command != keymap::ConversionState::INSERT_CHARACTER) {
-      if (key_command != keymap::ConversionState::COMMIT) {
-        if (key_command == keymap::ConversionState::CANCEL ||
-            key_command == keymap::ConversionState::CANCEL_AND_IME_OFF ||
-            key_command == keymap::ConversionState::UNDO) {
-          DiscardPendingZenzFeedback("cancel_after_zenz");
-        } else if (HasVisibleZenzLiveCorrection()) {
-          SetPendingZenzFeedbackRejected("explicit_conversion_after_zenz");
-        }
-        ClearZenzLiveCorrectionState();
-      }
-      live_conversion_active_ = false;
-      context_->mutable_converter()->SetCandidateListVisible(true);
-    }
-  }
-
+bool Session::ExecuteConversionCommand(
+    keymap::ConversionState::Commands key_command,
+    commands::Command* command) {
   switch (key_command) {
     case keymap::ConversionState::INSERT_CHARACTER:
       return InsertCharacter(command);
@@ -2018,7 +1999,189 @@ bool Session::SendKeyConversionState(commands::Command* command) {
     case keymap::ConversionState::NONE:
       return DoNothing(command);
   }
+
   return false;
+}
+
+bool Session::SendKeyDirectInputState(commands::Command* command) {
+  keymap::CommandSequence command_sequence;
+  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
+  if (!keymap->GetCommandSequenceDirect(command->input().key(),
+                                        &command_sequence)) {
+    return EchoBackAndClearUndoContext(command);
+  }
+
+  return ExecuteCommandSequence(command_sequence, command);
+}
+
+bool Session::SendKeyPrecompositionState(commands::Command* command) {
+  keymap::CommandSequence command_sequence;
+  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
+  const bool result =
+      context_->converter().CheckState(EngineConverterInterface::SUGGESTION)
+          ? keymap->GetCommandSequenceZeroQuerySuggestion(
+                command->input().key(), &command_sequence)
+          : keymap->GetCommandSequencePrecomposition(command->input().key(),
+                                                     &command_sequence);
+
+  if (!result) {
+    if (HasUndoContext() &&
+        IsCancelKeyForCompositionOrConversion(command->input().key())) {
+      return Revert(command);
+    }
+    return EchoBackAndClearUndoContext(command);
+  }
+
+  // Update the client context (if any) for later use. Note that the client
+  // context is updated only here. In other words, we will stop updating the
+  // client context once a conversion starts (mainly for performance reasons).
+  if (command->has_input() && command->input().has_context()) {
+    *context_->mutable_client_context() = command->input().context();
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+    const commands::Context& client_context = command->input().context();
+    if (client_context.has_preceding_text()) {
+      MozcLeftContextDebugOutput(absl::StrCat(
+          "[mozc-left-context] session preceding_text=[",
+          client_context.preceding_text(), "]"));
+    } else {
+      MozcLeftContextDebugOutput(
+          "[mozc-left-context] session context has no preceding_text");
+    }
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+
+  } else {
+    context_->mutable_client_context()->Clear();
+
+#if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+    MozcLeftContextDebugOutput("[mozc-left-context] session no context");
+#endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+  }
+
+  return ExecuteCommandSequence(command_sequence, command);
+}
+
+bool Session::SendKeyCompositionState(commands::Command* command) {
+  keymap::CommandSequence command_sequence;
+  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
+  const bool result =
+      context_->converter().CheckState(EngineConverterInterface::SUGGESTION)
+          ? keymap->GetCommandSequenceSuggestion(command->input().key(),
+                                                 &command_sequence)
+          : keymap->GetCommandSequenceComposition(command->input().key(),
+                                                  &command_sequence);
+
+  if (!result) {
+    return DoNothing(command);
+  }
+
+  return ExecuteCommandSequence(command_sequence, command);
+}
+
+bool Session::SendKeyConversionState(commands::Command* command) {
+  keymap::CommandSequence command_sequence;
+  const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
+  const bool result =
+      context_->converter().CheckState(EngineConverterInterface::PREDICTION)
+          ? keymap->GetCommandSequencePrediction(command->input().key(),
+                                                 &command_sequence)
+          : keymap->GetCommandSequenceConversion(command->input().key(),
+                                                 &command_sequence);
+
+  if (!result || command_sequence.empty()) {
+    return DoNothing(command);
+  }
+
+  keymap::ConversionState::Commands key_command;
+  if (!keymap->ResolveConversionCommandName(command_sequence.front(),
+                                            &key_command)) {
+    return DoNothing(command);
+  }
+
+  const commands::KeyEvent& input_key = command->input().key();
+
+  ZenzDebugOutput(absl::StrCat(
+      "[zenz-feedback] SendKeyConversionState"
+      " key_command=", static_cast<int>(key_command),
+      " live_conversion_active=", ZenzBool(live_conversion_active_),
+      " ", ZenzRedactedTextStats("live_key", live_conversion_key_),
+      " ", ZenzRedactedTextStats("live_value", live_conversion_value_),
+      " pending_zenz_pending=", ZenzBool(pending_zenz_live_.pending),
+      " pending_zenz_gen=", pending_zenz_live_.generation,
+      " pending_context_class=", pending_zenz_live_.context_class,
+      " ", ZenzRedactedTextStats("pending_key", pending_zenz_live_.key),
+      " ", ZenzRedactedTextStats("pending_value",
+                                  pending_zenz_live_.mozc_value),
+      " ", ZenzRedactedTextStats("zenz_key", zenz_live_key_),
+      " ", ZenzRedactedTextStats("zenz_value", zenz_live_value_),
+      " state=", static_cast<int>(context_->state()),
+      " has_special_key=", ZenzBool(input_key.has_special_key()),
+      " special_key=",
+      input_key.has_special_key()
+          ? static_cast<int>(input_key.special_key())
+          : -1,
+      " has_key_code=", ZenzBool(input_key.has_key_code()),
+      " key_code=", input_key.has_key_code() ? input_key.key_code() : 0,
+      " has_key_string=", ZenzBool(input_key.has_key_string()),
+      " key_string_bytes=",
+      input_key.has_key_string() ? input_key.key_string().size() : 0,
+      " modifier_count=", input_key.modifier_keys_size(),
+      " has_mode=", ZenzBool(input_key.has_mode()),
+      " mode=", input_key.has_mode() ? static_cast<int>(input_key.mode()) : -1,
+      " input_style=", static_cast<int>(input_key.input_style())));
+
+  if (live_conversion_active_) {
+    // During live conversion, Backspace should edit the underlying
+    // composition instead of cancelling conversion.
+    if (IsPlainBackspaceKey(command->input().key())) {
+      DiscardPendingZenzFeedback("backspace_after_zenz");
+      ClearZenzLiveCorrectionState();
+      return Backspace(command);
+    }
+
+    // If a zenz correction is visible, Enter should commit the zenz value
+    // immediately. Do not route this through normal Commit(), because some client
+    // paths may promote the live conversion state before Commit() observes the
+    // zenz state.
+    if (key_command == keymap::ConversionState::COMMIT &&
+        HasVisibleZenzLiveCorrection()) {
+      ZenzDebugOutput(absl::StrCat(
+          "[zenz-feedback] commit key while zenz visible ",
+          ZenzRedactedTextStats("key", zenz_live_key_),
+          " ", ZenzRedactedTextStats("value", zenz_live_value_)));
+
+      if (!CommitZenzLiveCorrectionResult(command)) {
+        return false;
+      }
+
+      if (command_sequence.size() == 1) {
+        return true;
+      }
+
+      keymap::CommandSequence remaining_sequence(
+          command_sequence.begin() + 1, command_sequence.end());
+      return ExecuteCommandSequence(remaining_sequence, command);
+    }
+
+    // Explicit conversion operations such as Space, candidate movement, or Cancel
+    // promote live conversion back to normal conversion behavior.
+    if (key_command != keymap::ConversionState::INSERT_CHARACTER) {
+      if (key_command != keymap::ConversionState::COMMIT) {
+        if (key_command == keymap::ConversionState::CANCEL ||
+            key_command == keymap::ConversionState::CANCEL_AND_IME_OFF ||
+            key_command == keymap::ConversionState::UNDO) {
+          DiscardPendingZenzFeedback("cancel_after_zenz");
+        } else if (HasVisibleZenzLiveCorrection()) {
+          SetPendingZenzFeedbackRejected("explicit_conversion_after_zenz");
+        }
+        ClearZenzLiveCorrectionState();
+      }
+      live_conversion_active_ = false;
+      context_->mutable_converter()->SetCandidateListVisible(true);
+    }
+  }
+
+  return ExecuteCommandSequence(command_sequence, command);
 }
 
 void Session::UpdatePreferences(commands::Command* command) {

@@ -67,6 +67,8 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - 1文字だけの未確定文字列では、助詞などの誤変換を避けるためライブ変換を実行しない
 - `え~`、`えー`、`ん？` のような「かな1文字 + 装飾的な末尾記号」でも、短すぎる漢字化を避けるためライブ変換を抑制
 - 確定済みの左文脈や直前の文節、限定的な右文脈を参照し、`mainにマージしました`、`githubには`、`2名しかいない`、`追記したい`、`山梨県立美術館`、`滋賀方面` のような文脈で、助詞・複合機能語・機能表現・接尾的な語構成・地名接尾構成が同音漢字候補に負ける挙動を抑制
+- キー設定エディタで、1つのキー入力に対して複数のコマンドを順序付きで割り当て可能
+- 複数コマンドは `Commit|IMEOff` のような形式で保存され、設定画面では `Commit → IMEOff` のように編集可能
 - Windows 版で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を個別キーとして設定画面から割り当て可能
 - Windows 版で IMEOn / IMEOff に割り当てたキーを押した場合、すでに同じ状態でも IME モードインジケータを表示
 - Windows 版の設定画面から、Mozkey を Windows の既定 IME として明示的に設定し、変更前の既定 IME 設定へ戻せるボタンを追加
@@ -268,6 +270,20 @@ Zenz 学習データは設定画面から管理できます。管理画面では
 
 これにより、変換確定直後の修正操作がユーザーの意図に近い形で履歴学習へ反映されます。
 
+### 複数コマンドのキー割り当て
+
+キー設定エディタで、1つのキー入力に対して複数のコマンドを順序付きで割り当てられるようにしました。
+
+たとえば、次のような割り当てができます。
+
+- `Composition + Ctrl Enter -> Commit → IMEOff`
+- `Composition + Ctrl Space -> Convert → ConvertNext`
+- `Conversion + Ctrl Enter -> Commit → IMEOff`
+
+コマンド列は左から右へ順に実行されます。途中で入力状態が変わった場合、後続コマンドはその時点の状態に合わせて解決されます。たとえば `Convert → ConvertNext` では、まず未変換状態から変換状態へ入り、その後に次候補へ移動します。
+
+設定ファイル上では、複数コマンドは `Commit|IMEOff` や `Convert|ConvertNext` のように `|` 区切りで保存されます。設定画面では `Commit → IMEOff` のように表示され、コマンドの追加、削除、並べ替えができます。
+
 ### 左右 Shift / Ctrl の個別キー割り当て（Windows）
 
 Windows 版では、キー設定エディタ上で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を別々のキーとして扱えます。
@@ -468,6 +484,8 @@ Main features added in this fork
 - Suppresses live conversion for one-character compositions to avoid over-converting particles
 - Suppresses live conversion for very short kana compositions with decorative trailing symbols such as `え~`, `えー`, or `ん？`
 - Uses committed left context, previous segments, and limited right context to reduce unnatural homophone results in cases such as `mainにマージしました`, `githubには`, `2名しかいない`, `追記したい`, `山梨県立美術館`, and `滋賀方面`
+- Allows assigning multiple commands to a single key binding as an ordered command sequence
+- Stores command sequences as `Commit|IMEOff` and shows them in the keymap editor as `Commit → IMEOff`
 - Allows assigning left/right Shift and left/right Ctrl separately on Windows
 - Shows the IME mode indicator even when a key assigned to IMEOn or IMEOff is pressed while Mozc is already in that state
 - Adds explicit Windows default IME controls to the config dialog, with restore support for the previous default IME setting
@@ -678,6 +696,20 @@ For example:
 - The tail-specific learning for `医師とは` is reverted
 
 This makes immediate correction after conversion confirmation behave closer to user intent.
+
+### Multiple commands per key binding
+
+The keymap editor can assign multiple commands to one key binding as an ordered command sequence.
+
+Examples:
+
+- `Composition + Ctrl Enter -> Commit → IMEOff`
+- `Composition + Ctrl Space -> Convert → ConvertNext`
+- `Conversion + Ctrl Enter -> Commit → IMEOff`
+
+Commands are executed from left to right. If the input state changes during the sequence, the following command is resolved against the current state at that point. For example, `Convert → ConvertNext` first enters conversion from composition and then moves to the next candidate.
+
+In exported keymap files, command sequences are stored with `|`, such as `Commit|IMEOff` or `Convert|ConvertNext`. In the keymap editor UI, they are displayed with arrows, such as `Commit → IMEOff`.
 
 ### Independent left/right Shift and Ctrl key bindings (Windows)
 

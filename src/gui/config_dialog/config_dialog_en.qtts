@@ -486,6 +486,54 @@
     </message>
 </context>
 <context>
+    <name>mozc::gui::CommandSequenceEditorDialog</name>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="48"/>
+        <source>Edit command sequence</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="51"/>
+        <source>Filter commands</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="56"/>
+        <source>Add &gt;</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="57"/>
+        <source>&lt; Remove</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="58"/>
+        <source>Up</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="59"/>
+        <source>Down</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="60"/>
+        <source>Clear</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="63"/>
+        <source>Available commands</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="79"/>
+        <source>Command sequence</source>
+        <translation></translation>
+    </message>
+</context>
+<context>
     <name>mozc::gui::ConfigDialog</name>
     <message>
         <location filename="config_dialog.cc" line="130"/>

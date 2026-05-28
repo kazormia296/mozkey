@@ -486,6 +486,54 @@
     </message>
 </context>
 <context>
+    <name>mozc::gui::CommandSequenceEditorDialog</name>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="48"/>
+        <source>Edit command sequence</source>
+        <translation>コマンド列を編集</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="51"/>
+        <source>Filter commands</source>
+        <translation>コマンドを検索</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="56"/>
+        <source>Add &gt;</source>
+        <translation>追加 &gt;</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="57"/>
+        <source>&lt; Remove</source>
+        <translation>&lt; 削除</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="58"/>
+        <source>Up</source>
+        <translation>上へ</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="59"/>
+        <source>Down</source>
+        <translation>下へ</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="60"/>
+        <source>Clear</source>
+        <translation>クリア</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="63"/>
+        <source>Available commands</source>
+        <translation>利用可能なコマンド</translation>
+    </message>
+    <message>
+        <location filename="command_sequence_editor_dialog.cc" line="79"/>
+        <source>Command sequence</source>
+        <translation>コマンド列</translation>
+    </message>
+</context>
+<context>
     <name>mozc::gui::ConfigDialog</name>
     <message>
         <location filename="config_dialog.cc" line="133"/>
