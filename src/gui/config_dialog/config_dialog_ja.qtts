@@ -352,13 +352,13 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="1385"/>
-        <source>Set [ProductName] as the Windows default IME...</source>
-        <translation>[ProductName] を Windows の既定 IME に設定...</translation>
+        <source>Set as Windows default IME</source>
+        <translation>Windows の既定 IME に設定</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="1385"/>
-        <source>Restore previous Windows default IME setting...</source>
-        <translation>以前の Windows 既定 IME 設定に戻す...</translation>
+        <source>Restore previous setting</source>
+        <translation>以前の設定に戻す</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="1395"/>

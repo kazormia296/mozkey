@@ -1871,14 +1871,14 @@
                 <item>
                  <widget class="QPushButton" name="setDefaultImeButton">
                   <property name="text">
-                   <string>Set [ProductName] as the Windows default IME...</string>
+                   <string>Set as Windows default IME</string>
                   </property>
                  </widget>
                 </item>
                 <item>
                  <widget class="QPushButton" name="restoreDefaultImeButton">
                   <property name="text">
-                   <string>Restore previous Windows default IME setting...</string>
+                   <string>Restore previous setting</string>
                   </property>
                  </widget>
                 </item>
