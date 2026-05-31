@@ -174,6 +174,8 @@ Windows 版では、追加のオフライン防御層として、インストー
 - `kyouha` と入力
 - デバウンス時間の経過後、Space を押す前に未確定文字列が `今日は` のように表示される
 - 続けて文字を入力しても途中の変換結果は確定されず、同じ未確定文字列として再変換される
+- ローマ字テーブルで `v. -> …` や `v, -> ‥` のような省略記号を入力する場合も、直前まで表示されていたライブ変換結果を保ったまま入力を継続する
+- Shift による英字入力へ移る場合は、表示中のライブ変換結果を先に確定してから英字入力を開始する
 - Backspace / Delete では、削除後の状態をすぐにライブ変換結果へ反映する
 - Enter で現在のライブ変換結果を確定する
 
@@ -557,6 +559,8 @@ For example:
 - Type `kyouha`
 - After the debounce delay, the preedit can be shown as `今日は` before pressing Space
 - Typing more characters keeps the same uncommitted composition and schedules another live conversion
+- Romaji-table ellipsis rules such as `v. -> …` or `v, -> ‥` keep the visible live-converted prefix instead of falling back to raw kana
+- When Shift-based ASCII input starts, the visible live conversion result is committed first, and then ASCII input begins
 - Pressing Backspace or Delete updates the live conversion result immediately
 - Pressing Enter commits the current live conversion result
 
