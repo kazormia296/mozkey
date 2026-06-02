@@ -119,6 +119,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
 namespace {
 using ::mozc::commands::Request;
 using ::testing::_;
+using ::testing::AtLeast;
 using ::testing::DoAll;
 using ::testing::Mock;
 using ::testing::Return;
@@ -1385,6 +1386,554 @@ TEST_F(SessionTest,
   EXPECT_TRUE(command.output().live_conversion_pending());
   EXPECT_PREEDIT("今日は‥", command);
   EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+}
+
+TEST_F(SessionTest, LiveConversionKeepsExpressiveKanaAtomsAsComposition) {
+  constexpr absl::string_view kExpressiveAtoms[] = {
+      "ふん",
+      "ちっ",
+      "ちぇっ",
+      "くそ",
+      "よう",
+      "ふむ",
+      "はて",
+      "ほっ",
+      "ふう",
+      "いてっ",
+      "ぎゃっ",
+      "ひゃっ",
+      "ほう",
+      "はいはい",
+      "ほっほーん",
+
+      "ちっす",
+      "ちっっす",
+      "ちーっす",
+      "ちぃーっす",
+      "ちぃーーっす",
+      "ちーっすー",
+      "ちょっす",
+      "ちょーっす",
+      "ちょーっすー",
+      "ちょりっす",
+      "ちょりーっす",
+      "ちょりーっすー",
+
+      "うひょ",
+      "うひょー",
+      "うひょーん",
+      "うっひょ",
+      "うっひょー",
+      "うっひょーん",
+      "うっっひょ",
+      "うっっひょーん",
+
+      "うっそん",
+      "うっっそ",
+      "うっっっそーん",
+      "くっそ",
+      "くっっそ",
+      "くっっっそー",
+
+      "やっば",
+      "やっっばい",
+      "やっべぇ",
+      "やっっべー",
+
+      "すっご",
+      "すっっごい",
+      "すっげぇ",
+      "すっっげー",
+      "すっくな",
+      "すっっくない",
+      "すっくね",
+      "すっっくねぇ",
+      "すっくねえ",
+      "すっくねー",
+      "すっぱ",
+      "すっっぱ",
+      "すっっっぱ",
+      "すっぱー",
+      "すっっぱー",
+      "すっぺぇ",
+      "すっっぺー",
+
+      "こっわ",
+      "こっっわい",
+
+      "つっよ",
+      "つっっよい",
+      "つっら",
+      "つっっらい",
+      "つっれぇ",
+      "つっっれー",
+
+      "でっか",
+      "でっっかい",
+
+      "なっが",
+      "なっっがい",
+
+      "たっか",
+      "たっっかい",
+      "たっけぇ",
+      "たっっけー",
+
+      "ちっさ",
+      "ちっっさい",
+      "ちっちゃ",
+      "ちっっちゃい",
+      "ちっせぇ",
+      "ちっっせー",
+
+      "ひっく",
+      "ひっっくい",
+      "ひっろ",
+      "ひっっろい",
+
+      "さっむ",
+      "さっっむい",
+      "さっみぃ",
+      "さっっみー",
+
+      "あっつ",
+      "あっっつい",
+      "あっちぃ",
+      "あっっちー",
+
+      "うっま",
+      "うっっまい",
+      "うっめぇ",
+      "うっっめー",
+      "うっざ",
+      "うっっざい",
+      "うっぜぇ",
+      "うっっぜー",
+      "うっす",
+      "うっっすい",
+
+      "かっる",
+      "かっっるい",
+
+      "きっつ",
+      "きっっつい",
+      "きっちぃ",
+      "きっっちー",
+      "きっも",
+      "きっっもい",
+      "きっれい",
+      "きっっれい",
+
+      "だっる",
+      "だっっるい",
+      "だっりぃ",
+      "だっっりー",
+      "だっさ",
+      "だっっさい",
+      "だっせぇ",
+      "だっっせー",
+
+      "えっぐ",
+      "えっっぐい",
+
+      "くっさ",
+      "くっっさい",
+      "くっせぇ",
+      "くっっせー",
+      "くっろ",
+      "くっっろい",
+
+      "まっぶし",
+      "まっっぶしい",
+
+      "おっも",
+      "おっっもい",
+      "おっそ",
+      "おっっそい",
+
+      "はっや",
+      "はっっやい",
+
+      "めっちゃ",
+      "めっっちゃ",
+
+      "ねっむ",
+      "ねっっむい",
+
+      "ほっそ",
+      "ほっっそい",
+
+      "せっま",
+      "せっっまい",
+
+      "みっじか",
+      "みっっじかい",
+
+      "しっろ",
+      "しっっろい",
+
+      "ええ",
+      "えぇ",
+      "ぇぇ",
+      "えぇぇ",
+      "えぇー",
+  };
+
+  for (absl::string_view expressive_atom : kExpressiveAtoms) {
+    MockEngine engine;
+    std::shared_ptr<MockConverter> converter =
+        CreateEngineConverterMock(&engine);
+
+    Session session(engine);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_live_conversion_delay_msec(0);
+    session.SetConfig(config);
+
+    std::vector<std::string> chars;
+    for (absl::string_view c : Utf8AsChars(expressive_atom)) {
+      chars.emplace_back(c);
+    }
+    ASSERT_GE(chars.size(), 2);
+
+    std::string prefix;
+    std::string prefix_key_codes;
+    for (size_t i = 0; i + 1 < chars.size(); ++i) {
+      prefix.append(chars[i]);
+      prefix_key_codes.push_back('a');
+    }
+
+    // Some prefixes such as 「ちぇ」「いて」「はいは」 are intentionally not
+    // covered by the prefix test.  This test verifies that the completed
+    // expressive atom is held as kana during live conversion.
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(Return(false));
+
+    commands::Command command;
+    InsertCharacterString(prefix, prefix_key_codes, &session, &command);
+
+    Mock::VerifyAndClearExpectations(converter.get());
+
+    EXPECT_CALL(*converter, StartConversion(_, _)).Times(0);
+
+    command.Clear();
+    InsertCharacterString(chars.back(), "a", &session, &command);
+
+    EXPECT_EQ(session.context().composer().GetQueryForConversion(),
+              expressive_atom);
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+    EXPECT_PREEDIT(expressive_atom, command);
+
+    Mock::VerifyAndClearExpectations(converter.get());
+  }
+}
+
+TEST_F(SessionTest, LiveConversionKeepsExpressiveKanaPrefixesAsComposition) {
+  constexpr absl::string_view kExpressivePrefixes[] = {
+      "うひ",
+      "うっひ",
+      "うっっひ",
+
+      "うっ",
+      "うっっ",
+      "くっ",
+      "くっっ",
+
+      "やっ",
+      "やっっ",
+      "すっ",
+      "すっっ",
+      "こっ",
+      "こっっ",
+      "つっ",
+      "つっっ",
+      "でっ",
+      "でっっ",
+      "なっ",
+      "なっっ",
+      "たっ",
+      "たっっ",
+      "ちっ",
+      "ちっっ",
+      "ひっ",
+      "ひっっ",
+      "さっ",
+      "さっっ",
+      "あっ",
+      "あっっ",
+      "かっ",
+      "かっっ",
+      "きっ",
+      "きっっ",
+      "だっ",
+      "だっっ",
+      "えっ",
+      "えっっ",
+      "まっ",
+      "まっっ",
+      "おっ",
+      "おっっ",
+      "はっ",
+      "はっっ",
+      "めっ",
+      "めっっ",
+      "ねっ",
+      "ねっっ",
+      "ほっ",
+      "ほっっ",
+      "せっ",
+      "せっっ",
+      "みっ",
+      "みっっ",
+      "しっ",
+      "しっっ",
+
+      "ちー",
+      "ちぃー",
+      "ちーっ",
+      "ちぃーっ",
+      "ちょ",
+      "ちょー",
+      "ちょーっ",
+      "ちょり",
+      "ちょりー",
+      "ちょりーっ",
+  };
+
+  for (absl::string_view expressive_prefix : kExpressivePrefixes) {
+    MockEngine engine;
+    std::shared_ptr<MockConverter> converter =
+        CreateEngineConverterMock(&engine);
+
+    Session session(engine);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_live_conversion_delay_msec(0);
+    session.SetConfig(config);
+
+    EXPECT_CALL(*converter, StartConversion(_, _)).Times(0);
+
+    commands::Command command;
+    const std::string dummy_key_codes(
+        Util::CharsLen(expressive_prefix), 'a');
+    InsertCharacterString(expressive_prefix, dummy_key_codes,
+                          &session, &command);
+
+    EXPECT_EQ(session.context().composer().GetQueryForConversion(),
+              expressive_prefix);
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+    EXPECT_PREEDIT(expressive_prefix, command);
+
+    Mock::VerifyAndClearExpectations(converter.get());
+  }
+}
+
+TEST_F(SessionTest,
+       LiveConversionKeepsCasualSsuGreetingRomanPendingPrefixesAsComposition) {
+  struct TestCase {
+    absl::string_view kana_prefix;
+    absl::string_view roman_suffix;
+    absl::string_view expected_query;
+  };
+
+  constexpr TestCase kTestCases[] = {
+      {"ち", "ssu", "ちっす"},
+      {"ちー", "ssu", "ちーっす"},
+      {"ちぃー", "ssu", "ちぃーっす"},
+      {"ちょ", "r", "ちょr"},
+      {"ちょー", "ssu", "ちょーっす"},
+      {"ちょり", "ssu", "ちょりっす"},
+      {"ちょりー", "ssu", "ちょりーっす"},
+  };
+
+  for (const TestCase& test_case : kTestCases) {
+    MockEngine engine;
+    std::shared_ptr<MockConverter> converter =
+        CreateEngineConverterMock(&engine);
+
+    Session session(engine);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_live_conversion_delay_msec(0);
+    session.SetConfig(config);
+
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(Return(false));
+
+    commands::Command command;
+    const std::string dummy_key_codes(
+        Util::CharsLen(test_case.kana_prefix), 'a');
+    InsertCharacterString(test_case.kana_prefix, dummy_key_codes,
+                          &session, &command);
+
+    Mock::VerifyAndClearExpectations(converter.get());
+
+    EXPECT_CALL(*converter, StartConversion(_, _)).Times(0);
+
+    command.Clear();
+    InsertCharacterChars(test_case.roman_suffix, &session, &command);
+
+    EXPECT_EQ(session.context().composer().GetQueryForConversion(),
+              test_case.expected_query);
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+    Mock::VerifyAndClearExpectations(converter.get());
+  }
+}
+
+TEST_F(SessionTest, LiveConversionDoesNotHoldHohoAsExpressiveAtom) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter =
+      CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(0);
+  session.SetConfig(config);
+
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key("ほほ");
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = "ほほ";
+  candidate->content_key = "ほほ";
+  candidate->value = "頬";
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(AtLeast(1))
+      .WillRepeatedly(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  commands::Command command;
+  InsertCharacterString("ほほ", "ab", &session, &command);
+
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_PREEDIT("頬", command);
+}
+
+TEST_F(SessionTest, LiveConversionDoesNotHoldHouhouAsExpressiveAtom) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter =
+      CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(0);
+  session.SetConfig(config);
+
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key("ほうほう");
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = "ほうほう";
+  candidate->content_key = "ほうほう";
+  candidate->value = "方法";
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(AtLeast(1))
+      .WillRepeatedly(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  commands::Command command;
+  InsertCharacterString("ほうほう", "abcd", &session, &command);
+
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_PREEDIT("方法", command);
+}
+
+TEST_F(SessionTest, LiveConversionDoesNotHoldNonExpressiveSokuonWords) {
+  constexpr absl::string_view kKeys[] = {
+      "うそ",
+      "うっそう",
+      "くそう",
+      "まっって",
+      "いっった",
+      "きっかけ",
+      "やっと",
+      "かって",
+      "まって",
+
+      "きれい",
+      "つらい",
+      "うざい",
+      "すくない",
+      "すっぱい",
+      "すっっぱい",
+      "おそい",
+      "おもい",
+      "はやい",
+      "きもい",
+      "ださい",
+      "ねむい",
+      "ほそい",
+      "ひろい",
+      "せまい",
+      "みじかい",
+      "しろい",
+      "くろい",
+      "うすい",
+
+      "あっち",
+      "きっちり",
+      "めちゃくちゃ",
+      "ちょっと",
+      "ちょうど",
+  };
+
+  for (absl::string_view key : kKeys) {
+    MockEngine engine;
+    std::shared_ptr<MockConverter> converter =
+        CreateEngineConverterMock(&engine);
+
+    Session session(engine);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_live_conversion_delay_msec(0);
+    session.SetConfig(config);
+
+    Segments segments;
+    Segment* segment = segments.add_segment();
+    segment->set_key(key);
+    converter::Candidate* candidate = segment->add_candidate();
+    candidate->key = std::string(key);
+    candidate->content_key = std::string(key);
+    candidate->value = std::string(key);
+
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(AtLeast(1))
+        .WillRepeatedly(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+    commands::Command command;
+    const std::string dummy_key_codes(Util::CharsLen(key), 'a');
+    InsertCharacterString(key, dummy_key_codes, &session, &command);
+
+    EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+    EXPECT_TRUE(command.output().live_conversion());
+
+    Mock::VerifyAndClearExpectations(converter.get());
+  }
 }
 
 TEST_F(SessionTest,
