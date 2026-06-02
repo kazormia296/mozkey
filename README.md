@@ -66,6 +66,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - ライブ変換は入力直後の不要な変換ちらつきを抑えるため、文字入力後に短いデバウンスを挟んで実行
 - 1文字だけの未確定文字列では、助詞などの誤変換を避けるためライブ変換を実行しない
 - `え~`、`えー`、`ん？` のような「かな1文字 + 装飾的な末尾記号」でも、短すぎる漢字化を避けるためライブ変換を抑制
+- `ふん`、`ふむ`、`はて`、`うひょー`、`すっごい`、`なっがい`、`めっちゃ`、`ちーっす`、`ちょりーっす` のような感嘆詞・口語評価語・くだけた挨拶が、ライブ変換中に不自然な漢字やカタカナへ寄る挙動を抑制
 - 確定済みの左文脈や直前の文節、限定的な右文脈を参照し、`mainにマージしました`、`githubには`、`2名しかいない`、`追記したい`、`山梨県立美術館`、`滋賀方面` のような文脈で、助詞・複合機能語・機能表現・接尾的な語構成・地名接尾構成が同音漢字候補に負ける挙動を抑制
 - キー設定エディタで、1つのキー入力に対して複数のコマンドを順序付きで割り当て可能
 - 複数コマンドは `Commit|IMEOff` のような形式で保存され、設定画面では `Commit → IMEOff` のように編集可能
@@ -170,6 +171,18 @@ Windows 版では、追加のオフライン防御層として、インストー
 入力途中の不要な中間変換表示を抑えるため、この fork では文字入力後に短い設定可能なデバウンス時間を挟んでからライブ変換を実行します。`に`、`を`、`が` のような助詞として使われやすい入力を誤って漢字化しないように、1文字だけの未確定文字列ではライブ変換を行いません。
 
 また、`え~`、`えー`、`ん？` のように、かな1文字の後ろに装飾的な記号だけが続く場合もライブ変換を抑制します。これにより、入力途中の `え~` が `絵～` のように短すぎる漢字候補へ変換される挙動を避けます。
+
+さらに、短い感嘆詞、口語的な評価語、くだけた挨拶など、ひらがなのまま使われることが多い表現では、ライブ変換による過剰な漢字化・カタカナ化を抑制します。
+
+対象には、たとえば以下のような入力が含まれます。
+
+- `ふん`、`ふむ`、`はて`、`ほう`
+- `うひょー`、`うっひょーん`、`うっそん`
+- `すっごい`、`なっがい`、`たっかい`、`あっちぃ`
+- `めっちゃ`
+- `ちっす`、`ちーっす`、`ちょーっす`、`ちょりーっす`
+
+これらは通常変換そのものを禁止するものではありません。Space を押した場合は従来どおり変換候補を出せます。ライブ変換中だけ、入力途中の短い口語表現が意図せず別の漢字語やカタカナ語へ先走って表示されることを避けます。
 
 たとえば:
 
@@ -491,6 +504,7 @@ Main features added in this fork
 - Applies live conversion after a short debounce delay to avoid noisy intermediate conversions
 - Suppresses live conversion for one-character compositions to avoid over-converting particles
 - Suppresses live conversion for very short kana compositions with decorative trailing symbols such as `え~`, `えー`, or `ん？`
+- Suppresses over-eager live conversion for short expressive kana utterances, colloquial evaluative forms, and casual greetings such as `ふん`, `ふむ`, `うひょー`, `すっごい`, `なっがい`, `めっちゃ`, `ちーっす`, and `ちょりーっす`
 - Uses committed left context, previous segments, and limited right context to reduce unnatural homophone results in cases such as `mainにマージしました`, `githubには`, `2名しかいない`, `追記したい`, `山梨県立美術館`, and `滋賀方面`
 - Allows assigning multiple commands to a single key binding as an ordered command sequence
 - Stores command sequences as `Commit|IMEOff` and shows them in the keymap editor as `Commit → IMEOff`
@@ -561,6 +575,10 @@ With live conversion enabled, Mozc automatically converts the current compositio
 To reduce distracting intermediate conversions, this fork applies live conversion after a short configurable debounce delay instead of converting every character immediately. Single-character compositions are not live-converted, because they are often particles such as `に`, `を`, or `が`.
 
 Live conversion is also suppressed for very short kana compositions followed only by decorative trailing symbols, such as `え~`, `えー`, or `ん？`. This avoids noisy intermediate conversions such as `え~` becoming `絵～` while the user is still typing.
+
+This fork also keeps many short expressive kana utterances, colloquial evaluative forms, and casual greetings as kana during live conversion. Examples include `ふん`, `ふむ`, `はて`, `うひょー`, `うっそん`, `すっごい`, `なっがい`, `あっちぃ`, `めっちゃ`, `ちーっす`, and `ちょりーっす`.
+
+This does not disable normal conversion. Pressing Space still invokes ordinary conversion candidates. The suppression only prevents live conversion from prematurely showing unnatural kanji or katakana results while the user is still composing these short colloquial expressions.
 
 For example:
 
