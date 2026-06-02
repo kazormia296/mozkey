@@ -104,7 +104,6 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   int initial_preedit_method_;
   bool initial_use_keyboard_to_change_preedit_method_;
   bool initial_use_mode_indicator_;
-  bool initial_use_dark_mode_candidate_window_;
 
   bool initial_use_custom_preedit_text_color_;
   uint32_t initial_preedit_text_color_;

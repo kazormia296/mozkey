@@ -669,7 +669,7 @@
          <x>0</x>
          <y>0</y>
          <width>485</width>
-         <height>895</height>
+         <height>955</height>
         </rect>
        </property>
        <widget class="QWidget" name="horizontalLayoutWidget_2">
@@ -710,11 +710,11 @@
           <x>30</x>
           <y>40</y>
           <width>441</width>
-          <height>350</height>
+          <height>410</height>
          </rect>
         </property>
         <layout class="QGridLayout" name="gridLayout_9">
-         <item row="7" column="0" colspan="8">
+         <item row="8" column="0" colspan="8">
           <widget class="QCheckBox" name="autoSwitchCompositionMode">
            <property name="text">
             <string>Automatically switch to halfwidth</string>
@@ -722,7 +722,7 @@
           </widget>
          </item>
 
-         <item row="8" column="0" colspan="8">
+         <item row="9" column="0" colspan="8">
           <widget class="QCheckBox" name="liveConversionCheckBox">
            <property name="toolTip">
             <string>入力中の未確定文字列を、文字が入力されるたびに自動で変換します。</string>
@@ -733,7 +733,7 @@
           </widget>
          </item>
 
-         <item row="9" column="0" colspan="3">
+         <item row="10" column="0" colspan="3">
           <widget class="QLabel" name="liveConversionDelayLabel">
            <property name="toolTip">
             <string>文字入力後、ライブ変換を開始するまでの待ち時間です。0 ms にすると即時変換します。</string>
@@ -743,7 +743,7 @@
            </property>
           </widget>
          </item>
-         <item row="9" column="3" colspan="5">
+         <item row="10" column="3" colspan="5">
           <widget class="QSpinBox" name="liveConversionDelaySpinBox">
            <property name="toolTip">
             <string>文字入力後、ライブ変換を開始するまでの待ち時間です。0 ms にすると即時変換します。</string>
@@ -765,6 +765,17 @@
            </property>
            <property name="specialValueText">
             <string>即時</string>
+           </property>
+          </widget>
+         </item>
+
+         <item row="11" column="0" colspan="8">
+          <widget class="QCheckBox" name="showLiveConversionRubyWindow">
+           <property name="toolTip">
+            <string>Shows the typed reading near the candidate window during live conversion.</string>
+           </property>
+           <property name="text">
+            <string>Show ruby window during live conversion</string>
            </property>
           </widget>
          </item>
@@ -1004,7 +1015,38 @@
           </widget>
          </item>
 
-         <item row="10" column="0" colspan="8">
+         <item row="7" column="0" colspan="3">
+          <widget class="QLabel" name="candidateRubyFontLabel">
+           <property name="text">
+            <string>Candidate/ruby font</string>
+           </property>
+          </widget>
+         </item>
+
+         <item row="7" column="3" colspan="5">
+          <widget class="QComboBox" name="candidateRubyFontComboBox">
+           <property name="minimumSize">
+            <size>
+             <width>180</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>280</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="sizeAdjustPolicy">
+            <enum>QComboBox::AdjustToMinimumContentsLengthWithIcon</enum>
+           </property>
+           <property name="minimumContentsLength">
+            <number>18</number>
+           </property>
+          </widget>
+         </item>
+
+         <item row="12" column="0" colspan="8">
           <widget class="QCheckBox" name="zenzLiveCorrectionCheckBox">
            <property name="toolTip">
             <string>ライブ変換結果に対して、ローカルの Zenz モデルで文脈補正を行います。</string>
@@ -1015,7 +1057,7 @@
           </widget>
          </item>
 
-         <item row="11" column="0" colspan="3">
+         <item row="13" column="0" colspan="3">
           <widget class="QLabel" name="zenzLiveCorrectionDelayLabel">
            <property name="toolTip">
             <string>ライブ変換後、Zenz 推論を開始するまでの待ち時間です。</string>
@@ -1025,7 +1067,7 @@
            </property>
           </widget>
          </item>
-         <item row="11" column="3" colspan="5">
+         <item row="13" column="3" colspan="5">
           <widget class="QSpinBox" name="zenzLiveCorrectionDelaySpinBox">
            <property name="toolTip">
             <string>ライブ変換後、Zenz 推論を開始するまでの待ち時間です。0 ms にすると即時推論します。</string>
@@ -1050,7 +1092,7 @@
            </property>
           </widget>
          </item>
-         <item row="12" column="0" colspan="3">
+         <item row="14" column="0" colspan="3">
           <widget class="QLabel" name="zenzLiveCorrectionMinKeyLengthLabel">
            <property name="toolTip">
             <string>Zenz 推論を許可する最小読み長です。短くすると補正機会は増えますが、誤補正も増える可能性があります。</string>
@@ -1060,7 +1102,7 @@
            </property>
           </widget>
          </item>
-         <item row="12" column="3" colspan="5">
+         <item row="14" column="3" colspan="5">
           <widget class="QSpinBox" name="zenzLiveCorrectionMinKeyLengthSpinBox">
            <property name="toolTip">
             <string>Zenz 推論を許可する最小読み長です。</string>
@@ -1083,7 +1125,7 @@
           </widget>
          </item>
 
-         <item row="13" column="0" colspan="8">
+         <item row="15" column="0" colspan="8">
           <widget class="QCheckBox" name="zenzFeedbackLearningCheckBox">
            <property name="toolTip">
             <string>Zenz 補正結果の採用/却下をローカル TSV に記録し、次回以降の補正判断に使用します。</string>
@@ -1094,14 +1136,14 @@
           </widget>
          </item>
 
-         <item row="14" column="0" colspan="3">
+         <item row="16" column="0" colspan="3">
           <widget class="QLabel" name="zenzFeedbackDataLabel">
            <property name="text">
             <string>Zenz 学習データ</string>
            </property>
           </widget>
          </item>
-         <item row="14" column="3" colspan="5">
+         <item row="16" column="3" colspan="5">
           <widget class="QPushButton" name="editZenzFeedbackButton">
            <property name="toolTip">
             <string>Zenz 学習データを安全な管理画面で表示し、インポート、エクスポート、エントリ削除を行います。</string>
@@ -1117,7 +1159,7 @@
         <property name="geometry">
          <rect>
           <x>20</x>
-          <y>410</y>
+          <y>470</y>
           <width>461</width>
           <height>21</height>
          </rect>
@@ -1149,7 +1191,7 @@
         <property name="geometry">
          <rect>
           <x>30</x>
-          <y>440</y>
+          <y>500</y>
           <width>441</width>
           <height>141</height>
          </rect>
@@ -1159,7 +1201,7 @@
         <property name="geometry">
          <rect>
           <x>30</x>
-          <y>605</y>
+          <y>665</y>
           <width>441</width>
           <height>270</height>
          </rect>
@@ -2353,9 +2395,11 @@
   <tabstop>useJapaneseLayout</tabstop>
   <tabstop>useModeIndicator</tabstop>
   <tabstop>useDarkModeCandidateWindow</tabstop>
+  <tabstop>candidateRubyFontComboBox</tabstop>
   <tabstop>autoSwitchCompositionMode</tabstop>
   <tabstop>liveConversionCheckBox</tabstop>
   <tabstop>liveConversionDelaySpinBox</tabstop>
+  <tabstop>showLiveConversionRubyWindow</tabstop>
   <tabstop>zenzLiveCorrectionCheckBox</tabstop>
   <tabstop>zenzLiveCorrectionDelaySpinBox</tabstop>
   <tabstop>zenzLiveCorrectionMinKeyLengthSpinBox</tabstop>

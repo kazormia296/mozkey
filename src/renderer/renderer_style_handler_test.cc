@@ -41,5 +41,36 @@ TEST(RendererStyleHandlerTest, GetRendererStyle) {
   EXPECT_TRUE(style.has_window_border());
 }
 
+TEST(RendererStyleHandlerTest, ApplyCandidateRubyFont) {
+  RendererStyle style;
+  RendererStyleHandler::GetDefaultRendererStyle(&style);
+
+  RendererStyleHandler::ApplyCandidateRubyFont("Yu Gothic UI", &style);
+
+  ASSERT_GT(style.text_styles_size(), 3);
+  EXPECT_FALSE(style.text_styles(0).has_font_name());
+  EXPECT_EQ("Yu Gothic UI", style.text_styles(2).font_name());
+  EXPECT_EQ("Yu Gothic UI", style.text_styles(3).font_name());
+  EXPECT_FALSE(style.footer_style().has_font_name());
+  EXPECT_FALSE(style.footer_sub_label_style().has_font_name());
+  EXPECT_EQ("Yu Gothic UI",
+            style.infolist_style().caption_style().font_name());
+  EXPECT_EQ("Yu Gothic UI", style.infolist_style().title_style().font_name());
+  EXPECT_EQ("Yu Gothic UI",
+            style.infolist_style().description_style().font_name());
+}
+
+TEST(RendererStyleHandlerTest, ApplyCandidateRubyFontSkipsEmptyFontName) {
+  RendererStyle style;
+  RendererStyleHandler::GetDefaultRendererStyle(&style);
+
+  RendererStyleHandler::ApplyCandidateRubyFont("", &style);
+
+  ASSERT_GT(style.text_styles_size(), 3);
+  EXPECT_FALSE(style.text_styles(2).has_font_name());
+  EXPECT_FALSE(style.footer_style().has_font_name());
+  EXPECT_FALSE(style.infolist_style().title_style().has_font_name());
+}
+
 }  // namespace renderer
 }  // namespace mozc

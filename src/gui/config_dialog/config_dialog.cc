@@ -31,15 +31,19 @@
 #include "gui/config_dialog/config_dialog.h"
 
 #include <QAbstractItemView>
+#include <QComboBox>
+#include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QStringList>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -103,6 +107,127 @@ void Connect(const QList<T *> &objects, const char *signal,
     QObject::connect(*itr, signal, receiver, slot);
   }
 }
+
+int FindComboBoxItemByData(QComboBox *combo_box, const QString &data) {
+  if (combo_box == nullptr) {
+    return -1;
+  }
+
+  for (int i = 0; i < combo_box->count(); ++i) {
+    if (combo_box->itemData(i).toString().compare(
+            data, Qt::CaseInsensitive) == 0) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+void AddComboBoxFontItemIfMissing(QComboBox *combo_box,
+                                  const QString &font_name) {
+  if (combo_box == nullptr || font_name.isEmpty()) {
+    return;
+  }
+
+  if (FindComboBoxItemByData(combo_box, font_name) < 0) {
+    combo_box->addItem(font_name, font_name);
+  }
+}
+
+void SetComboBoxCurrentFontNameOrAdd(QComboBox *combo_box,
+                                     const QString &font_name) {
+  if (combo_box == nullptr) {
+    return;
+  }
+
+  if (font_name.isEmpty()) {
+    const int default_index = FindComboBoxItemByData(combo_box, QString());
+    if (default_index >= 0) {
+      combo_box->setCurrentIndex(default_index);
+    }
+    return;
+  }
+
+  int index = FindComboBoxItemByData(combo_box, font_name);
+  if (index < 0) {
+    combo_box->addItem(font_name, font_name);
+    index = combo_box->count() - 1;
+  }
+
+  combo_box->setCurrentIndex(index);
+}
+
+bool FontFamilyExists(const QStringList &families, const QString &family) {
+  return families.contains(family, Qt::CaseInsensitive);
+}
+
+void InitializeCandidateRubyFontComboBox(QComboBox *combo_box) {
+  if (combo_box == nullptr) {
+    return;
+  }
+
+  combo_box->clear();
+
+  combo_box->setSizeAdjustPolicy(
+      QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  combo_box->setMinimumContentsLength(18);
+  combo_box->setMinimumWidth(180);
+  combo_box->setMaximumWidth(280);
+
+  // Empty data means the platform/default font.
+  combo_box->addItem(
+      QCoreApplication::translate("ConfigDialog", "Default"),
+      QString());
+
+  QFontDatabase font_database;
+  const QStringList all_families = font_database.families();
+  const QStringList japanese_families =
+      font_database.families(QFontDatabase::Japanese);
+
+  QStringList font_families;
+
+  for (const QString &family : japanese_families) {
+    // Skip vertical font aliases such as "@Yu Gothic".
+    if (family.startsWith(QLatin1Char('@'))) {
+      continue;
+    }
+    if (!FontFamilyExists(font_families, family)) {
+      font_families.append(family);
+    }
+  }
+
+  // Some Japanese UI fonts may not be returned by the Japanese writing-system
+  // query on every environment.  Add known useful families if they exist, then
+  // sort the final list so users can find fonts by name.
+  const QStringList supplemental_families = {
+      QString::fromUtf8("BIZ UDPGothic"),
+      QString::fromUtf8("BIZ UDGothic"),
+      QString::fromUtf8("Meiryo"),
+      QString::fromUtf8("Meiryo UI"),
+      QString::fromUtf8("MS Gothic"),
+      QString::fromUtf8("MS PGothic"),
+      QString::fromUtf8("Noto Sans CJK JP"),
+      QString::fromUtf8("Noto Sans JP"),
+      QString::fromUtf8("Yu Gothic"),
+      QString::fromUtf8("Yu Gothic UI"),
+  };
+
+  for (const QString &family : supplemental_families) {
+    if (FontFamilyExists(all_families, family) &&
+        !FontFamilyExists(font_families, family)) {
+      font_families.append(family);
+    }
+  }
+
+  font_families.sort(Qt::CaseInsensitive);
+
+  for (const QString &family : font_families) {
+    AddComboBoxFontItemIfMissing(combo_box, family);
+  }
+
+  combo_box->setCurrentIndex(0);
+}
+
 }  // namespace
 
 namespace mozc {
@@ -118,8 +243,7 @@ ConfigDialog::ConfigDialog()
     : client_(client::ClientFactory::NewClient()),
       initial_preedit_method_(0),
       initial_use_keyboard_to_change_preedit_method_(false),
-      initial_use_mode_indicator_(true),
-      initial_use_dark_mode_candidate_window_(false) {
+      initial_use_mode_indicator_(true) {
   setupUi(this);
 
   // QScrollArea has its own viewport, and the viewport may paint a different
@@ -267,8 +391,11 @@ ConfigDialog::ConfigDialog()
   // Mode indicator is available only on Windows.
   useModeIndicator->hide();
 
-  // Candidate window dark mode is available only on Windows.
+  // Candidate/ruby appearance options are available only on Windows.
   useDarkModeCandidateWindow->hide();
+  candidateRubyFontLabel->hide();
+  candidateRubyFontComboBox->hide();
+  showLiveConversionRubyWindow->hide();
 
   // Preedit display color customization is available only on Windows TSF.
   preeditDisplayColorGroupBox->hide();
@@ -347,6 +474,8 @@ ConfigDialog::ConfigDialog()
                    targetPreeditBackgroundColorButton, SLOT(setEnabled(bool)));
   QObject::connect(targetPreeditUnderlineColorCheckBox, SIGNAL(toggled(bool)),
                    targetPreeditUnderlineColorButton, SLOT(setEnabled(bool)));
+
+  InitializeCandidateRubyFontComboBox(candidateRubyFontComboBox);
 
   // Event handlers to enable 'Apply' button.
   Connect(findChildren<QPushButton *>(), SIGNAL(clicked()), this,
@@ -446,8 +575,6 @@ void ConfigDialog::Reload() {
   initial_use_keyboard_to_change_preedit_method_ =
       config.use_keyboard_to_change_preedit_method();
   initial_use_mode_indicator_ = config.use_mode_indicator();
-  initial_use_dark_mode_candidate_window_ =
-      config.use_dark_mode_candidate_window();
 
   initial_use_custom_preedit_text_color_ =
       config.use_custom_preedit_text_color();
@@ -497,10 +624,6 @@ bool ConfigDialog::Update() {
   const bool use_mode_indicator_changed =
       (initial_use_mode_indicator_ != config.use_mode_indicator());
 
-  const bool use_dark_mode_candidate_window_changed =
-      (initial_use_dark_mode_candidate_window_ !=
-       config.use_dark_mode_candidate_window());
-
   const bool preedit_display_color_changed =
       initial_use_custom_preedit_text_color_ !=
           config.use_custom_preedit_text_color() ||
@@ -548,15 +671,6 @@ bool ConfigDialog::Update() {
                              tr("Input mode indicator setting is enabled from"
                                 " new applications."));
     initial_use_mode_indicator_ = config.use_mode_indicator();
-  }
-
-  if (use_dark_mode_candidate_window_changed) {
-    QMessageBox::information(
-        this, windowTitle(),
-        tr("Candidate window and ruby overlay dark mode setting is enabled from"
-           " new applications."));
-    initial_use_dark_mode_candidate_window_ =
-        config.use_dark_mode_candidate_window();
   }
 
   if (preedit_display_color_changed) {
@@ -1327,6 +1441,9 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
                      0u,
                      kMaxLiveConversionDelayMsec)));
 
+  SET_CHECKBOX(showLiveConversionRubyWindow,
+               show_live_conversion_ruby_window);
+
   SET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
 
   const uint32_t zenz_live_correction_delay_msec =
@@ -1397,6 +1514,10 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(useModeIndicator, use_mode_indicator);
 
   SET_CHECKBOX(useDarkModeCandidateWindow, use_dark_mode_candidate_window);
+
+  SetComboBoxCurrentFontNameOrAdd(
+      candidateRubyFontComboBox,
+      QString::fromUtf8(config.candidate_ruby_font_name().c_str()));
 
   SET_CHECKBOX(inputPreeditTextColorCheckBox, use_custom_preedit_text_color);
   SetColorButton(inputPreeditTextColorButton, config.preedit_text_color());
@@ -1508,6 +1629,8 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
   config->set_live_conversion_delay_msec(
       static_cast<uint32_t>(liveConversionDelaySpinBox->value()));
+  GET_CHECKBOX(showLiveConversionRubyWindow,
+               show_live_conversion_ruby_window);
 
   GET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
   config->set_zenz_live_correction_delay_msec(
@@ -1525,6 +1648,14 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(useModeIndicator, use_mode_indicator);
 
   GET_CHECKBOX(useDarkModeCandidateWindow, use_dark_mode_candidate_window);
+
+  const QString font_name =
+      candidateRubyFontComboBox->currentData().toString().trimmed();
+  if (!font_name.isEmpty()) {
+    config->set_candidate_ruby_font_name(font_name.toUtf8().constData());
+  } else {
+    config->clear_candidate_ruby_font_name();
+  }
 
   GET_CHECKBOX(inputPreeditTextColorCheckBox,
               use_custom_preedit_text_color);
@@ -1785,6 +1916,7 @@ void ConfigDialog::SelectLiveConversionSetting(int state) {
 
   liveConversionDelayLabel->setEnabled(enabled);
   liveConversionDelaySpinBox->setEnabled(enabled);
+  showLiveConversionRubyWindow->setEnabled(enabled);
 
   zenzLiveCorrectionCheckBox->setEnabled(enabled);
   SelectZenzLiveCorrectionSetting(

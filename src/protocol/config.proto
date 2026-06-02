@@ -447,6 +447,13 @@ message Config {
   optional bool use_custom_preedit_target_underline_color = 132 [default = false];
   optional uint32 preedit_target_underline_color = 133 [default = 0x0066ff];
 
+  // Font family name for candidate and ruby windows on Windows.
+  // Empty string means the platform/default font.
+  optional string candidate_ruby_font_name = 134 [default = ""];
+
+  // Show ruby window during live conversion on Windows.
+  optional bool show_live_conversion_ruby_window = 135 [default = true];
+
   //////////////////////////////////////////////////////////////
   //
   // Cloud (300-319)

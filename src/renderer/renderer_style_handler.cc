@@ -29,6 +29,8 @@
 
 #include "renderer/renderer_style_handler.h"
 
+#include <string>
+
 #include "base/singleton.h"
 #include "protocol/renderer_style.pb.h"
 
@@ -303,6 +305,31 @@ void RendererStyleHandler::ApplyCandidateWindowTheme(bool use_dark_mode,
   } else {
     ApplyLightCandidateWindowTheme(style);
   }
+}
+
+void RendererStyleHandler::ApplyCandidateRubyFont(
+    const std::string& font_name, RendererStyle* style) {
+  if (style == nullptr || font_name.empty()) {
+    return;
+  }
+
+  constexpr int kCandidateTextStyleIndex = 2;
+  constexpr int kDescriptionTextStyleIndex = 3;
+
+  if (style->text_styles_size() > kCandidateTextStyleIndex) {
+    style->mutable_text_styles(kCandidateTextStyleIndex)->set_font_name(
+        font_name);
+  }
+
+  if (style->text_styles_size() > kDescriptionTextStyleIndex) {
+    style->mutable_text_styles(kDescriptionTextStyleIndex)->set_font_name(
+        font_name);
+  }
+
+  RendererStyle::InfolistStyle* infostyle = style->mutable_infolist_style();
+  infostyle->mutable_caption_style()->set_font_name(font_name);
+  infostyle->mutable_title_style()->set_font_name(font_name);
+  infostyle->mutable_description_style()->set_font_name(font_name);
 }
 
 }  // namespace renderer

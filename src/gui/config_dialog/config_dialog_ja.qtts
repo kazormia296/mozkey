@@ -265,6 +265,26 @@
         <translation>候補・ルビ表示をダークモードにする</translation>
     </message>
     <message>
+        <location filename="config_dialog.ui" line="0"/>
+        <source>Candidate/ruby font</source>
+        <translation>候補・ルビ表示のフォント</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
+        <source>Show ruby window during live conversion</source>
+        <translation>ライブ変換中にルビ表示を出す</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
+        <source>Shows the typed reading near the candidate window during live conversion.</source>
+        <translation>ライブ変換中に、入力した読みを候補付近のルビ表示で示します。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Default</source>
+        <translation>既定</translation>
+    </message>
+    <message>
         <location filename="config_dialog.ui" line="809"/>
         <source>Suggest</source>
         <translation>サジェスト</translation>
@@ -687,11 +707,6 @@
         <location filename="config_dialog.cc" line="399"/>
         <source>Input mode indicator setting is enabled from new applications.</source>
         <translation>入力モード表示の設定は新しいアプリケーションから有効になります。</translation>
-    </message>
-    <message>
-        <location filename="config_dialog.cc" line="406"/>
-        <source>Candidate window and ruby overlay dark mode setting is enabled from new applications.</source>
-        <translation>候補・ルビ表示のダークモード設定は新しいアプリケーションから有効になります。</translation>
     </message>
     <message>
         <location filename="config_dialog.cc" line="732"/>
