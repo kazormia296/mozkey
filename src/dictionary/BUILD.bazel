@@ -380,14 +380,14 @@ mozc_cc_library(
         "//:__subpackages__",
     ],
     deps = [
+        "//base:text_normalizer",
         "//base:vlog",
         "//base/strings:japanese",
         "//base/strings:unicode",
         "//protocol:user_dictionary_storage_cc_proto",
-        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
