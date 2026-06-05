@@ -3181,8 +3181,20 @@ bool Session::SendKeyConversionState(commands::Command* command) {
       return ExecuteCommandSequence(remaining_sequence, command);
     }
 
+    // While a zenz correction is visible, the first plain Space should peel off
+    // only the speculative correction layer and return to the stable Mozc live
+    // conversion result.  The next Space can then enter normal candidate
+    // navigation as usual.  Other candidate-navigation keys keep their explicit
+    // navigation semantics.
+    if (key_command == keymap::ConversionState::CONVERT_NEXT &&
+        IsPureSpaceKey(input_key) &&
+        HasVisibleZenzLiveCorrection()) {
+      return RevertZenzLiveCorrectionToLiveConversion(command);
+    }
+
     // Explicit conversion operations such as Space, candidate movement, or Cancel
-    // promote live conversion back to normal conversion behavior.
+    // promote live conversion back to normal conversion behavior.  When a visible
+    // zenz layer exists, plain Space is consumed above to peel off that layer first.
     if (key_command != keymap::ConversionState::INSERT_CHARACTER) {
       if (key_command != keymap::ConversionState::COMMIT) {
         if (key_command == keymap::ConversionState::CANCEL ||
@@ -5324,6 +5336,50 @@ bool Session::OutputZenzLiveCorrection(
   // as user acceptance. Acceptance must be recorded only when the user commits
   // the visible zenz result.
   zenz_live_preedit_output_ = *preedit;
+  return true;
+}
+
+bool Session::RevertZenzLiveCorrectionToLiveConversion(
+    commands::Command* command) {
+  if (!HasVisibleZenzLiveCorrection()) {
+    return false;
+  }
+
+  ZenzDebugOutput(absl::StrCat(
+      "[zenz-feedback] revert zenz correction to mozc live conversion ",
+      ZenzRedactedTextStats("key", zenz_live_key_),
+      " ", ZenzRedactedTextStats("zenz_value", zenz_live_value_),
+      " ", ZenzRedactedTextStats("mozc_value", zenz_live_mozc_value_),
+      " visible_generation=", zenz_live_visible_generation_));
+
+  SetPendingZenzFeedbackRejected("space_revert_zenz_to_mozc");
+
+  const commands::Preedit live_preedit = live_conversion_preedit_output_;
+  ClearZenzLiveCorrectionState();
+
+  command->mutable_output()->set_consumed(true);
+  OutputMode(command);
+
+  commands::Output* output = command->mutable_output();
+  output->clear_candidate_window();
+  output->set_live_conversion(true);
+  output->set_live_conversion_pending(false);
+  output->set_zenz_live_correction_pending(false);
+  output->set_zenz_live_correction_applied(false);
+
+  if (live_preedit.segment_size() > 0) {
+    *output->mutable_preedit() = live_preedit;
+    output->mutable_preedit()->set_cursor(
+        Util::CharsLen(live_conversion_value_));
+  } else {
+    Output(command);
+    output->clear_candidate_window();
+    output->set_live_conversion(true);
+    output->set_live_conversion_pending(false);
+    output->set_zenz_live_correction_pending(false);
+    output->set_zenz_live_correction_applied(false);
+  }
+
   return true;
 }
 
