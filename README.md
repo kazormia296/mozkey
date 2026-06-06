@@ -86,7 +86,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - merge-ut-dictionaries 由来の地名・SudachiDict 系語彙を system dictionary に取り込めるようにした
 - dic-nico-intersection-pixiv 由来のネット・サブカル系固有名詞を、既存辞書との差分として daily 辞書に追加可能
 - mozcdic-ut-personal-names 由来の人名辞書を、既存辞書や nico/pixiv delta との重複を除いた弱い daily 辞書として追加可能
-- 文節区切り崩れを抑えるための syntax guard 辞書を daily 辞書生成パイプラインに追加し、`と打ちたいのに`、`に分ける`、`にまで`、`までに`、`までも`、`肌身離さず` などの高影響な経路を保護
+- 文節区切り崩れを抑えるための syntax guard 辞書を daily 辞書生成パイプラインに追加し、`と打ちたいのに`、`に分ける`、`した方が`、`したにもかかわらず`、`にまで`、`までに`、`までも`、`肌身離さず` などの高影響な経路を保護
 - 大規模な生成辞書は Git に含めず、ローカルで再生成して Bazel の辞書入力へ切り替える運用に
 - `には` や `してたの` のような自然な機能語かな列が、`二は` や `して他の` のような 1 文字漢字候補に過剰変換される挙動を抑制
 - `にじ` のような 2 文字ひらがな入力で、`に|じ` のような短すぎる文節分割が全体候補を隠す挙動を抑制
@@ -398,7 +398,7 @@ daily local 辞書は主に以下を元に生成できます。
   - 短すぎる読み、長いカタカナ塊、グループ名風表記、ASCII 表記、記号を含む表記などは除外または弱める
 - Mozkey syntax / expressive kana guard 辞書
   - 文節区切り崩れの影響が大きいケースだけを小さな生成辞書として補強
-  - 例: `と打ちたいのに`、`に分ける`、`にまで`、`までに`、`までも`、`肌身離さず`、`になってしまいます`、`になっちゃいます` のような経路を保護
+  - 例: `と打ちたいのに`、`に分ける`、`した方が`、`したにもかかわらず`、`にまで`、`までに`、`までも`、`肌身離さず`、`になってしまいます`、`になっちゃいます` のような経路を保護
   - 例: `うっそ`、`くっそ`、`やっば`、`ちっす`、`ほえ～`、`ほぇ～` のような完成済み expressive kana を自然なかな候補として補強
 
 巨大な生成辞書ファイルは、このリポジトリには commit しません。`src/data/dictionary_koyasi/generated/` 以下にローカル生成します。
@@ -554,7 +554,7 @@ Main features added in this fork
 - Allows incorporating place names and SudachiDict-derived vocabulary from merge-ut-dictionaries into the system dictionary
 - Allows adding internet/subculture proper nouns from dic-nico-intersection-pixiv as daily-dictionary differences
 - Allows adding a weak personal-name dictionary from mozcdic-ut-personal-names after removing entries already covered by the generated daily dictionary, nico/pixiv delta dictionary, or base Mozc dictionaries
-- Adds a syntax guard dictionary generation pipeline to reduce high-impact segmentation failures, including guarded paths such as `と打ちたいのに`, `に分ける`, `にまで`, `までに`, `までも`, and `肌身離さず`
+- Adds a syntax guard dictionary generation pipeline to reduce high-impact segmentation failures, including guarded paths such as `と打ちたいのに`, `に分ける`, `した方が`, `したにもかかわらず`, `にまで`, `までに`, `までも`, and `肌身離さず`
 - Keeps large generated dictionary files out of Git and switches Bazel dictionary inputs to locally generated files
 - Reduces over-conversion of natural functional kana sequences such as `には` and `してたの`
 - Reduces cases where short two-character hiragana inputs such as `にじ` are split too aggressively
@@ -871,7 +871,7 @@ The daily local dictionary can be generated from:
   - risky short readings, long katakana-like names, group-like names, ASCII values, and punctuation-heavy values are filtered or demoted
 - Mozkey syntax / expressive kana guard dictionary
   - small generated guard entries for high-impact segmentation failures
-  - for example, protecting paths such as `と打ちたいのに`, `に分ける`, `にまで`, `までに`, `までも`, `肌身離さず`, `になってしまいます`, and `になっちゃいます`
+  - for example, protecting paths such as `と打ちたいのに`, `に分ける`, `した方が`, `したにもかかわらず`, `にまで`, `までに`, `までも`, `肌身離さず`, `になってしまいます`, and `になっちゃいます`
   - also adds natural kana candidates for completed expressive forms such as `うっそ`, `くっそ`, `やっば`, `ちっす`, `ほえ～`, `ほぇ～`, and `ほっほーん`
 
 Large generated dictionary files are not committed to this repository.

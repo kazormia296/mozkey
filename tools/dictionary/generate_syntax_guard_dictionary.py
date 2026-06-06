@@ -125,6 +125,21 @@ SEEDED_FIXED_GUARDS = (
     # Fix:
     # とうちたいのに -> 統治体の二
     ("とうちたいのに", "と打ちたいのに", "と", "のに"),
+
+    # Fix:
+    # したほうが... -> 下ほうが... / 下方が...
+    # 方が is a formal-noun + case-particle construction following a verbal
+    # expression.  Guard this grammar boundary once, so it can connect to many
+    # following predicates such as いい, 悪い, 早い, 自然, 安全, and マシ.
+    # Do not make bare した too cheap; keep the rescue at the longer
+    # functional boundary.
+    ("したほうが", "した方が", "した", "が"),
+
+    # Fix:
+    # したにもかかわらず -> 下にもかかわらず
+    # にもかかわらず is a concessive functional expression.  In this full
+    # sequence, verbal した is overwhelmingly more natural than noun 下.
+    ("したにもかかわらず", "したにもかかわらず", "した", "ず"),
 )
 
 DIRECT_FIXED_GUARDS = (
