@@ -1960,7 +1960,7 @@ TEST_F(SessionTest, LiveConversionKeepsExpressiveKanaPrefixesAsComposition) {
 }
 
 TEST_F(SessionTest,
-       LiveConversionKeepsCasualSsuGreetingRomanPendingPrefixesAsComposition) {
+       LiveConversionDoesNotSpecialCaseCasualSsuGreetingRomanPendingPrefixes) {
   struct TestCase {
     absl::string_view kana_prefix;
     absl::string_view roman_suffix;
@@ -1969,7 +1969,7 @@ TEST_F(SessionTest,
 
   constexpr TestCase kTestCases[] = {
       // Completed forms such as 「ちっす」 are now routed to the converter.
-      // This test keeps only a genuinely pending roman suffix.
+      // Do not special-case an unresolved ASCII suffix here either.
       {"ちょ", "r", "ちょr"},
   };
 
@@ -1999,7 +1999,13 @@ TEST_F(SessionTest,
 
     Mock::VerifyAndClearExpectations(converter.get());
 
-    EXPECT_CALL(*converter, StartConversion(_, _)).Times(0);
+    // Depending on the active composer table, this unresolved ASCII suffix may
+    // remain pending inside the composer and may not reach live conversion yet.
+    // The important property is that session no longer has a bespoke
+    // expressive-kana suppression path for this case.
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(Return(false));
 
     command.Clear();
     InsertCharacterChars(test_case.roman_suffix, &session, &command);
@@ -2212,7 +2218,7 @@ TEST_F(SessionTest,
 }
 
 TEST_F(SessionTest,
-       DelayedLiveConversionClearsPendingOutputForExpressiveKanaWithPendingRomanSuffix) {
+       DelayedLiveConversionKeepsPendingOutputForExpressiveKanaWithPendingRomanSuffix) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter =
       CreateEngineConverterMock(&engine);
@@ -2251,30 +2257,36 @@ TEST_F(SessionTest,
   *command.mutable_input()->mutable_command() = delayed_command;
 
   EXPECT_TRUE(session.SendCommand(&command));
-  EXPECT_FALSE(command.output().live_conversion());
-  EXPECT_FALSE(command.output().live_conversion_pending());
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_TRUE(command.output().live_conversion_pending());
+  EXPECT_FALSE(command.output().has_candidate_window());
   EXPECT_TRUE(EnsurePreedit("ふんっｌｔ", command));
 }
 
 TEST_F(SessionTest,
-       LiveConversionKeepsExpressiveKanaWithPendingRomanSuffixAsComposition) {
+       LiveConversionDoesNotSpecialCaseExpressiveKanaWithPendingRomanSuffix) {
   struct TestCase {
     absl::string_view kana_prefix;
     absl::string_view roman_suffix;
+    absl::string_view expected_query;
     absl::string_view expected_preedit;
   };
 
   constexpr TestCase kTestCases[] = {
-      {"ふん", "l", "ふんｌ"},
-      {"ふん", "lt", "ふんｌｔ"},
-      {"ふんっ", "l", "ふんっｌ"},
-      {"ふんっ", "lt", "ふんっｌｔ"},
-      {"ふんっっ", "l", "ふんっっｌ"},
-      {"ふんっっ", "lt", "ふんっっｌｔ"},
-      {"ふむ", "l", "ふむｌ"},
-      {"ふむっ", "lt", "ふむっｌｔ"},
-      {"ほう", "lt", "ほうｌｔ"},
-      {"ほうっ", "lt", "ほうっｌｔ"},
+      {"ふん", "l", "ふんl", "ふんｌ"},
+      {"ふん", "lt", "ふんlt", "ふんｌｔ"},
+      {"ふんっ", "l", "ふんっl", "ふんっｌ"},
+      {"ふんっ", "lt", "ふんっlt", "ふんっｌｔ"},
+      {"ふんっっ", "l", "ふんっっl", "ふんっっｌ"},
+      {"ふんっっ", "lt", "ふんっっlt", "ふんっっｌｔ"},
+      {"ふむ", "l", "ふむl", "ふむｌ"},
+      {"ふむっ", "lt", "ふむっlt", "ふむっｌｔ"},
+      {"ほう", "lt", "ほうlt", "ほうｌｔ"},
+      {"ほうっ", "lt", "ほうっlt", "ほうっｌｔ"},
+      {"はっ", "p", "はっp", "はっｐ"},
+      {"ほっ", "t", "ほっt", "ほっｔ"},
+      {"ちっ", "p", "ちっp", "ちっｐ"},
+      {"あっ", "p", "あっp", "あっｐ"},
   };
 
   for (const TestCase& test_case : kTestCases) {
@@ -2291,9 +2303,9 @@ TEST_F(SessionTest,
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
 
-    // A completed kana prefix may now reach the converter.  The pending roman
-    // suffix itself must still stay in composition and must not start another
-    // live conversion.
+    // Setting up the kana prefix may run live conversion for an earlier stable
+    // prefix.  This test only verifies the behavior after the unresolved ASCII
+    // suffix is appended.
     EXPECT_CALL(*converter, StartConversion(_, _))
         .Times(::testing::AnyNumber())
         .WillRepeatedly(Return(false));
@@ -2306,11 +2318,18 @@ TEST_F(SessionTest,
 
     Mock::VerifyAndClearExpectations(converter.get());
 
-    EXPECT_CALL(*converter, StartConversion(_, _)).Times(0);
+    // An unresolved ASCII suffix must not be held by expressive-kana guards.
+    // The active romaji table is user-configurable, so this path must go
+    // through ordinary live conversion instead of being suppressed in session.
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(AtLeast(1))
+        .WillRepeatedly(Return(false));
 
     command.Clear();
     InsertCharacterChars(test_case.roman_suffix, &session, &command);
 
+    EXPECT_EQ(session.context().composer().GetQueryForConversion(),
+              test_case.expected_query);
     EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
     EXPECT_FALSE(command.output().live_conversion());
     EXPECT_FALSE(command.output().live_conversion_pending());
@@ -2318,6 +2337,184 @@ TEST_F(SessionTest,
 
     Mock::VerifyAndClearExpectations(converter.get());
   }
+}
+
+TEST_F(SessionTest,
+       LiveConversionRunsConverterForSokuonWithPendingRomanSuffix) {
+  struct TestCase {
+    absl::string_view kana_prefix;
+    absl::string_view roman_suffix;
+    absl::string_view expected_query;
+  };
+
+  constexpr TestCase kTestCases[] = {
+      {"ごしっ", "k", "ごしっk"},
+      {"しっ", "p", "しっp"},
+      {"はっ", "p", "はっp"},
+      {"ほっ", "t", "ほっt"},
+      {"ちっ", "p", "ちっp"},
+      {"あっ", "p", "あっp"},
+  };
+
+  for (const TestCase& test_case : kTestCases) {
+    MockEngine engine;
+    std::shared_ptr<MockConverter> converter =
+        CreateEngineConverterMock(&engine);
+
+    Session session(engine);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_live_conversion_delay_msec(0);
+    session.SetConfig(config);
+
+    // Setting up the kana prefix may run live conversion for an earlier stable
+    // prefix such as 「ごし」.  This test only verifies the behavior after the
+    // pending roman suffix is appended.
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(Return(false));
+
+    commands::Command command;
+    const std::string prefix_key_codes(
+        Util::CharsLen(test_case.kana_prefix), 'a');
+    InsertCharacterString(test_case.kana_prefix, prefix_key_codes,
+                          &session, &command);
+
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+    Mock::VerifyAndClearExpectations(converter.get());
+
+    Segments segments;
+    Segment* segment = segments.add_segment();
+    segment->set_key(std::string(test_case.expected_query));
+    converter::Candidate* candidate = segment->add_candidate();
+    candidate->key = std::string(test_case.expected_query);
+    candidate->content_key = std::string(test_case.expected_query);
+    candidate->value = std::string(test_case.expected_query);
+
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(AtLeast(1))
+        .WillRepeatedly(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+    command.Clear();
+    InsertCharacterChars(test_case.roman_suffix, &session, &command);
+
+    EXPECT_EQ(session.context().composer().GetQueryForConversion(),
+              test_case.expected_query);
+    EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+    EXPECT_TRUE(command.output().live_conversion());
+
+    Mock::VerifyAndClearExpectations(converter.get());
+  }
+}
+
+TEST_F(SessionTest,
+       LiveConversionDoesNotSpecialCaseEvaluativeSlangWithPendingRomanSuffix) {
+  struct TestCase {
+    absl::string_view kana_prefix;
+    absl::string_view roman_suffix;
+    absl::string_view expected_query;
+    absl::string_view expected_preedit;
+  };
+
+  constexpr TestCase kTestCases[] = {
+      {"これやっ", "b", "これやっb", "これやっｂ"},
+      {"まじでなっ", "g", "まじでなっg", "まじでなっｇ"},
+      {"しっ", "r", "しっr", "しっｒ"},
+  };
+
+  for (const TestCase& test_case : kTestCases) {
+    MockEngine engine;
+    std::shared_ptr<MockConverter> converter =
+        CreateEngineConverterMock(&engine);
+
+    Session session(engine);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_live_conversion_delay_msec(0);
+    session.SetConfig(config);
+
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(Return(false));
+
+    commands::Command command;
+    const std::string prefix_key_codes(
+        Util::CharsLen(test_case.kana_prefix), 'a');
+    InsertCharacterString(test_case.kana_prefix, prefix_key_codes,
+                          &session, &command);
+
+    Mock::VerifyAndClearExpectations(converter.get());
+
+    // Do not infer the next kana from the pending ASCII suffix here.  The
+    // active romaji table is user-configurable, so evaluative slang prefixes
+    // with unresolved ASCII should go through the ordinary live-conversion
+    // path instead of being suppressed by a hard-coded romanization table.
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .Times(AtLeast(1))
+        .WillRepeatedly(Return(false));
+
+    command.Clear();
+    InsertCharacterChars(test_case.roman_suffix, &session, &command);
+
+    EXPECT_EQ(session.context().composer().GetQueryForConversion(),
+              test_case.expected_query);
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+    EXPECT_FALSE(command.output().live_conversion());
+    EXPECT_TRUE(EnsurePreedit(test_case.expected_preedit, command));
+
+    Mock::VerifyAndClearExpectations(converter.get());
+  }
+}
+
+TEST_F(SessionTest,
+       DelayedLiveConversionPreservesStablePrefixForPendingRomanSuffix) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(100);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _)).Times(0);
+
+  commands::Command command;
+  InsertCharacterString("ふんっ", "aaa", &session, &command);
+  ASSERT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  session_peer.live_conversion_key_() = "ふんっ";
+  session_peer.live_conversion_preedit_() = "ふんっ";
+  session_peer.live_conversion_value_() = "フンッ";
+
+  commands::Preedit& live_preedit =
+      session_peer.live_conversion_preedit_output_();
+  live_preedit.Clear();
+  commands::Preedit::Segment* segment = live_preedit.add_segment();
+  segment->set_key("ふんっ");
+  segment->set_value("フンッ");
+  segment->set_value_length(Util::CharsLen("フンッ"));
+
+  command.Clear();
+  InsertCharacterChars("l", &session, &command);
+
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_TRUE(command.output().live_conversion_pending());
+  EXPECT_FALSE(command.output().has_candidate_window());
+  EXPECT_PREEDIT("フンッｌ", command);
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Mock::VerifyAndClearExpectations(converter.get());
 }
 
 TEST_F(SessionTest,

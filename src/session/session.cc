@@ -1331,60 +1331,11 @@ bool ShouldHoldExpressiveKanaTypingPrefixForLiveConversion(
   return false;
 }
 
-bool IsAsciiLetterForPendingRomanSuffix(char c) {
-  return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
-}
-
-bool StripTrailingAsciiLetterSuffix(absl::string_view text,
-                                    absl::string_view* core) {
-  size_t suffix_len = 0;
-
-  while (!text.empty() &&
-         IsAsciiLetterForPendingRomanSuffix(text.back())) {
-    text.remove_suffix(1);
-    ++suffix_len;
-  }
-
-  if (suffix_len == 0 || text.empty()) {
-    return false;
-  }
-
-  *core = text;
-  return true;
-}
-
-bool ShouldSkipLiveConversionForPendingRomanSuffixAfterExpressiveKana(
-    absl::string_view key,
-    LiveConversionLeftBoundary committed_left_boundary) {
-  absl::string_view kana_core;
-  if (!StripTrailingAsciiLetterSuffix(key, &kana_core)) {
-    return false;
-  }
-
-  const absl::string_view expressive_core =
-      StripTrailingLiveConversionSentenceTail(kana_core);
-  if (expressive_core.empty()) {
-    return false;
-  }
-
-  const LiveConversionAtom atom =
-      ExtractTrailingLiveConversionAtom(expressive_core,
-                                        committed_left_boundary);
-
-  return ShouldHoldExpressiveKanaAtomForLiveConversion(atom,
-                                                       expressive_core);
-}
-
 bool ShouldSkipLiveConversionForCompositionKey(
     absl::string_view key,
     LiveConversionLeftBoundary committed_left_boundary,
     size_t min_key_length) {
   if (Util::CharsLen(key) < min_key_length) {
-    return true;
-  }
-
-  if (ShouldSkipLiveConversionForPendingRomanSuffixAfterExpressiveKana(
-          key, committed_left_boundary)) {
     return true;
   }
 
