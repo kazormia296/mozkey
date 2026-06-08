@@ -241,6 +241,9 @@ void NotifyDisplayAttributeUpdate();
 
 ConfigDialog::ConfigDialog()
     : client_(client::ClientFactory::NewClient()),
+      initial_ime_hot_key_disabled_(false),
+      initial_startup_enabled_(false),
+      suppress_apply_button_update_(true),
       initial_preedit_method_(0),
       initial_use_keyboard_to_change_preedit_method_(false),
       initial_use_mode_indicator_(true) {
@@ -496,14 +499,12 @@ ConfigDialog::ConfigDialog()
 
   InitializeCandidateRubyFontComboBox(candidateRubyFontComboBox);
 
-  // Event handlers to enable 'Apply' button.
-  Connect(findChildren<QPushButton *>(), SIGNAL(clicked()), this,
+  // Event handlers to update 'Apply' button state.
+  Connect(findChildren<QCheckBox *>(), SIGNAL(stateChanged(int)), this,
           SLOT(EnableApplyButton()));
-  Connect(findChildren<QCheckBox *>(), SIGNAL(clicked()), this,
+  Connect(findChildren<QComboBox *>(), SIGNAL(currentIndexChanged(int)), this,
           SLOT(EnableApplyButton()));
-  Connect(findChildren<QComboBox *>(), SIGNAL(activated(int)), this,
-          SLOT(EnableApplyButton()));
-  Connect(findChildren<QSpinBox *>(), SIGNAL(editingFinished()), this,
+  Connect(findChildren<QSpinBox *>(), SIGNAL(valueChanged(int)), this,
           SLOT(EnableApplyButton()));
   Connect(findChildren<QLineEdit *>(), SIGNAL(textEdited(QString)), this,
           SLOT(EnableApplyButton()));
@@ -550,6 +551,9 @@ ConfigDialog::ConfigDialog()
   IMEHotKeyDisabledCheckBox->setVisible(false);
 #endif  // _WIN32
 
+  RecordCurrentStateAsApplied();
+  suppress_apply_button_update_ = false;
+  EnableApplyButton();
 }
 
 bool ConfigDialog::SetConfig(const config::Config &config) {
@@ -586,12 +590,12 @@ void ConfigDialog::Reload() {
     QMessageBox::critical(this, windowTitle(),
                           tr("Failed to get current config values."));
   }
-  ConvertFromProto(config);
 
-  SelectLiveConversionSetting(
-      static_cast<int>(liveConversionCheckBox->isChecked()));
-  SelectAutoConversionSetting(static_cast<int>(useAutoConversion->isChecked()));
-  SelectDirectCommitSetting(static_cast<int>(useDirectCommit->isChecked()));
+  const bool was_suppressed = suppress_apply_button_update_;
+  suppress_apply_button_update_ = true;
+  ConvertFromProto(config);
+  UpdateDependentControls();
+  suppress_apply_button_update_ = was_suppressed;
   initial_preedit_method_ = static_cast<int>(config.preedit_method());
   initial_use_keyboard_to_change_preedit_method_ =
       config.use_keyboard_to_change_preedit_method();
@@ -731,6 +735,7 @@ bool ConfigDialog::Update() {
     // in almost all cases.
     // TODO(taku): better to show dialog?
     LOG(ERROR) << "Failed to update IME HotKey status";
+    return false;
   }
 #endif  // _WIN32
 
@@ -745,6 +750,10 @@ bool ConfigDialog::Update() {
     }
   }
 #endif  // __APPLE__
+
+  base_config_ = config;
+  RecordCurrentStateAsApplied();
+  EnableApplyButton();
 
   return true;
 }
@@ -1971,6 +1980,7 @@ void ConfigDialog::EditKeymap() {
     custom_keymap_table_ = output;
     // set keymapSettingComboBox to "Custom keymap"
     keymapSettingComboBox->setCurrentIndex(0);
+    EnableApplyButton();
   }
 }
 
@@ -1978,6 +1988,7 @@ void ConfigDialog::EditRomanTable() {
   std::string output;
   if (gui::RomanTableEditorDialog::Show(this, custom_roman_table_, &output)) {
     custom_roman_table_ = output;
+    EnableApplyButton();
   }
 }
 
@@ -2089,7 +2100,12 @@ void ConfigDialog::ResetToDefaults() {
                             QMessageBox::Cancel)) {
     // TODO(taku): remove the dependency to config::ConfigHandler
     // nice to have GET_DEFAULT_CONFIG command
+    const bool was_suppressed = suppress_apply_button_update_;
+    suppress_apply_button_update_ = true;
     ConvertFromProto(config::ConfigHandler::DefaultConfig());
+    UpdateDependentControls();
+    suppress_apply_button_update_ = was_suppressed;
+    EnableApplyButton();
   }
 }
 
@@ -2167,8 +2183,62 @@ void ConfigDialog::RestorePreviousDefaultImeSetting() {
 #endif  // _WIN32
 }
 
+void ConfigDialog::UpdateDependentControls() {
+  SelectInputModeSetting(inputModeComboBox->currentIndex());
+  SelectLiveConversionSetting(
+      static_cast<int>(liveConversionCheckBox->isChecked()));
+  SelectAutoConversionSetting(static_cast<int>(useAutoConversion->isChecked()));
+  SelectDirectCommitSetting(static_cast<int>(useDirectCommit->isChecked()));
+  SelectSuggestionSetting(
+      static_cast<int>(historySuggestCheckBox->isChecked() ||
+                       dictionarySuggestCheckBox->isChecked() ||
+                       realtimeConversionCheckBox->isChecked()));
+}
+
+void ConfigDialog::RecordCurrentStateAsApplied() {
+  ConvertToProto(&last_applied_config_);
+
+#ifdef _WIN32
+  initial_ime_hot_key_disabled_ = IMEHotKeyDisabledCheckBox->isChecked();
+#endif  // _WIN32
+
+#ifdef __APPLE__
+  initial_startup_enabled_ = startupCheckBox->isChecked();
+#endif  // __APPLE__
+}
+
+bool ConfigDialog::IsModified() const {
+  config::Config current_config;
+  ConvertToProto(&current_config);
+
+  if (current_config.SerializeAsString() !=
+      last_applied_config_.SerializeAsString()) {
+    return true;
+  }
+
+#ifdef _WIN32
+  if (IMEHotKeyDisabledCheckBox->isChecked() !=
+      initial_ime_hot_key_disabled_) {
+    return true;
+  }
+#endif  // _WIN32
+
+#ifdef __APPLE__
+  if (startupCheckBox->isChecked() != initial_startup_enabled_) {
+    return true;
+  }
+#endif  // __APPLE__
+
+  return false;
+}
+
 void ConfigDialog::EnableApplyButton() {
-  configDialogButtonBox->button(QDialogButtonBox::Apply)->setEnabled(true);
+  if (suppress_apply_button_update_) {
+    return;
+  }
+
+  configDialogButtonBox->button(QDialogButtonBox::Apply)
+      ->setEnabled(IsModified());
 }
 
 // Catch MouseButtonRelease event to toggle the CheckBoxes
