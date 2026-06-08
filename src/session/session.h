@@ -554,6 +554,11 @@ class Session {
       const mozc::keymap::CommandSequence& command_sequence,
       mozc::commands::Command* command);
 
+  bool ExecuteCommandSequenceWithInitialOutput(
+      const mozc::keymap::CommandSequence& command_sequence,
+      const mozc::commands::Output* initial_output,
+      mozc::commands::Command* command);
+
   bool ExecuteDirectInputCommand(
       mozc::keymap::DirectInputState::Commands key_command,
       mozc::commands::Command* command);

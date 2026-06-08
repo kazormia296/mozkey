@@ -2360,6 +2360,42 @@ ImeContext::State GetEffectiveStateForTestSendKey(const commands::KeyEvent& key,
   return state;
 }
 
+void MergeCommandResult(const commands::Result& step_result,
+                        commands::Result* accumulated_result) {
+  if (!accumulated_result->has_key() && !accumulated_result->has_value()) {
+    *accumulated_result = step_result;
+    return;
+  }
+
+  if (step_result.has_key()) {
+    accumulated_result->set_key(
+        absl::StrCat(accumulated_result->key(), step_result.key()));
+  }
+  if (step_result.has_value()) {
+    accumulated_result->set_value(
+        absl::StrCat(accumulated_result->value(), step_result.value()));
+  }
+}
+
+void AccumulateCommandOutput(const commands::Output& step_output,
+                             bool* consumed,
+                             bool* has_accumulated_result,
+                             commands::Result* accumulated_result,
+                             commands::Output* final_output) {
+  *consumed = *consumed || step_output.consumed();
+  *final_output = step_output;
+
+  if (step_output.has_result()) {
+    MergeCommandResult(step_output.result(), accumulated_result);
+    *has_accumulated_result = true;
+  }
+
+  final_output->set_consumed(*consumed);
+  if (*has_accumulated_result) {
+    *final_output->mutable_result() = *accumulated_result;
+  }
+}
+
 }  // namespace
 
 Session::Session(const EngineInterface& engine)
@@ -2777,28 +2813,28 @@ bool Session::UpdateComposition(commands::Command* command) {
 bool Session::ExecuteCommandSequence(
     const keymap::CommandSequence& command_sequence,
     commands::Command* command) {
+  return ExecuteCommandSequenceWithInitialOutput(command_sequence, nullptr,
+                                                 command);
+}
+
+bool Session::ExecuteCommandSequenceWithInitialOutput(
+    const keymap::CommandSequence& command_sequence,
+    const commands::Output* initial_output,
+    commands::Command* command) {
   bool executed = false;
   bool consumed = false;
   bool has_accumulated_result = false;
   commands::Result accumulated_result;
   commands::Output final_output;
 
-  const auto merge_result = [](const commands::Result& step_result,
-                               commands::Result* accumulated_result) {
-    if (!accumulated_result->has_key() && !accumulated_result->has_value()) {
-      *accumulated_result = step_result;
-      return;
-    }
-
-    if (step_result.has_key()) {
-      accumulated_result->set_key(
-          absl::StrCat(accumulated_result->key(), step_result.key()));
-    }
-    if (step_result.has_value()) {
-      accumulated_result->set_value(
-          absl::StrCat(accumulated_result->value(), step_result.value()));
-    }
-  };
+  if (initial_output != nullptr) {
+    AccumulateCommandOutput(*initial_output,
+                            &consumed,
+                            &has_accumulated_result,
+                            &accumulated_result,
+                            &final_output);
+    executed = true;
+  }
 
   for (const std::string& command_name : command_sequence) {
     if (command_name.empty()) {
@@ -2823,19 +2859,11 @@ bool Session::ExecuteCommandSequence(
     executed = true;
 
     const commands::Output step_output = command->output();
-    consumed = consumed || step_output.consumed();
-
-    final_output = step_output;
-
-    if (step_output.has_result()) {
-      merge_result(step_output.result(), &accumulated_result);
-      has_accumulated_result = true;
-    }
-
-    final_output.set_consumed(consumed);
-    if (has_accumulated_result) {
-      *final_output.mutable_result() = accumulated_result;
-    }
+    AccumulateCommandOutput(step_output,
+                            &consumed,
+                            &has_accumulated_result,
+                            &accumulated_result,
+                            &final_output);
   }
 
   if (!executed) {
@@ -3419,9 +3447,12 @@ bool Session::SendKeyConversionState(commands::Command* command) {
         return true;
       }
 
+      const commands::Output zenz_commit_output = command->output();
+
       keymap::CommandSequence remaining_sequence(
           command_sequence.begin() + 1, command_sequence.end());
-      return ExecuteCommandSequence(remaining_sequence, command);
+      return ExecuteCommandSequenceWithInitialOutput(
+          remaining_sequence, &zenz_commit_output, command);
     }
 
     // While a zenz correction is visible, the first plain Space should peel off
