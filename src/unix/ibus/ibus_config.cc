@@ -83,8 +83,9 @@ std::string UpdateConfigFile() {
   return std::string(kIbusConfigTextProto);
 }
 
-std::string NormalizeLayout(const std::string& layout) {
+std::string NormalizeLayout(absl::string_view layout) {
   std::string output;
+  output.reserve(layout.size());
   for (const char c : layout) {
     if (absl::ascii_isalnum(c) || c == '_' || c == '-' || c == '/') {
       output += c;
@@ -95,7 +96,7 @@ std::string NormalizeLayout(const std::string& layout) {
   return output;
 }
 
-bool ParseConfig(const std::string& data, ibus::Config& config) {
+bool ParseConfig(absl::string_view data, ibus::Config& config) {
   const bool success =
       mozc::protobuf::TextFormat::ParseFromString(data, &config);
   if (!success) {
@@ -115,7 +116,7 @@ bool ParseConfig(const std::string& data, ibus::Config& config) {
   return success;
 }
 
-std::string EscapeXmlValue(const std::string& value) {
+std::string EscapeXmlValue(absl::string_view value) {
   return absl::StrReplaceAll(value, {{"&", "&amp;"},
                                      {"<", "&lt;"},
                                      {">", "&gt;"},
@@ -155,7 +156,7 @@ bool IbusConfig::Initialize() {
   return LoadConfig(config_data);
 }
 
-bool IbusConfig::LoadConfig(const std::string& config_data) {
+bool IbusConfig::LoadConfig(absl::string_view config_data) {
   const bool valid_user_config = ParseConfig(config_data, config_);
 
   protobuf_util::SanitizeMessageStrings(config_, [](absl::string_view src) {
@@ -166,9 +167,9 @@ bool IbusConfig::LoadConfig(const std::string& config_data) {
 
   engine_xml_ = CreateEnginesXml(config_);
   if (!valid_user_config) {
-    engine_xml_ +=
+    absl::StrAppend(&engine_xml_,
         ("<!-- Failed to parse the user config. -->\n"
-         "<!-- Used the default setting instead. -->\n");
+         "<!-- Used the default setting instead. -->\n"));
   }
 
   return valid_user_config;
