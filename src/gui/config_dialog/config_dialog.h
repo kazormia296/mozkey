@@ -95,6 +95,9 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   void ConvertFromProto(const config::Config &config);
   bool Update();
   void Reload();
+  void UpdateDependentControls();
+  void RecordCurrentStateAsApplied();
+  bool IsModified() const;
 
   std::unique_ptr<client::ClientInterface> client_;
   std::string custom_keymap_table_;
@@ -102,6 +105,10 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   // base_config_ keeps the original config imported from the file including
   // unconfigurable options with the GUI (e.g. composing_timeout_threshold_msec)
   config::Config base_config_;
+  config::Config last_applied_config_;
+  bool initial_ime_hot_key_disabled_;
+  bool initial_startup_enabled_;
+  bool suppress_apply_button_update_;
   int initial_preedit_method_;
   bool initial_use_keyboard_to_change_preedit_method_;
   bool initial_use_mode_indicator_;
