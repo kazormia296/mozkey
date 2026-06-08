@@ -51,6 +51,9 @@ namespace mozc {
 constexpr char kIbusConfigFile[] = "ibus_config.textproto";
 
 namespace {
+// Defines absl::string_view kIbusConfigTextProto.
+#include "unix/ibus/ibus_config_textproto.inc"
+
 std::string UpdateConfigFile() {
   const std::string engines_file = FileUtil::JoinPath(
       SystemUtil::GetUserProfileDirectory(), kIbusConfigFile);
@@ -58,7 +61,7 @@ std::string UpdateConfigFile() {
     absl::StatusOr<std::string> config = FileUtil::GetContents(engines_file);
     if (!config.ok()) {
       LOG(ERROR) << config.status();
-      return kIbusConfigTextProto;
+      return std::string(kIbusConfigTextProto);
     }
     return *std::move(config);
   } else if (absl::IsNotFound(s)) {
@@ -67,10 +70,10 @@ std::string UpdateConfigFile() {
         !s.ok()) {
       LOG(ERROR) << "Failed to write " << engines_file << ": " << s;
     }
-    return kIbusConfigTextProto;
+    return std::string(kIbusConfigTextProto);
   } else {
     LOG(ERROR) << "Cannot check if " << engines_file << "exists: " << s;
-    return kIbusConfigTextProto;
+    return std::string(kIbusConfigTextProto);
   }
 }
 
