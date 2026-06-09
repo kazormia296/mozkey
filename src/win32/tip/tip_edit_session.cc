@@ -396,6 +396,68 @@ bool TurnOnImeAndTryToReconvertFromIme(TipTextService* text_service,
   }
 }
 
+bool ReconvertSelectionOrKeepFallbackOutput(TipTextService* text_service,
+                                            ITfContext* context,
+                                            Output* fallback_output) {
+  if (context == nullptr || fallback_output == nullptr) {
+    return false;
+  }
+
+  TipSurroundingTextInfo info;
+  bool need_async_edit_session = false;
+  if (!TipSurroundingText::PrepareForReconversionFromIme(
+          text_service, context, &info, &need_async_edit_session)) {
+    // Do not apply the fallback output when the selected text state is
+    // unknown.  Otherwise selected application text may be replaced with a
+    // space in TSF-unfriendly applications.
+    return true;
+  }
+
+  if (info.in_composition) {
+    // This command is only intended for the precomposition state.  Be
+    // conservative if a composition is unexpectedly found.
+    return true;
+  }
+
+  const std::string text_utf8 = WideToUtf8(info.selected_text);
+  if (text_utf8.empty()) {
+    // No selected application text.  Keep and apply the fallback InsertSpace
+    // output that the server already generated.
+    fallback_output->clear_callback();
+    return false;
+  }
+
+  TipPrivateContext* private_context = text_service->GetPrivateContext(context);
+  if (!private_context) {
+    // This is an unmanaged context.  Consume the key rather than applying the
+    // fallback and potentially replacing selected application text.
+    return true;
+  }
+
+  Output output;
+  {
+    SessionCommand command;
+    command.set_type(SessionCommand::CONVERT_REVERSE);
+    command.set_text(text_utf8);
+    if (!private_context->GetClient()->SendCommand(command, &output)) {
+      return true;
+    }
+  }
+
+  if (output.has_callback() && output.callback().has_session_command() &&
+      output.callback().session_command().has_type()) {
+    // Do not allow recursive callbacks.
+    return true;
+  }
+
+  if (need_async_edit_session) {
+    return TipEditSession::OnOutputReceivedAsync(text_service, context,
+                                                 std::move(output));
+  }
+  return TipEditSession::OnOutputReceivedSync(text_service, context,
+                                              std::move(output));
+}
+
 bool UndoCommint(TipTextService* text_service, ITfContext* context) {
   if (context == nullptr) {
     return false;
@@ -531,6 +593,12 @@ bool OnOutputReceivedImpl(TipTextService* text_service,
       switch (type) {
         case SessionCommand::CONVERT_REVERSE:
           return TurnOnImeAndTryToReconvertFromIme(text_service, context);
+        case SessionCommand::RECONVERT_SELECTION_OR_INSERT_SPACE:
+          if (ReconvertSelectionOrKeepFallbackOutput(text_service, context,
+                                                     &new_output)) {
+            return true;
+          }
+          break;
         case SessionCommand::UNDO:
           return UndoCommint(text_service, context);
         default:
