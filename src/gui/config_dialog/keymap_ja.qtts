@@ -252,6 +252,10 @@
         <translation>再変換</translation>
     </message>
     <message>
+        <source>ReconvertSelectionOrInsertSpace</source>
+        <translation>選択文字列を再変換（未選択時は空白）</translation>
+    </message>
+    <message>
         <source>DeleteSelectedCandidate</source>
         <translation>選択候補を履歴から削除</translation>
     </message>

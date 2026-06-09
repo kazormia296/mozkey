@@ -73,6 +73,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - 確定済みの左文脈や直前の文節、限定的な右文脈を参照し、`mainにマージしました`、`githubには`、`2名しかいない`、`追記したい`、`山梨県立美術館`、`滋賀方面` のような文脈で、助詞・複合機能語・機能表現・接尾的な語構成・地名接尾構成が同音漢字候補に負ける挙動を抑制
 - キー設定エディタで、1つのキー入力に対して複数のコマンドを順序付きで割り当て可能
 - 複数コマンドは `Commit|IMEOff` のような形式で保存され、設定画面では `Commit → IMEOff` のように編集可能
+- MS-IME 風キー設定では、確定済み文字列を選択した状態で Space を押すと再変換し、未選択時は従来どおり空白を入力
 - Windows 版で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を個別キーとして設定画面から割り当て可能
 - Windows 版で IMEOn / IMEOff に割り当てたキーを押した場合、すでに同じ状態でも IME モードインジケータを表示
 - Windows 版の設定画面から、Mozkey を Windows の既定 IME として明示的に設定し、変更前の既定 IME 設定へ戻せるボタンを追加
@@ -321,6 +322,14 @@ Zenz ライブ補正では、Zenzai v3/v3.2 の特殊トークン形式に沿っ
 
 設定ファイル上では、複数コマンドは `Commit|IMEOff` や `Convert|ConvertNext` のように `|` 区切りで保存されます。設定画面では `Commit → IMEOff` のように表示され、コマンドの追加、削除、並べ替えができます。
 
+### 選択文字列の Space 再変換（Windows / MS-IME 風キー設定）
+
+Windows 版の MS-IME 風キー設定では、確定済みテキストを範囲選択した状態で Space を押すと、その選択文字列を再変換します。何も選択していない場合は、従来どおり空白を入力します。
+
+この挙動は、キー設定画面では「選択文字列を再変換（未選択時は空白）」というコマンドとして表示されます。Space キーを無条件に横取りするものではなく、MS-IME 風キー設定で「入力文字なし」の Space にこのコマンドが割り当てられている場合だけ有効です。ユーザーが Space の割り当てを変更している場合は、そのキー設定が優先されます。
+
+既存のカスタムキー設定を使っている場合は、MS-IME 風キー設定を選び直すか、キー設定画面で「入力文字なし」の Space に「選択文字列を再変換（未選択時は空白）」を手動で割り当てることで有効にできます。
+
 ### 左右 Shift / Ctrl の個別キー割り当て（Windows）
 
 Windows 版では、キー設定エディタ上で左 Shift / 右 Shift / 左 Ctrl / 右 Ctrl を別々のキーとして扱えます。
@@ -541,6 +550,7 @@ Main features added in this fork
 - Uses committed left context, previous segments, and limited right context to reduce unnatural homophone results in cases such as `mainにマージしました`, `githubには`, `2名しかいない`, `追記したい`, `山梨県立美術館`, and `滋賀方面`
 - Allows assigning multiple commands to a single key binding as an ordered command sequence
 - Stores command sequences as `Commit|IMEOff` and shows them in the keymap editor as `Commit → IMEOff`
+- In the MS-IME style keymap, pressing Space while committed text is selected reconverts that selection; with no selection, Space still inserts a normal space
 - Allows assigning left/right Shift and left/right Ctrl separately on Windows
 - Shows the IME mode indicator even when a key assigned to IMEOn or IMEOff is pressed while Mozc is already in that state
 - Adds explicit Windows default IME controls to the config dialog, with restore support for the previous default IME setting
@@ -790,6 +800,14 @@ Examples:
 Commands are executed from left to right. If the input state changes during the sequence, the following command is resolved against the current state at that point. For example, `Convert → ConvertNext` first enters conversion from composition and then moves to the next candidate.
 
 In exported keymap files, command sequences are stored with `|`, such as `Commit|IMEOff` or `Convert|ConvertNext`. In the keymap editor UI, they are displayed with arrows, such as `Commit → IMEOff`.
+
+### Space reconversion for selected text (Windows / MS-IME style keymap)
+
+In the Windows MS-IME style keymap, pressing Space while committed application text is selected reconverts that selected text. When no text is selected, the same key keeps the normal behavior and inserts a space.
+
+In the keymap editor, this command is shown as `Reconvert selected text, or insert space if no text is selected`. It does not unconditionally intercept the Space key; it is enabled only when the MS-IME style keymap assigns this command to Space in the precomposition state. If the user has customized the Space key binding, that custom keymap takes precedence.
+
+Users with an existing custom keymap can enable this behavior by selecting the MS-IME style keymap again or by manually assigning `Reconvert selected text, or insert space if no text is selected` to Space in the precomposition state.
 
 ### Independent left/right Shift and Ctrl key bindings (Windows)
 

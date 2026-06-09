@@ -2597,6 +2597,14 @@ bool Session::SendCommand(commands::Command* command) {
       result = ApplyZenzLiveCorrection(command);
       break;
 
+    case commands::SessionCommand::RECONVERT_SELECTION_OR_INSERT_SPACE:
+      // This command is a client-side callback command.  It should normally be
+      // handled by the TSF client from Output::Callback.  If it reaches the
+      // server through SendCommand unexpectedly, consume it without changing the
+      // current composition.
+      result = DoNothing(command);
+      break;
+
     case commands::SessionCommand::REQUEST_NWP: {
       ConversionPreferences conversion_preferences =
           context_->converter().conversion_preferences();
@@ -2689,6 +2697,7 @@ bool Session::TestSendKey(commands::Command* command) {
     // the inconsistency between TestSendKey and SendKey.
     switch (key_command) {
       case keymap::PrecompositionState::INSERT_SPACE:
+      case keymap::PrecompositionState::RECONVERT_SELECTION_OR_INSERT_SPACE:
         if (!IsFullWidthInsertSpace(command->input()) && IsPureSpaceKey(key)) {
           return EchoBackAndClearUndoContext(command);
         }
@@ -3010,6 +3019,8 @@ bool Session::ExecutePrecompositionCommand(
       return EchoBackAndClearUndoContext(command);
     case keymap::PrecompositionState::RECONVERT:
       return RequestConvertReverse(command);
+    case keymap::PrecompositionState::RECONVERT_SELECTION_OR_INSERT_SPACE:
+      return RequestReconvertSelectionOrInsertSpace(command);
 
     case keymap::PrecompositionState::IME_ACTION:
       return ImeAction(command);
@@ -3733,6 +3744,26 @@ bool Session::RequestConvertReverse(commands::Command* command) {
   commands::SessionCommand* session_command =
       command->mutable_output()->mutable_callback()->mutable_session_command();
   session_command->set_type(commands::SessionCommand::CONVERT_REVERSE);
+  return true;
+}
+
+bool Session::RequestReconvertSelectionOrInsertSpace(
+    commands::Command* command) {
+  if (context_->state() != ImeContext::PRECOMPOSITION) {
+    return DoNothing(command);
+  }
+
+  // Build the normal InsertSpace output first.  The TSF client will apply this
+  // output only when the application has no selected text.  When selected text
+  // exists, the callback is handled before the fallback output is applied.
+  if (!InsertSpace(command)) {
+    return false;
+  }
+
+  commands::SessionCommand* session_command =
+      command->mutable_output()->mutable_callback()->mutable_session_command();
+  session_command->set_type(
+      commands::SessionCommand::RECONVERT_SELECTION_OR_INSERT_SPACE);
   return true;
 }
 

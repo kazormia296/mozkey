@@ -118,6 +118,11 @@ class Session {
   // ConvertReverse keybinding is called.
   bool RequestConvertReverse(mozc::commands::Command* command);
 
+  // Generates the normal InsertSpace fallback output and attaches a callback
+  // asking the TSF client to reconvert selected application text, if any.
+  bool RequestReconvertSelectionOrInsertSpace(
+      mozc::commands::Command* command);
+
   // Begins reverse conversion for the given session.  This function
   // is called when the CONVERT_REVERSE SessionCommand is called.
   bool ConvertReverse(mozc::commands::Command* command);

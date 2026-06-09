@@ -252,6 +252,10 @@
         <translation>Reconvert</translation>
     </message>
     <message>
+        <source>ReconvertSelectionOrInsertSpace</source>
+        <translation>Reconvert selected text, or insert space if no text is selected</translation>
+    </message>
+    <message>
         <source>DeleteSelectedCandidate</source>
         <translation>Remove selected candidate from history</translation>
     </message>
