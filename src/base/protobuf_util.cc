@@ -77,7 +77,9 @@ void SanitizeMessageStrings(
 
     // Sanitize a non-repeated string.
     if (!field->is_repeated()) {
-      const absl::string_view val = reflection->GetStringView(message, field);
+      protobuf::Reflection::ScratchSpace scratch;
+      const absl::string_view val =
+          reflection->GetStringView(message, field, scratch);
       if (std::optional<std::string> new_val = sanitizer(val);
           new_val.has_value()) {
         reflection->SetString(&message, field, *std::move(new_val));
@@ -87,9 +89,10 @@ void SanitizeMessageStrings(
 
     // Sanitize repeated strings.
     const int count = reflection->FieldSize(message, field);
+    protobuf::Reflection::ScratchSpace scratch;
     for (int i = 0; i < count; ++i) {
       const absl::string_view val =
-          reflection->GetRepeatedStringView(message, field, i);
+          reflection->GetRepeatedStringView(message, field, i, scratch);
       if (std::optional<std::string> new_val = sanitizer(val);
           new_val.has_value()) {
         reflection->SetRepeatedString(&message, field, i, *std::move(new_val));
