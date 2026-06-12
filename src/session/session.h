@@ -303,6 +303,21 @@ class Session {
   // Reading at the time when the current delayed live conversion was scheduled.
   std::string pending_live_conversion_key_;
 
+  // Original SEND_KEY input that scheduled the current delayed live conversion.
+  // Delayed APPLY_LIVE_CONVERSION callbacks are SEND_COMMAND inputs, so this is
+  // reused to keep passive suggestion generation consistent after the delay.
+  commands::Input pending_live_conversion_input_;
+
+  // Passive suggestion window generated for the current delayed live conversion.
+  // It is reused if the delayed callback cannot regenerate suggestions, which
+  // prevents the visible suggestion window from disappearing at materialization.
+  commands::CandidateWindow pending_live_conversion_suggestion_candidate_window_;
+
+  // Passive suggestion window currently associated with live conversion output.
+  // Some delayed callbacks re-render live conversion without regenerating
+  // suggestions; this cache keeps the passive suggestion window stable there.
+  commands::CandidateWindow live_conversion_suggestion_candidate_window_;
+
   // The reading used for the latest successful live conversion.
   std::string live_conversion_key_;
 
@@ -475,6 +490,20 @@ class Session {
   void CancelPendingLiveConversion();
   void ClearLiveConversionState();
   void CancelLiveConversionForEditing();
+  // Starts prediction candidate selection from a live-conversion-backed
+  // CONVERSION state.  Other conversion keys keep following their existing
+  // keymap-defined conversion path, while Tab-style prediction keys focus
+  // prediction candidates.
+  bool PredictAndConvertFromLiveConversion(mozc::commands::Command* command);
+  // Adds a non-focused suggestion candidate window to live-conversion output
+  // without mutating the real converter state.  This keeps live conversion as a
+  // CONVERSION state for normal conversion keys while still showing passive
+  // suggestions.
+  bool AttachLiveConversionSuggestionCandidateWindow(
+      const mozc::commands::Input& input,
+      mozc::commands::Output* output);
+  bool AttachCachedLiveConversionSuggestionCandidateWindow(
+      mozc::commands::Output* output) const;
   bool CommitLiveConversionResult(mozc::commands::Command* command);
   bool CommitPendingLiveConversionDisplayDirectly(
       mozc::commands::Command* command);
