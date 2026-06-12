@@ -359,10 +359,26 @@ bool TurnOnImeAndTryToReconvertFromIme(TipTextService* text_service,
     if (open) {
       return true;
     }
-    // Currently Mozc server will not turn on IME when |text_utf8| is empty but
-    // people expect IME will be turned on even when the reconversion does
-    // nothing.  b/4225148.
-    return OnUpdateOnOffModeAsync(text_service, context, true);
+    // When reconversion is requested without selected text in direct mode,
+    // behave as an IME-on key.  This must go through the normal session path;
+    // otherwise only TipInputModeManager is updated and the TSF open/close
+    // compartment stays OFF until the next focus update restores the effective
+    // state to OFF.
+    TipPrivateContext* private_context = text_service->GetPrivateContext(context);
+    if (!private_context) {
+      // This is an unmanaged context. Keep the historical local/UI update
+      // behavior, because there is no Mozc session to synchronize.
+      return OnUpdateOnOffModeAsync(text_service, context, true);
+    }
+
+    Output output;
+    SessionCommand command;
+    command.set_type(SessionCommand::TURN_ON_IME);
+    if (!private_context->GetClient()->SendCommand(command, &output)) {
+      return false;
+    }
+    return TipEditSession::OnOutputReceivedSync(text_service, context,
+                                                std::move(output));
   }
 
   TipPrivateContext* private_context = text_service->GetPrivateContext(context);
