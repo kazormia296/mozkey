@@ -3477,6 +3477,27 @@ bool Session::SendKeyConversionState(commands::Command* command) {
       return RevertZenzLiveCorrectionToLiveConversion(command);
     }
 
+    // A prediction key such as Tab should focus prediction candidates even while
+    // live conversion is active.  Do this before the generic live-conversion
+    // promotion below, otherwise PredictAndConvert() would see an ordinary
+    // CONVERSION state and fall back to ConvertNext().  Other conversion
+    // commands still follow their existing keymap-defined conversion path.
+    if (key_command == keymap::ConversionState::PREDICT_AND_CONVERT) {
+      if (!PredictAndConvertFromLiveConversion(command)) {
+        return false;
+      }
+
+      if (command_sequence.size() == 1) {
+        return true;
+      }
+
+      const commands::Output prediction_output = command->output();
+      keymap::CommandSequence remaining_sequence(
+          command_sequence.begin() + 1, command_sequence.end());
+      return ExecuteCommandSequenceWithInitialOutput(
+          remaining_sequence, &prediction_output, command);
+    }
+
     // Explicit conversion operations such as Space, candidate movement, or Cancel
     // promote live conversion back to normal conversion behavior.  When a visible
     // zenz layer exists, plain Space is consumed above to peel off that layer first.
@@ -4020,6 +4041,8 @@ void Session::CancelPendingLiveConversion() {
   live_conversion_pending_ = false;
   pending_live_conversion_generation_ = 0;
   pending_live_conversion_key_.clear();
+  pending_live_conversion_input_.Clear();
+  pending_live_conversion_suggestion_candidate_window_.Clear();
   CancelPendingZenzLiveCorrection();
 }
 
@@ -4030,6 +4053,9 @@ void Session::ClearLiveConversionState() {
   live_conversion_pending_ = false;
   pending_live_conversion_generation_ = 0;
   pending_live_conversion_key_.clear();
+  pending_live_conversion_input_.Clear();
+  pending_live_conversion_suggestion_candidate_window_.Clear();
+  live_conversion_suggestion_candidate_window_.Clear();
 
   live_conversion_key_.clear();
   live_conversion_preedit_.clear();
@@ -4088,9 +4114,26 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   const std::string live_conversion_preedit =
       context_->composer().GetStringForPreedit();
 
+  // Delayed live-conversion callbacks are SEND_COMMAND inputs and may not carry
+  // the same request_suggestion/context data as the original SEND_KEY input.
+  // Keep the original input for passive suggestion generation so the suggestion
+  // window does not disappear when the delayed live conversion materializes.
+  const bool use_pending_live_conversion_input =
+      live_conversion_pending_ &&
+      pending_live_conversion_key_ == live_conversion_key &&
+      pending_live_conversion_input_.type() != commands::Input::NONE;
+  const commands::Input live_conversion_suggestion_input =
+      use_pending_live_conversion_input ? pending_live_conversion_input_
+                                        : command->input();
+  const commands::CandidateWindow
+      pending_live_conversion_suggestion_candidate_window =
+          pending_live_conversion_suggestion_candidate_window_;
+
   live_conversion_pending_ = false;
   pending_live_conversion_generation_ = 0;
   pending_live_conversion_key_.clear();
+  pending_live_conversion_input_.Clear();
+  pending_live_conversion_suggestion_candidate_window_.Clear();
 
   if (!context_->mutable_converter()->Convert(context_->composer())) {
     OutputComposition(command);
@@ -4136,6 +4179,14 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
     return true;
   }
 
+  if (!AttachLiveConversionSuggestionCandidateWindow(
+          live_conversion_suggestion_input, command->mutable_output()) &&
+      pending_live_conversion_suggestion_candidate_window.candidate_size() > 0) {
+    live_conversion_suggestion_candidate_window_ =
+        pending_live_conversion_suggestion_candidate_window;
+    *command->mutable_output()->mutable_candidate_window() =
+        live_conversion_suggestion_candidate_window_;
+  }
   MaybeScheduleZenzLiveCorrection(command);
   return true;
 }
@@ -4272,6 +4323,8 @@ bool Session::MaybeScheduleLiveConversion(commands::Command* command) {
   live_conversion_pending_ = true;
   pending_live_conversion_generation_ = live_conversion_generation_;
   pending_live_conversion_key_ = key;
+  pending_live_conversion_input_ = command->input();
+  pending_live_conversion_suggestion_candidate_window_.Clear();
 
   if (!OutputPendingLiveConversion(command)) {
     // Avoid showing raw hiragana fallback. If pending display cannot be built
@@ -4279,6 +4332,11 @@ bool Session::MaybeScheduleLiveConversion(commands::Command* command) {
     return MaybeStartLiveConversion(command);
   }
 
+  if (AttachLiveConversionSuggestionCandidateWindow(command->input(),
+                                                    command->mutable_output())) {
+    pending_live_conversion_suggestion_candidate_window_ =
+        command->output().candidate_window();
+  }
   AttachDelayedLiveConversionCallback(command);
 
   return true;
@@ -4292,6 +4350,8 @@ bool Session::IgnoreStaleDelayedLiveConversion(commands::Command* command) {
   // composer still has text.
   if (live_conversion_pending_) {
     OutputPendingLiveConversion(command);
+    AttachCachedLiveConversionSuggestionCandidateWindow(
+        command->mutable_output());
     return true;
   }
 
@@ -4308,6 +4368,8 @@ bool Session::IgnoreStaleDelayedLiveConversion(commands::Command* command) {
 
     command->mutable_output()->set_live_conversion(true);
     command->mutable_output()->set_live_conversion_pending(false);
+    AttachCachedLiveConversionSuggestionCandidateWindow(
+        command->mutable_output());
     return true;
   }
 
@@ -5404,6 +5466,7 @@ bool Session::OutputCurrentLiveConversionWithZenzPending(
     output->set_live_conversion(true);
     output->set_live_conversion_pending(false);
     output->set_zenz_live_correction_pending(true);
+    AttachCachedLiveConversionSuggestionCandidateWindow(output);
     return true;
   }
 
@@ -5434,6 +5497,7 @@ bool Session::OutputCurrentLiveConversionAfterZenzStop(
     if (!debug.empty()) {
       output->set_zenz_live_correction_debug(std::string(debug));
     }
+    AttachCachedLiveConversionSuggestionCandidateWindow(output);
     return true;
   }
 
@@ -5518,6 +5582,7 @@ bool Session::AdvancePendingZenzLiveCorrection(
       output->set_live_conversion(true);
       output->set_live_conversion_pending(false);
       output->set_zenz_live_correction_pending(true);
+      AttachCachedLiveConversionSuggestionCandidateWindow(output);
     }
     AttachZenzLiveCorrectionPollCallback(command);
     return result;
@@ -5847,6 +5912,8 @@ bool Session::OutputZenzLiveCorrection(
   // as user acceptance. Acceptance must be recorded only when the user commits
   // the visible zenz result.
   zenz_live_preedit_output_ = *preedit;
+
+  AttachCachedLiveConversionSuggestionCandidateWindow(output);
   return true;
 }
 
@@ -6707,6 +6774,102 @@ bool Session::Suggest(const commands::Input& input) {
                                                 input.context());
 }
 
+bool Session::AttachLiveConversionSuggestionCandidateWindow(
+    const commands::Input& input, commands::Output* output) {
+  DCHECK(output);
+
+  // Output() from live conversion may contain the real CONVERSION candidate
+  // window.  Only the passive SUGGESTION window built below is allowed to
+  // remain on live-conversion output; otherwise the renderer would show the
+  // ordinary conversion candidate list without an explicit Space/Down action.
+  live_conversion_suggestion_candidate_window_.Clear();
+  output->clear_candidate_window();
+
+  if (SuppressSuggestion(input)) {
+    return false;
+  }
+
+  // Live conversion intentionally keeps the real converter in CONVERSION state
+  // so that Space/Down can enter the normal conversion candidate list with a
+  // single key press.  EngineConverter::Suggest(), however, is defined only for
+  // COMPOSITION/SUGGESTION states and resets converter state while generating
+  // candidates.  Build the passive suggestion window on a cloned context and
+  // copy only candidate_window to the live-conversion output.  The real
+  // converter state, live_conversion_active_, selected segment, and Zenz state
+  // are left untouched.
+  ImeContext suggestion_context(*context_);
+  if (suggestion_context.converter().IsActive()) {
+    suggestion_context.mutable_converter()->Cancel();
+  }
+  suggestion_context.set_state(ImeContext::COMPOSITION);
+
+  bool has_suggestion = false;
+  if (input.has_request_suggestion() &&
+      input.type() == commands::Input::SEND_KEY) {
+    ConversionPreferences conversion_preferences =
+        suggestion_context.converter().conversion_preferences();
+    conversion_preferences.request_suggestion = input.request_suggestion();
+    has_suggestion =
+        suggestion_context.mutable_converter()->SuggestWithPreferences(
+            suggestion_context.composer(), input.context(),
+            conversion_preferences);
+  } else {
+    has_suggestion = suggestion_context.mutable_converter()->Suggest(
+        suggestion_context.composer(), input.context());
+  }
+
+  if (!has_suggestion) {
+    return false;
+  }
+
+  commands::Output suggestion_output;
+  suggestion_context.mutable_converter()->PopOutput(
+      suggestion_context.composer(), &suggestion_output);
+
+  if (!suggestion_output.has_candidate_window() ||
+      suggestion_output.candidate_window().candidate_size() == 0) {
+    return false;
+  }
+
+  live_conversion_suggestion_candidate_window_ =
+      suggestion_output.candidate_window();
+  *output->mutable_candidate_window() =
+      live_conversion_suggestion_candidate_window_;
+  return true;
+}
+
+bool Session::AttachCachedLiveConversionSuggestionCandidateWindow(
+    commands::Output* output) const {
+  DCHECK(output);
+
+  output->clear_candidate_window();
+
+  const commands::CandidateWindow* candidate_window = nullptr;
+  if (live_conversion_suggestion_candidate_window_.has_category() &&
+      live_conversion_suggestion_candidate_window_.category() ==
+          commands::SUGGESTION &&
+      live_conversion_suggestion_candidate_window_.candidate_size() > 0 &&
+      !live_conversion_suggestion_candidate_window_.has_focused_index()) {
+    candidate_window = &live_conversion_suggestion_candidate_window_;
+  } else if (
+      pending_live_conversion_suggestion_candidate_window_.has_category() &&
+      pending_live_conversion_suggestion_candidate_window_.category() ==
+          commands::SUGGESTION &&
+      pending_live_conversion_suggestion_candidate_window_.candidate_size() >
+          0 &&
+      !pending_live_conversion_suggestion_candidate_window_
+           .has_focused_index()) {
+    candidate_window = &pending_live_conversion_suggestion_candidate_window_;
+  }
+
+  if (candidate_window == nullptr) {
+    return false;
+  }
+
+  *output->mutable_candidate_window() = *candidate_window;
+  return true;
+}
+
 bool Session::ConvertToTransliteration(
     commands::Command* command,
     const transliteration::TransliterationType type) {
@@ -7405,6 +7568,39 @@ bool Session::ConvertCancel(commands::Command* command) {
   if (Suggest(command->input())) {
     Output(command);
   } else {
+    OutputComposition(command);
+  }
+  return true;
+}
+
+bool Session::PredictAndConvertFromLiveConversion(commands::Command* command) {
+  DCHECK(command);
+
+  CancelPendingLiveConversion();
+  command->mutable_output()->set_consumed(true);
+
+  if (context_->state() != ImeContext::CONVERSION || !live_conversion_active_) {
+    return PredictAndConvert(command);
+  }
+
+  // Selecting prediction candidates is an explicit user override of the
+  // currently visible live conversion result.  If a zenz correction is visible,
+  // remember it as rejected before removing the speculative layer.
+  if (HasVisibleZenzLiveCorrection()) {
+    SetPendingZenzFeedbackRejected("predict_after_zenz");
+  }
+  ClearZenzLiveCorrectionState();
+
+  live_conversion_active_ = false;
+  if (context_->mutable_converter()->Predict(context_->composer())) {
+    SetSessionState(ImeContext::CONVERSION, context_.get());
+    Output(command);
+  } else {
+    // EngineConverter::Predict() resets its internal state on a first-prediction
+    // failure.  Keep Session and EngineConverter aligned and fall back to the
+    // same composition output that ordinary PredictAndConvert() uses on failure.
+    ClearLiveConversionState();
+    SetSessionState(ImeContext::COMPOSITION, context_.get());
     OutputComposition(command);
   }
   return true;
