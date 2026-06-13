@@ -396,6 +396,7 @@ void MozcState::SendCompositionMode(mozc::commands::CompositionMode mode) {
 void MozcState::SetUrl(const std::string& url) { url_ = url; }
 
 void MozcState::ClearAll() {
+  live_conversion_timer_.reset();
   SetPreeditInfo(Text());
   SetAuxString("");
   ic_->inputPanel().reset();
@@ -485,7 +486,7 @@ void MozcState::ScheduleLiveConversion(
   live_conversion_timer_ = engine_->instance()->eventLoop().addTimeEvent(
       CLOCK_MONOTONIC, target_usec, 0,
       [this, command](fcitx::EventSourceTime *timer, uint64_t usec) {
-          live_conversion_timer_.reset();
+          auto timer_keeper = std::move(this->live_conversion_timer_);
           mozc::commands::Output new_output;
           if (this->SendCommand(command, &new_output)) {
               this->ParseResponse(new_output);

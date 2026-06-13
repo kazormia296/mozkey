@@ -339,12 +339,9 @@ void MozcResponseParser::ExecuteCallback(const mozc::commands::Output& response,
       uint32_t delay = response.callback().has_delay_millisec()
                            ? response.callback().delay_millisec()
                            : 0;
-      if (delay > 0) {
-        auto* mozc_state = engine_->mozcState(ic);
-        mozc_state->ScheduleLiveConversion(session_command, delay);
-        return;
-      }
-      break;
+      auto* mozc_state = engine_->mozcState(ic);
+      mozc_state->ScheduleLiveConversion(session_command, delay);
+      return;
     }
     default:
       return;
