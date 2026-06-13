@@ -326,6 +326,26 @@ void MozcResponseParser::ExecuteCallback(const mozc::commands::Output& response,
       session_command.set_text(surrounding_text_info.selection_text);
       break;
     }
+    case mozc::commands::SessionCommand::APPLY_LIVE_CONVERSION: {
+      if (callback_command.has_live_conversion_generation()) {
+        session_command.set_live_conversion_generation(
+            callback_command.live_conversion_generation());
+      }
+      if (callback_command.has_live_conversion_key()) {
+        session_command.set_live_conversion_key(
+            callback_command.live_conversion_key());
+      }
+
+      uint32_t delay = response.callback().has_delay_millisec()
+                           ? response.callback().delay_millisec()
+                           : 0;
+      if (delay > 0) {
+        auto* mozc_state = engine_->mozcState(ic);
+        mozc_state->ScheduleLiveConversion(session_command, delay);
+        return;
+      }
+      break;
+    }
     default:
       return;
   }

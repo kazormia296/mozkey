@@ -39,6 +39,8 @@
 #include <memory>
 #include <string>
 
+#include <fcitx-utils/eventloopinterface.h>
+
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "unix/fcitx5/mozc_client_interface.h"
@@ -105,6 +107,9 @@ class MozcState : public InputContextProperty {
 
   void DrawAll();
 
+  void ScheduleLiveConversion(const mozc::commands::SessionCommand& command,
+                              uint32_t delay_millisec);
+
  private:
   void DisplayUsage();
   // Sends key event to the server. If the IPC succeeds, returns true and the
@@ -159,6 +164,8 @@ class MozcState : public InputContextProperty {
   std::string url_;  // URL to be opened by a browser.
   std::string description_;
   std::string title_;
+
+  mutable std::unique_ptr<fcitx::EventSourceTime> live_conversion_timer_;
 };
 
 }  // namespace fcitx

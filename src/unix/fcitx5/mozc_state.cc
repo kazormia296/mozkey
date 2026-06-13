@@ -40,6 +40,8 @@
 #include <fcitx/inputpanel.h>
 #include <fcitx/text.h>
 #include <fcitx/userinterface.h>
+#include <fcitx/instance.h>
+#include <fcitx-utils/event.h>
 
 #include <cstdint>
 #include <memory>
@@ -115,6 +117,8 @@ bool MozcState::TrySendKeyEvent(InputContext* ic,
                                 std::string* out_error) const {
   DCHECK(out);
   DCHECK(out_error);
+
+  live_conversion_timer_.reset();
 
   // Call EnsureConnection just in case MozcState::MozcConnection() fails
   // to establish the server connection.
@@ -291,6 +295,7 @@ void MozcState::SelectCandidate(int32_t id) {
 // This function is called from SCIM framework.
 void MozcState::Reset() {
   MOZC_VLOG(1) << "resetim";
+  live_conversion_timer_.reset();
   std::string error;
   mozc::commands::Output raw_response;
   if (TrySendCommand(mozc::commands::SessionCommand::REVERT, &raw_response,
@@ -327,6 +332,7 @@ void MozcState::FocusIn() {
 // This function is called when the ic loses focus.
 void MozcState::FocusOut(const InputContextEvent& event) {
   MOZC_VLOG(1) << "MozcState::FocusOut()";
+  live_conversion_timer_.reset();
   std::string error;
   mozc::commands::Output raw_response;
 
@@ -471,5 +477,21 @@ MozcClientInterface* MozcState::GetClient() const {
 }
 
 void MozcState::ReleaseClient() { client_.reset(); }
+
+void MozcState::ScheduleLiveConversion(
+    const mozc::commands::SessionCommand& command, uint32_t delay_millisec) {
+  live_conversion_timer_.reset();
+  uint64_t target_usec = fcitx::now(CLOCK_MONOTONIC) + delay_millisec * 1000;
+  live_conversion_timer_ = engine_->instance()->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, target_usec, 0,
+      [this, command](fcitx::EventSourceTime *timer, uint64_t usec) {
+          live_conversion_timer_.reset();
+          mozc::commands::Output new_output;
+          if (this->SendCommand(command, &new_output)) {
+              this->ParseResponse(new_output);
+          }
+          return false;
+      });
+}
 
 }  // namespace fcitx
