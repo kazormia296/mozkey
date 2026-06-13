@@ -753,11 +753,17 @@ void EngineConverter::Reset() {
   // in order to clear history segments.
   converter_->ResetConversion(&segments_);
 
+  // Reset() must also clear the pending output result.  In COMPOSITION state,
+  // callers such as Session::CommitStringDirectly() may reset the converter
+  // before setting their own direct-commit result.  If a previous CommitPreedit
+  // left result_ populated, PopOutput() would otherwise emit that stale result
+  // instead of the direct-commit string.
+  ResetResult();
+
   if (CheckState(COMPOSITION)) {
     return;
   }
 
-  ResetResult();
   // Reset segments (and its internal context)
   ResetState();
 }
@@ -987,8 +993,70 @@ void EngineConverter::CommitSegmentsInternal(const composer::Composer& composer,
   UpdateCandidateList();
 }
 
+namespace {
+
+bool InitRerankedPreeditCommitSegmentsWithSegmentKeys(
+    absl::string_view key,
+    absl::string_view value,
+    const std::vector<std::string>& segment_keys,
+    Segments* segments) {
+  if (segment_keys.empty()) {
+    return false;
+  }
+
+  std::string joined_key;
+  joined_key.reserve(key.size());
+  for (const std::string& segment_key : segment_keys) {
+    if (segment_key.empty()) {
+      return false;
+    }
+    joined_key.append(segment_key);
+  }
+
+  // This segmented path is intentionally narrow.  It is used only for raw
+  // hiragana commits after ConvertCancel, where key and value are identical.
+  // If normalization changed the committed value or the saved segment keys no
+  // longer match the restored preedit, fall back to the regular single-segment
+  // CommitPreedit path.
+  if (joined_key != key || joined_key != value) {
+    return false;
+  }
+
+  segments->clear_conversion_segments();
+  for (const std::string& segment_key : segment_keys) {
+    Segment* segment = segments->add_segment();
+    segment->set_key(segment_key);
+    segment->set_segment_type(Segment::FIXED_VALUE);
+
+    converter::Candidate* candidate = segment->add_candidate();
+    candidate->key = segment_key;
+    candidate->content_key = segment_key;
+    candidate->value = segment_key;
+    candidate->content_value = segment_key;
+    candidate->attributes |= converter::Attribute::RERANKED;
+  }
+  return true;
+}
+
+}  // namespace
+
 void EngineConverter::CommitPreedit(const composer::Composer& composer,
                                     const commands::Context& context) {
+  CommitPreedit(composer, context, false);
+}
+
+void EngineConverter::CommitPreedit(const composer::Composer& composer,
+                                    const commands::Context& context,
+                                    bool mark_preedit_as_reranked) {
+  CommitPreedit(composer, context, mark_preedit_as_reranked,
+                std::vector<std::string>());
+}
+
+void EngineConverter::CommitPreedit(
+    const composer::Composer& composer,
+    const commands::Context& context,
+    bool mark_preedit_as_reranked,
+    const std::vector<std::string>& segment_keys) {
   const std::string key = composer.GetQueryForConversion();
   const std::string preedit = composer.GetStringForSubmission();
   std::string normalized_preedit = TextNormalizer::NormalizeText(preedit);
@@ -1002,7 +1070,16 @@ void EngineConverter::CommitPreedit(const composer::Composer& composer,
   // Cursor offset needs to be calculated based on normalized text.
   output::FillCursorOffsetResult(CalculateCursorOffset(normalized_preedit),
                                  &result_);
-  segments_.InitForCommit(key, normalized_preedit);
+  if (!mark_preedit_as_reranked ||
+      !InitRerankedPreeditCommitSegmentsWithSegmentKeys(
+          key, normalized_preedit, segment_keys, &segments_)) {
+    segments_.InitForCommit(key, normalized_preedit);
+  }
+  if (mark_preedit_as_reranked && segments_.conversion_segments_size() == 1 &&
+      segments_.conversion_segment(0).candidates_size() == 1) {
+    segments_.mutable_conversion_segment(0)->mutable_candidate(0)->attributes |=
+        converter::Attribute::RERANKED;
+  }
   CommitSegmentsSize(EngineConverterInterface::COMPOSITION, context);
   DCHECK(request_);
   DCHECK(config_);
@@ -1290,6 +1367,29 @@ void MaybeFillConfig(converter::Candidate::Command command,
 void EngineConverter::FillPreedit(const composer::Composer& composer,
                                   commands::Preedit* preedit) const {
   output::FillPreedit(composer, preedit);
+}
+
+bool EngineConverter::GetConversionSegmentKeys(
+    std::vector<std::string>* segment_keys) const {
+  if (segment_keys == nullptr) {
+    return false;
+  }
+
+  segment_keys->clear();
+  if (!CheckState(CONVERSION) || segments_.conversion_segments_size() == 0) {
+    return false;
+  }
+
+  segment_keys->reserve(segments_.conversion_segments_size());
+  for (const Segment& segment : segments_.conversion_segments()) {
+    if (segment.key().empty()) {
+      segment_keys->clear();
+      return false;
+    }
+    segment_keys->push_back(std::string(segment.key()));
+  }
+
+  return !segment_keys->empty();
 }
 
 void EngineConverter::FillOutput(const composer::Composer& composer,

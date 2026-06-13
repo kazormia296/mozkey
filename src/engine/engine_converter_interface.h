@@ -36,6 +36,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"
 #include "composer/composer.h"
@@ -181,6 +182,41 @@ class EngineConverterInterface {
   // Commit the preedit string represented by Composer.
   virtual void CommitPreedit(const composer::Composer& composer,
                              const commands::Context& context) = 0;
+
+  // Commit the preedit string represented by Composer.
+  // If |mark_preedit_as_reranked| is true, the committed raw preedit is
+  // treated like an explicitly selected non-default candidate for user segment
+  // history.  The default implementation preserves compatibility with
+  // EngineConverterInterface implementations that do not need the extra signal.
+  virtual void CommitPreedit(const composer::Composer& composer,
+                             const commands::Context& context,
+                             bool mark_preedit_as_reranked) {
+    (void)mark_preedit_as_reranked;
+    CommitPreedit(composer, context);
+  }
+
+  // Commit the preedit string represented by Composer, optionally preserving
+  // conversion-time segment boundaries for user segment history.  The default
+  // implementation ignores |segment_keys| to preserve compatibility with
+  // lightweight implementations.
+  virtual void CommitPreedit(const composer::Composer& composer,
+                             const commands::Context& context,
+                             bool mark_preedit_as_reranked,
+                             const std::vector<std::string>& segment_keys) {
+    (void)segment_keys;
+    CommitPreedit(composer, context, mark_preedit_as_reranked);
+  }
+
+  // Returns the key boundaries of the currently visible conversion segments.
+  // This is used only to preserve the user's explicit hiragana choice after
+  // ConvertCancel.  Lightweight implementations can ignore it.
+  virtual bool GetConversionSegmentKeys(
+      std::vector<std::string>* segment_keys) const {
+    if (segment_keys != nullptr) {
+      segment_keys->clear();
+    }
+    return false;
+  }
 
   // Commit prefix of the preedit string represented by Composer.
   // The caller should delete characters from composer based on returned

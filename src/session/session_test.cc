@@ -122,6 +122,7 @@ using ::mozc::commands::Request;
 using ::testing::_;
 using ::testing::AtLeast;
 using ::testing::DoAll;
+using ::testing::Invoke;
 using ::testing::Mock;
 using ::testing::Return;
 using ::testing::SetArgPointee;
@@ -3101,6 +3102,81 @@ TEST_F(SessionTest, PendingDirectCommitLearningIsDiscardedBySessionCommand) {
   EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
 }
 
+TEST_F(SessionTest,
+       PendingDirectCommitLearningSurvivesTurnOffImeSessionCommandHandler) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  EXPECT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  EXPECT_CALL(*converter, RevertConversion(_)).Times(0);
+  session_peer.HandlePendingDirectCommitLearningForSessionCommand(
+      commands::SessionCommand::TURN_OFF_IME);
+
+  EXPECT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest, PendingDirectCommitLearningIsConfirmedByIMEOff) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  EXPECT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  commands::Command command;
+  EXPECT_CALL(*converter, RevertConversion(_)).Times(0);
+  EXPECT_TRUE(session.IMEOff(&command));
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+  EXPECT_EQ(session.context().state(), ImeContext::DIRECT);
+}
+
+TEST_F(SessionTest, PendingDirectCommitLearningIsConfirmedByMakeSureIMEOff) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  EXPECT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  commands::Command command;
+  EXPECT_CALL(*converter, RevertConversion(_)).Times(0);
+  EXPECT_TRUE(session.MakeSureIMEOff(&command));
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+  EXPECT_EQ(session.context().state(), ImeContext::DIRECT);
+}
+
 TEST_F(SessionTest, PendingDirectCommitLearningIgnoresEmptyResult) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
@@ -4502,6 +4578,720 @@ TEST_F(SessionTest, UpdatePreferences) {
   session.SendKey(&command);
   EXPECT_EQ(command.output().status().mode(), commands::HIRAGANA);
   EXPECT_EQ(command.output().status().comeback_mode(), commands::HIRAGANA);
+}
+
+TEST_F(SessionTest,
+       CommitAfterConvertCancelMarksHiraganaPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.Commit(&command));
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.key(), "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).key, "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_NE(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       IMEOffAfterConvertCancelMarksHiraganaPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.IMEOff(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::DIRECT);
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.key(), "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).key, "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_NE(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       MakeSureIMEOffAfterConvertCancelMarksHiraganaPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.MakeSureIMEOff(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::DIRECT);
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.key(), "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).key, "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_NE(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       KeymapCommandSequenceCommitAndImeOffAfterConvertCancelMarksHiraganaPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SetCustomKeymapForSession(
+      "status\tkey\tcommand\n"
+      "Composition\tCtrl Enter\tCommit|IMEOff\n",
+      &session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(SendKey("Ctrl Enter", &session, &command));
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_RESULT("きょう", command);
+  EXPECT_EQ(session.context().state(), ImeContext::DIRECT);
+  EXPECT_EQ(command.output().mode(), commands::DIRECT);
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.key(), "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).key, "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_NE(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       ConvertCancelWithActiveLiveConversionMarksHiraganaPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  SessionTestPeer session_peer(session);
+  session_peer.live_conversion_active_() = true;
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.Commit(&command));
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_NE(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       CommitAfterOneCharacterConvertCancelDoesNotMarkPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("あ", "a", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("あ");
+  AddCandidate("あ", "亜", segment);
+  AddCandidate("あ", "あ", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.Commit(&command));
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.key(), "あ");
+  EXPECT_EQ(committed_segment.candidate(0).value, "あ");
+  EXPECT_EQ(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       CommitAfterNonHiraganaConvertCancelDoesNotMarkPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("キョウ", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("キョウ");
+  AddCandidate("キョウ", "今日", segment);
+  AddCandidate("キョウ", "キョウ", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.Commit(&command));
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.key(), "キョウ");
+  EXPECT_EQ(committed_segment.candidate(0).value, "キョウ");
+  EXPECT_EQ(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       CommitAfterEditedConvertCancelDoesNotMarkPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+
+  command.Clear();
+  InsertCharacterString("う", "d", &session, &command);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.Commit(&command));
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょうう");
+  EXPECT_EQ(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       CommitPlainPreeditDoesNotMarkPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.Commit(&command));
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       DirectCommitPunctuationAfterConvertCancelMarksHiraganaPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
+  session.SetConfig(config);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  InsertCharacterString("。", ".", &session, &command);
+
+  EXPECT_RESULT("きょう。", command);
+  EXPECT_FALSE(command.output().has_preedit());
+  EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.key(), "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).key, "きょう");
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_NE(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+  EXPECT_EQ(session_peer.pending_direct_commit_learning_().key, "きょう");
+  EXPECT_EQ(session_peer.pending_direct_commit_learning_().value, "きょう");
+  EXPECT_NE(session_peer.pending_direct_commit_learning_().revert_context,
+            nullptr);
+}
+
+TEST_F(SessionTest,
+       DirectCommitPunctuationAfterConvertCancelWithActiveLiveConversionCommitsRawHiragana) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
+  session.SetConfig(config);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "きょう";
+  session_peer.live_conversion_value_() = "今日";
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  InsertCharacterString("。", ".", &session, &command);
+
+  EXPECT_RESULT("きょう。", command);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 1);
+  const Segment& committed_segment = committed_segments.conversion_segment(0);
+  ASSERT_EQ(committed_segment.candidates_size(), 1);
+  EXPECT_EQ(committed_segment.candidate(0).value, "きょう");
+  EXPECT_NE(committed_segment.candidate(0).attributes &
+                converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       DirectCommitPunctuationAfterConvertCancelLearningIsDiscardedByBackspace) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
+  session.SetConfig(config);
+
+  commands::Command command;
+  InsertCharacterString("きょう", "abc", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょう");
+  AddCandidate("きょう", "今日", segment);
+  AddCandidate("きょう", "きょう", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([](const ConversionRequest&, Segments*) {}));
+
+  command.Clear();
+  InsertCharacterString("。", ".", &session, &command);
+
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  command.Clear();
+  ASSERT_TRUE(session.Backspace(&command));
+
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest,
+       OneCharacterDirectCommitPunctuationAfterConvertCancelDoesNotMarkPreeditAsReranked) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
+  session.SetConfig(config);
+
+  commands::Command command;
+  InsertCharacterString("あ", "a", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("あ");
+  AddCandidate("あ", "亜", segment);
+  AddCandidate("あ", "あ", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+
+  EXPECT_CALL(*converter, FinishConversion(_, _)).Times(0);
+
+  command.Clear();
+  InsertCharacterString("。", ".", &session, &command);
+
+  EXPECT_RESULT("あ。", command);
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest,
+       RomajiTablePunctuationAfterConvertCancelDoesNotDirectCommitOrLearn) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
+  session.SetConfig(config);
+
+  auto table = std::make_shared<composer::Table>();
+  table->InitializeWithRequestAndConfig(
+      commands::Request::default_instance(),
+      config::ConfigHandler::DefaultConfig());
+  table->AddRule("v.", "…", "");
+  session.SetTable(table);
+
+  commands::Command command;
+  InsertCharacterString("きょうv", "abcv", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("きょうv");
+  AddCandidate("きょうv", "今日v", segment);
+  AddCandidate("きょうv", "きょうv", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  EXPECT_CALL(*converter, FinishConversion(_, _)).Times(0);
+
+  command.Clear();
+  ASSERT_TRUE(SendKey(".", &session, &command));
+
+  EXPECT_PREEDIT("きょう…", command);
+  EXPECT_FALSE(command.output().has_result());
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
 }
 
 TEST_F(SessionTest, RomajiInput) {
@@ -9423,6 +10213,67 @@ TEST_F(SessionTest, TestSendKeyCancelKeyRevertsHistoryAfterCommit) {
   EXPECT_FALSE(command.output().consumed());
 }
 
+TEST_F(SessionTest, PendingDirectCommitLearningIsDiscardedByCancelKeyEchoBack) {
+  config::Config config;
+  config.set_session_keymap(config::Config::MSIME);
+
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  auto key_map_manager = std::make_shared<keymap::KeyMapManager>(config);
+  session.SetConfig(config);
+  session.SetKeyMapManager(key_map_manager);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  ASSERT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  commands::Command command;
+  ASSERT_TRUE(SetSendKeyCommand("Ctrl z", &command));
+  EXPECT_TRUE(session.SendKey(&command));
+
+  EXPECT_FALSE(command.output().consumed());
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
+TEST_F(SessionTest,
+       TestSendKeyPendingDirectCommitLearningIsDiscardedByCancelKeyEchoBack) {
+  config::Config config;
+  config.set_session_keymap(config::Config::MSIME);
+
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  auto key_map_manager = std::make_shared<keymap::KeyMapManager>(config);
+  session.SetConfig(config);
+  session.SetKeyMapManager(key_map_manager);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command committed_command;
+  committed_command.mutable_output()->mutable_result()->set_key("あめ");
+  committed_command.mutable_output()->mutable_result()->set_value("雨");
+
+  ASSERT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed_command, "test_direct_commit"));
+  ASSERT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+
+  commands::Command command;
+  ASSERT_TRUE(SetSendKeyCommand("Ctrl z", &command));
+  EXPECT_TRUE(session.TestSendKey(&command));
+
+  EXPECT_FALSE(command.output().consumed());
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+}
+
 // Undo command must call RervertConversion
 TEST_F(SessionTest, Issue3428520) {
   MockEngine engine;
@@ -12809,6 +13660,154 @@ TEST_F(SessionTest, RequestNWP) {
   EXPECT_FALSE(session.SendCommand(&command));
   EXPECT_CALL(*converter, StartPrediction(_, _)).Times(0);
   EXPECT_FALSE(command.output().has_all_candidate_words());
+}
+
+TEST_F(SessionTest,
+       CommitAfterMultiSegmentConvertCancelLearnsSegmentedHiragana) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterString("おつかれぺん", "abcdef", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("おつかれ");
+  AddCandidate("おつかれ", "お疲れ", segment);
+  AddCandidate("おつかれ", "おつかれ", segment);
+  segment = conversion_segments.add_segment();
+  segment->set_key("ぺん");
+  AddCandidate("ぺん", "ペン", segment);
+  AddCandidate("ぺん", "ぺん", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(session.Commit(&command));
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 2);
+  const Segment& first = committed_segments.conversion_segment(0);
+  ASSERT_EQ(first.candidates_size(), 1);
+  EXPECT_EQ(first.segment_type(), Segment::FIXED_VALUE);
+  EXPECT_EQ(first.key(), "おつかれ");
+  EXPECT_EQ(first.candidate(0).key, "おつかれ");
+  EXPECT_EQ(first.candidate(0).content_key, "おつかれ");
+  EXPECT_EQ(first.candidate(0).value, "おつかれ");
+  EXPECT_EQ(first.candidate(0).content_value, "おつかれ");
+  EXPECT_NE(first.candidate(0).attributes & converter::Attribute::RERANKED,
+            0);
+
+  const Segment& second = committed_segments.conversion_segment(1);
+  ASSERT_EQ(second.candidates_size(), 1);
+  EXPECT_EQ(second.segment_type(), Segment::FIXED_VALUE);
+  EXPECT_EQ(second.key(), "ぺん");
+  EXPECT_EQ(second.candidate(0).key, "ぺん");
+  EXPECT_EQ(second.candidate(0).content_key, "ぺん");
+  EXPECT_EQ(second.candidate(0).value, "ぺん");
+  EXPECT_EQ(second.candidate(0).content_value, "ぺん");
+  EXPECT_NE(second.candidate(0).attributes & converter::Attribute::RERANKED,
+            0);
+}
+
+TEST_F(SessionTest,
+       DirectCommitPunctuationAfterMultiSegmentConvertCancelLearnsSegmentedHiragana) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
+  session.SetConfig(config);
+
+  commands::Command command;
+  InsertCharacterString("おつかれぺん", "abcdef", &session, &command);
+
+  Segments conversion_segments;
+  Segment* segment = conversion_segments.add_segment();
+  segment->set_key("おつかれ");
+  AddCandidate("おつかれ", "お疲れ", segment);
+  AddCandidate("おつかれ", "おつかれ", segment);
+  segment = conversion_segments.add_segment();
+  segment->set_key("ぺん");
+  AddCandidate("ぺん", "ペン", segment);
+  AddCandidate("ぺん", "ぺん", segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(conversion_segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+
+  command.Clear();
+  ASSERT_TRUE(session.ConvertCancel(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  Segments committed_segments;
+  EXPECT_CALL(*converter, FinishConversion(_, _))
+      .WillOnce(Invoke([&committed_segments](
+                           const ConversionRequest&,
+                           Segments* segments) {
+        committed_segments = *segments;
+      }));
+
+  command.Clear();
+  ASSERT_TRUE(SendKey(".", &session, &command));
+
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_RESULT_AND_KEY("おつかれぺん。", "おつかれぺん。", command);
+  EXPECT_TRUE(session_peer.pending_direct_commit_learning_().pending);
+  EXPECT_EQ(session_peer.pending_direct_commit_learning_().key,
+            "おつかれぺん");
+  EXPECT_EQ(session_peer.pending_direct_commit_learning_().value,
+            "おつかれぺん");
+
+  ASSERT_EQ(committed_segments.conversion_segments_size(), 2);
+  const Segment& first = committed_segments.conversion_segment(0);
+  ASSERT_EQ(first.candidates_size(), 1);
+  EXPECT_EQ(first.key(), "おつかれ");
+  EXPECT_EQ(first.candidate(0).key, "おつかれ");
+  EXPECT_EQ(first.candidate(0).content_key, "おつかれ");
+  EXPECT_EQ(first.candidate(0).value, "おつかれ");
+  EXPECT_EQ(first.candidate(0).content_value, "おつかれ");
+  EXPECT_NE(first.candidate(0).attributes & converter::Attribute::RERANKED,
+            0);
+
+  const Segment& second = committed_segments.conversion_segment(1);
+  ASSERT_EQ(second.candidates_size(), 1);
+  EXPECT_EQ(second.key(), "ぺん");
+  EXPECT_EQ(second.candidate(0).key, "ぺん");
+  EXPECT_EQ(second.candidate(0).content_key, "ぺん");
+  EXPECT_EQ(second.candidate(0).value, "ぺん");
+  EXPECT_EQ(second.candidate(0).content_value, "ぺん");
+  EXPECT_NE(second.candidate(0).attributes & converter::Attribute::RERANKED,
+            0);
 }
 
 }  // namespace session
