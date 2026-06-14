@@ -190,6 +190,15 @@ class EngineConverter : public EngineConverterInterface {
   // Commits the preedit string represented by Composer.
   void CommitPreedit(const composer::Composer& composer,
                      const commands::Context& context) override;
+  void CommitPreedit(const composer::Composer& composer,
+                     const commands::Context& context,
+                     bool mark_preedit_as_reranked) override;
+  void CommitPreedit(const composer::Composer& composer,
+                     const commands::Context& context,
+                     bool mark_preedit_as_reranked,
+                     const std::vector<std::string>& segment_keys) override;
+  bool GetConversionSegmentKeys(
+      std::vector<std::string>* segment_keys) const override;
 
   // Commits the specified number of characters at the head of the preedit
   // string represented by Composer.

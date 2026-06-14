@@ -38,6 +38,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
@@ -335,6 +336,15 @@ class Session {
   // to avoid display-attribute flicker.
   commands::Preedit live_conversion_preedit_output_;
 
+  // Set only after an explicit conversion Cancel command, such as Esc or Ctrl+Z
+  // in the default keymap.  If the user commits the unchanged hiragana preedit
+  // immediately after that cancel, the raw preedit should be learned like an
+  // explicitly selected non-default candidate, matching F6 -> Enter behavior.
+  bool pending_reranked_preedit_commit_after_convert_cancel_ = false;
+  std::string pending_reranked_preedit_commit_key_;
+  std::string pending_reranked_preedit_commit_value_;
+  std::vector<std::string> pending_reranked_preedit_commit_segment_keys_;
+
   struct PendingZenzLiveCorrection {
     uint32_t generation = 0;
     std::string key;
@@ -432,6 +442,16 @@ class Session {
 
   bool EditCancelOnPasswordField(mozc::commands::Command* command);
 
+  void MaybeSetPendingRerankedPreeditCommitAfterConvertCancel();
+  void ClearPendingRerankedPreeditCommitAfterConvertCancel();
+  bool ShouldMarkPreeditCommitAsRerankedAfterConvertCancel() const;
+  bool ShouldMarkPreeditCommitAsRerankedAfterConvertCancel(
+      const composer::Composer& composer) const;
+  bool CommitPendingRerankedPreeditAfterConvertCancelForDirectCommit(
+      const composer::Composer& composer,
+      const commands::Context& context,
+      absl::string_view reason);
+
   bool ConvertToTransliteration(
       mozc::commands::Command* command,
       mozc::transliteration::TransliterationType type);
@@ -447,6 +467,10 @@ class Session {
 
   // Commits without EngineConverter.
   void CommitCompositionDirectly(commands::Command* command);
+  std::pair<std::string, std::string>
+  GetDirectCommitStringsWithDirectCommitSuffixFallback(
+      const composer::Composer& composer_before_insert,
+      const commands::KeyEvent& key) const;
   void CommitSourceTextDirectly(commands::Command* command);
   void CommitRawTextDirectly(commands::Command* command);
   void CommitStringDirectly(absl::string_view key, absl::string_view preedit,
@@ -552,6 +576,10 @@ class Session {
       absl::string_view key,
       absl::string_view value);
 
+  bool SetPendingDirectCommitLearning(
+      absl::string_view key,
+      absl::string_view value,
+      absl::string_view reason);
   bool SetPendingDirectCommitLearningFromCommittedResult(
       const mozc::commands::Command& command,
       absl::string_view reason);
