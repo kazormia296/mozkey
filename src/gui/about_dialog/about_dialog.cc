@@ -95,7 +95,13 @@ AboutDialog::AboutDialog(QWidget *parent)
   window_palette.setColor(QPalette::WindowText, QColor(0, 0, 0));
   setPalette(window_palette);
   setAutoFillBackground(true);
-  std::string version_info = "(" + Version::GetMozcVersion() + ")";
+#ifdef GOOGLE_JAPANESE_INPUT_BUILD
+  const std::string version_info = "(" + Version::GetMozcVersion() + ")";
+#else  // GOOGLE_JAPANESE_INPUT_BUILD
+  const std::string version_info =
+      Version::GetMozkeyReleaseVersion() + "\nBuild " +
+      Version::GetMozcVersion();
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
   version_label->setText(QLatin1String(version_info.c_str()));
   GuiUtil::ReplaceWidgetLabels(this);
 

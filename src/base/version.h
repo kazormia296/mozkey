@@ -44,6 +44,9 @@ class Version {
   // Get current mozc version (former called MOZC_VERSION)
   static std::string GetMozcVersion();
 
+  // Get the user-facing Mozkey release version, such as "v0.7.6".
+  static std::string GetMozkeyReleaseVersion();
+
 #ifdef _WIN32
   // Get current mozc version (former called MOZC_VERSION) by std::wstring
   static std::wstring GetMozcVersionW();
