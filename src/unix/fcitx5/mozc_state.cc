@@ -309,6 +309,7 @@ void MozcState::Reset() {
 
 bool MozcState::Paging(bool prev) {
   MOZC_VLOG(1) << "paging";
+  live_conversion_timer_.reset();
   std::string error;
   mozc::commands::SessionCommand::CommandType command =
       prev ? mozc::commands::SessionCommand::CONVERT_PREV_PAGE
