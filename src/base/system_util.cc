@@ -850,6 +850,9 @@ std::string SystemUtil::GetOSVersionString() {
   const std::string ret = "MacOSX " + MacUtil::GetOSVersionString();
   // TODO(toshiyuki): get more specific info
   return ret;
+#elif defined(__ANDROID__)
+  return "Android " + AndroidUtil::GetSystemProperty(
+                          AndroidUtil::kSystemPropertyOsVersion, "Unknown");
 #elif defined(__linux__)
   const std::string ret = "Linux";
   return ret;
