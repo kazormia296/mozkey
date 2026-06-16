@@ -133,6 +133,16 @@ mozc_cc_test(
 )
 
 mozc_cc_test(
+    name = "zenz_named_pipe_client_test",
+    size = "small",
+    srcs = ["zenz_named_pipe_client_test.cc"],
+    deps = [
+        ":session",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
     name = "zenz_output_validator_test",
     size = "small",
     srcs = [

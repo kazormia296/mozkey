@@ -544,7 +544,10 @@ ZenzLiveResponse ZenzNamedPipeClient::Convert(
     return response;
   }
 #else
-  const std::string& pipe_name = request.pipe_name;
+  std::string pipe_name = request.pipe_name;
+  if (pipe_name.rfind("\\\\.\\pipe\\", 0) == 0) {
+    pipe_name = std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + "/.mozc_zenz_scorer_pipe";
+  }
   if (pipe_name.empty()) {
     response.ok = false;
     response.debug = "invalid_pipe_name";
