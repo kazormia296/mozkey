@@ -953,6 +953,221 @@ The current Windows default IME override will be saved so it can be restored lat
         <source>使わない</source>
         <translation>使わない</translation>
     </message>
+    <message>
+        <location filename="config_dialog.cc" line="1650"/>
+        <source>Candidate, suggestion, and ruby window appearance</source>
+        <translation>候補・サジェスト・ルビウィンドウの外観</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1651"/>
+        <source>Reset</source>
+        <translation>初期化</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1652"/>
+        <source>Reset candidate, suggestion, and ruby window appearance to defaults</source>
+        <translation>候補・サジェスト・ルビウィンドウの外観を初期値に戻します</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1653"/>
+        <source>Follow candidate window</source>
+        <translation>候補ウィンドウに合わせる</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1654"/>
+        <source>Default (Light)</source>
+        <translation>標準（ライト）</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1655"/>
+        <source>Dark</source>
+        <translation>ダーク</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1656"/>
+        <source>Custom</source>
+        <translation>カスタム</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1661"/>
+        <source>Candidate window</source>
+        <translation>候補ウィンドウ</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1662"/>
+        <source>Suggestion window</source>
+        <translation>サジェストウィンドウ</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1663"/>
+        <source>Ruby window</source>
+        <translation>ルビウィンドウ</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1664"/>
+        <source>Target</source>
+        <translation>対象</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1665"/>
+        <source>Color</source>
+        <translation>配色</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1666"/>
+        <source>Size</source>
+        <translation>サイズ</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1667"/>
+        <source>Corner radius</source>
+        <translation>角丸</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1669"/>
+        <source>Candidate, suggestion, and ruby font</source>
+        <translation>候補・サジェスト・ルビのフォント</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1670"/>
+        <source>Background</source>
+        <translation>背景</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1671"/>
+        <source>Text</source>
+        <translation>文字</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1672"/>
+        <source>Selected background</source>
+        <translation>選択背景</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1673"/>
+        <source>Selected border</source>
+        <translation>選択枠</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1674"/>
+        <source>Border</source>
+        <translation>枠線</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1675"/>
+        <source>Shortcut text</source>
+        <translation>ショートカット文字</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1676"/>
+        <source>Shortcut background</source>
+        <translation>ショートカット背景</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1677"/>
+        <source>Description</source>
+        <translation>説明</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1678"/>
+        <source>Footer text</source>
+        <translation>フッター文字</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1679"/>
+        <source>Footer background</source>
+        <translation>フッター背景</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1680"/>
+        <source>Footer border</source>
+        <translation>フッター枠線</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1681"/>
+        <source>Scrollbar background</source>
+        <translation>スクロール背景</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1682"/>
+        <source>Scrollbar thumb</source>
+        <translation>スクロールつまみ</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1683"/>
+        <source>Load light colors</source>
+        <translation>ライト配色を読み込む</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1684"/>
+        <source>Load dark colors</source>
+        <translation>ダーク配色を読み込む</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1685"/>
+        <source>Load candidate colors</source>
+        <translation>候補配色を読み込む</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1686"/>
+        <source>Candidate window custom colors</source>
+        <translation>候補ウィンドウのカスタム配色</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1687"/>
+        <source>Suggestion window custom colors</source>
+        <translation>サジェストウィンドウのカスタム配色</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1688"/>
+        <source>Ruby window custom colors</source>
+        <translation>ルビウィンドウのカスタム配色</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1689"/>
+        <source>Choose window color</source>
+        <translation>ウィンドウの色を選択</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Opacity</source>
+        <translation>透明度</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow spread</source>
+        <translation>影の広がり</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow direction</source>
+        <translation>影の方向</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow distance</source>
+        <translation>影の距離</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow angle</source>
+        <translation>影の角度</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow opacity</source>
+        <translation>影の濃さ</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Even shadow on all sides</source>
+        <translation>全方向に均等な影にします</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Set shadow direction</source>
+        <translation>影の方向を設定します</translation>
+    </message>
 </context>
 <context>
     <name>mozc::gui::GenericTableEditorDialog</name>

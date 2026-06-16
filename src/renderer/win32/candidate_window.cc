@@ -35,6 +35,8 @@
 #include <wil/resource.h>
 #include <windows.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <sstream>
@@ -48,10 +50,12 @@
 #include "protocol/candidate_window.pb.h"
 #include "protocol/renderer_command.pb.h"
 #include "protocol/renderer_style.pb.h"
+#include "renderer/renderer_style_handler.h"
 #include "renderer/table_layout.h"
 #include "renderer/win32/resource.h"
 #include "renderer/win32/text_renderer.h"
 #include "renderer/win32/win32_dpi_util.h"
+#include "renderer/win32/win32_renderer_util.h"
 
 namespace mozc {
 namespace renderer {
@@ -94,9 +98,30 @@ COLORREF ToColorRef(const RendererStyle::RGBAColor& color) {
              static_cast<int>(color.b()));
 }
 
-RendererStyle GetCurrentRendererStyle(uint32_t dpi) {
+RendererStyleHandler::RendererStyleType GetRendererStyleType(
+    const commands::CandidateWindow& candidate_window) {
+  // PREDICTION is the user-visible continuation of suggestion UI, so it uses
+  // the same appearance bucket as SUGGESTION.
+  const bool use_suggestion_style =
+      candidate_window.category() == commands::SUGGESTION ||
+      candidate_window.category() == commands::PREDICTION;
+  return use_suggestion_style ? RendererStyleHandler::RendererStyleType::kSuggestion
+                              : RendererStyleHandler::RendererStyleType::kCandidate;
+}
+
+RendererStyle GetCurrentRendererStyle(
+    RendererStyleHandler::RendererStyleType style_type) {
   RendererStyle style;
-  GetScaledRendererStyle(&style, dpi);
+  if (!RendererStyleHandler::GetRendererStyleForWindowType(style_type, &style)) {
+    RendererStyleHandler::GetDefaultRendererStyle(&style);
+  }
+  return style;
+}
+
+RendererStyle GetCurrentScaledRendererStyle(
+    RendererStyleHandler::RendererStyleType style_type, uint32_t dpi) {
+  RendererStyle style;
+  GetScaledRendererStyleForWindowType(style_type, &style, dpi);
   return style;
 }
 
@@ -145,17 +170,29 @@ COLORREF GetFooterBorderColor(const RendererStyle& style) {
   return GetFrameColor(style);
 }
 
-int GetWindowCornerRadius(uint32_t dpi) {
-  const int radius = static_cast<int>(6.0 * GetDPIScalingFactor(dpi));
-  return (radius < 6) ? 6 : radius;
+int GetWindowCornerRadius(uint32_t dpi,
+                          RendererStyleHandler::RendererStyleType style_type) {
+  const uint32_t logical_radius =
+      RendererStyleHandler::GetCandidateWindowCornerRadius(style_type);
+  if (logical_radius == 0) {
+    return 0;
+  }
+  return static_cast<int>(std::lround(logical_radius *
+                                      GetDPIScalingFactor(dpi)));
 }
 
-void UpdateRoundedWindowRegion(HWND hwnd, const Size& size, uint32_t dpi) {
+void UpdateRoundedWindowRegion(
+    HWND hwnd, const Size& size, uint32_t dpi,
+    RendererStyleHandler::RendererStyleType style_type) {
   if (hwnd == nullptr || size.width <= 0 || size.height <= 0) {
     return;
   }
 
-  const int radius = GetWindowCornerRadius(dpi);
+  const int radius = GetWindowCornerRadius(dpi, style_type);
+  if (radius <= 0) {
+    ::SetWindowRgn(hwnd, nullptr, TRUE);
+    return;
+  }
   HRGN region =
       ::CreateRoundRectRgn(0, 0, size.width + 1, size.height + 1,
                            radius * 2, radius * 2);
@@ -379,6 +416,7 @@ void CandidateWindow::EnableOrDisableWindowForWorkaround() {
 }
 
 void CandidateWindow::OnDestroy() {
+  shadow_window_.Destroy();
   // PostQuitMessage may stop the message loop even though other
   // windows are not closed. WindowManager should close these windows
   // before process termination.
@@ -508,6 +546,12 @@ void CandidateWindow::DoPaint(HDC dc) {
   DrawFrame(dc);
 }
 
+void CandidateWindow::OnShowWindow(BOOL shown, UINT /*status*/) {
+  if (!shown) {
+    shadow_window_.Hide();
+  }
+}
+
 void CandidateWindow::OnSettingChange(UINT uFlags, LPCTSTR /*lpszSection*/) {
   // Since TextRenderer uses dialog font to render,
   // we monitor font-related parameters to know when the font style is changed.
@@ -533,7 +577,13 @@ void CandidateWindow::UpdateLayout(
     const commands::CandidateWindow& candidates) {
   *candidate_window_ = candidates;
 
+  const RendererStyleHandler::RendererStyleType style_type =
+      GetRendererStyleType(*candidate_window_);
+  const RendererStyle layout_style = GetCurrentScaledRendererStyle(style_type,
+                                                                   dpi_);
+
   // Refresh text renderer so color/font cache follows the latest renderer style.
+  text_renderer_->SetRendererStyleType(style_type);
   text_renderer_->OnThemeChanged();
 
   if (metrics_changed_) {
@@ -561,7 +611,10 @@ void CandidateWindow::UpdateLayout(
   // Add a vertical scroll bar if candidate list consists of more than
   // one page.
   if (candidate_window_->candidate_size() < candidate_window_->size()) {
-    table_layout_->SetVScrollBar(indicator_width_);
+    const int scrollbar_width = layout_style.has_scrollbar_width()
+                                    ? layout_style.scrollbar_width()
+                                    : indicator_width_;
+    table_layout_->SetVScrollBar(std::max(1, scrollbar_width));
   }
 
   if (candidate_window_->has_footer()) {
@@ -633,7 +686,10 @@ void CandidateWindow::UpdateLayout(
     }
   }
 
-  table_layout_->SetRowRectPadding(kRowRectPadding);
+  const int row_rect_padding = layout_style.has_row_rect_padding()
+                                   ? layout_style.row_rect_padding()
+                                   : kRowRectPadding;
+  table_layout_->SetRowRectPadding(std::max(0, row_rect_padding));
 
   // put a padding in COLUMN_GAP1.
   // the width is determined to be equal to the width of " ".
@@ -695,8 +751,35 @@ void CandidateWindow::UpdateLayout(
   table_layout_->FreezeLayout();
 
   if (m_hWnd != nullptr) {
-    UpdateRoundedWindowRegion(m_hWnd, table_layout_->GetTotalSize(), dpi_);
+    UpdateRoundedWindowRegion(m_hWnd, table_layout_->GetTotalSize(), dpi_,
+                              GetRendererStyleType(*candidate_window_));
+    UpdateEffectWindows();
   }
+}
+
+void CandidateWindow::UpdateEffectWindows() {
+  if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+    return;
+  }
+  const RendererStyleHandler::RendererStyleType style_type =
+      GetRendererStyleType(*candidate_window_);
+  const RendererStyleHandler::CandidateWindowEffectStyle effect_style =
+      RendererStyleHandler::GetCandidateWindowEffectStyle(style_type);
+  ApplyRendererWindowOpacity(m_hWnd, effect_style.opacity_percent);
+  RECT window_rect = {};
+  if (!::GetWindowRect(m_hWnd, &window_rect)) {
+    shadow_window_.Hide();
+    return;
+  }
+  RendererWindowShadowStyle shadow_style;
+  shadow_style.size = effect_style.shadow.size;
+  shadow_style.opacity_percent = effect_style.shadow.opacity_percent;
+  shadow_style.angle_degrees = effect_style.shadow.angle_degrees;
+  shadow_style.distance = effect_style.shadow.distance;
+  shadow_window_.Update(m_hWnd, window_rect, dpi_,
+                        RendererStyleHandler::GetCandidateWindowCornerRadius(
+                            style_type),
+                        shadow_style);
 }
 
 void CandidateWindow::SetSendCommandInterface(
@@ -774,7 +857,8 @@ void CandidateWindow::DrawVScrollBar(HDC dc) {
     const int end_index =
         candidate_window_->candidate(candidates_in_page - 1).index();
 
-    const auto style = GetCurrentRendererStyle(dpi_);
+    const auto style = GetCurrentRendererStyle(
+        GetRendererStyleType(*candidate_window_));
     const CRect background_crect = ToCRect(vscroll_rect);
     FillSolidRect(dc, &background_crect, GetIndicatorBackgroundColor(style));
 
@@ -799,7 +883,8 @@ void CandidateWindow::DrawShortcutBackground(HDC dc) {
       const int width = shortcut_colmun_rect.Right() - row_rect.Left();
       shortcut_colmun_rect.origin.x = row_rect.Left();
       shortcut_colmun_rect.size.width = width;
-      const auto style = GetCurrentRendererStyle(dpi_);
+      const auto style = GetCurrentRendererStyle(
+        GetRendererStyleType(*candidate_window_));
       const CRect shortcut_colmun_crect = ToCRect(shortcut_colmun_rect);
       FillSolidRect(dc, &shortcut_colmun_crect,
                     GetShortcutBackgroundColor(style));
@@ -813,7 +898,8 @@ void CandidateWindow::DrawFooter(HDC dc) {
     return;
   }
 
-  const auto style = GetCurrentRendererStyle(dpi_);
+  const auto style = GetCurrentRendererStyle(
+        GetRendererStyleType(*candidate_window_));
 
   const COLORREF kFooterSeparatorColors[kFooterSeparatorHeight] = {
     GetFooterBorderColor(style)};
@@ -910,14 +996,16 @@ void CandidateWindow::DrawSelectedRect(HDC dc) {
       focused_array_index < candidate_window_->candidate_size()) {
     (void)candidate_window_->candidate(focused_array_index);
 
-    const auto style = GetCurrentRendererStyle(dpi_);
+    const auto style = GetCurrentRendererStyle(
+        GetRendererStyleType(*candidate_window_));
 
     CRect selected_rect =
         ToCRect(table_layout_->GetRowRect(focused_array_index));
 
     selected_rect.DeflateRect(4, 1);
 
-    const int radius = GetWindowCornerRadius(dpi_);
+    const int radius = GetWindowCornerRadius(
+        dpi_, GetRendererStyleType(*candidate_window_));
 
     wil::unique_select_object prev_pen =
         wil::SelectObject(dc, static_cast<HPEN>(::GetStockObject(DC_PEN)));
@@ -926,9 +1014,13 @@ void CandidateWindow::DrawSelectedRect(HDC dc) {
 
     ::SetDCPenColor(dc, GetSelectedRowFrameColor(style));
     ::SetDCBrushColor(dc, GetSelectedRowBackgroundColor(style));
-    ::RoundRect(dc, selected_rect.left, selected_rect.top,
-                selected_rect.right, selected_rect.bottom,
-                radius, radius);
+    if (radius <= 0) {
+      ::Rectangle(dc, selected_rect.left, selected_rect.top,
+                  selected_rect.right, selected_rect.bottom);
+    } else {
+      ::RoundRect(dc, selected_rect.left, selected_rect.top,
+                  selected_rect.right, selected_rect.bottom, radius, radius);
+    }
   }
 }
 
@@ -942,7 +1034,8 @@ void CandidateWindow::DrawInformationIcon(HDC dc) {
       rect.right = rect.right - (2.0 * scale_factor);
       rect.top += (2.0 * scale_factor);
       rect.bottom -= (2.0 * scale_factor);
-      const auto style = GetCurrentRendererStyle(dpi_);
+      const auto style = GetCurrentRendererStyle(
+        GetRendererStyleType(*candidate_window_));
 
       FillSolidRect(dc, &rect, GetIndicatorColor(style));
       ::SetDCBrushColor(dc, GetIndicatorColor(style));
@@ -952,18 +1045,21 @@ void CandidateWindow::DrawInformationIcon(HDC dc) {
 }
 
 void CandidateWindow::DrawBackground(HDC dc) {
-  const auto style = GetCurrentRendererStyle(dpi_);
+  const auto style = GetCurrentRendererStyle(
+        GetRendererStyleType(*candidate_window_));
   const Rect client_rect(Point(0, 0), table_layout_->GetTotalSize());
   const CRect client_crect = ToCRect(client_rect);
   FillSolidRect(dc, &client_crect, GetDefaultBackgroundColor(style));
 }
 
 void CandidateWindow::DrawFrame(HDC dc) {
-  const auto style = GetCurrentRendererStyle(dpi_);
+  const auto style = GetCurrentRendererStyle(
+        GetRendererStyleType(*candidate_window_));
   const Rect client_rect(Point(0, 0), table_layout_->GetTotalSize());
   const CRect client_crect = ToCRect(client_rect);
 
-  const int radius = GetWindowCornerRadius(dpi_);
+  const int radius = GetWindowCornerRadius(
+        dpi_, GetRendererStyleType(*candidate_window_));
 
   wil::unique_select_object prev_pen =
       wil::SelectObject(dc, static_cast<HPEN>(::GetStockObject(DC_PEN)));
@@ -971,9 +1067,14 @@ void CandidateWindow::DrawFrame(HDC dc) {
       wil::SelectObject(dc, static_cast<HBRUSH>(::GetStockObject(HOLLOW_BRUSH)));
 
   ::SetDCPenColor(dc, GetFrameColor(style));
-  ::RoundRect(dc, client_crect.left, client_crect.top,
-              client_crect.right, client_crect.bottom,
-              radius * 2, radius * 2);
+  if (radius <= 0) {
+    ::Rectangle(dc, client_crect.left, client_crect.top,
+                client_crect.right, client_crect.bottom);
+  } else {
+    ::RoundRect(dc, client_crect.left, client_crect.top,
+                client_crect.right, client_crect.bottom,
+                radius * 2, radius * 2);
+  }
 }
 
 void CandidateWindow::set_mouse_moving(bool moving) { mouse_moving_ = moving; }

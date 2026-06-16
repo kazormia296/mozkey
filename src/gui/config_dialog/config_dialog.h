@@ -80,6 +80,13 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   virtual void SelectDirectCommitSetting(int state);
   virtual void SelectSuggestionSetting(int state);
   virtual void SelectPreeditColor();
+  virtual void SelectRendererAppearanceColor();
+  virtual void SelectRendererShadowDirectionPreset();
+  virtual void LoadRendererLightAppearance();
+  virtual void LoadRendererDarkAppearance();
+  virtual void LoadRendererCandidateAppearance();
+  virtual void ResetRendererAppearanceControls();
+  virtual void UpdateRendererAppearanceControls();
   virtual void LaunchAdministrationDialog();
   virtual void SetMozkeyAsDefaultIme();
   virtual void RestorePreviousDefaultImeSetting();
@@ -92,6 +99,9 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   bool GetConfig(config::Config *config);
   bool SetConfig(const config::Config &config);
   void ConvertToProto(config::Config *config) const;
+  void InitializeRendererAppearanceControls();
+  void ConvertRendererAppearanceFromProto(const config::Config &config);
+  void ConvertRendererAppearanceToProto(config::Config *config) const;
   void ConvertFromProto(const config::Config &config);
   bool Update();
   void Reload();

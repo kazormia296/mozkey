@@ -65,13 +65,23 @@ uint32_t GetDpiForPoint(int x, int y) {
   return dpi_x;
 }
 
-void GetScaledRendererStyle(::mozc::renderer::RendererStyle* style,
-                            uint32_t dpi) {
-  const double scale_factor = GetDPIScalingFactor(dpi);
-
-  if (!RendererStyleHandler::GetRendererStyle(style)) {
-    RendererStyleHandler::GetDefaultRendererStyle(style);
+uint32_t GetDpiForWindowHandle(HWND hwnd) {
+  if (hwnd != nullptr && ::IsWindow(hwnd)) {
+    RECT rect = {};
+    if (::GetWindowRect(hwnd, &rect)) {
+      return GetDpiForPoint(rect.left, rect.top);
+    }
   }
+  return ::GetDpiForSystem();
+}
+
+void ScaleRendererStyleForDpi(::mozc::renderer::RendererStyle* style,
+                              uint32_t dpi) {
+  if (style == nullptr) {
+    return;
+  }
+
+  const double scale_factor = GetDPIScalingFactor(dpi);
 
   // style->window_border is non-scalable.
   style->set_scrollbar_width(style->scrollbar_width() * scale_factor);
@@ -95,6 +105,24 @@ void GetScaledRendererStyle(::mozc::renderer::RendererStyle* style,
   ScaleTextStyle(info_style->mutable_caption_style(), scale_factor);
   ScaleTextStyle(info_style->mutable_title_style(), scale_factor);
   ScaleTextStyle(info_style->mutable_description_style(), scale_factor);
+}
+
+void GetScaledRendererStyle(::mozc::renderer::RendererStyle* style,
+                            uint32_t dpi) {
+  GetScaledRendererStyleForWindowType(
+      RendererStyleHandler::RendererStyleType::kCandidate, style, dpi);
+}
+
+void GetScaledRendererStyleForWindowType(
+    RendererStyleHandler::RendererStyleType type,
+    ::mozc::renderer::RendererStyle* style, uint32_t dpi) {
+  if (style == nullptr) {
+    return;
+  }
+  if (!RendererStyleHandler::GetRendererStyleForWindowType(type, style)) {
+    RendererStyleHandler::GetDefaultRendererStyle(style);
+  }
+  ScaleRendererStyleForDpi(style, dpi);
 }
 
 }  // namespace win32

@@ -77,9 +77,14 @@ namespace {
               static_cast<int>(color.b()));
   }
 
-  COLORREF GetTextColor(TextRenderer::FONT_TYPE type, uint32_t dpi) {
+  COLORREF GetTextColor(
+      TextRenderer::FONT_TYPE type,
+      RendererStyleHandler::RendererStyleType style_type) {
     RendererStyle style;
-    GetScaledRendererStyle(&style, dpi);
+    if (!RendererStyleHandler::GetRendererStyleForWindowType(style_type,
+                                                             &style)) {
+      RendererStyleHandler::GetDefaultRendererStyle(&style);
+    }
 
     switch (type) {
       case TextRenderer::FONTSET_SHORTCUT:
@@ -188,19 +193,27 @@ namespace {
     wcscpy_s(font->lfFaceName, font_name.c_str());
   }
 
-  LOGFONTW GetLogFont(TextRenderer::FONT_TYPE type, uint32_t dpi) {
+  int ToDpiScaledFontHeight(double font_size, uint32_t dpi) {
+    return -std::max(1, static_cast<int>(std::lround(
+                            font_size * GetDPIScalingFactor(dpi))));
+  }
+
+  LOGFONTW GetLogFont(TextRenderer::FONT_TYPE type, uint32_t dpi,
+                      RendererStyleHandler::RendererStyleType style_type) {
     LOGFONTW font = GetMessageBoxLogFont(dpi);
 
     RendererStyle style;
-    GetScaledRendererStyle(&style, dpi);
+    if (!RendererStyleHandler::GetRendererStyleForWindowType(style_type,
+                                                             &style)) {
+      RendererStyleHandler::GetDefaultRendererStyle(&style);
+    }
 
     switch (type) {
       case TextRenderer::FONTSET_SHORTCUT: {
         const RendererStyle::TextStyle* text_style =
             GetTextStyleOrNull(style, kShortcutTextStyleIndex);
         if (text_style != nullptr && text_style->has_font_size()) {
-          font.lfHeight =
-              -static_cast<int>(std::lround(text_style->font_size()));
+          font.lfHeight = ToDpiScaledFontHeight(text_style->font_size(), dpi);
         } else {
           font.lfHeight += (font.lfHeight > 0 ? 2 : -2);
         }
@@ -213,8 +226,7 @@ namespace {
         const RendererStyle::TextStyle* text_style =
             GetTextStyleOrNull(style, kCandidateTextStyleIndex);
         if (text_style != nullptr && text_style->has_font_size()) {
-          font.lfHeight =
-              -static_cast<int>(std::lround(text_style->font_size()));
+          font.lfHeight = ToDpiScaledFontHeight(text_style->font_size(), dpi);
         } else {
           font.lfHeight += (font.lfHeight > 0 ? 2 : -2);
         }
@@ -227,8 +239,7 @@ namespace {
         const RendererStyle::TextStyle* text_style =
             GetTextStyleOrNull(style, kDescriptionTextStyleIndex);
         if (text_style != nullptr && text_style->has_font_size()) {
-          font.lfHeight =
-              -static_cast<int>(std::lround(text_style->font_size()));
+          font.lfHeight = ToDpiScaledFontHeight(text_style->font_size(), dpi);
         }
         ApplyFontNameFromTextStyle(text_style, &font);
         font.lfWeight = FW_NORMAL;
@@ -239,7 +250,7 @@ namespace {
       case TextRenderer::FONTSET_FOOTER_LABEL:
         if (style.footer_style().has_font_size()) {
           font.lfHeight =
-              -static_cast<int>(std::lround(style.footer_style().font_size()));
+              ToDpiScaledFontHeight(style.footer_style().font_size(), dpi);
         }
         ApplyFontNameFromTextStyle(&style.footer_style(), &font);
         font.lfWeight = FW_NORMAL;
@@ -247,8 +258,8 @@ namespace {
 
       case TextRenderer::FONTSET_FOOTER_SUBLABEL:
         if (style.footer_sub_label_style().has_font_size()) {
-          font.lfHeight = -static_cast<int>(
-              std::lround(style.footer_sub_label_style().font_size()));
+          font.lfHeight = ToDpiScaledFontHeight(
+              style.footer_sub_label_style().font_size(), dpi);
         }
         ApplyFontNameFromTextStyle(&style.footer_sub_label_style(), &font);
         font.lfWeight = FW_NORMAL;
@@ -256,8 +267,8 @@ namespace {
 
       case TextRenderer::FONTSET_INFOLIST_CAPTION:
         if (style.infolist_style().caption_style().has_font_size()) {
-          font.lfHeight = -static_cast<int>(std::lround(
-              style.infolist_style().caption_style().font_size()));
+          font.lfHeight = ToDpiScaledFontHeight(
+              style.infolist_style().caption_style().font_size(), dpi);
         }
         ApplyFontNameFromTextStyle(&style.infolist_style().caption_style(),
                                    &font);
@@ -266,8 +277,8 @@ namespace {
 
       case TextRenderer::FONTSET_INFOLIST_TITLE:
         if (style.infolist_style().title_style().has_font_size()) {
-          font.lfHeight = -static_cast<int>(
-              std::lround(style.infolist_style().title_style().font_size()));
+          font.lfHeight = ToDpiScaledFontHeight(
+              style.infolist_style().title_style().font_size(), dpi);
         }
         ApplyFontNameFromTextStyle(&style.infolist_style().title_style(),
                                    &font);
@@ -276,8 +287,8 @@ namespace {
 
       case TextRenderer::FONTSET_INFOLIST_DESCRIPTION:
         if (style.infolist_style().description_style().has_font_size()) {
-          font.lfHeight = -static_cast<int>(std::lround(
-              style.infolist_style().description_style().font_size()));
+          font.lfHeight = ToDpiScaledFontHeight(
+              style.infolist_style().description_style().font_size(), dpi);
         }
         ApplyFontNameFromTextStyle(&style.infolist_style().description_style(),
                                    &font);
@@ -322,7 +333,8 @@ class GdiTextRenderer : public TextRenderer {
   explicit GdiTextRenderer(uint32_t dpi)
       : render_info_(SIZE_OF_FONT_TYPE),
         mem_dc_(::CreateCompatibleDC(nullptr)),
-        dpi_(dpi) {
+        dpi_(dpi),
+        style_type_(RendererStyleHandler::RendererStyleType::kCandidate) {
     OnThemeChanged();
   }
 
@@ -335,6 +347,11 @@ class GdiTextRenderer : public TextRenderer {
   };
 
   // TextRenderer overrides:
+  void SetRendererStyleType(
+      RendererStyleHandler::RendererStyleType style_type) override {
+    style_type_ = style_type;
+  }
+
   void OnThemeChanged() override {
     // delete old fonts
     for (size_t i = 0; i < SIZE_OF_FONT_TYPE; ++i) {
@@ -345,7 +362,7 @@ class GdiTextRenderer : public TextRenderer {
 
     for (size_t i = 0; i < SIZE_OF_FONT_TYPE; ++i) {
       const auto font_type = static_cast<FONT_TYPE>(i);
-      const LOGFONTW log_font = GetLogFont(font_type, dpi_);
+      const LOGFONTW log_font = GetLogFont(font_type, dpi_, style_type_);
       render_info_[i].style = GetGdiDrawTextStyle(font_type);
       render_info_[i].font.reset(::CreateFontIndirectW(&log_font));
 
@@ -355,7 +372,7 @@ class GdiTextRenderer : public TextRenderer {
         render_info_[i].font.reset(::CreateFontIndirectW(&fallback_log_font));
       }
 
-      render_info_[i].color = GetTextColor(font_type, dpi_);
+      render_info_[i].color = GetTextColor(font_type, style_type_);
     }
   }
 
@@ -427,6 +444,7 @@ class GdiTextRenderer : public TextRenderer {
   std::vector<RenderInfo> render_info_;
   wil::unique_hdc mem_dc_;
   uint32_t dpi_;
+  RendererStyleHandler::RendererStyleType style_type_;
 };
 
 class DirectWriteTextRenderer : public TextRenderer {
@@ -438,7 +456,8 @@ class DirectWriteTextRenderer : public TextRenderer {
       : d2d2_factory_(std::move(d2d2_factory)),
         dwrite_factory_(std::move(dwrite_factory)),
         dwrite_interop_(std::move(dwrite_interop)),
-        dpi_(dpi) {
+        dpi_(dpi),
+        style_type_(RendererStyleHandler::RendererStyleType::kCandidate) {
     OnThemeChanged();
   }
 
@@ -477,6 +496,11 @@ class DirectWriteTextRenderer : public TextRenderer {
   };
 
   // TextRenderer overrides:
+  void SetRendererStyleType(
+      RendererStyleHandler::RendererStyleType style_type) override {
+    style_type_ = style_type;
+  }
+
   void OnThemeChanged() override {
     // delete old fonts
     render_info_.clear();
@@ -484,9 +508,9 @@ class DirectWriteTextRenderer : public TextRenderer {
 
     for (size_t i = 0; i < SIZE_OF_FONT_TYPE; ++i) {
       const auto font_type = static_cast<FONT_TYPE>(i);
-      const LOGFONTW log_font = GetLogFont(font_type, dpi_);
+      const LOGFONTW log_font = GetLogFont(font_type, dpi_, style_type_);
 
-      render_info_[i].color = GetTextColor(font_type, dpi_);
+      render_info_[i].color = GetTextColor(font_type, style_type_);
       render_info_[i].format = CreateFormatWithFallback(log_font);
       render_info_[i].format_to_render = CreateFormatWithFallback(log_font);
 
@@ -770,6 +794,7 @@ class DirectWriteTextRenderer : public TextRenderer {
   wil::com_ptr_nothrow<IDWriteGdiInterop> dwrite_interop_;
   std::vector<RenderInfo> render_info_;
   uint32_t dpi_;
+  RendererStyleHandler::RendererStyleType style_type_;
 };
 
 }  // namespace

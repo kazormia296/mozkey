@@ -340,6 +340,7 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   main_window_->SetWindowPos(HWND_TOPMOST, main_window_rect.Left(),
                              main_window_rect.Top(), main_window_rect.Width(),
                              main_window_rect.Height(), set_windows_pos_flags);
+  main_window_->UpdateEffectWindows();
   if (is_live_conversion_passive_suggestion) {
     last_live_conversion_passive_suggestion_visible_ = true;
   }
@@ -378,6 +379,7 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
     infolist_window_->SetWindowPos(
         HWND_TOPMOST, 0, 0, 0, 0,
         SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    infolist_window_->UpdateEffectWindows();
 
     if (candidate_window.has_focused_index() &&
         candidate_window.candidate_size() > 0) {
@@ -433,6 +435,7 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
         HWND_TOPMOST, cascading_window_rect.Left(), cascading_window_rect.Top(),
         cascading_window_rect.Width(), cascading_window_rect.Height(),
         set_windows_pos_flags);
+    cascading_window_->UpdateEffectWindows();
     // This trick ensures that the window is certainly shown as 'inactivated'
     // in terms of visual effect on DWM-enabled desktop.
     cascading_window_->SendMessageW(WM_NCACTIVATE, FALSE);
