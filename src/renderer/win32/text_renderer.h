@@ -40,6 +40,7 @@
 
 #include "absl/types/span.h"
 #include "base/coordinates.h"
+#include "renderer/renderer_style_handler.h"
 
 namespace mozc {
 namespace renderer {
@@ -79,6 +80,10 @@ class TextRenderer {
 
   // Returns an instance of TextRenderer.
   static std::unique_ptr<TextRenderer> Create(uint32_t dpi);
+
+  // Selects candidate/suggestion appearance for text rendering.
+  virtual void SetRendererStyleType(
+      RendererStyleHandler::RendererStyleType style_type) = 0;
 
   // Updates font cache.
   virtual void OnThemeChanged() = 0;

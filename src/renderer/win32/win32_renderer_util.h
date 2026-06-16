@@ -32,6 +32,7 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -83,6 +84,38 @@ struct IndicatorWindowLayout {
 
   RECT window_rect;
   bool is_vertical;
+};
+
+struct RendererWindowShadowStyle {
+  // Logical pixels. 0 disables the custom shadow.
+  uint32_t size = 0;
+  // 0 disables the custom shadow.
+  uint32_t opacity_percent = 0;
+  // Screen-space degrees: 0=right, 45=down-right, 90=down.
+  uint32_t angle_degrees = 45;
+  // Logical pixels. 0 keeps the shadow even on all sides.
+  uint32_t distance = 0;
+};
+
+// Applies whole-window opacity. 100 removes WS_EX_LAYERED again so the default
+// opaque path remains the fast path. The value is clamped to [20, 100].
+void ApplyRendererWindowOpacity(HWND hwnd, uint32_t opacity_percent);
+
+class RendererShadowWindow {
+ public:
+  RendererShadowWindow() = default;
+  RendererShadowWindow(const RendererShadowWindow&) = delete;
+  RendererShadowWindow& operator=(const RendererShadowWindow&) = delete;
+  ~RendererShadowWindow();
+
+  void Destroy();
+  void Hide();
+  bool Update(HWND owner_window, const RECT& owner_rect, uint32_t dpi,
+              uint32_t owner_corner_radius,
+              const RendererWindowShadowStyle& style);
+
+ private:
+  HWND hwnd_ = nullptr;
 };
 
 // Retrieves the working area that contains the specified |point|.

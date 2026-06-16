@@ -47,7 +47,9 @@
 #include "protocol/renderer_command.pb.h"
 #include "protocol/renderer_style.pb.h"
 #include "renderer/win32/text_renderer.h"
+#include "renderer/renderer_style_handler.h"
 #include "renderer/win32/win32_dpi_util.h"
+#include "renderer/win32/win32_renderer_util.h"
 
 namespace mozc {
 namespace renderer {
@@ -85,7 +87,8 @@ InfolistWindow::InfolistWindow()
       style_(new RendererStyle),
       metrics_changed_(false),
       visible_(false) {
-  GetScaledRendererStyle(style_.get(), dpi_);
+  GetScaledRendererStyleForWindowType(
+      RendererStyleHandler::RendererStyleType::kCandidate, style_.get(), dpi_);
 }
 
 InfolistWindow::~InfolistWindow() {}
@@ -95,11 +98,13 @@ void InfolistWindow::UpdateDpi(uint32_t dpi) {
     return;
   }
   dpi_ = dpi;
-  GetScaledRendererStyle(style_.get(), dpi_);
+  GetScaledRendererStyleForWindowType(
+      RendererStyleHandler::RendererStyleType::kCandidate, style_.get(), dpi_);
   text_renderer_->OnDpiChanged(dpi_);
 }
 
 void InfolistWindow::OnDestroy() {
+  shadow_window_.Destroy();
   // PostQuitMessage may stop the message loop even though other
   // windows are not closed. WindowManager should close these windows
   // before process termination.
@@ -291,6 +296,12 @@ Size InfolistWindow::DoPaintRow(HDC dc, int row, int ypos) {
   return Size(0, row_height);
 }
 
+void InfolistWindow::OnShowWindow(BOOL shown, UINT /*status*/) {
+  if (!shown) {
+    shadow_window_.Hide();
+  }
+}
+
 void InfolistWindow::OnSettingChange(UINT uFlags, LPCTSTR /*lpszSection*/) {
   // Since TextRenderer uses dialog font to render,
   // we monitor font-related parameters to know when the font style is changed.
@@ -327,6 +338,7 @@ void InfolistWindow::DelayShow(UINT mseconds) {
     SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     SendMessageW(WM_NCACTIVATE, FALSE);
+    UpdateEffectWindows();
   } else {
     SetTimer(kIdDelayShowHideTimer, mseconds, nullptr);
   }
@@ -336,6 +348,7 @@ void InfolistWindow::DelayHide(UINT mseconds) {
   visible_ = false;
   KillTimer(kIdDelayShowHideTimer);
   if (mseconds <= 0) {
+    shadow_window_.Hide();
     ShowWindow(SW_HIDE);
   } else {
     SetTimer(kIdDelayShowHideTimer, mseconds, nullptr);
@@ -349,9 +362,36 @@ void InfolistWindow::UpdateLayout(
   // InfolistWindow caches both RendererStyle and TextRenderer.  Mozkey's
   // candidate/ruby font setting updates RendererStyle without sending
   // WM_SETTINGCHANGE, so refresh them whenever the infolist layout is updated.
-  GetScaledRendererStyle(style_.get(), dpi_);
+  GetScaledRendererStyleForWindowType(
+      RendererStyleHandler::RendererStyleType::kCandidate, style_.get(), dpi_);
   text_renderer_->OnThemeChanged();
   metrics_changed_ = false;
+  UpdateEffectWindows();
+}
+
+void InfolistWindow::UpdateEffectWindows() {
+  if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+    return;
+  }
+  const RendererStyleHandler::CandidateWindowEffectStyle effect_style =
+      RendererStyleHandler::GetCandidateWindowEffectStyle(
+          RendererStyleHandler::RendererStyleType::kCandidate);
+  ApplyRendererWindowOpacity(m_hWnd, effect_style.opacity_percent);
+  RECT window_rect = {};
+  if (!::GetWindowRect(m_hWnd, &window_rect)) {
+    shadow_window_.Hide();
+    return;
+  }
+  RendererWindowShadowStyle shadow_style;
+  shadow_style.size = effect_style.shadow.size;
+  shadow_style.opacity_percent = effect_style.shadow.opacity_percent;
+  shadow_style.angle_degrees = effect_style.shadow.angle_degrees;
+  shadow_style.distance = effect_style.shadow.distance;
+  shadow_window_.Update(
+      m_hWnd, window_rect, dpi_,
+      RendererStyleHandler::GetCandidateWindowCornerRadius(
+          RendererStyleHandler::RendererStyleType::kCandidate),
+      shadow_style);
 }
 
 void InfolistWindow::SetSendCommandInterface(

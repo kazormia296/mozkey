@@ -927,6 +927,221 @@ The current Windows default IME override will be saved so it can be restored lat
         <source>使わない</source>
         <translation>Do not use</translation>
     </message>
+    <message>
+        <location filename="config_dialog.cc" line="1650"/>
+        <source>Candidate, suggestion, and ruby window appearance</source>
+        <translation>Candidate, suggestion, and ruby window appearance</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1651"/>
+        <source>Reset</source>
+        <translation>Reset</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1652"/>
+        <source>Reset candidate, suggestion, and ruby window appearance to defaults</source>
+        <translation>Reset candidate, suggestion, and ruby window appearance to defaults</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1653"/>
+        <source>Follow candidate window</source>
+        <translation>Follow candidate window</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1654"/>
+        <source>Default (Light)</source>
+        <translation>Default (Light)</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1655"/>
+        <source>Dark</source>
+        <translation>Dark</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1656"/>
+        <source>Custom</source>
+        <translation>Custom</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1661"/>
+        <source>Candidate window</source>
+        <translation>Candidate window</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1662"/>
+        <source>Suggestion window</source>
+        <translation>Suggestion window</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1663"/>
+        <source>Ruby window</source>
+        <translation>Ruby window</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1664"/>
+        <source>Target</source>
+        <translation>Target</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1665"/>
+        <source>Color</source>
+        <translation>Color</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1666"/>
+        <source>Size</source>
+        <translation>Size</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1667"/>
+        <source>Corner radius</source>
+        <translation>Corner radius</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1669"/>
+        <source>Candidate, suggestion, and ruby font</source>
+        <translation>Candidate, suggestion, and ruby font</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1670"/>
+        <source>Background</source>
+        <translation>Background</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1671"/>
+        <source>Text</source>
+        <translation>Text</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1672"/>
+        <source>Selected background</source>
+        <translation>Selected background</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1673"/>
+        <source>Selected border</source>
+        <translation>Selected border</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1674"/>
+        <source>Border</source>
+        <translation>Border</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1675"/>
+        <source>Shortcut text</source>
+        <translation>Shortcut text</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1676"/>
+        <source>Shortcut background</source>
+        <translation>Shortcut background</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1677"/>
+        <source>Description</source>
+        <translation>Description</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1678"/>
+        <source>Footer text</source>
+        <translation>Footer text</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1679"/>
+        <source>Footer background</source>
+        <translation>Footer background</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1680"/>
+        <source>Footer border</source>
+        <translation>Footer border</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1681"/>
+        <source>Scrollbar background</source>
+        <translation>Scrollbar background</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1682"/>
+        <source>Scrollbar thumb</source>
+        <translation>Scrollbar thumb</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1683"/>
+        <source>Load light colors</source>
+        <translation>Load light colors</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1684"/>
+        <source>Load dark colors</source>
+        <translation>Load dark colors</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1685"/>
+        <source>Load candidate colors</source>
+        <translation>Load candidate colors</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1686"/>
+        <source>Candidate window custom colors</source>
+        <translation>Candidate window custom colors</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1687"/>
+        <source>Suggestion window custom colors</source>
+        <translation>Suggestion window custom colors</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1688"/>
+        <source>Ruby window custom colors</source>
+        <translation>Ruby window custom colors</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1689"/>
+        <source>Choose window color</source>
+        <translation>Choose window color</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Opacity</source>
+        <translation>Opacity</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow spread</source>
+        <translation>Shadow spread</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow direction</source>
+        <translation>Shadow direction</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow distance</source>
+        <translation>Shadow distance</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow angle</source>
+        <translation>Shadow angle</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Shadow opacity</source>
+        <translation>Shadow opacity</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Even shadow on all sides</source>
+        <translation>Even shadow on all sides</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="1740"/>
+        <source>Set shadow direction</source>
+        <translation>Set shadow direction</translation>
+    </message>
 </context>
 <context>
     <name>mozc::gui::GenericTableEditorDialog</name>

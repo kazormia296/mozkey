@@ -436,12 +436,14 @@ message Config {
 
   //////////////////////////////////////////////////////////////
   //
-  // Renderer (120-139)
+  // Renderer (120-179)
   //
   // Use mode indicator feature.
   optional bool use_mode_indicator = 120 [default = true];
 
   // Use dark mode for candidate window and ruby overlay on Windows.
+  // Deprecated UI-wise. Newer clients should use the per-window appearance
+  // settings below and keep this field synchronized for backward compatibility.
   optional bool use_dark_mode_candidate_window = 121 [default = false];
 
   // Customize preedit display attributes on Windows TSF.
@@ -473,6 +475,89 @@ message Config {
 
   // Show ruby window during live conversion on Windows.
   optional bool show_live_conversion_ruby_window = 135 [default = true];
+
+
+  enum RendererWindowColorTheme {
+    RENDERER_WINDOW_COLOR_LIGHT = 0;
+    RENDERER_WINDOW_COLOR_DARK = 1;
+    RENDERER_WINDOW_COLOR_CUSTOM = 2;
+    RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE = 3;
+  }
+
+  message CandidateWindowColorPalette {
+    // Color values are stored as 0xRRGGBB, not Windows COLORREF.
+    optional uint32 background_color = 1 [default = 0xffffff];
+    optional uint32 text_color = 2 [default = 0x000000];
+    optional uint32 selected_background_color = 3 [default = 0xd1eaff];
+    optional uint32 selected_border_color = 4 [default = 0x7facdd];
+    optional uint32 border_color = 5 [default = 0x969696];
+    optional uint32 shortcut_text_color = 6 [default = 0x777777];
+    optional uint32 shortcut_background_color = 7 [default = 0xf3f4ff];
+    optional uint32 description_text_color = 8 [default = 0x888888];
+    optional uint32 footer_text_color = 9 [default = 0x4c4c4c];
+    optional uint32 footer_background_color = 10 [default = 0xffffff];
+    optional uint32 footer_border_color = 11 [default = 0x606060];
+    optional uint32 scrollbar_background_color = 12 [default = 0xe0e0e0];
+    optional uint32 scrollbar_indicator_color = 13 [default = 0x7590b8];
+  }
+
+  message RubyWindowColorPalette {
+    // Color values are stored as 0xRRGGBB, not Windows COLORREF.
+    optional uint32 background_color = 1 [default = 0xffffff];
+    optional uint32 text_color = 2 [default = 0x000000];
+    optional uint32 border_color = 3 [default = 0x969696];
+  }
+
+  // Candidate, prediction/suggestion, and ruby window appearance on Windows.
+  // CONVERSION, TRANSLITERATION, and USAGE use the candidate window appearance.
+  // PREDICTION and SUGGESTION use the suggest window appearance.
+  // RubyWindow has its own compact palette.
+  optional RendererWindowColorTheme candidate_window_color_theme = 136
+      [default = RENDERER_WINDOW_COLOR_LIGHT];
+  optional CandidateWindowColorPalette candidate_window_custom_color_palette =
+      137;
+
+  optional RendererWindowColorTheme suggest_window_color_theme = 138
+      [default = RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE];
+  optional CandidateWindowColorPalette suggest_window_custom_color_palette =
+      139;
+
+  optional RendererWindowColorTheme ruby_window_color_theme = 140
+      [default = RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE];
+  optional RubyWindowColorPalette ruby_window_custom_color_palette = 141;
+
+  // Window corner radius. 0 means square corners.
+  optional uint32 candidate_window_custom_corner_radius = 142 [default = 6];
+  optional uint32 suggest_window_custom_corner_radius = 143 [default = 6];
+  optional uint32 ruby_window_custom_corner_radius = 144 [default = 9];
+
+  // Candidate-like and ruby window size. 100 means the current default size.
+  optional uint32 candidate_window_size_percent = 145 [default = 100];
+  optional uint32 suggest_window_size_percent = 146 [default = 100];
+  optional uint32 ruby_window_size_percent = 147 [default = 100];
+
+  // Whole-window opacity. 100 is fully opaque. Values are clamped by the
+  // renderer so that the UI cannot become accidentally invisible.
+  optional uint32 candidate_window_opacity_percent = 148 [default = 100];
+  optional uint32 suggest_window_opacity_percent = 149 [default = 100];
+  optional uint32 ruby_window_opacity_percent = 150 [default = 90];
+
+  // Custom shadow. Size 0, distance 0 with size 0, or opacity 0 disables
+  // the custom shadow. Size and distance are logical pixels and are DPI-scaled
+  // by the renderer. Angle is screen-space degrees: 0=right, 45=down-right,
+  // 90=down. Distance 0 creates an even shadow on all sides.
+  optional uint32 candidate_window_shadow_size = 151 [default = 12];
+  optional uint32 candidate_window_shadow_opacity_percent = 152 [default = 30];
+  optional uint32 candidate_window_shadow_angle_degrees = 153 [default = 45];
+  optional uint32 candidate_window_shadow_distance = 154 [default = 6];
+  optional uint32 suggest_window_shadow_size = 155 [default = 12];
+  optional uint32 suggest_window_shadow_opacity_percent = 156 [default = 30];
+  optional uint32 suggest_window_shadow_angle_degrees = 157 [default = 45];
+  optional uint32 suggest_window_shadow_distance = 158 [default = 6];
+  optional uint32 ruby_window_shadow_size = 159 [default = 10];
+  optional uint32 ruby_window_shadow_opacity_percent = 160 [default = 28];
+  optional uint32 ruby_window_shadow_angle_degrees = 161 [default = 90];
+  optional uint32 ruby_window_shadow_distance = 162 [default = 4];
 
   //////////////////////////////////////////////////////////////
   //

@@ -30,6 +30,7 @@
 #ifndef MOZC_RENDERER_RENDERER_STYLE_HANDLER_H_
 #define MOZC_RENDERER_RENDERER_STYLE_HANDLER_H_
 
+#include <cstdint>
 #include <string>
 
 #include "protocol/renderer_style.pb.h"
@@ -42,6 +43,33 @@ class RendererStyleHandler {
  public:
   RendererStyleHandler() = delete;
 
+  enum class RendererStyleType {
+    kCandidate,
+    kSuggestion,
+  };
+
+  struct WindowShadowStyle {
+    uint32_t size = 12;
+    uint32_t opacity_percent = 30;
+    uint32_t angle_degrees = 45;
+    uint32_t distance = 6;
+  };
+
+  struct CandidateWindowEffectStyle {
+    uint32_t opacity_percent = 100;
+    WindowShadowStyle shadow;
+  };
+
+  struct RubyWindowStyle {
+    uint32_t background_color = 0xffffff;
+    uint32_t text_color = 0x000000;
+    uint32_t border_color = 0x969696;
+    uint32_t corner_radius = 9;
+    uint32_t size_percent = 100;
+    uint32_t opacity_percent = 90;
+    WindowShadowStyle shadow;
+  };
+
   // return current Style
   static bool GetRendererStyle(RendererStyle* style);
   // set Style
@@ -49,9 +77,50 @@ class RendererStyleHandler {
   // get default Style
   static void GetDefaultRendererStyle(RendererStyle* style);
 
+  // return the style for a concrete renderer window class.
+  // GetRendererStyle() remains as candidate-window compatibility API.
+  static bool GetRendererStyleForWindowType(RendererStyleType type,
+                                            RendererStyle* style);
+
+  // Atomically updates the candidate/suggestion/ruby appearance.
+  static bool SetRendererWindowStyles(
+      const RendererStyle& candidate_style, const RendererStyle& suggestion_style,
+      const RubyWindowStyle& ruby_style, uint32_t candidate_corner_radius,
+      uint32_t suggestion_corner_radius,
+      const CandidateWindowEffectStyle& candidate_effect_style,
+      const CandidateWindowEffectStyle& suggestion_effect_style);
+
+  // Returns the logical corner radius for a candidate-like window. The caller
+  // scales this value for DPI and converts radius to GDI diameter if needed.
+  static uint32_t GetCandidateWindowCornerRadius(RendererStyleType type);
+
+  // Returns the candidate-like window opacity and custom shadow settings.
+  static CandidateWindowEffectStyle GetCandidateWindowEffectStyle(
+      RendererStyleType type);
+
+  // Returns the ruby-window appearance. Colors are 0xRRGGBB. Corner radius is
+  // a logical pixel radius at 100% DPI.
+  static RubyWindowStyle GetRubyWindowStyle();
+
   // Applies candidate window theme options to the given style.
   static void ApplyCandidateWindowTheme(bool use_dark_mode,
                                         RendererStyle* style);
+
+  // Applies custom candidate-like window colors to the given style.
+  // Color values are 0xRRGGBB, not Windows COLORREF.
+  static void ApplyCandidateWindowCustomColors(
+      uint32_t background_color, uint32_t text_color,
+      uint32_t selected_background_color, uint32_t selected_border_color,
+      uint32_t border_color, uint32_t shortcut_text_color,
+      uint32_t shortcut_background_color, uint32_t description_text_color,
+      uint32_t footer_text_color, uint32_t footer_background_color,
+      uint32_t footer_border_color, uint32_t scrollbar_background_color,
+      uint32_t scrollbar_indicator_color, RendererStyle* style);
+
+  // Applies a candidate-like window size percentage to font sizes and layout
+  // metrics. 100 means the default size.
+  static void ApplyCandidateWindowSize(uint32_t size_percent,
+                                       RendererStyle* style);
 
   // Applies candidate/ruby font options to the given style.
   static void ApplyCandidateRubyFont(const std::string& font_name,

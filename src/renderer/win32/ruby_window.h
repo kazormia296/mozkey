@@ -10,6 +10,7 @@
 #include <atlwin.h>
 
 #include "protocol/renderer_command.pb.h"
+#include "renderer/win32/win32_renderer_util.h"
 
 namespace mozc {
 namespace renderer {
@@ -22,8 +23,7 @@ typedef ATL::CWinTraits<WS_POPUP,
 class RubyWindow
     : public ATL::CWindowImpl<RubyWindow, ATL::CWindow, RubyWindowTraits> {
  public:
-  DECLARE_WND_CLASS_EX(L"MozcRubyWindow", CS_SAVEBITS | CS_DROPSHADOW,
-                       COLOR_WINDOW);
+  DECLARE_WND_CLASS_EX(L"MozcRubyWindow", CS_SAVEBITS, COLOR_WINDOW);
 
   RubyWindow();
   RubyWindow(const RubyWindow&) = delete;
@@ -32,6 +32,7 @@ class RubyWindow
 
   BEGIN_MSG_MAP(RubyWindow)
     MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBkgnd)
+    MESSAGE_HANDLER(WM_SHOWWINDOW, OnShowWindow)
     MESSAGE_HANDLER(WM_PAINT, OnPaint)
   END_MSG_MAP()
 
@@ -42,6 +43,8 @@ class RubyWindow
 
  private:
   LRESULT OnEraseBkgnd(UINT msg_id, WPARAM wparam, LPARAM lparam,
+                       BOOL& handled);
+  LRESULT OnShowWindow(UINT msg_id, WPARAM wparam, LPARAM lparam,
                        BOOL& handled);
   LRESULT OnPaint(UINT msg_id, WPARAM wparam, LPARAM lparam, BOOL& handled);
 
@@ -62,6 +65,7 @@ class RubyWindow
 
   std::wstring text_;
   SIZE window_size_ = {};
+  RendererShadowWindow shadow_window_;
 };
 
 }  // namespace win32

@@ -124,6 +124,7 @@ mozc_cc_library(
         ":resource_h",
         ":text_renderer",
         ":win32_dpi_util",
+        ":win32_renderer_util",
         "//base:const",
         "//base:coordinates",
         "//base/win32:wide_char",
@@ -134,6 +135,7 @@ mozc_cc_library(
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
         "//protocol:renderer_cc_proto",
+        "//renderer:renderer_style_handler",
         "//renderer:table_layout",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
@@ -196,6 +198,7 @@ mozc_cc_library(
         "//bazel/win32:d2d1",
         "//bazel/win32:dwrite",
         "//protocol:renderer_cc_proto",
+        "//renderer:renderer_style_handler",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/types:span",
         "@com_microsoft_wil//:wil",
@@ -228,6 +231,8 @@ mozc_cc_library(
     tags = MOZC_TAGS.WIN_ONLY,
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
+        ":win32_dpi_util",
+        ":win32_renderer_util",
         "//base/win32:wide_char",
         "//bazel/win32:gdi32",
         "//bazel/win32:user32",
@@ -248,6 +253,7 @@ mozc_cc_library(
     deps = [
         ":text_renderer",
         ":win32_dpi_util",
+        ":win32_renderer_util",
         "//base:const",
         "//base:coordinates",
         "//base:vlog",
@@ -258,6 +264,7 @@ mozc_cc_library(
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
         "//protocol:renderer_cc_proto",
+        "//renderer:renderer_style_handler",
         "@com_microsoft_wil//:wil",
     ],
 )
@@ -320,6 +327,8 @@ mozc_cc_library(
     visibility = ["//visibility:private"],
     deps = [
         "//base:system_util",
+        "//bazel/win32:gdi32",
+        "//bazel/win32:user32",
         "//protocol:renderer_cc_proto",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",

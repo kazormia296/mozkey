@@ -32,7 +32,10 @@
 
 #include <cstdint>
 
+#include <windows.h>
+
 #include "protocol/renderer_style.pb.h"
+#include "renderer/renderer_style_handler.h"
 
 namespace mozc {
 namespace renderer {
@@ -45,9 +48,20 @@ double GetDPIScalingFactor(uint32_t dpi);
 // coordinates. Falls back to USER_DEFAULT_SCREEN_DPI on failure.
 uint32_t GetDpiForPoint(int x, int y);
 
-// Populates |style| with the default RendererStyle, scaled for |dpi|.
+// Returns the effective DPI of the monitor containing |hwnd|. Falls back to the
+// system DPI if |hwnd| is invalid or its monitor cannot be resolved.
+uint32_t GetDpiForWindowHandle(HWND hwnd);
+
+// Populates |style| with the candidate-window RendererStyle, scaled for |dpi|.
+// This is kept as the compatibility API for callers that do not distinguish
+// candidate-like window types.
 void GetScaledRendererStyle(::mozc::renderer::RendererStyle* style,
                             uint32_t dpi);
+
+// Populates |style| with the RendererStyle for |type|, scaled for |dpi|.
+void GetScaledRendererStyleForWindowType(
+    RendererStyleHandler::RendererStyleType type,
+    ::mozc::renderer::RendererStyle* style, uint32_t dpi);
 
 }  // namespace win32
 }  // namespace renderer

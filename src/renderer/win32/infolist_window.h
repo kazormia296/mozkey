@@ -45,6 +45,7 @@
 #include "protocol/renderer_command.pb.h"
 #include "protocol/renderer_style.pb.h"
 #include "renderer/win32/text_renderer.h"
+#include "renderer/win32/win32_renderer_util.h"
 
 namespace mozc {
 namespace renderer {
@@ -60,7 +61,7 @@ typedef ATL::CWinTraits<WS_POPUP | WS_DISABLED,
 class InfolistWindow : public ATL::CWindowImpl<InfolistWindow, ATL::CWindow,
                                                InfolistWindowTraits> {
  public:
-  DECLARE_WND_CLASS_EX(kInfolistWindowClassName, CS_SAVEBITS | CS_DROPSHADOW,
+  DECLARE_WND_CLASS_EX(kInfolistWindowClassName, CS_SAVEBITS,
                        COLOR_WINDOW);
 
   BEGIN_MSG_MAP(InfolistWindow)
@@ -68,6 +69,7 @@ class InfolistWindow : public ATL::CWindowImpl<InfolistWindow, ATL::CWindow,
   MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBkgnd)
   MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
   MESSAGE_HANDLER(WM_SETTINGCHANGE, OnSettingChange)
+  MESSAGE_HANDLER(WM_SHOWWINDOW, OnShowWindow)
   MESSAGE_HANDLER(WM_PAINT, OnPaint)
   MESSAGE_HANDLER(WM_PRINTCLIENT, OnPrintClient)
   MESSAGE_HANDLER(WM_TIMER, OnTimer)
@@ -83,6 +85,7 @@ class InfolistWindow : public ATL::CWindowImpl<InfolistWindow, ATL::CWindow,
   void OnPaint(HDC dc);
   void OnPrintClient(HDC dc, UINT uFlags);
   void OnSettingChange(UINT uFlags, LPCTSTR lpszSection);
+  void OnShowWindow(BOOL shown, UINT status);
   void OnTimer(UINT_PTR nIDEvent);
 
   // If |dpi| differs from the cached DPI, updates the cached DPI, re-scales
@@ -92,6 +95,7 @@ class InfolistWindow : public ATL::CWindowImpl<InfolistWindow, ATL::CWindow,
   void UpdateDpi(uint32_t dpi);
 
   void UpdateLayout(const commands::CandidateWindow& candidates);
+  void UpdateEffectWindows();
   void SetSendCommandInterface(
       client::SendCommandInterface* send_command_interface);
 
@@ -125,6 +129,11 @@ class InfolistWindow : public ATL::CWindowImpl<InfolistWindow, ATL::CWindow,
                     reinterpret_cast<LPCTSTR>(lparam));
     return 0;
   }
+  inline LRESULT OnShowWindow(UINT msg_id, WPARAM wparam, LPARAM lparam,
+                              BOOL& handled) {
+    OnShowWindow(static_cast<BOOL>(wparam), static_cast<UINT>(lparam));
+    return 0;
+  }
   inline LRESULT OnPaint(UINT msg_id, WPARAM wparam, LPARAM lparam,
                          BOOL& handled) {
     OnPaint(reinterpret_cast<HDC>(wparam));
@@ -148,6 +157,7 @@ class InfolistWindow : public ATL::CWindowImpl<InfolistWindow, ATL::CWindow,
   std::unique_ptr<renderer::RendererStyle> style_;
   bool metrics_changed_;
   bool visible_;
+  RendererShadowWindow shadow_window_;
 };
 
 }  // namespace win32

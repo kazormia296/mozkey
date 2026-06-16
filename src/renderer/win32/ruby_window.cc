@@ -1,6 +1,8 @@
 #include "renderer/win32/ruby_window.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <string>
 
 #include "base/win32/wide_char.h"
@@ -9,6 +11,8 @@
 #include "protocol/config.pb.h"
 #include "protocol/renderer_command.pb.h"
 #include "renderer/renderer_style_handler.h"
+#include "renderer/win32/win32_dpi_util.h"
+#include "renderer/win32/win32_renderer_util.h"
 
 namespace mozc {
 namespace renderer {
@@ -16,61 +20,57 @@ namespace win32 {
 namespace {
 
 // Theme-aware translucent pill UI.
-// The colors follow RendererStyle so that the ruby overlay matches the
-// candidate window light/dark setting.
 constexpr int kPaddingX = 14;
 constexpr int kPaddingY = 6;
 constexpr int kGapFromComposition = 0;
 constexpr int kFontPointSize = 13;
-constexpr int kCornerRadius = 18;
-
-// Whole-window alpha. 255 is opaque.
-constexpr BYTE kWindowAlpha = 228;
+constexpr uint32_t kDefaultDpi = 96;
 
 // Keep the overlay close to the preedit, but do not let it cover the glyphs.
 constexpr int kFallbackLineHeight = 22;
 
-struct RubyWindowTheme {
-  COLORREF background_color;
-  COLORREF border_color;
-  COLORREF text_color;
-};
-
-COLORREF ToColorRef(const RendererStyle::RGBAColor& color) {
-  return RGB(static_cast<int>(color.r()),
-             static_cast<int>(color.g()),
-             static_cast<int>(color.b()));
+COLORREF ToColorRef(uint32_t rgb) {
+  return RGB(static_cast<int>((rgb >> 16) & 0xff),
+             static_cast<int>((rgb >> 8) & 0xff),
+             static_cast<int>(rgb & 0xff));
 }
 
-RubyWindowTheme GetRubyWindowTheme() {
-  // Fallback is the current dark pill. Even if RendererStyle is incomplete,
-  // the ruby window stays readable.
-  RubyWindowTheme theme = {
-      RGB(24, 27, 31),    // background
-      RGB(58, 64, 72),    // border
-      RGB(246, 248, 250)  // text
-  };
+RendererStyleHandler::RubyWindowStyle GetRubyWindowTheme() {
+  return RendererStyleHandler::GetRubyWindowStyle();
+}
 
-  RendererStyle style;
-  if (!RendererStyleHandler::GetRendererStyle(&style)) {
-    return theme;
+uint32_t GetWindowDpi(HWND hwnd) {
+  return GetDpiForWindowHandle(hwnd);
+}
+
+int ScaleCornerRadius(uint32_t logical_radius, uint32_t dpi) {
+  if (logical_radius == 0) {
+    return 0;
   }
+  return static_cast<int>(
+      std::lround(logical_radius *
+                  (static_cast<double>(dpi) / static_cast<double>(kDefaultDpi))));
+}
 
-  if (style.has_border_color()) {
-    theme.border_color = ToColorRef(style.border_color());
+int ScaleByPercent(int value, uint32_t percent) {
+  if (value <= 0) {
+    return 0;
   }
+  return std::max(1, static_cast<int>(std::lround(
+                         static_cast<double>(value) * percent / 100.0)));
+}
 
-  const RendererStyle::TextStyle& candidate_style = style.candidate_style();
+int GetRubyPaddingX(const RendererStyleHandler::RubyWindowStyle& theme) {
+  return ScaleByPercent(kPaddingX, theme.size_percent);
+}
 
-  if (candidate_style.has_background_color()) {
-    theme.background_color = ToColorRef(candidate_style.background_color());
-  }
+int GetRubyPaddingY(const RendererStyleHandler::RubyWindowStyle& theme) {
+  return ScaleByPercent(kPaddingY, theme.size_percent);
+}
 
-  if (candidate_style.has_foreground_color()) {
-    theme.text_color = ToColorRef(candidate_style.foreground_color());
-  }
-
-  return theme;
+int GetRubyFontPointSize() {
+  return ScaleByPercent(
+      kFontPointSize, RendererStyleHandler::GetRubyWindowStyle().size_percent);
 }
 
 bool IsLiveConversionRubyWindowEnabled() {
@@ -150,20 +150,21 @@ void RubyWindow::Initialize() {
     Create(nullptr);
   }
 
-  LONG_PTR ex_style = ::GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
-  ::SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED);
-  ::SetLayeredWindowAttributes(m_hWnd, 0, kWindowAlpha, LWA_ALPHA);
+  ApplyRendererWindowOpacity(
+      m_hWnd, RendererStyleHandler::GetRubyWindowStyle().opacity_percent);
 
   ShowWindow(SW_HIDE);
 }
 
 void RubyWindow::Destroy() {
+  shadow_window_.Destroy();
   if (IsWindow()) {
     DestroyWindow();
   }
 }
 
 void RubyWindow::Hide() {
+  shadow_window_.Hide();
   if (IsWindow()) {
     ShowWindow(SW_HIDE);
   }
@@ -268,7 +269,7 @@ void RubyWindow::UpdateFont(HDC dc) {
   const int dpi_y = ::GetDeviceCaps(dc, LOGPIXELSY);
 
   const std::wstring font_name = GetRubyWindowFontFaceName();
-  const int font_height = -MulDiv(kFontPointSize, dpi_y, 72);
+  const int font_height = -MulDiv(GetRubyFontPointSize(), dpi_y, 72);
   const int font_weight = FW_SEMIBOLD;
 
   if (font_ != nullptr &&
@@ -335,8 +336,9 @@ SIZE RubyWindow::MeasureText() const {
 
   ::ReleaseDC(nullptr, dc);
 
-  size.cx += kPaddingX * 2;
-  size.cy += kPaddingY * 2;
+  const RendererStyleHandler::RubyWindowStyle theme = GetRubyWindowTheme();
+  size.cx += GetRubyPaddingX(theme) * 2;
+  size.cy += GetRubyPaddingY(theme) * 2;
   return size;
 }
 
@@ -397,14 +399,30 @@ void RubyWindow::OnUpdate(const commands::RendererCommand& command) {
   left = ClampInt(left, work_area.left, work_area.right - window_size_.cx);
   top = ClampInt(top, work_area.top, work_area.bottom - window_size_.cy);
 
-  HRGN region = ::CreateRoundRectRgn(0, 0, window_size_.cx + 1,
-                                     window_size_.cy + 1, kCornerRadius,
-                                     kCornerRadius);
-  ::SetWindowRgn(m_hWnd, region, TRUE);
-  // Ownership of |region| is transferred to the window.
+  const int radius = ScaleCornerRadius(
+      RendererStyleHandler::GetRubyWindowStyle().corner_radius,
+      GetWindowDpi(m_hWnd));
+  if (radius <= 0) {
+    ::SetWindowRgn(m_hWnd, nullptr, TRUE);
+  } else {
+    HRGN region = ::CreateRoundRectRgn(0, 0, window_size_.cx + 1,
+                                       window_size_.cy + 1, radius * 2,
+                                       radius * 2);
+    ::SetWindowRgn(m_hWnd, region, TRUE);
+    // Ownership of |region| is transferred to the window.
+  }
 
   SetWindowPos(HWND_TOPMOST, left, top, window_size_.cx, window_size_.cy,
                SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  ApplyRendererWindowOpacity(m_hWnd, GetRubyWindowTheme().opacity_percent);
+  RECT window_rect = {left, top, left + window_size_.cx, top + window_size_.cy};
+  RendererWindowShadowStyle shadow_style;
+  shadow_style.size = GetRubyWindowTheme().shadow.size;
+  shadow_style.opacity_percent = GetRubyWindowTheme().shadow.opacity_percent;
+  shadow_style.angle_degrees = GetRubyWindowTheme().shadow.angle_degrees;
+  shadow_style.distance = GetRubyWindowTheme().shadow.distance;
+  shadow_window_.Update(m_hWnd, window_rect, GetWindowDpi(m_hWnd),
+                        GetRubyWindowTheme().corner_radius, shadow_style);
 
   ShowWindow(SW_SHOWNOACTIVATE);
   Invalidate(FALSE);
@@ -416,6 +434,14 @@ LRESULT RubyWindow::OnEraseBkgnd(UINT msg_id,
                                  BOOL& handled) {
   handled = TRUE;
   return TRUE;
+}
+
+LRESULT RubyWindow::OnShowWindow(UINT /*msg_id*/, WPARAM wparam,
+                                 LPARAM /*lparam*/, BOOL& /*handled*/) {
+  if (wparam == FALSE) {
+    shadow_window_.Hide();
+  }
+  return 0;
 }
 
 LRESULT RubyWindow::OnPaint(UINT msg_id,
@@ -433,18 +459,23 @@ void RubyWindow::DoPaint(HDC dc) {
   RECT rect = {};
   GetClientRect(&rect);
 
-  const RubyWindowTheme theme = GetRubyWindowTheme();
+  const RendererStyleHandler::RubyWindowStyle theme = GetRubyWindowTheme();
 
   ::SetBkMode(dc, TRANSPARENT);
 
-  HBRUSH bg_brush = ::CreateSolidBrush(theme.background_color);
-  HPEN border_pen = ::CreatePen(PS_SOLID, 1, theme.border_color);
+  HBRUSH bg_brush = ::CreateSolidBrush(ToColorRef(theme.background_color));
+  HPEN border_pen = ::CreatePen(PS_SOLID, 1, ToColorRef(theme.border_color));
 
   HGDIOBJ old_brush = ::SelectObject(dc, bg_brush);
   HGDIOBJ old_pen = ::SelectObject(dc, border_pen);
 
-  ::RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, kCornerRadius,
-              kCornerRadius);
+  const int radius = ScaleCornerRadius(theme.corner_radius, GetWindowDpi(m_hWnd));
+  if (radius <= 0) {
+    ::Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom);
+  } else {
+    ::RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, radius * 2,
+                radius * 2);
+  }
 
   ::SelectObject(dc, old_pen);
   ::SelectObject(dc, old_brush);
@@ -456,13 +487,13 @@ void RubyWindow::DoPaint(HDC dc) {
     old_font = static_cast<HFONT>(::SelectObject(dc, font_));
   }
 
-  ::SetTextColor(dc, theme.text_color);
+  ::SetTextColor(dc, ToColorRef(theme.text_color));
 
   RECT text_rect = rect;
-  text_rect.left += kPaddingX;
-  text_rect.top += kPaddingY;
-  text_rect.right -= kPaddingX;
-  text_rect.bottom -= kPaddingY;
+  text_rect.left += GetRubyPaddingX(theme);
+  text_rect.top += GetRubyPaddingY(theme);
+  text_rect.right -= GetRubyPaddingX(theme);
+  text_rect.bottom -= GetRubyPaddingY(theme);
 
   ::DrawTextW(dc, text_.c_str(), static_cast<int>(text_.size()), &text_rect,
               DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);

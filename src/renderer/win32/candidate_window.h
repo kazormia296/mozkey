@@ -46,6 +46,7 @@
 #include "protocol/commands.pb.h"
 #include "renderer/table_layout.h"
 #include "renderer/win32/text_renderer.h"
+#include "renderer/win32/win32_renderer_util.h"
 
 namespace mozc {
 namespace renderer {
@@ -67,7 +68,7 @@ typedef ATL::CWinTraits<WS_POPUP | WS_DISABLED,
 class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
                                                 CandidateWindowTraits> {
  public:
-  DECLARE_WND_CLASS_EX(kCandidateWindowClassName, CS_SAVEBITS | CS_DROPSHADOW,
+  DECLARE_WND_CLASS_EX(kCandidateWindowClassName, CS_SAVEBITS,
                        COLOR_WINDOW);
 
   BEGIN_MSG_MAP(CandidateWindow)
@@ -79,6 +80,7 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   MESSAGE_HANDLER(WM_LBUTTONUP, OnLButtonUp)
   MESSAGE_HANDLER(WM_MOUSEMOVE, OnMouseMove)
   MESSAGE_HANDLER(WM_SETTINGCHANGE, OnSettingChange)
+  MESSAGE_HANDLER(WM_SHOWWINDOW, OnShowWindow)
   MESSAGE_HANDLER(WM_PAINT, OnPaint)
   MESSAGE_HANDLER(WM_PRINTCLIENT, OnPrintClient)
   END_MSG_MAP()
@@ -97,6 +99,7 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   void OnPaint(HDC dc);
   void OnPrintClient(HDC dc, UINT uFlags);
   void OnSettingChange(UINT uFlags, LPCTSTR lpszSection);
+  void OnShowWindow(BOOL shown, UINT status);
 
   void set_mouse_moving(bool moving);
 
@@ -107,6 +110,7 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   void UpdateDpi(uint32_t dpi);
 
   void UpdateLayout(const commands::CandidateWindow& candidate_window);
+  void UpdateEffectWindows();
   void SetSendCommandInterface(
       client::SendCommandInterface* send_command_interface);
 
@@ -184,6 +188,11 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
                     reinterpret_cast<LPCTSTR>(lparam));
     return 0;
   }
+  inline LRESULT OnShowWindow(UINT msg_id, WPARAM wparam, LPARAM lparam,
+                              BOOL& handled) {
+    OnShowWindow(static_cast<BOOL>(wparam), static_cast<UINT>(lparam));
+    return 0;
+  }
   inline LRESULT OnPaint(UINT msg_id, WPARAM wparam, LPARAM lparam,
                          BOOL& handled) {
     OnPaint(reinterpret_cast<HDC>(wparam));
@@ -205,6 +214,7 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   int indicator_width_;
   bool metrics_changed_;
   bool mouse_moving_;
+  RendererShadowWindow shadow_window_;
 };
 
 }  // namespace win32

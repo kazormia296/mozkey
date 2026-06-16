@@ -31,18 +31,24 @@
 #include "gui/config_dialog/config_dialog.h"
 
 #include <QAbstractItemView>
+#include <QByteArray>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QFrame>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSizePolicy>
+#include <QSpinBox>
 #include <QStringList>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -50,6 +56,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <istream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -405,6 +412,8 @@ ConfigDialog::ConfigDialog()
   // On Windows/Linux, useJapaneseLayout checkbox should be invisible.
   useJapaneseLayout->hide();
 #endif  // !__APPLE__
+
+  InitializeRendererAppearanceControls();
 
 #ifndef _WIN32
   // Mode indicator is available only on Windows.
@@ -851,6 +860,206 @@ uint32_t GetColorButtonRgb(const QPushButton *button,
   }
 
   return value.toUInt();
+}
+
+struct CandidateWindowPaletteDefaults {
+  uint32_t background_color;
+  uint32_t text_color;
+  uint32_t selected_background_color;
+  uint32_t selected_border_color;
+  uint32_t border_color;
+  uint32_t shortcut_text_color;
+  uint32_t shortcut_background_color;
+  uint32_t description_text_color;
+  uint32_t footer_text_color;
+  uint32_t footer_background_color;
+  uint32_t footer_border_color;
+  uint32_t scrollbar_background_color;
+  uint32_t scrollbar_indicator_color;
+};
+
+struct RubyWindowPaletteDefaults {
+  uint32_t background_color;
+  uint32_t text_color;
+  uint32_t border_color;
+};
+
+constexpr CandidateWindowPaletteDefaults kLightCandidatePalette = {
+    0xffffff, 0x000000, 0xd1eaff, 0x7facdd, 0x969696,
+    0x777777, 0xf3f4ff, 0x888888, 0x4c4c4c, 0xffffff,
+    0x606060, 0xe0e0e0, 0x7590b8};
+
+constexpr CandidateWindowPaletteDefaults kDarkCandidatePalette = {
+    0x181b20, 0xe6edf3, 0x242b34, 0x3f4b59, 0x323840,
+    0x96a0aa, 0x181b20, 0x8b949e, 0xb7c0c9, 0x161a1f,
+    0x2a3037, 0x1d2228, 0x4b5766};
+
+constexpr RubyWindowPaletteDefaults kLightRubyPalette = {
+    0xffffff, 0x000000, 0x969696};
+constexpr RubyWindowPaletteDefaults kDarkRubyPalette = {
+    0x181b20, 0xe6edf3, 0x323840};
+
+constexpr const char* kCandidatePaletteButtonNames[] = {
+    "BackgroundColorButton", "TextColorButton", "SelectedBackgroundColorButton",
+    "SelectedBorderColorButton", "BorderColorButton", "ShortcutTextColorButton",
+    "ShortcutBackgroundColorButton", "DescriptionTextColorButton",
+    "FooterTextColorButton", "FooterBackgroundColorButton",
+    "FooterBorderColorButton", "ScrollbarBackgroundColorButton",
+    "ScrollbarIndicatorColorButton"};
+
+constexpr const char* kRubyPaletteButtonNames[] = {
+    "BackgroundColorButton", "TextColorButton", "BorderColorButton"};
+
+QComboBox* FindComboBox(const QObject* parent, const char* name) {
+  return parent->findChild<QComboBox*>(QString::fromLatin1(name));
+}
+
+QSpinBox* FindSpinBox(const QObject* parent, const char* name) {
+  return parent->findChild<QSpinBox*>(QString::fromLatin1(name));
+}
+
+QPushButton* FindButton(const QObject* parent, const QString& name) {
+  return parent->findChild<QPushButton*>(name);
+}
+
+void SetComboCurrentData(QComboBox* combo, int value) {
+  if (combo == nullptr) {
+    return;
+  }
+  const int index = combo->findData(value);
+  combo->setCurrentIndex(index >= 0 ? index : 0);
+}
+
+int GetComboCurrentData(const QComboBox* combo, int default_value) {
+  if (combo == nullptr) {
+    return default_value;
+  }
+  const QVariant data = combo->currentData();
+  return data.isValid() ? data.toInt() : default_value;
+}
+
+void SetCandidatePaletteButtons(QObject* parent, const QString& prefix,
+                                const CandidateWindowPaletteDefaults& palette) {
+  const uint32_t values[] = {
+      palette.background_color,
+      palette.text_color,
+      palette.selected_background_color,
+      palette.selected_border_color,
+      palette.border_color,
+      palette.shortcut_text_color,
+      palette.shortcut_background_color,
+      palette.description_text_color,
+      palette.footer_text_color,
+      palette.footer_background_color,
+      palette.footer_border_color,
+      palette.scrollbar_background_color,
+      palette.scrollbar_indicator_color,
+  };
+  for (size_t i = 0; i < std::size(kCandidatePaletteButtonNames); ++i) {
+    SetColorButton(FindButton(parent, prefix + kCandidatePaletteButtonNames[i]),
+                   values[i]);
+  }
+}
+
+CandidateWindowPaletteDefaults GetCandidatePaletteButtons(
+    const QObject* parent, const QString& prefix,
+    const CandidateWindowPaletteDefaults& defaults) {
+  CandidateWindowPaletteDefaults palette = defaults;
+  uint32_t* values[] = {
+      &palette.background_color,
+      &palette.text_color,
+      &palette.selected_background_color,
+      &palette.selected_border_color,
+      &palette.border_color,
+      &palette.shortcut_text_color,
+      &palette.shortcut_background_color,
+      &palette.description_text_color,
+      &palette.footer_text_color,
+      &palette.footer_background_color,
+      &palette.footer_border_color,
+      &palette.scrollbar_background_color,
+      &palette.scrollbar_indicator_color,
+  };
+  for (size_t i = 0; i < std::size(kCandidatePaletteButtonNames); ++i) {
+    *values[i] = GetColorButtonRgb(
+        FindButton(parent, prefix + kCandidatePaletteButtonNames[i]),
+        *values[i]);
+  }
+  return palette;
+}
+
+void SetRubyPaletteButtons(QObject* parent, const QString& prefix,
+                           const RubyWindowPaletteDefaults& palette) {
+  const uint32_t values[] = {palette.background_color, palette.text_color,
+                             palette.border_color};
+  for (size_t i = 0; i < std::size(kRubyPaletteButtonNames); ++i) {
+    SetColorButton(FindButton(parent, prefix + kRubyPaletteButtonNames[i]),
+                   values[i]);
+  }
+}
+
+RubyWindowPaletteDefaults GetRubyPaletteButtons(
+    const QObject* parent, const QString& prefix,
+    const RubyWindowPaletteDefaults& defaults) {
+  RubyWindowPaletteDefaults palette = defaults;
+  uint32_t* values[] = {&palette.background_color, &palette.text_color,
+                        &palette.border_color};
+  for (size_t i = 0; i < std::size(kRubyPaletteButtonNames); ++i) {
+    *values[i] = GetColorButtonRgb(
+        FindButton(parent, prefix + kRubyPaletteButtonNames[i]), *values[i]);
+  }
+  return palette;
+}
+
+void SetCandidatePaletteButtonsFromProto(
+    QObject* parent, const QString& prefix,
+    const config::Config::CandidateWindowColorPalette& proto) {
+  SetCandidatePaletteButtons(
+      parent, prefix,
+      {proto.background_color(), proto.text_color(),
+       proto.selected_background_color(), proto.selected_border_color(),
+       proto.border_color(), proto.shortcut_text_color(),
+       proto.shortcut_background_color(), proto.description_text_color(),
+       proto.footer_text_color(), proto.footer_background_color(),
+       proto.footer_border_color(), proto.scrollbar_background_color(),
+       proto.scrollbar_indicator_color()});
+}
+
+void SetRubyPaletteButtonsFromProto(
+    QObject* parent, const QString& prefix,
+    const config::Config::RubyWindowColorPalette& proto) {
+  SetRubyPaletteButtons(parent, prefix,
+                        {proto.background_color(), proto.text_color(),
+                         proto.border_color()});
+}
+
+void SaveCandidatePaletteToProto(
+    const QObject* parent, const QString& prefix,
+    config::Config::CandidateWindowColorPalette* proto) {
+  const CandidateWindowPaletteDefaults palette =
+      GetCandidatePaletteButtons(parent, prefix, kLightCandidatePalette);
+  proto->set_background_color(palette.background_color);
+  proto->set_text_color(palette.text_color);
+  proto->set_selected_background_color(palette.selected_background_color);
+  proto->set_selected_border_color(palette.selected_border_color);
+  proto->set_border_color(palette.border_color);
+  proto->set_shortcut_text_color(palette.shortcut_text_color);
+  proto->set_shortcut_background_color(palette.shortcut_background_color);
+  proto->set_description_text_color(palette.description_text_color);
+  proto->set_footer_text_color(palette.footer_text_color);
+  proto->set_footer_background_color(palette.footer_background_color);
+  proto->set_footer_border_color(palette.footer_border_color);
+  proto->set_scrollbar_background_color(palette.scrollbar_background_color);
+  proto->set_scrollbar_indicator_color(palette.scrollbar_indicator_color);
+}
+
+void SaveRubyPaletteToProto(const QObject* parent, const QString& prefix,
+                            config::Config::RubyWindowColorPalette* proto) {
+  const RubyWindowPaletteDefaults palette =
+      GetRubyPaletteButtons(parent, prefix, kLightRubyPalette);
+  proto->set_background_color(palette.background_color);
+  proto->set_text_color(palette.text_color);
+  proto->set_border_color(palette.border_color);
 }
 
 QString ToQString(absl::string_view s) {
@@ -1425,6 +1634,403 @@ void GetComboboxForPreeditMethod(const QComboBox *combobox,
 // TODO(taku)
 // Actually ConvertFromProto and ConvertToProto are almost the same.
 // The difference only SET_ and GET_. We would like to unify the twos.
+void ConfigDialog::InitializeRendererAppearanceControls() {
+#ifndef _WIN32
+  return;
+#endif  // !_WIN32
+
+  useDarkModeCandidateWindow->hide();
+  candidateRubyFontLabel->hide();
+  candidateRubyFontComboBox->hide();
+
+  constexpr int kRendererAppearanceGroupX = 30;
+  constexpr int kRendererAppearanceGroupY = 1122;
+  constexpr int kRendererAppearanceGroupWidth = 441;
+  constexpr int kRendererAppearanceToPreeditMargin = 18;
+  constexpr int kInputSupportBottomMargin = 30;
+
+  QWidget* group = new QWidget(inputSupportScrollAreaWidgetContents);
+  group->setObjectName(QStringLiteral("rendererAppearanceGroupBox"));
+  group->setGeometry(kRendererAppearanceGroupX, kRendererAppearanceGroupY,
+                     kRendererAppearanceGroupWidth, 1);
+
+  QVBoxLayout* root_layout = new QVBoxLayout(group);
+  root_layout->setContentsMargins(0, 0, 0, 0);
+  root_layout->setSpacing(6);
+
+  QWidget* section = new QWidget(group);
+  section->setFixedHeight(60);
+  QHBoxLayout* section_layout = new QHBoxLayout(section);
+  section_layout->setContentsMargins(0, 20, 0, 16);
+  QLabel* section_label =
+      new QLabel(tr("Candidate, suggestion, and ruby window appearance"),
+                 section);
+  QPushButton* reset_button = new QPushButton(tr("Reset"), section);
+  reset_button->setObjectName(QStringLiteral("rendererAppearanceResetButton"));
+  reset_button->setFixedWidth(64);
+  reset_button->setMinimumHeight(24);
+  reset_button->setToolTip(tr(
+      "Reset candidate, suggestion, and ruby window appearance to defaults"));
+  QFrame* section_line = new QFrame(section);
+  section_line->setFrameShape(QFrame::HLine);
+  section_line->setFrameShadow(QFrame::Sunken);
+  section_layout->addWidget(section_label);
+  section_layout->addWidget(reset_button);
+  section_layout->addWidget(section_line);
+  QObject::connect(reset_button, SIGNAL(clicked()), this,
+                   SLOT(ResetRendererAppearanceControls()));
+  root_layout->addWidget(section);
+
+  QGridLayout* font_layout = new QGridLayout();
+  font_layout->setContentsMargins(0, 0, 0, 0);
+  font_layout->setHorizontalSpacing(8);
+  font_layout->setVerticalSpacing(0);
+  QLabel* font_label =
+      new QLabel(tr("Candidate, suggestion, and ruby font"), group);
+  font_label->setMinimumHeight(24);
+  font_label->setMinimumWidth(220);
+  candidateRubyFontComboBox->setParent(group);
+  candidateRubyFontComboBox->show();
+  candidateRubyFontComboBox->setMinimumHeight(24);
+  font_layout->addWidget(font_label, 0, 0);
+  font_layout->addWidget(candidateRubyFontComboBox, 0, 1);
+  font_layout->setColumnStretch(1, 1);
+  root_layout->addLayout(font_layout);
+
+  QWidget* color_grid_widget = new QWidget(group);
+  color_grid_widget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+  QGridLayout* grid = new QGridLayout(color_grid_widget);
+  grid->setContentsMargins(0, 0, 0, 0);
+  grid->setHorizontalSpacing(8);
+  grid->setVerticalSpacing(2);
+  root_layout->addWidget(color_grid_widget);
+
+  auto add_color_theme_combo = [this](QComboBox* combo, bool allow_follow) {
+    if (allow_follow) {
+      combo->addItem(
+          tr("Follow candidate window"),
+          static_cast<int>(
+              config::Config::RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE));
+    }
+    combo->addItem(
+        tr("Default (Light)"),
+        static_cast<int>(config::Config::RENDERER_WINDOW_COLOR_LIGHT));
+    combo->addItem(
+        tr("Dark"),
+        static_cast<int>(config::Config::RENDERER_WINDOW_COLOR_DARK));
+    combo->addItem(
+        tr("Custom"),
+        static_cast<int>(config::Config::RENDERER_WINDOW_COLOR_CUSTOM));
+  };
+
+  auto add_row = [&](int row, const QString& title, const char* color_name,
+                     bool color_follow, const char* size_name,
+                     const char* corner_name, const char* opacity_name,
+                     int default_corner_radius, int default_opacity) {
+    QLabel* title_label = new QLabel(title, group);
+    title_label->setMinimumHeight(24);
+    grid->addWidget(title_label, row, 0);
+
+    QComboBox* color_combo = new QComboBox(group);
+    color_combo->setObjectName(QString::fromLatin1(color_name));
+    add_color_theme_combo(color_combo, color_follow);
+    color_combo->setMinimumHeight(24);
+    grid->addWidget(color_combo, row, 1);
+
+    QSpinBox* size_spin = new QSpinBox(group);
+    size_spin->setObjectName(QString::fromLatin1(size_name));
+    size_spin->setRange(80, 200);
+    size_spin->setSingleStep(5);
+    size_spin->setSuffix(QStringLiteral(" %"));
+    size_spin->setValue(100);
+    size_spin->setMinimumHeight(24);
+    grid->addWidget(size_spin, row, 2);
+
+    QSpinBox* corner_spin = new QSpinBox(group);
+    corner_spin->setObjectName(QString::fromLatin1(corner_name));
+    corner_spin->setRange(0, 24);
+    corner_spin->setSuffix(QStringLiteral(" px"));
+    corner_spin->setValue(default_corner_radius);
+    corner_spin->setMinimumHeight(24);
+    grid->addWidget(corner_spin, row, 3);
+
+    QSpinBox* opacity_spin = new QSpinBox(group);
+    opacity_spin->setObjectName(QString::fromLatin1(opacity_name));
+    opacity_spin->setRange(20, 100);
+    opacity_spin->setSuffix(QStringLiteral(" %"));
+    opacity_spin->setValue(default_opacity);
+    opacity_spin->setMinimumHeight(24);
+    grid->addWidget(opacity_spin, row, 4);
+
+    QObject::connect(color_combo, SIGNAL(currentIndexChanged(int)), this,
+                     SLOT(UpdateRendererAppearanceControls()));
+    QObject::connect(color_combo, SIGNAL(currentIndexChanged(int)), this,
+                     SLOT(EnableApplyButton()));
+    QObject::connect(size_spin, SIGNAL(valueChanged(int)), this,
+                     SLOT(EnableApplyButton()));
+    QObject::connect(corner_spin, SIGNAL(valueChanged(int)), this,
+                     SLOT(EnableApplyButton()));
+    QObject::connect(opacity_spin, SIGNAL(valueChanged(int)), this,
+                     SLOT(EnableApplyButton()));
+  };
+
+  grid->addWidget(new QLabel(tr("Target"), group), 0, 0);
+  grid->addWidget(new QLabel(tr("Color"), group), 0, 1);
+  grid->addWidget(new QLabel(tr("Size"), group), 0, 2);
+  grid->addWidget(new QLabel(tr("Corner radius"), group), 0, 3);
+  grid->addWidget(new QLabel(tr("Opacity"), group), 0, 4);
+
+  add_row(1, tr("Candidate window"), "candidateWindowColorThemeComboBox",
+          false, "candidateWindowSizePercentSpinBox",
+          "candidateWindowCornerRadiusSpinBox",
+          "candidateWindowOpacityPercentSpinBox", 6, 100);
+  add_row(2, tr("Suggestion window"), "suggestWindowColorThemeComboBox", true,
+          "suggestWindowSizePercentSpinBox", "suggestWindowCornerRadiusSpinBox",
+          "suggestWindowOpacityPercentSpinBox", 6, 100);
+  add_row(3, tr("Ruby window"), "rubyWindowColorThemeComboBox", true,
+          "rubyWindowSizePercentSpinBox", "rubyWindowCornerRadiusSpinBox",
+          "rubyWindowOpacityPercentSpinBox", 9, 90);
+  for (int row = 0; row <= 3; ++row) {
+    grid->setRowMinimumHeight(row, 24);
+    grid->setRowStretch(row, 0);
+  }
+
+  root_layout->addSpacing(20);
+
+  QWidget* shadow_grid_widget = new QWidget(group);
+  shadow_grid_widget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+  QGridLayout* shadow_grid = new QGridLayout(shadow_grid_widget);
+  shadow_grid->setContentsMargins(0, 0, 0, 0);
+  shadow_grid->setHorizontalSpacing(8);
+  shadow_grid->setVerticalSpacing(6);
+  root_layout->addWidget(shadow_grid_widget);
+
+  auto add_shadow_spin = [&](int row, int column, const char* name, int min,
+                             int max, const QString& suffix, int value) {
+    QSpinBox* spin = new QSpinBox(group);
+    spin->setObjectName(QString::fromLatin1(name));
+    spin->setRange(min, max);
+    spin->setSuffix(suffix);
+    spin->setValue(value);
+    spin->setMinimumHeight(24);
+    spin->setMinimumWidth(58);
+    shadow_grid->addWidget(spin, row, column);
+    QObject::connect(spin, SIGNAL(valueChanged(int)), this,
+                     SLOT(UpdateRendererAppearanceControls()));
+    QObject::connect(spin, SIGNAL(valueChanged(int)), this,
+                     SLOT(EnableApplyButton()));
+    return spin;
+  };
+
+  auto add_direction_button = [&](QGridLayout* layout, int row, int column,
+                                  const QString& text, const char* angle_name,
+                                  const char* distance_name, int angle,
+                                  int default_distance, bool center) {
+    QPushButton* button = new QPushButton(text, group);
+    button->setFixedSize(24, 24);
+    button->setProperty("angleSpinBox", QString::fromLatin1(angle_name));
+    button->setProperty("distanceSpinBox", QString::fromLatin1(distance_name));
+    button->setProperty("angle", angle);
+    button->setProperty("defaultDistance", default_distance);
+    button->setProperty("center", center);
+    button->setToolTip(center ? tr("Even shadow on all sides")
+                              : tr("Set shadow direction"));
+    layout->addWidget(button, row, column);
+    QObject::connect(button, SIGNAL(clicked()), this,
+                     SLOT(SelectRendererShadowDirectionPreset()));
+  };
+
+  auto add_direction_pad = [&](int row, int column, const char* angle_name,
+                               const char* distance_name,
+                               int default_distance) {
+    QWidget* pad = new QWidget(group);
+    QGridLayout* pad_layout = new QGridLayout(pad);
+    pad_layout->setContentsMargins(0, 0, 0, 0);
+    pad_layout->setHorizontalSpacing(1);
+    pad_layout->setVerticalSpacing(1);
+    add_direction_button(pad_layout, 0, 0, QStringLiteral("↖"), angle_name,
+                         distance_name, 225, default_distance, false);
+    add_direction_button(pad_layout, 0, 1, QStringLiteral("↑"), angle_name,
+                         distance_name, 270, default_distance, false);
+    add_direction_button(pad_layout, 0, 2, QStringLiteral("↗"), angle_name,
+                         distance_name, 315, default_distance, false);
+    add_direction_button(pad_layout, 1, 0, QStringLiteral("←"), angle_name,
+                         distance_name, 180, default_distance, false);
+    add_direction_button(pad_layout, 1, 1, QStringLiteral("●"), angle_name,
+                         distance_name, 0, default_distance, true);
+    add_direction_button(pad_layout, 1, 2, QStringLiteral("→"), angle_name,
+                         distance_name, 0, default_distance, false);
+    add_direction_button(pad_layout, 2, 0, QStringLiteral("↙"), angle_name,
+                         distance_name, 135, default_distance, false);
+    add_direction_button(pad_layout, 2, 1, QStringLiteral("↓"), angle_name,
+                         distance_name, 90, default_distance, false);
+    add_direction_button(pad_layout, 2, 2, QStringLiteral("↘"), angle_name,
+                         distance_name, 45, default_distance, false);
+    shadow_grid->addWidget(pad, row, column);
+  };
+
+  auto add_shadow_row = [&](int row, const QString& title, const char* size_name,
+                            const char* opacity_name, const char* distance_name,
+                            const char* angle_name, int default_size,
+                            int default_opacity, int default_distance,
+                            int default_angle) {
+    shadow_grid->addWidget(new QLabel(title, group), row, 0);
+    add_shadow_spin(row, 1, size_name, 0, 96, QStringLiteral(" px"),
+                    default_size);
+    add_shadow_spin(row, 2, opacity_name, 0, 100, QStringLiteral(" %"),
+                    default_opacity);
+    add_direction_pad(row, 3, angle_name, distance_name, default_distance);
+    add_shadow_spin(row, 4, angle_name, 0, 359, QStringLiteral("°"),
+                    default_angle);
+    add_shadow_spin(row, 5, distance_name, 0, 96, QStringLiteral(" px"),
+                    default_distance);
+  };
+
+  shadow_grid->addWidget(new QLabel(tr("Target"), group), 0, 0);
+  shadow_grid->addWidget(new QLabel(tr("Shadow spread"), group), 0, 1);
+  shadow_grid->addWidget(new QLabel(tr("Shadow opacity"), group), 0, 2);
+  shadow_grid->addWidget(new QLabel(tr("Shadow direction"), group), 0, 3);
+  shadow_grid->addWidget(new QLabel(tr("Shadow angle"), group), 0, 4);
+  shadow_grid->addWidget(new QLabel(tr("Shadow distance"), group), 0, 5);
+  add_shadow_row(1, tr("Candidate window"),
+                 "candidateWindowShadowSizeSpinBox",
+                 "candidateWindowShadowOpacityPercentSpinBox",
+                 "candidateWindowShadowDistanceSpinBox",
+                 "candidateWindowShadowAngleDegreesSpinBox", 12, 30, 6, 45);
+  add_shadow_row(2, tr("Suggestion window"),
+                 "suggestWindowShadowSizeSpinBox",
+                 "suggestWindowShadowOpacityPercentSpinBox",
+                 "suggestWindowShadowDistanceSpinBox",
+                 "suggestWindowShadowAngleDegreesSpinBox", 12, 30, 6, 45);
+  add_shadow_row(3, tr("Ruby window"),
+                 "rubyWindowShadowSizeSpinBox",
+                 "rubyWindowShadowOpacityPercentSpinBox",
+                 "rubyWindowShadowDistanceSpinBox",
+                 "rubyWindowShadowAngleDegreesSpinBox", 10, 28, 4, 90);
+
+  auto add_palette_button = [&](QGridLayout* layout, int row, int col,
+                                const QString& prefix, const char* suffix,
+                                const QString& label) {
+    QLabel* text = new QLabel(label, group);
+    text->setMinimumHeight(26);
+    text->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    QPushButton* button = new QPushButton(group);
+    button->setObjectName(prefix + suffix);
+    button->setMinimumSize(84, 26);
+    button->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+    layout->addWidget(text, row, col * 2);
+    layout->addWidget(button, row, col * 2 + 1);
+    QObject::connect(button, SIGNAL(clicked()), this,
+                     SLOT(SelectRendererAppearanceColor()));
+    return button;
+  };
+
+  auto add_load_button = [&](QHBoxLayout* layout, const QString& text,
+                             const QString& target, const char* slot) {
+    QPushButton* button = new QPushButton(text, group);
+    button->setProperty("target", target);
+    button->setMinimumHeight(26);
+    layout->addWidget(button);
+    QObject::connect(button, SIGNAL(clicked()), this, slot);
+  };
+
+  auto add_candidate_palette_group = [&](const QString& title,
+                                         const QString& prefix,
+                                         bool allow_candidate_load) {
+    QGroupBox* box = new QGroupBox(title, group);
+    box->setObjectName(prefix + QStringLiteral("PaletteGroupBox"));
+    box->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    QVBoxLayout* box_layout = new QVBoxLayout(box);
+    box_layout->setContentsMargins(8, 8, 8, 8);
+    box_layout->setSpacing(8);
+    QGridLayout* palette_grid = new QGridLayout();
+    palette_grid->setHorizontalSpacing(8);
+    palette_grid->setVerticalSpacing(8);
+    box_layout->addLayout(palette_grid);
+    const QString labels[] = {
+        tr("Background"),
+        tr("Text"),
+        tr("Selected background"),
+        tr("Selected border"),
+        tr("Border"),
+        tr("Shortcut text"),
+        tr("Shortcut background"),
+        tr("Description"),
+        tr("Footer text"),
+        tr("Footer background"),
+        tr("Footer border"),
+        tr("Scrollbar background"),
+        tr("Scrollbar thumb")};
+    for (size_t i = 0; i < std::size(kCandidatePaletteButtonNames); ++i) {
+      add_palette_button(palette_grid, static_cast<int>(i / 2),
+                         static_cast<int>(i % 2), prefix,
+                         kCandidatePaletteButtonNames[i], labels[i]);
+    }
+    QHBoxLayout* load_layout = new QHBoxLayout();
+    load_layout->setSpacing(6);
+    add_load_button(load_layout, tr("Load light colors"), prefix,
+                    SLOT(LoadRendererLightAppearance()));
+    add_load_button(load_layout, tr("Load dark colors"), prefix,
+                    SLOT(LoadRendererDarkAppearance()));
+    if (allow_candidate_load) {
+      add_load_button(load_layout, tr("Load candidate colors"), prefix,
+                      SLOT(LoadRendererCandidateAppearance()));
+    }
+    load_layout->addStretch();
+    box_layout->addLayout(load_layout);
+    root_layout->addWidget(box);
+  };
+
+  auto add_ruby_palette_group = [&]() {
+    const QString prefix = QStringLiteral("rubyWindow");
+    QGroupBox* box = new QGroupBox(tr("Ruby window custom colors"), group);
+    box->setObjectName(prefix + QStringLiteral("PaletteGroupBox"));
+    box->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    QVBoxLayout* box_layout = new QVBoxLayout(box);
+    box_layout->setContentsMargins(8, 8, 8, 8);
+    box_layout->setSpacing(8);
+    QGridLayout* palette_grid = new QGridLayout();
+    palette_grid->setHorizontalSpacing(8);
+    palette_grid->setVerticalSpacing(8);
+    box_layout->addLayout(palette_grid);
+    const QString labels[] = {tr("Background"), tr("Text"), tr("Border")};
+    for (size_t i = 0; i < std::size(kRubyPaletteButtonNames); ++i) {
+      add_palette_button(palette_grid, 0, static_cast<int>(i), prefix,
+                         kRubyPaletteButtonNames[i], labels[i]);
+    }
+    QHBoxLayout* load_layout = new QHBoxLayout();
+    load_layout->setSpacing(6);
+    add_load_button(load_layout, tr("Load light colors"), prefix,
+                    SLOT(LoadRendererLightAppearance()));
+    add_load_button(load_layout, tr("Load dark colors"), prefix,
+                    SLOT(LoadRendererDarkAppearance()));
+    add_load_button(load_layout, tr("Load candidate colors"), prefix,
+                    SLOT(LoadRendererCandidateAppearance()));
+    load_layout->addStretch();
+    box_layout->addLayout(load_layout);
+    root_layout->addWidget(box);
+  };
+
+  add_candidate_palette_group(tr("Candidate window custom colors"),
+                              QStringLiteral("candidateWindow"), false);
+  add_candidate_palette_group(tr("Suggestion window custom colors"),
+                              QStringLiteral("suggestWindow"), true);
+  add_ruby_palette_group();
+
+  root_layout->activate();
+  const int appearance_height = root_layout->sizeHint().height();
+  group->setGeometry(kRendererAppearanceGroupX, kRendererAppearanceGroupY,
+                     kRendererAppearanceGroupWidth, appearance_height);
+  preeditDisplayColorGroupBox->move(
+      kRendererAppearanceGroupX,
+      group->y() + group->height() + kRendererAppearanceToPreeditMargin);
+  inputSupportScrollAreaWidgetContents->resize(
+      485, preeditDisplayColorGroupBox->y() +
+               preeditDisplayColorGroupBox->height() +
+               kInputSupportBottomMargin);
+
+}
+
 void ConfigDialog::ConvertFromProto(const config::Config &config) {
   base_config_ = config;
   // tab1
@@ -1582,7 +2188,7 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
 
   SET_CHECKBOX(useModeIndicator, use_mode_indicator);
 
-  SET_CHECKBOX(useDarkModeCandidateWindow, use_dark_mode_candidate_window);
+  ConvertRendererAppearanceFromProto(config);
 
   SetComboBoxCurrentFontNameOrAdd(
       candidateRubyFontComboBox,
@@ -1731,7 +2337,7 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
 
   GET_CHECKBOX(useModeIndicator, use_mode_indicator);
 
-  GET_CHECKBOX(useDarkModeCandidateWindow, use_dark_mode_candidate_window);
+  ConvertRendererAppearanceToProto(config);
 
   const QString font_name =
       candidateRubyFontComboBox->currentData().toString().trimmed();
@@ -1854,6 +2460,477 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
 #undef SET_CHECKBOX
 #undef GET_COMBOBOX
 #undef GET_CHECKBOX
+
+
+void ConfigDialog::ConvertRendererAppearanceFromProto(
+    const config::Config &config) {
+#ifndef _WIN32
+  if (useDarkModeCandidateWindow != nullptr) {
+    useDarkModeCandidateWindow->setChecked(
+        config.use_dark_mode_candidate_window());
+  }
+  return;
+#endif  // !_WIN32
+
+  const int candidate_color_theme =
+      config.has_candidate_window_color_theme()
+          ? static_cast<int>(config.candidate_window_color_theme())
+          : static_cast<int>(config.use_dark_mode_candidate_window()
+                             ? config::Config::RENDERER_WINDOW_COLOR_DARK
+                             : config::Config::RENDERER_WINDOW_COLOR_LIGHT);
+  SetComboCurrentData(FindComboBox(this, "candidateWindowColorThemeComboBox"),
+                      candidate_color_theme);
+  SetComboCurrentData(FindComboBox(this, "suggestWindowColorThemeComboBox"),
+                      static_cast<int>(config.suggest_window_color_theme()));
+  SetComboCurrentData(FindComboBox(this, "rubyWindowColorThemeComboBox"),
+                      static_cast<int>(config.ruby_window_color_theme()));
+
+  SetCandidatePaletteButtonsFromProto(
+      this, QStringLiteral("candidateWindow"),
+      config.candidate_window_custom_color_palette());
+  SetCandidatePaletteButtonsFromProto(
+      this, QStringLiteral("suggestWindow"),
+      config.suggest_window_custom_color_palette());
+  SetRubyPaletteButtonsFromProto(this, QStringLiteral("rubyWindow"),
+                                 config.ruby_window_custom_color_palette());
+
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowSizePercentSpinBox")) {
+    spin->setValue(static_cast<int>(
+        config.has_candidate_window_size_percent()
+            ? config.candidate_window_size_percent()
+            : 100));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowSizePercentSpinBox")) {
+    spin->setValue(static_cast<int>(
+        config.has_suggest_window_size_percent()
+            ? config.suggest_window_size_percent()
+            : 100));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowSizePercentSpinBox")) {
+    spin->setValue(static_cast<int>(
+        config.has_ruby_window_size_percent()
+            ? config.ruby_window_size_percent()
+            : 100));
+  }
+
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowCornerRadiusSpinBox")) {
+    spin->setValue(static_cast<int>(config.candidate_window_custom_corner_radius()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowCornerRadiusSpinBox")) {
+    spin->setValue(static_cast<int>(config.suggest_window_custom_corner_radius()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowCornerRadiusSpinBox")) {
+    spin->setValue(static_cast<int>(config.ruby_window_custom_corner_radius()));
+  }
+
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowOpacityPercentSpinBox")) {
+    spin->setValue(static_cast<int>(config.candidate_window_opacity_percent()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowOpacityPercentSpinBox")) {
+    spin->setValue(static_cast<int>(config.suggest_window_opacity_percent()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowOpacityPercentSpinBox")) {
+    spin->setValue(static_cast<int>(config.ruby_window_opacity_percent()));
+  }
+
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowSizeSpinBox")) {
+    spin->setValue(static_cast<int>(config.candidate_window_shadow_size()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowOpacityPercentSpinBox")) {
+    spin->setValue(static_cast<int>(config.candidate_window_shadow_opacity_percent()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowAngleDegreesSpinBox")) {
+    spin->setValue(static_cast<int>(config.candidate_window_shadow_angle_degrees() % 360));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowDistanceSpinBox")) {
+    spin->setValue(static_cast<int>(config.candidate_window_shadow_distance()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowSizeSpinBox")) {
+    spin->setValue(static_cast<int>(config.suggest_window_shadow_size()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowOpacityPercentSpinBox")) {
+    spin->setValue(static_cast<int>(config.suggest_window_shadow_opacity_percent()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowAngleDegreesSpinBox")) {
+    spin->setValue(static_cast<int>(config.suggest_window_shadow_angle_degrees() % 360));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowDistanceSpinBox")) {
+    spin->setValue(static_cast<int>(config.suggest_window_shadow_distance()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowSizeSpinBox")) {
+    spin->setValue(static_cast<int>(config.ruby_window_shadow_size()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowOpacityPercentSpinBox")) {
+    spin->setValue(static_cast<int>(config.ruby_window_shadow_opacity_percent()));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowAngleDegreesSpinBox")) {
+    spin->setValue(static_cast<int>(config.ruby_window_shadow_angle_degrees() % 360));
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowDistanceSpinBox")) {
+    spin->setValue(static_cast<int>(config.ruby_window_shadow_distance()));
+  }
+
+  if (useDarkModeCandidateWindow != nullptr) {
+    useDarkModeCandidateWindow->setChecked(
+        candidate_color_theme ==
+        static_cast<int>(config::Config::RENDERER_WINDOW_COLOR_DARK));
+  }
+  UpdateRendererAppearanceControls();
+}
+
+void ConfigDialog::ConvertRendererAppearanceToProto(config::Config *config) const {
+#ifndef _WIN32
+  if (useDarkModeCandidateWindow != nullptr) {
+    config->set_use_dark_mode_candidate_window(
+        useDarkModeCandidateWindow->isChecked());
+  }
+  return;
+#endif  // !_WIN32
+
+  const int candidate_color_theme = GetComboCurrentData(
+      FindComboBox(this, "candidateWindowColorThemeComboBox"),
+      static_cast<int>(config::Config::RENDERER_WINDOW_COLOR_LIGHT));
+  config->set_candidate_window_color_theme(
+      static_cast<config::Config::RendererWindowColorTheme>(
+          candidate_color_theme));
+  config->set_use_dark_mode_candidate_window(
+      candidate_color_theme ==
+      static_cast<int>(config::Config::RENDERER_WINDOW_COLOR_DARK));
+
+  config->set_suggest_window_color_theme(
+      static_cast<config::Config::RendererWindowColorTheme>(
+          GetComboCurrentData(
+              FindComboBox(this, "suggestWindowColorThemeComboBox"),
+              static_cast<int>(
+                  config::Config::RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE))));
+  config->set_ruby_window_color_theme(
+      static_cast<config::Config::RendererWindowColorTheme>(
+          GetComboCurrentData(
+              FindComboBox(this, "rubyWindowColorThemeComboBox"),
+              static_cast<int>(
+                  config::Config::RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE))));
+
+  SaveCandidatePaletteToProto(this, QStringLiteral("candidateWindow"),
+                              config->mutable_candidate_window_custom_color_palette());
+  SaveCandidatePaletteToProto(this, QStringLiteral("suggestWindow"),
+                              config->mutable_suggest_window_custom_color_palette());
+  SaveRubyPaletteToProto(this, QStringLiteral("rubyWindow"),
+                         config->mutable_ruby_window_custom_color_palette());
+
+  if (const QSpinBox* spin = FindSpinBox(this, "candidateWindowSizePercentSpinBox")) {
+    config->set_candidate_window_size_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "suggestWindowSizePercentSpinBox")) {
+    config->set_suggest_window_size_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "rubyWindowSizePercentSpinBox")) {
+    config->set_ruby_window_size_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+
+  if (const QSpinBox* spin = FindSpinBox(this, "candidateWindowCornerRadiusSpinBox")) {
+    config->set_candidate_window_custom_corner_radius(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "suggestWindowCornerRadiusSpinBox")) {
+    config->set_suggest_window_custom_corner_radius(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "rubyWindowCornerRadiusSpinBox")) {
+    config->set_ruby_window_custom_corner_radius(
+        static_cast<uint32_t>(spin->value()));
+  }
+
+  if (const QSpinBox* spin = FindSpinBox(this, "candidateWindowOpacityPercentSpinBox")) {
+    config->set_candidate_window_opacity_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "suggestWindowOpacityPercentSpinBox")) {
+    config->set_suggest_window_opacity_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "rubyWindowOpacityPercentSpinBox")) {
+    config->set_ruby_window_opacity_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+
+  if (const QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowSizeSpinBox")) {
+    config->set_candidate_window_shadow_size(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowOpacityPercentSpinBox")) {
+    config->set_candidate_window_shadow_opacity_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowAngleDegreesSpinBox")) {
+    config->set_candidate_window_shadow_angle_degrees(
+        static_cast<uint32_t>(spin->value()) % 360u);
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "candidateWindowShadowDistanceSpinBox")) {
+    config->set_candidate_window_shadow_distance(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowSizeSpinBox")) {
+    config->set_suggest_window_shadow_size(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowOpacityPercentSpinBox")) {
+    config->set_suggest_window_shadow_opacity_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowAngleDegreesSpinBox")) {
+    config->set_suggest_window_shadow_angle_degrees(
+        static_cast<uint32_t>(spin->value()) % 360u);
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "suggestWindowShadowDistanceSpinBox")) {
+    config->set_suggest_window_shadow_distance(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowSizeSpinBox")) {
+    config->set_ruby_window_shadow_size(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowOpacityPercentSpinBox")) {
+    config->set_ruby_window_shadow_opacity_percent(
+        static_cast<uint32_t>(spin->value()));
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowAngleDegreesSpinBox")) {
+    config->set_ruby_window_shadow_angle_degrees(
+        static_cast<uint32_t>(spin->value()) % 360u);
+  }
+  if (const QSpinBox* spin = FindSpinBox(this, "rubyWindowShadowDistanceSpinBox")) {
+    config->set_ruby_window_shadow_distance(
+        static_cast<uint32_t>(spin->value()));
+  }
+}
+
+void ConfigDialog::ResetRendererAppearanceControls() {
+  SetComboCurrentData(FindComboBox(this, "candidateWindowColorThemeComboBox"),
+                      static_cast<int>(
+                          config::Config::RENDERER_WINDOW_COLOR_LIGHT));
+  SetComboCurrentData(FindComboBox(this, "suggestWindowColorThemeComboBox"),
+                      static_cast<int>(config::Config::
+                                           RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE));
+  SetComboCurrentData(FindComboBox(this, "rubyWindowColorThemeComboBox"),
+                      static_cast<int>(config::Config::
+                                           RENDERER_WINDOW_COLOR_FOLLOW_CANDIDATE));
+
+  SetCandidatePaletteButtons(this, QStringLiteral("candidateWindow"),
+                             kLightCandidatePalette);
+  SetCandidatePaletteButtons(this, QStringLiteral("suggestWindow"),
+                             kLightCandidatePalette);
+  SetRubyPaletteButtons(this, QStringLiteral("rubyWindow"), kLightRubyPalette);
+
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowSizePercentSpinBox")) {
+    spin->setValue(100);
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowSizePercentSpinBox")) {
+    spin->setValue(100);
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowSizePercentSpinBox")) {
+    spin->setValue(100);
+  }
+
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowCornerRadiusSpinBox")) {
+    spin->setValue(6);
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowCornerRadiusSpinBox")) {
+    spin->setValue(6);
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowCornerRadiusSpinBox")) {
+    spin->setValue(9);
+  }
+
+  if (QSpinBox* spin = FindSpinBox(this, "candidateWindowOpacityPercentSpinBox")) {
+    spin->setValue(100);
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "suggestWindowOpacityPercentSpinBox")) {
+    spin->setValue(100);
+  }
+  if (QSpinBox* spin = FindSpinBox(this, "rubyWindowOpacityPercentSpinBox")) {
+    spin->setValue(90);
+  }
+
+  struct ShadowDefault {
+    const char* size_name;
+    const char* opacity_name;
+    const char* angle_name;
+    const char* distance_name;
+    int size;
+    int opacity;
+    int angle;
+    int distance;
+  };
+  const ShadowDefault shadow_defaults[] = {
+      {"candidateWindowShadowSizeSpinBox",
+       "candidateWindowShadowOpacityPercentSpinBox",
+       "candidateWindowShadowAngleDegreesSpinBox",
+       "candidateWindowShadowDistanceSpinBox", 12, 30, 45, 6},
+      {"suggestWindowShadowSizeSpinBox",
+       "suggestWindowShadowOpacityPercentSpinBox",
+       "suggestWindowShadowAngleDegreesSpinBox",
+       "suggestWindowShadowDistanceSpinBox", 12, 30, 45, 6},
+      {"rubyWindowShadowSizeSpinBox",
+       "rubyWindowShadowOpacityPercentSpinBox",
+       "rubyWindowShadowAngleDegreesSpinBox",
+       "rubyWindowShadowDistanceSpinBox", 10, 28, 90, 4},
+  };
+  for (const ShadowDefault& shadow_default : shadow_defaults) {
+    if (QSpinBox* spin = FindSpinBox(this, shadow_default.size_name)) {
+      spin->setValue(shadow_default.size);
+    }
+    if (QSpinBox* spin = FindSpinBox(this, shadow_default.opacity_name)) {
+      spin->setValue(shadow_default.opacity);
+    }
+    if (QSpinBox* spin = FindSpinBox(this, shadow_default.angle_name)) {
+      spin->setValue(shadow_default.angle);
+    }
+    if (QSpinBox* spin = FindSpinBox(this, shadow_default.distance_name)) {
+      spin->setValue(shadow_default.distance);
+    }
+  }
+
+  SetComboBoxCurrentFontNameOrAdd(candidateRubyFontComboBox, QString());
+  if (useDarkModeCandidateWindow != nullptr) {
+    useDarkModeCandidateWindow->setChecked(false);
+  }
+
+  UpdateRendererAppearanceControls();
+  EnableApplyButton();
+}
+
+void ConfigDialog::SelectRendererShadowDirectionPreset() {
+  QPushButton* button = qobject_cast<QPushButton*>(sender());
+  if (button == nullptr) {
+    return;
+  }
+
+  const QByteArray angle_spin_name =
+      button->property("angleSpinBox").toString().toLatin1();
+  const QByteArray distance_spin_name =
+      button->property("distanceSpinBox").toString().toLatin1();
+  QSpinBox* angle_spin = FindSpinBox(this, angle_spin_name.constData());
+  QSpinBox* distance_spin =
+      FindSpinBox(this, distance_spin_name.constData());
+  if (angle_spin == nullptr || distance_spin == nullptr) {
+    return;
+  }
+
+  const bool center = button->property("center").toBool();
+  if (center) {
+    distance_spin->setValue(0);
+  } else {
+    angle_spin->setValue(button->property("angle").toInt());
+    if (distance_spin->value() == 0) {
+      distance_spin->setValue(button->property("defaultDistance").toInt());
+    }
+  }
+  UpdateRendererAppearanceControls();
+  EnableApplyButton();
+}
+
+void ConfigDialog::SelectRendererAppearanceColor() {
+  QPushButton *button = qobject_cast<QPushButton *>(sender());
+  if (button == nullptr) {
+    return;
+  }
+  const uint32_t current_rgb = GetColorButtonRgb(button, 0x000000);
+  const QColor selected_color = QColorDialog::getColor(
+      RgbHexToQColor(current_rgb), this, tr("Choose window color"));
+  if (!selected_color.isValid()) {
+    return;
+  }
+  SetColorButton(button, QColorToRgbHex(selected_color));
+  EnableApplyButton();
+}
+
+void ConfigDialog::LoadRendererLightAppearance() {
+  QPushButton* button = qobject_cast<QPushButton*>(sender());
+  if (button == nullptr) {
+    return;
+  }
+  const QString target = button->property("target").toString();
+  if (target == QStringLiteral("rubyWindow")) {
+    SetRubyPaletteButtons(this, target, kLightRubyPalette);
+  } else {
+    SetCandidatePaletteButtons(this, target, kLightCandidatePalette);
+  }
+  EnableApplyButton();
+}
+
+void ConfigDialog::LoadRendererDarkAppearance() {
+  QPushButton* button = qobject_cast<QPushButton*>(sender());
+  if (button == nullptr) {
+    return;
+  }
+  const QString target = button->property("target").toString();
+  if (target == QStringLiteral("rubyWindow")) {
+    SetRubyPaletteButtons(this, target, kDarkRubyPalette);
+  } else {
+    SetCandidatePaletteButtons(this, target, kDarkCandidatePalette);
+  }
+  EnableApplyButton();
+}
+
+void ConfigDialog::LoadRendererCandidateAppearance() {
+  QPushButton* button = qobject_cast<QPushButton*>(sender());
+  if (button == nullptr) {
+    return;
+  }
+  const QString target = button->property("target").toString();
+  const CandidateWindowPaletteDefaults candidate_palette =
+      GetCandidatePaletteButtons(this, QStringLiteral("candidateWindow"),
+                                 kLightCandidatePalette);
+  if (target == QStringLiteral("rubyWindow")) {
+    SetRubyPaletteButtons(
+        this, target,
+        {candidate_palette.background_color, candidate_palette.text_color,
+         candidate_palette.border_color});
+  } else {
+    SetCandidatePaletteButtons(this, target, candidate_palette);
+  }
+  EnableApplyButton();
+}
+
+void ConfigDialog::UpdateRendererAppearanceControls() {
+  auto enable_candidate_palette = [&](const QString& prefix, bool enabled) {
+    if (QWidget* box = findChild<QWidget*>(prefix + QStringLiteral("PaletteGroupBox"))) {
+      box->setEnabled(enabled);
+    }
+  };
+  const int custom_color =
+      static_cast<int>(config::Config::RENDERER_WINDOW_COLOR_CUSTOM);
+  enable_candidate_palette(
+      QStringLiteral("candidateWindow"),
+      GetComboCurrentData(FindComboBox(this, "candidateWindowColorThemeComboBox"),
+                          custom_color) == custom_color);
+  enable_candidate_palette(
+      QStringLiteral("suggestWindow"),
+      GetComboCurrentData(FindComboBox(this, "suggestWindowColorThemeComboBox"),
+                          custom_color) == custom_color);
+  enable_candidate_palette(
+      QStringLiteral("rubyWindow"),
+      GetComboCurrentData(FindComboBox(this, "rubyWindowColorThemeComboBox"),
+                          custom_color) == custom_color);
+
+  auto update_shadow_angle_enabled = [&](const char* distance_name,
+                                         const char* angle_name) {
+    QSpinBox* distance_spin = FindSpinBox(this, distance_name);
+    QSpinBox* angle_spin = FindSpinBox(this, angle_name);
+    if (distance_spin == nullptr || angle_spin == nullptr) {
+      return;
+    }
+    angle_spin->setEnabled(distance_spin->value() > 0);
+  };
+  update_shadow_angle_enabled("candidateWindowShadowDistanceSpinBox",
+                              "candidateWindowShadowAngleDegreesSpinBox");
+  update_shadow_angle_enabled("suggestWindowShadowDistanceSpinBox",
+                              "suggestWindowShadowAngleDegreesSpinBox");
+  update_shadow_angle_enabled("rubyWindowShadowDistanceSpinBox",
+                              "rubyWindowShadowAngleDegreesSpinBox");
+}
 
 void ConfigDialog::SelectPreeditColor() {
   QPushButton *button = qobject_cast<QPushButton *>(sender());

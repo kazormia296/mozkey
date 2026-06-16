@@ -29,6 +29,9 @@
 
 #include "renderer/renderer_style_handler.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <string>
 
 #include "absl/log/check.h"
@@ -48,6 +51,72 @@ void SetColor(RendererStyle::RGBAColor* color, int r, int g, int b) {
   color->set_r(r);
   color->set_g(g);
   color->set_b(b);
+}
+
+void SetRgbColor(RendererStyle::RGBAColor* color, uint32_t rgb) {
+  SetColor(color, static_cast<int>((rgb >> 16) & 0xff),
+           static_cast<int>((rgb >> 8) & 0xff),
+           static_cast<int>(rgb & 0xff));
+}
+
+uint32_t ToRgb(const RendererStyle::RGBAColor& color, uint32_t fallback) {
+  if (!color.IsInitialized()) {
+    return fallback;
+  }
+  return ((static_cast<uint32_t>(color.r()) & 0xff) << 16) |
+         ((static_cast<uint32_t>(color.g()) & 0xff) << 8) |
+         (static_cast<uint32_t>(color.b()) & 0xff);
+}
+
+
+int ScaleIntegerMetric(int value, uint32_t percent) {
+  if (value <= 0) {
+    return 0;
+  }
+  return std::max(1, static_cast<int>(std::lround(
+                         static_cast<double>(value) * percent / 100.0)));
+}
+
+double ScaleFontSize(double value, uint32_t percent) {
+  if (value <= 0) {
+    return value;
+  }
+  return static_cast<double>(value) * percent / 100.0;
+}
+
+void ScaleTextStyle(RendererStyle::TextStyle* style, uint32_t percent) {
+  if (style == nullptr) {
+    return;
+  }
+  if (style->has_font_size()) {
+    style->set_font_size(ScaleFontSize(style->font_size(), percent));
+  }
+  if (style->has_left_padding()) {
+    style->set_left_padding(
+        ScaleIntegerMetric(style->left_padding(), percent));
+  }
+  if (style->has_right_padding()) {
+    style->set_right_padding(
+        ScaleIntegerMetric(style->right_padding(), percent));
+  }
+}
+
+RendererStyleHandler::RubyWindowStyle RubyStyleFromRendererStyle(
+    const RendererStyle& style) {
+  RendererStyleHandler::RubyWindowStyle ruby_style;
+  if (style.has_border_color()) {
+    ruby_style.border_color = ToRgb(style.border_color(), ruby_style.border_color);
+  }
+  if (style.candidate_style().has_background_color()) {
+    ruby_style.background_color =
+        ToRgb(style.candidate_style().background_color(),
+              ruby_style.background_color);
+  }
+  if (style.candidate_style().has_foreground_color()) {
+    ruby_style.text_color = ToRgb(style.candidate_style().foreground_color(),
+                                  ruby_style.text_color);
+  }
+  return ruby_style;
 }
 
 void ApplyLightCandidateWindowTheme(RendererStyle* style) {
@@ -164,11 +233,33 @@ class RendererStyleHandlerImpl {
   ~RendererStyleHandlerImpl() = default;
 
   bool GetRendererStyle(RendererStyle* style);
+  bool GetRendererStyleForWindowType(
+      RendererStyleHandler::RendererStyleType type, RendererStyle* style);
   bool SetRendererStyle(const RendererStyle& style);
+  bool SetRendererWindowStyles(
+      const RendererStyle& candidate_style, const RendererStyle& suggestion_style,
+      const RendererStyleHandler::RubyWindowStyle& ruby_style,
+      uint32_t candidate_corner_radius, uint32_t suggestion_corner_radius,
+      const RendererStyleHandler::CandidateWindowEffectStyle&
+          candidate_effect_style,
+      const RendererStyleHandler::CandidateWindowEffectStyle&
+          suggestion_effect_style);
   void GetDefaultRendererStyle(RendererStyle* style);
+  uint32_t GetCandidateWindowCornerRadius(
+      RendererStyleHandler::RendererStyleType type) const;
+  RendererStyleHandler::CandidateWindowEffectStyle
+  GetCandidateWindowEffectStyle(
+      RendererStyleHandler::RendererStyleType type) const;
+  RendererStyleHandler::RubyWindowStyle GetRubyWindowStyle() const;
 
  private:
-  RendererStyle style_;
+  RendererStyle candidate_style_;
+  RendererStyle suggestion_style_;
+  RendererStyleHandler::RubyWindowStyle ruby_style_;
+  uint32_t candidate_corner_radius_ = 6;
+  uint32_t suggestion_corner_radius_ = 6;
+  RendererStyleHandler::CandidateWindowEffectStyle candidate_effect_style_;
+  RendererStyleHandler::CandidateWindowEffectStyle suggestion_effect_style_;
 };
 
 RendererStyleHandlerImpl* GetRendererStyleHandlerImpl() {
@@ -176,19 +267,61 @@ RendererStyleHandlerImpl* GetRendererStyleHandlerImpl() {
 }
 
 RendererStyleHandlerImpl::RendererStyleHandlerImpl() {
-  GetDefaultRendererStyle(&style_);
+  GetDefaultRendererStyle(&candidate_style_);
+  suggestion_style_ = candidate_style_;
+  ruby_style_ = RubyStyleFromRendererStyle(candidate_style_);
 }
 
 bool RendererStyleHandlerImpl::GetRendererStyle(RendererStyle* style) {
   if (style == nullptr) {
     return false;
   }
-  *style = style_;
+  *style = candidate_style_;
   return true;
 }
 
+bool RendererStyleHandlerImpl::GetRendererStyleForWindowType(
+    RendererStyleHandler::RendererStyleType type, RendererStyle* style) {
+  if (style == nullptr) {
+    return false;
+  }
+  switch (type) {
+    case RendererStyleHandler::RendererStyleType::kCandidate:
+      *style = candidate_style_;
+      return true;
+    case RendererStyleHandler::RendererStyleType::kSuggestion:
+      *style = suggestion_style_;
+      return true;
+  }
+  return false;
+}
+
 bool RendererStyleHandlerImpl::SetRendererStyle(const RendererStyle& style) {
-  style_ = style;
+  candidate_style_ = style;
+  suggestion_style_ = style;
+  ruby_style_ = RubyStyleFromRendererStyle(style);
+  candidate_corner_radius_ = 6;
+  suggestion_corner_radius_ = 6;
+  candidate_effect_style_ = RendererStyleHandler::CandidateWindowEffectStyle();
+  suggestion_effect_style_ = RendererStyleHandler::CandidateWindowEffectStyle();
+  return true;
+}
+
+bool RendererStyleHandlerImpl::SetRendererWindowStyles(
+    const RendererStyle& candidate_style, const RendererStyle& suggestion_style,
+    const RendererStyleHandler::RubyWindowStyle& ruby_style,
+    uint32_t candidate_corner_radius, uint32_t suggestion_corner_radius,
+    const RendererStyleHandler::CandidateWindowEffectStyle&
+        candidate_effect_style,
+    const RendererStyleHandler::CandidateWindowEffectStyle&
+        suggestion_effect_style) {
+  candidate_style_ = candidate_style;
+  suggestion_style_ = suggestion_style;
+  ruby_style_ = ruby_style;
+  candidate_corner_radius_ = candidate_corner_radius;
+  suggestion_corner_radius_ = suggestion_corner_radius;
+  candidate_effect_style_ = candidate_effect_style;
+  suggestion_effect_style_ = suggestion_effect_style;
   return true;
 }
 
@@ -199,6 +332,34 @@ void RendererStyleHandlerImpl::GetDefaultRendererStyle(RendererStyle* style) {
   ApplyLightCandidateWindowTheme(style);
 }
 
+uint32_t RendererStyleHandlerImpl::GetCandidateWindowCornerRadius(
+    RendererStyleHandler::RendererStyleType type) const {
+  switch (type) {
+    case RendererStyleHandler::RendererStyleType::kCandidate:
+      return candidate_corner_radius_;
+    case RendererStyleHandler::RendererStyleType::kSuggestion:
+      return suggestion_corner_radius_;
+  }
+  return candidate_corner_radius_;
+}
+
+RendererStyleHandler::CandidateWindowEffectStyle
+RendererStyleHandlerImpl::GetCandidateWindowEffectStyle(
+    RendererStyleHandler::RendererStyleType type) const {
+  switch (type) {
+    case RendererStyleHandler::RendererStyleType::kCandidate:
+      return candidate_effect_style_;
+    case RendererStyleHandler::RendererStyleType::kSuggestion:
+      return suggestion_effect_style_;
+  }
+  return candidate_effect_style_;
+}
+
+RendererStyleHandler::RubyWindowStyle
+RendererStyleHandlerImpl::GetRubyWindowStyle() const {
+  return ruby_style_;
+}
+
 }  // namespace
 
 bool RendererStyleHandler::GetRendererStyle(RendererStyle* style) {
@@ -207,6 +368,37 @@ bool RendererStyleHandler::GetRendererStyle(RendererStyle* style) {
 
 bool RendererStyleHandler::SetRendererStyle(const RendererStyle& style) {
   return GetRendererStyleHandlerImpl()->SetRendererStyle(style);
+}
+
+bool RendererStyleHandler::GetRendererStyleForWindowType(
+    RendererStyleType type, RendererStyle* style) {
+  return GetRendererStyleHandlerImpl()->GetRendererStyleForWindowType(type,
+                                                                      style);
+}
+
+bool RendererStyleHandler::SetRendererWindowStyles(
+    const RendererStyle& candidate_style, const RendererStyle& suggestion_style,
+    const RubyWindowStyle& ruby_style, uint32_t candidate_corner_radius,
+    uint32_t suggestion_corner_radius,
+    const CandidateWindowEffectStyle& candidate_effect_style,
+    const CandidateWindowEffectStyle& suggestion_effect_style) {
+  return GetRendererStyleHandlerImpl()->SetRendererWindowStyles(
+      candidate_style, suggestion_style, ruby_style, candidate_corner_radius,
+      suggestion_corner_radius, candidate_effect_style, suggestion_effect_style);
+}
+
+uint32_t RendererStyleHandler::GetCandidateWindowCornerRadius(
+    RendererStyleType type) {
+  return GetRendererStyleHandlerImpl()->GetCandidateWindowCornerRadius(type);
+}
+
+RendererStyleHandler::CandidateWindowEffectStyle
+RendererStyleHandler::GetCandidateWindowEffectStyle(RendererStyleType type) {
+  return GetRendererStyleHandlerImpl()->GetCandidateWindowEffectStyle(type);
+}
+
+RendererStyleHandler::RubyWindowStyle RendererStyleHandler::GetRubyWindowStyle() {
+  return GetRendererStyleHandlerImpl()->GetRubyWindowStyle();
 }
 
 void RendererStyleHandler::GetDefaultRendererStyle(RendererStyle* style) {
@@ -223,6 +415,101 @@ void RendererStyleHandler::ApplyCandidateWindowTheme(bool use_dark_mode,
   } else {
     ApplyLightCandidateWindowTheme(style);
   }
+}
+
+void RendererStyleHandler::ApplyCandidateWindowCustomColors(
+    uint32_t background_color, uint32_t text_color,
+    uint32_t selected_background_color, uint32_t selected_border_color,
+    uint32_t border_color, uint32_t shortcut_text_color,
+    uint32_t shortcut_background_color, uint32_t description_text_color,
+    uint32_t footer_text_color, uint32_t footer_background_color,
+    uint32_t footer_border_color, uint32_t scrollbar_background_color,
+    uint32_t scrollbar_indicator_color, RendererStyle* style) {
+  if (style == nullptr) {
+    return;
+  }
+
+  SetRgbColor(style->mutable_border_color(), border_color);
+  SetRgbColor(style->mutable_shortcut_style()->mutable_foreground_color(),
+              shortcut_text_color);
+  SetRgbColor(style->mutable_shortcut_style()->mutable_background_color(),
+              shortcut_background_color);
+  SetRgbColor(style->mutable_candidate_style()->mutable_foreground_color(),
+              text_color);
+  SetRgbColor(style->mutable_candidate_style()->mutable_background_color(),
+              background_color);
+  SetRgbColor(style->mutable_description_style()->mutable_foreground_color(),
+              description_text_color);
+  SetRgbColor(style->mutable_description_style()->mutable_background_color(),
+              background_color);
+  SetRgbColor(style->mutable_footer_style()->mutable_foreground_color(),
+              footer_text_color);
+  SetRgbColor(style->mutable_footer_sub_label_style()->mutable_foreground_color(),
+              footer_text_color);
+  if (style->footer_border_colors_size() == 0) {
+    style->add_footer_border_colors();
+  }
+  SetRgbColor(style->mutable_footer_border_colors(0), footer_border_color);
+  SetRgbColor(style->mutable_footer_top_color(), footer_background_color);
+  SetRgbColor(style->mutable_footer_bottom_color(), footer_background_color);
+  SetRgbColor(style->mutable_focused_background_color(),
+              selected_background_color);
+  SetRgbColor(style->mutable_focused_border_color(), selected_border_color);
+  SetRgbColor(style->mutable_scrollbar_background_color(),
+              scrollbar_background_color);
+  SetRgbColor(style->mutable_scrollbar_indicator_color(),
+              scrollbar_indicator_color);
+
+  RendererStyle::InfolistStyle* infostyle = style->mutable_infolist_style();
+  SetRgbColor(infostyle->mutable_caption_style()->mutable_foreground_color(),
+              text_color);
+  SetRgbColor(infostyle->mutable_title_style()->mutable_foreground_color(),
+              text_color);
+  SetRgbColor(infostyle->mutable_title_style()->mutable_background_color(),
+              background_color);
+  SetRgbColor(infostyle->mutable_description_style()->mutable_foreground_color(),
+              description_text_color);
+  SetRgbColor(infostyle->mutable_description_style()->mutable_background_color(),
+              background_color);
+  SetRgbColor(infostyle->mutable_border_color(), border_color);
+  SetRgbColor(infostyle->mutable_caption_background_color(),
+              shortcut_background_color);
+  SetRgbColor(infostyle->mutable_focused_background_color(),
+              selected_background_color);
+  SetRgbColor(infostyle->mutable_focused_border_color(),
+              selected_border_color);
+}
+
+void RendererStyleHandler::ApplyCandidateWindowSize(uint32_t size_percent,
+                                                    RendererStyle* style) {
+  if (style == nullptr || size_percent == 100) {
+    return;
+  }
+
+  ScaleTextStyle(style->mutable_shortcut_style(), size_percent);
+  ScaleTextStyle(style->mutable_gap1_style(), size_percent);
+  ScaleTextStyle(style->mutable_candidate_style(), size_percent);
+  ScaleTextStyle(style->mutable_description_style(), size_percent);
+  ScaleTextStyle(style->mutable_footer_style(), size_percent);
+  ScaleTextStyle(style->mutable_footer_sub_label_style(), size_percent);
+
+  style->set_scrollbar_width(
+      ScaleIntegerMetric(style->scrollbar_width(), size_percent));
+  style->set_row_rect_padding(
+      ScaleIntegerMetric(style->row_rect_padding(), size_percent));
+
+  RendererStyle::InfolistStyle* infostyle = style->mutable_infolist_style();
+  infostyle->set_caption_height(
+      ScaleIntegerMetric(infostyle->caption_height(), size_percent));
+  infostyle->set_caption_padding(
+      ScaleIntegerMetric(infostyle->caption_padding(), size_percent));
+  infostyle->set_row_rect_padding(
+      ScaleIntegerMetric(infostyle->row_rect_padding(), size_percent));
+  infostyle->set_window_width(
+      ScaleIntegerMetric(infostyle->window_width(), size_percent));
+  ScaleTextStyle(infostyle->mutable_caption_style(), size_percent);
+  ScaleTextStyle(infostyle->mutable_title_style(), size_percent);
+  ScaleTextStyle(infostyle->mutable_description_style(), size_percent);
 }
 
 void RendererStyleHandler::ApplyCandidateRubyFont(
