@@ -146,6 +146,16 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
+        <source>When live conversion is off, pressing Space once converts the current composition and opens the candidate window without advancing to the second candidate.</source>
+        <translation>When live conversion is off, pressing Space once converts the current composition and opens the candidate window without advancing to the second candidate.</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
+        <source>Open candidate window on first Space (live conversion off)</source>
+        <translation>Open candidate window on first Space (live conversion off)</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
         <source>Show ruby window during live conversion</source>
         <translation></translation>
     </message>

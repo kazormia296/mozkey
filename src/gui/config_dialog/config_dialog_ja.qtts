@@ -286,6 +286,16 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
+        <source>When live conversion is off, pressing Space once converts the current composition and opens the candidate window without advancing to the second candidate.</source>
+        <translation>ライブ変換がオフのとき、スペースキーを1回押すだけで現在の未確定文字列を変換し、第2候補へ進まずに候補ウィンドウを開きます。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
+        <source>Open candidate window on first Space (live conversion off)</source>
+        <translation>スペースキー1回で候補ウィンドウを開く（ライブ変換OFF時）</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
         <source>Show ruby window during live conversion</source>
         <translation>ライブ変換中にルビ表示を出す</translation>
     </message>
