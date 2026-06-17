@@ -2071,8 +2071,8 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   SET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
-  SET_CHECKBOX(showCandidateWindowOnInitialSpaceConversionCheckBox,
-               show_candidate_window_on_initial_space_conversion);
+  SET_CHECKBOX(showCandidateWindowOnInitialConversionCheckBox,
+               show_candidate_window_on_initial_conversion);
 
   const uint32_t live_conversion_delay_msec =
       config.has_live_conversion_delay_msec()
@@ -2304,8 +2304,8 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   GET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
-  GET_CHECKBOX(showCandidateWindowOnInitialSpaceConversionCheckBox,
-               show_candidate_window_on_initial_space_conversion);
+  GET_CHECKBOX(showCandidateWindowOnInitialConversionCheckBox,
+               show_candidate_window_on_initial_conversion);
   config->set_live_conversion_delay_msec(
       static_cast<uint32_t>(liveConversionDelaySpinBox->value()));
   config->set_live_conversion_min_key_length(
@@ -3086,7 +3086,7 @@ void ConfigDialog::SelectLiveConversionSetting(int state) {
   liveConversionMinKeyLengthLabel->setEnabled(enabled);
   liveConversionMinKeyLengthSpinBox->setEnabled(enabled);
   showLiveConversionRubyWindow->setEnabled(enabled);
-  showCandidateWindowOnInitialSpaceConversionCheckBox->setEnabled(!enabled);
+  showCandidateWindowOnInitialConversionCheckBox->setEnabled(!enabled);
 
   zenzLiveCorrectionCheckBox->setEnabled(enabled);
   SelectZenzLiveCorrectionSetting(

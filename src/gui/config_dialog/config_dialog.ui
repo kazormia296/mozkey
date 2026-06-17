@@ -902,12 +902,12 @@
          </item>
 
          <item row="9" column="0" colspan="8">
-          <widget class="QCheckBox" name="showCandidateWindowOnInitialSpaceConversionCheckBox">
+          <widget class="QCheckBox" name="showCandidateWindowOnInitialConversionCheckBox">
            <property name="toolTip">
-            <string>When live conversion is off, pressing Space once converts the current composition and opens the candidate window without advancing to the second candidate.</string>
+            <string>When live conversion is off, the first conversion action opens the candidate window without advancing to the second candidate.</string>
            </property>
            <property name="text">
-            <string>Open candidate window on first Space (live conversion off)</string>
+            <string>Open candidate window on first conversion action (live conversion off)</string>
            </property>
           </widget>
          </item>
@@ -2763,7 +2763,7 @@
   <tabstop>useDarkModeCandidateWindow</tabstop>
   <tabstop>candidateRubyFontComboBox</tabstop>
   <tabstop>autoSwitchCompositionMode</tabstop>
-  <tabstop>showCandidateWindowOnInitialSpaceConversionCheckBox</tabstop>
+  <tabstop>showCandidateWindowOnInitialConversionCheckBox</tabstop>
   <tabstop>liveConversionCheckBox</tabstop>
   <tabstop>liveConversionDelaySpinBox</tabstop>
   <tabstop>liveConversionMinKeyLengthSpinBox</tabstop>

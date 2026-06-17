@@ -3761,7 +3761,7 @@ TEST_F(SessionTest, Conversion) {
 }
 
 TEST_F(SessionTest,
-       InitialSpaceConversionCanOpenCandidateWindowWithoutMovingCandidate) {
+       InitialConversionCanOpenCandidateWindowWithoutMovingCandidate) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
 
@@ -3772,7 +3772,7 @@ TEST_F(SessionTest,
   config::ConfigHandler::GetDefaultConfig(&config);
   config.set_session_keymap(config::Config::MSIME);
   config.set_use_live_conversion(false);
-  config.set_show_candidate_window_on_initial_space_conversion(true);
+  config.set_show_candidate_window_on_initial_conversion(true);
   session.SetConfig(config);
   session.SetKeyMapManager(std::make_shared<keymap::KeyMapManager>(config));
 
@@ -3811,7 +3811,79 @@ TEST_F(SessionTest,
 }
 
 TEST_F(SessionTest,
-       InitialSpaceConversionOptionIsIgnoredWhileLiveConversionIsEnabled) {
+       InitialConversionCanOpenCandidateWindowForNonSpaceConvertCommand) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_session_keymap(config::Config::MSIME);
+  config.set_use_live_conversion(false);
+  config.set_show_candidate_window_on_initial_conversion(true);
+  session.SetConfig(config);
+  session.SetKeyMapManager(std::make_shared<keymap::KeyMapManager>(config));
+
+  commands::Command command;
+  InsertCharacterChars("aiueo", &session, &command);
+  const ConversionRequest request = CreateConversionRequest(session);
+  Segments segments;
+  SetAiueo(&segments);
+  FillT13Ns(request, &segments);
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  command.Clear();
+  command.mutable_input()->set_type(commands::Input::SEND_KEY);
+  command.mutable_input()->mutable_key()->set_key_code('x');
+  ASSERT_TRUE(session.Convert(&command));
+
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_SINGLE_SEGMENT("あいうえお", command);
+  ASSERT_TRUE(command.output().has_candidate_window());
+  EXPECT_EQ(command.output().candidate_window().category(), commands::CONVERSION);
+  ASSERT_TRUE(command.output().candidate_window().has_focused_index());
+  EXPECT_EQ(command.output().candidate_window().focused_index(), 0);
+}
+
+TEST_F(SessionTest, InitialConversionOptionCanBeDisabled) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_session_keymap(config::Config::MSIME);
+  config.set_use_live_conversion(false);
+  config.set_show_candidate_window_on_initial_conversion(false);
+  session.SetConfig(config);
+  session.SetKeyMapManager(std::make_shared<keymap::KeyMapManager>(config));
+
+  commands::Command command;
+  InsertCharacterChars("aiueo", &session, &command);
+  const ConversionRequest request = CreateConversionRequest(session);
+  Segments segments;
+  SetAiueo(&segments);
+  FillT13Ns(request, &segments);
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(SendSpecialKey(commands::KeyEvent::SPACE, &session, &command));
+
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_SINGLE_SEGMENT("あいうえお", command);
+  EXPECT_FALSE(command.output().has_candidate_window());
+}
+
+TEST_F(SessionTest,
+       InitialConversionOptionIsIgnoredWhileLiveConversionIsEnabled) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
 
@@ -3822,7 +3894,7 @@ TEST_F(SessionTest,
   config::ConfigHandler::GetDefaultConfig(&config);
   config.set_session_keymap(config::Config::MSIME);
   config.set_use_live_conversion(true);
-  config.set_show_candidate_window_on_initial_space_conversion(true);
+  config.set_show_candidate_window_on_initial_conversion(true);
   session.SetConfig(config);
   session.SetKeyMapManager(std::make_shared<keymap::KeyMapManager>(config));
 
