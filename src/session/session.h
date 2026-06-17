@@ -561,7 +561,7 @@ class Session {
   bool OutputZenzLiveCorrection(
       absl::string_view value,
       mozc::commands::Command* command);
-  bool RevertZenzLiveCorrectionToLiveConversion(
+  bool RevertZenzLiveCorrectionToNormalConversion(
       mozc::commands::Command* command);
   bool CommitZenzLiveCorrectionResult(mozc::commands::Command* command);
 

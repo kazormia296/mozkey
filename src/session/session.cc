@@ -3495,15 +3495,15 @@ bool Session::SendKeyConversionState(commands::Command* command) {
           remaining_sequence, &zenz_commit_output, command);
     }
 
-    // While a zenz correction is visible, the first plain Space should peel off
-    // only the speculative correction layer and return to the stable Mozc live
-    // conversion result.  The next Space can then enter normal candidate
-    // navigation as usual.  Other candidate-navigation keys keep their explicit
-    // navigation semantics.
+    // While a zenz correction is visible, plain Space is an explicit
+    // candidate-change operation.  Reject the speculative zenz layer and
+    // restore the underlying Mozc conversion, but promote it to ordinary
+    // conversion state so the next text input commits it instead of extending
+    // the same live-conversion composition.
     if (key_command == keymap::ConversionState::CONVERT_NEXT &&
         IsPureSpaceKey(input_key) &&
         HasVisibleZenzLiveCorrection()) {
-      return RevertZenzLiveCorrectionToLiveConversion(command);
+      return RevertZenzLiveCorrectionToNormalConversion(command);
     }
 
     // A prediction key such as Tab should focus prediction candidates even while
@@ -5956,14 +5956,14 @@ bool Session::OutputZenzLiveCorrection(
   return true;
 }
 
-bool Session::RevertZenzLiveCorrectionToLiveConversion(
+bool Session::RevertZenzLiveCorrectionToNormalConversion(
     commands::Command* command) {
   if (!HasVisibleZenzLiveCorrection()) {
     return false;
   }
 
   ZenzDebugOutput(absl::StrCat(
-      "[zenz-feedback] revert zenz correction to mozc live conversion ",
+      "[zenz-feedback] revert zenz correction to mozc normal conversion ",
       ZenzRedactedTextStats("key", zenz_live_key_),
       " ", ZenzRedactedTextStats("zenz_value", zenz_live_value_),
       " ", ZenzRedactedTextStats("mozc_value", zenz_live_mozc_value_),
@@ -5972,30 +5972,35 @@ bool Session::RevertZenzLiveCorrectionToLiveConversion(
   SetPendingZenzFeedbackRejected("space_revert_zenz_to_mozc");
 
   const commands::Preedit live_preedit = live_conversion_preedit_output_;
-  ClearZenzLiveCorrectionState();
+  const std::string live_value = live_conversion_value_;
+
+  // This Space is already a conversion operation.  After peeling off the zenz
+  // layer, keep the converter's current segments but leave live conversion
+  // mode.  This makes the next character input follow normal conversion
+  // semantics: commit the restored Mozc result first, then start a new
+  // composition.
+  ClearLiveConversionState();
+  context_->mutable_converter()->SetCandidateListVisible(false);
 
   command->mutable_output()->set_consumed(true);
   OutputMode(command);
 
   commands::Output* output = command->mutable_output();
   output->clear_candidate_window();
-  output->set_live_conversion(true);
-  output->set_live_conversion_pending(false);
-  output->set_zenz_live_correction_pending(false);
-  output->set_zenz_live_correction_applied(false);
 
   if (live_preedit.segment_size() > 0) {
     *output->mutable_preedit() = live_preedit;
-    output->mutable_preedit()->set_cursor(
-        Util::CharsLen(live_conversion_value_));
+    output->mutable_preedit()->set_cursor(Util::CharsLen(live_value));
   } else {
     Output(command);
+    output = command->mutable_output();
     output->clear_candidate_window();
-    output->set_live_conversion(true);
-    output->set_live_conversion_pending(false);
-    output->set_zenz_live_correction_pending(false);
-    output->set_zenz_live_correction_applied(false);
   }
+
+  output->set_live_conversion(false);
+  output->set_live_conversion_pending(false);
+  output->set_zenz_live_correction_pending(false);
+  output->set_zenz_live_correction_applied(false);
 
   return true;
 }
@@ -6379,6 +6384,13 @@ bool Session::InsertCharacter(commands::Command* command) {
   if (should_commit) {
     CommitNotTriggeringZeroQuerySuggest(command);
     committed_conversion_before_insert = true;
+
+    // HandlePendingZenzFeedbackForKeyEvent() intentionally does not confirm
+    // feedback while the session is still in CONVERSION, because conversion
+    // keys may still be part of selecting the result.  An ordinary text input
+    // that reaches this point has already committed the current conversion, so
+    // it is now the next real text input after the zenz decision.
+    ConfirmPendingZenzFeedback();
 
     if (key.input_style() == commands::KeyEvent::DIRECT_INPUT) {
       // Do ClearUndoContext() because it is a direct input.

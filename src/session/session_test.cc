@@ -1327,7 +1327,7 @@ TEST_F(SessionTest,
 }
 
 TEST_F(SessionTest,
-       SpaceWhileZenzLiveCorrectionVisibleRevertsToMozcLiveConversion) {
+       SpaceWhileZenzLiveCorrectionVisibleRevertsToMozcNormalConversion) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
 
@@ -1374,7 +1374,7 @@ TEST_F(SessionTest,
   EXPECT_TRUE(SendSpecialKey(commands::KeyEvent::SPACE, &session, &command));
 
   EXPECT_TRUE(command.output().consumed());
-  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_FALSE(command.output().live_conversion());
   EXPECT_FALSE(command.output().live_conversion_pending());
   EXPECT_FALSE(command.output().zenz_live_correction_pending());
   EXPECT_FALSE(command.output().zenz_live_correction_applied());
@@ -1382,7 +1382,7 @@ TEST_F(SessionTest,
   EXPECT_PREEDIT("彼は点滴です", command);
 
   EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
-  EXPECT_TRUE(session_peer.live_conversion_active_());
+  EXPECT_FALSE(session_peer.live_conversion_active_());
   EXPECT_TRUE(session_peer.zenz_live_key_().empty());
   EXPECT_TRUE(session_peer.zenz_live_value_().empty());
   EXPECT_TRUE(session_peer.zenz_live_mozc_value_().empty());
@@ -1395,6 +1395,83 @@ TEST_F(SessionTest,
             "彼は天敵です");
   EXPECT_EQ(session_peer.pending_zenz_feedback_().reason,
             "space_revert_zenz_to_mozc");
+}
+
+TEST_F(SessionTest,
+       TextInputAfterZenzSpaceRevertCommitsMozcNormalConversion) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  commands::Command command;
+  InsertCharacterChars("karehatentekidesu", &session, &command);
+  ASSERT_EQ(session.context().composer().GetQueryForConversion(),
+            "かれはてんてきです");
+
+  const ConversionRequest request = CreateConversionRequest(session);
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key("かれは");
+  AddCandidate("かれは", "彼は", segment);
+
+  segment = segments.add_segment();
+  segment->set_key("てんてきです");
+  AddCandidate("てんてきです", "点滴です", segment);
+
+  FillT13Ns(request, &segments);
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  command.Clear();
+  ASSERT_TRUE(session.Convert(&command));
+  ASSERT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_PREEDIT("彼は点滴です", command);
+  Mock::VerifyAndClearExpectations(converter.get());
+
+  EnableZenzLiveCorrectionWithFeedbackLearning(&session);
+
+  session_peer.zenz_feedback_store_().RecordAccepted(
+      "かれはてんてきです",
+      "japanese_only",
+      "彼は天敵です");
+  ASSERT_FALSE(session_peer.zenz_feedback_store_().ListEntries().empty());
+
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "かれはてんてきです";
+  session_peer.live_conversion_preedit_() = "かれはてんてきです";
+  session_peer.live_conversion_value_() = "彼は点滴です";
+  session_peer.live_conversion_preedit_output_() = command.output().preedit();
+
+  command.Clear();
+  ASSERT_TRUE(session_peer.MaybeApplyZenzFeedbackLiveCorrection(&command));
+  ASSERT_TRUE(command.output().zenz_live_correction_applied());
+  EXPECT_PREEDIT("彼は天敵です", command);
+
+  command.Clear();
+  ASSERT_TRUE(SendSpecialKey(commands::KeyEvent::SPACE, &session, &command));
+  EXPECT_FALSE(command.output().live_conversion());
+  EXPECT_FALSE(command.output().has_candidate_window());
+  EXPECT_PREEDIT("彼は点滴です", command);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+
+  EXPECT_CALL(*converter, CommitSegmentValue(_, _, _))
+      .WillRepeatedly(Return(true));
+
+  command.Clear();
+  ASSERT_TRUE(SendKey("a", &session, &command));
+
+  EXPECT_RESULT("彼は点滴です", command);
+  EXPECT_PREEDIT("あ", command);
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  EXPECT_FALSE(session_peer.pending_zenz_feedback_().pending);
 }
 
 TEST_F(SessionTest,
