@@ -326,7 +326,8 @@ void MozcResponseParser::ExecuteCallback(const mozc::commands::Output& response,
       session_command.set_text(surrounding_text_info.selection_text);
       break;
     }
-    case mozc::commands::SessionCommand::APPLY_LIVE_CONVERSION: {
+    case mozc::commands::SessionCommand::APPLY_LIVE_CONVERSION:
+    case mozc::commands::SessionCommand::APPLY_ZENZ_LIVE_CORRECTION: {
       if (callback_command.has_live_conversion_generation()) {
         session_command.set_live_conversion_generation(
             callback_command.live_conversion_generation());
