@@ -1234,19 +1234,17 @@ void StartLlamaServerInBackground(const Options& options) {
     return;
   }
 
-  std::thread([options]() {
-    std::wstring launch_error;
-    if (!LaunchLlamaServer(options, &launch_error)) {
-      Debug(L"background launch failed: " + launch_error);
-      g_llama_launch_started = false;
-      g_llama_ready_probe_started = false;
-      g_llama_server_ready = false;
-      return;
-    }
+  std::wstring launch_error;
+  if (!LaunchLlamaServer(options, &launch_error)) {
+    Debug(L"background launch failed: " + launch_error);
+    g_llama_launch_started = false;
+    g_llama_ready_probe_started = false;
+    g_llama_server_ready = false;
+    return;
+  }
 
-    Debug(L"background launch requested");
-    StartLlamaReadyProbeInBackground(options);
-  }).detach();
+  Debug(L"background launch requested");
+  StartLlamaReadyProbeInBackground(options);
 }
 
 void StartLlamaReadyProbeInBackground(const Options& options) {
@@ -1822,18 +1820,16 @@ void StartLlamaServerInBackground(const Options& options) {
     return;
   }
 
-  std::thread([options]() {
-    std::string launch_error;
-    if (!LaunchLlamaServer(options, &launch_error)) {
-      Debug("background launch failed: " + launch_error);
-      g_llama_launch_started = false;
-      g_llama_ready_probe_started = false;
-      g_llama_server_ready = false;
-      return;
-    }
-    Debug("background launch requested");
-    StartLlamaReadyProbeInBackground(options);
-  }).detach();
+  std::string launch_error;
+  if (!LaunchLlamaServer(options, &launch_error)) {
+    Debug("background launch failed: " + launch_error);
+    g_llama_launch_started = false;
+    g_llama_ready_probe_started = false;
+    g_llama_server_ready = false;
+    return;
+  }
+  Debug("background launch requested");
+  StartLlamaReadyProbeInBackground(options);
 }
 
 void StartLlamaReadyProbeInBackground(const Options& options) {
