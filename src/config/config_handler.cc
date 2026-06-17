@@ -150,6 +150,10 @@ void NormalizeConfig(Config* config) {
     config->set_use_live_conversion(true);
   }
 
+  if (!config->has_show_candidate_window_on_initial_space_conversion()) {
+    config->set_show_candidate_window_on_initial_space_conversion(true);
+  }
+
   if (!config->has_use_direct_commit()) {
     config->set_use_direct_commit(true);
   }

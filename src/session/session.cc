@@ -7406,6 +7406,13 @@ bool Session::Convert(commands::Command* command) {
   CancelPendingLiveConversion();
   command->mutable_output()->set_consumed(true);
   const std::string composition = context_->composer().GetQueryForConversion();
+  const bool should_show_candidate_window_on_initial_space_conversion =
+      context_->state() == ImeContext::COMPOSITION &&
+      command->input().has_key() &&
+      IsPureSpaceKey(command->input().key()) &&
+      context_->GetConfig()
+          .show_candidate_window_on_initial_space_conversion() &&
+      !context_->GetConfig().use_live_conversion();
 
   // TODO(komatsu): Make a function like ConvertOrSpace.
   // Handle a space key on the ASCII composition mode.
@@ -7450,6 +7457,9 @@ bool Session::Convert(commands::Command* command) {
   }
 
   SetSessionState(ImeContext::CONVERSION, context_.get());
+  if (should_show_candidate_window_on_initial_space_conversion) {
+    context_->mutable_converter()->SetCandidateListVisible(true);
+  }
   Output(command);
   return true;
 }

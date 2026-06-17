@@ -72,6 +72,7 @@ class ConfigHandlerTest : public testing::TestWithTempUserProfile {
 
 void SetMozkeyInputDefaultsForTesting(Config* config) {
   config->set_use_live_conversion(true);
+  config->set_show_candidate_window_on_initial_space_conversion(true);
   config->set_use_direct_commit(true);
   config->set_direct_commit_key(
       Config::DIRECT_COMMIT_KUTEN |
@@ -142,6 +143,7 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaults) {
 
   EXPECT_TRUE(output.use_live_conversion());
   EXPECT_EQ(output.live_conversion_min_key_length(), 2);
+  EXPECT_TRUE(output.show_candidate_window_on_initial_space_conversion());
   EXPECT_TRUE(output.use_direct_commit());
   EXPECT_EQ(
       output.direct_commit_key(),
@@ -151,6 +153,28 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaults) {
           Config::DIRECT_COMMIT_EXCLAMATION_MARK |
           Config::DIRECT_COMMIT_OPEN_BRACKET |
           Config::DIRECT_COMMIT_CLOSE_BRACKET);
+}
+
+TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaultsPreservesExplicitFalse) {
+  TempDirectory temp_dir = testing::MakeTempDirectoryOrDie();
+  const std::string config_file =
+      FileUtil::JoinPath(temp_dir.path(), "mozc_config_test_tmp");
+  ASSERT_OK(FileUtil::UnlinkIfExists(config_file));
+  ConfigHandler::SetConfigFileNameForTesting(config_file);
+  ConfigHandler::Reload();
+
+  Config input;
+  ConfigHandler::GetDefaultConfig(&input);
+  input.set_use_live_conversion(false);
+  input.set_show_candidate_window_on_initial_space_conversion(false);
+  input.set_use_direct_commit(false);
+
+  ConfigHandler::SetConfig(input);
+  const Config output = ConfigHandler::GetCopiedConfig();
+
+  EXPECT_FALSE(output.use_live_conversion());
+  EXPECT_FALSE(output.show_candidate_window_on_initial_space_conversion());
+  EXPECT_FALSE(output.use_direct_commit());
 }
 
 TEST_F(ConfigHandlerTest, SetMetadata) {

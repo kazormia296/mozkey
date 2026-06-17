@@ -1644,7 +1644,7 @@ void ConfigDialog::InitializeRendererAppearanceControls() {
   candidateRubyFontComboBox->hide();
 
   constexpr int kRendererAppearanceGroupX = 30;
-  constexpr int kRendererAppearanceGroupY = 1122;
+  constexpr int kRendererAppearanceGroupY = 1146;
   constexpr int kRendererAppearanceGroupWidth = 441;
   constexpr int kRendererAppearanceToPreeditMargin = 18;
   constexpr int kInputSupportBottomMargin = 30;
@@ -2071,6 +2071,8 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   SET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
+  SET_CHECKBOX(showCandidateWindowOnInitialSpaceConversionCheckBox,
+               show_candidate_window_on_initial_space_conversion);
 
   const uint32_t live_conversion_delay_msec =
       config.has_live_conversion_delay_msec()
@@ -2302,6 +2304,8 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   GET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
+  GET_CHECKBOX(showCandidateWindowOnInitialSpaceConversionCheckBox,
+               show_candidate_window_on_initial_space_conversion);
   config->set_live_conversion_delay_msec(
       static_cast<uint32_t>(liveConversionDelaySpinBox->value()));
   config->set_live_conversion_min_key_length(
@@ -3082,6 +3086,7 @@ void ConfigDialog::SelectLiveConversionSetting(int state) {
   liveConversionMinKeyLengthLabel->setEnabled(enabled);
   liveConversionMinKeyLengthSpinBox->setEnabled(enabled);
   showLiveConversionRubyWindow->setEnabled(enabled);
+  showCandidateWindowOnInitialSpaceConversionCheckBox->setEnabled(!enabled);
 
   zenzLiveCorrectionCheckBox->setEnabled(enabled);
   SelectZenzLiveCorrectionSetting(
