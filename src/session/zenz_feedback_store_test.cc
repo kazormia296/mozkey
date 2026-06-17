@@ -127,7 +127,9 @@ TEST(ZenzFeedbackStoreTest, GetAcceptedCandidatesAllowsSingleAcceptedAndSorts) {
   store.RecordAccepted("k", "empty", "さらに強い");
   store.RecordRejected("k", "empty", "さらに強い", "explicit_reject");
 
-  // rejected >= accepted, so this candidate must be filtered out.
+  // Ordinary rejected feedback is a ranking signal, not a hard exclusion.
+  // accepted=2 and two medium rejections still produce a positive score, so the
+  // candidate remains available but is sorted below stronger candidates.
   store.RecordAccepted("k", "empty", "拒否優勢");
   store.RecordAccepted("k", "empty", "拒否優勢");
   store.RecordRejected("k", "empty", "拒否優勢", "explicit_reject");
@@ -147,7 +149,7 @@ TEST(ZenzFeedbackStoreTest, GetAcceptedCandidatesAllowsSingleAcceptedAndSorts) {
   const std::vector<ZenzFeedbackCandidate> candidates =
       store.GetAcceptedCandidates("k", "empty");
 
-  ASSERT_EQ(candidates.size(), 3);
+  ASSERT_EQ(candidates.size(), 4);
 
   EXPECT_EQ(candidates[0].value, "さらに強い");
   EXPECT_EQ(candidates[0].accepted_count, 3);
@@ -159,10 +161,89 @@ TEST(ZenzFeedbackStoreTest, GetAcceptedCandidatesAllowsSingleAcceptedAndSorts) {
   EXPECT_EQ(candidates[1].rejected_count, 0);
   EXPECT_EQ(candidates[1].reason, "feedback_preferred");
 
-  EXPECT_EQ(candidates[2].value, "弱い");
-  EXPECT_EQ(candidates[2].accepted_count, 1);
-  EXPECT_EQ(candidates[2].rejected_count, 0);
+  EXPECT_EQ(candidates[2].value, "拒否優勢");
+  EXPECT_EQ(candidates[2].accepted_count, 2);
+  EXPECT_EQ(candidates[2].rejected_count, 2);
   EXPECT_EQ(candidates[2].reason, "feedback_preferred");
+  EXPECT_GT(candidates[2].total_score, 0);
+
+  EXPECT_EQ(candidates[3].value, "弱い");
+  EXPECT_EQ(candidates[3].accepted_count, 1);
+  EXPECT_EQ(candidates[3].rejected_count, 0);
+  EXPECT_EQ(candidates[3].reason, "feedback_preferred");
+}
+
+TEST(ZenzFeedbackStoreTest, DecideTreatsOrdinaryRejectedAsSoftSignal) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+
+  store.RecordRejected("k", "empty", "v", "space_revert_zenz_to_mozc");
+
+  ZenzFeedbackDecision decision = store.Decide("k", "empty", "v");
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kNeutral);
+  EXPECT_EQ(decision.reason, "feedback_downgraded");
+  EXPECT_EQ(decision.accepted_count, 0);
+  EXPECT_EQ(decision.rejected_count, 1);
+  EXPECT_LT(decision.total_score, 0);
+
+  store.RecordAccepted("k", "empty", "v");
+  decision = store.Decide("k", "empty", "v");
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kPrefer);
+  EXPECT_EQ(decision.reason, "feedback_preferred");
+  EXPECT_EQ(decision.accepted_count, 1);
+  EXPECT_EQ(decision.rejected_count, 1);
+  EXPECT_GT(decision.total_score, 0);
+}
+
+TEST(ZenzFeedbackStoreTest, DecideAllowsFutureHardRejectReason) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordRejected("k", "empty", "v", "hard_reject");
+
+  ZenzFeedbackDecision decision = store.Decide("k", "empty", "v");
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kReject);
+  EXPECT_EQ(decision.reason, "feedback_hard_rejected");
+  EXPECT_TRUE(decision.hard_rejected);
+}
+
+TEST(ZenzFeedbackStoreTest, DecideHardRejectOverridesAcceptedFeedback) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordAccepted("k", "empty", "v");
+  store.RecordAccepted("k", "empty", "v");
+  store.RecordAccepted("k", "empty", "v");
+  store.RecordRejected("k", "empty", "v", "hard_reject");
+
+  const ZenzFeedbackDecision decision = store.Decide("k", "empty", "v");
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kReject);
+  EXPECT_EQ(decision.reason, "feedback_hard_rejected");
+  EXPECT_TRUE(decision.hard_rejected);
+  EXPECT_GT(decision.total_score, 0);
+}
+
+TEST(ZenzFeedbackStoreTest, GetRankedCandidatesExcludesHardRejectedValue) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordAccepted("k", "empty", "kept");
+  store.RecordAccepted("k", "empty", "blocked");
+  store.RecordAccepted("k", "empty", "blocked");
+  store.RecordAccepted("k", "empty", "blocked");
+  store.RecordRejected("k", "empty", "blocked", "hard_reject");
+
+  const std::vector<ZenzFeedbackCandidate> candidates =
+      store.GetRankedCandidates("k", "empty");
+
+  ASSERT_EQ(candidates.size(), 1);
+  EXPECT_EQ(candidates[0].value, "kept");
+  EXPECT_FALSE(candidates[0].hard_rejected);
 }
 
 TEST(ZenzFeedbackStoreTest,
@@ -349,7 +430,8 @@ TEST(ZenzFeedbackStoreTest, ListEntriesAggregatesExactEntries) {
   EXPECT_EQ(entries[1].value, "B");
   EXPECT_EQ(entries[1].accepted_count, 1);
   EXPECT_EQ(entries[1].rejected_count, 1);
-  EXPECT_EQ(entries[1].reason, "feedback_rejected");
+  EXPECT_EQ(entries[1].reason, "feedback_preferred");
+  EXPECT_GT(store.Decide("b", "empty", "B").total_score, 0);
 }
 
 TEST(ZenzFeedbackStoreTest, DeleteEntryRemovesOnlyMatchingRawRecords) {
@@ -442,7 +524,8 @@ TEST(ZenzFeedbackStoreTest, ExportAndImportReplacePreservesRecords) {
   EXPECT_EQ(entries[0].value, "v");
   EXPECT_EQ(entries[0].accepted_count, 1);
   EXPECT_EQ(entries[0].rejected_count, 1);
-  EXPECT_EQ(entries[0].reason, "feedback_rejected");
+  EXPECT_EQ(entries[0].reason, "feedback_preferred");
+  EXPECT_GT(store.Decide("k", "empty", "v").total_score, 0);
 }
 
 TEST(ZenzFeedbackStoreTest, ImportAppendKeepsExistingRecords) {

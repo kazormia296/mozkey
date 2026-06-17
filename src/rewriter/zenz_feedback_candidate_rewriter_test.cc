@@ -164,7 +164,7 @@ TEST(ZenzFeedbackCandidateRewriterTest,
 }
 
 TEST(ZenzFeedbackCandidateRewriterTest,
-     PromotesSingleSegmentConversionWhenAcceptedFeedbackExists) {
+     InsertsSingleSegmentConversionByFeedbackAdjustedCost) {
   ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
   ASSERT_TRUE(profile.ok());
 
@@ -192,20 +192,57 @@ TEST(ZenzFeedbackCandidateRewriterTest,
   EXPECT_EQ(segment.key(), "かれはてんてきです");
   ASSERT_GE(segment.candidates_size(), 2);
 
+  // With the default zero-cost test candidate, one accepted Zenz feedback
+  // entry is not allowed to hard-promote itself above the existing Mozc top
+  // candidate.  It participates in the same candidate set instead.
   EXPECT_EQ(segment.candidate(0).key, "かれはてんてきです");
   EXPECT_EQ(segment.candidate(0).content_key, "かれはてんてきです");
-  EXPECT_EQ(segment.candidate(0).value, "彼は天敵です");
-  EXPECT_EQ(segment.candidate(0).content_value, "彼は天敵です");
-  EXPECT_TRUE(segment.candidate(0).attributes & converter::Attribute::RERANKED);
+  EXPECT_EQ(segment.candidate(0).value, "彼は点滴です");
+  EXPECT_EQ(segment.candidate(0).content_value, "彼は点滴です");
   EXPECT_TRUE(segment.candidate(0).attributes &
-              converter::Attribute::USER_SEGMENT_HISTORY_REWRITER);
-  EXPECT_FALSE(segment.candidate(0).attributes &
-               converter::Attribute::BEST_CANDIDATE);
+              converter::Attribute::BEST_CANDIDATE);
 
   EXPECT_EQ(segment.candidate(1).key, "かれはてんてきです");
   EXPECT_EQ(segment.candidate(1).content_key, "かれはてんてきです");
+  EXPECT_EQ(segment.candidate(1).value, "彼は天敵です");
+  EXPECT_EQ(segment.candidate(1).content_value, "彼は天敵です");
+  EXPECT_TRUE(segment.candidate(1).attributes & converter::Attribute::RERANKED);
+  EXPECT_TRUE(segment.candidate(1).attributes &
+              converter::Attribute::USER_SEGMENT_HISTORY_REWRITER);
+  EXPECT_FALSE(segment.candidate(1).attributes &
+               converter::Attribute::BEST_CANDIDATE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
+     PromotesStrongFeedbackWhenAdjustedCostBecomesBest) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "japanese_only", "彼は天敵です");
+  store.RecordAccepted("かれはてんてきです", "japanese_only", "彼は天敵です");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は点滴です", &segments);
+  segments.mutable_conversion_segment(0)->mutable_candidate(0)->cost = 1000;
+  segments.mutable_conversion_segment(0)->mutable_candidate(0)->wcost = 1000;
+
+  const ConversionRequest request = CreateZenzFeedbackConversionRequest();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_TRUE(rewriter.Rewrite(request, &segments));
+
+  const Segment& segment = segments.conversion_segment(0);
+  ASSERT_GE(segment.candidates_size(), 2);
+  EXPECT_EQ(segment.candidate(0).value, "彼は天敵です");
+  EXPECT_TRUE(segment.candidate(0).attributes & converter::Attribute::RERANKED);
+  EXPECT_TRUE(segment.candidate(0).attributes &
+              converter::Attribute::USER_SEGMENT_HISTORY_REWRITER);
+  EXPECT_TRUE(segment.candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
   EXPECT_EQ(segment.candidate(1).value, "彼は点滴です");
-  EXPECT_EQ(segment.candidate(1).content_value, "彼は点滴です");
+  EXPECT_FALSE(segment.candidate(1).attributes &
+               converter::Attribute::BEST_CANDIDATE);
 }
 
 TEST(ZenzFeedbackCandidateRewriterTest,
@@ -228,6 +265,46 @@ TEST(ZenzFeedbackCandidateRewriterTest,
   ASSERT_EQ(segments.conversion_segments_size(), 2);
   EXPECT_EQ(segments.conversion_segment(0).key(), "かれは");
   EXPECT_EQ(segments.conversion_segment(1).key(), "てんてきです");
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
+     RepositionsExistingCandidateByFeedbackAdjustedCost) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "japanese_only", "彼は天敵です");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は点滴です", &segments);
+  Segment* segment = segments.mutable_conversion_segment(0);
+  segment->mutable_candidate(0)->cost = 0;
+  segment->mutable_candidate(0)->wcost = 0;
+
+  converter::Candidate* existing = segment->add_candidate();
+  existing->key = "かれはてんてきです";
+  existing->content_key = "かれはてんてきです";
+  existing->value = "彼は天敵です";
+  existing->content_value = "彼は天敵です";
+  existing->cost = 1600;
+  existing->wcost = 1600;
+
+  const ConversionRequest request = CreateZenzFeedbackConversionRequest();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_TRUE(rewriter.Rewrite(request, &segments));
+
+  ASSERT_EQ(segment->candidates_size(), 2);
+  EXPECT_EQ(segment->candidate(0).value, "彼は点滴です");
+  EXPECT_TRUE(segment->candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
+  EXPECT_EQ(segment->candidate(1).value, "彼は天敵です");
+  EXPECT_EQ(segment->candidate(1).cost, 1100);
+  EXPECT_TRUE(segment->candidate(1).attributes & converter::Attribute::RERANKED);
+  EXPECT_TRUE(segment->candidate(1).attributes &
+              converter::Attribute::USER_SEGMENT_HISTORY_REWRITER);
+  EXPECT_FALSE(segment->candidate(1).attributes &
+               converter::Attribute::BEST_CANDIDATE);
 }
 
 TEST(ZenzFeedbackCandidateRewriterTest,

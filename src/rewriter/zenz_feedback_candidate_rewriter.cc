@@ -1,7 +1,9 @@
 #include "rewriter/zenz_feedback_candidate_rewriter.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -62,6 +64,74 @@ int FindCandidateByValue(const Segment& segment, absl::string_view value) {
     }
   }
   return -1;
+}
+
+int ClampCost(int64_t cost) {
+  return static_cast<int>(std::clamp<int64_t>(
+      cost, 0, std::numeric_limits<int32_t>::max()));
+}
+
+int FeedbackCostDelta(const session::ZenzFeedbackCandidate& candidate) {
+  // A positive total score lowers the cost and makes the candidate easier to
+  // surface.  Ordinary rejected feedback only reduces this bonus; it should not
+  // erase the candidate from the set.
+  constexpr int kMaxBonus = 1800;
+  constexpr int kMaxPenalty = 2400;
+  const int raw_delta = -candidate.total_score / 2;
+  return std::clamp(raw_delta, -kMaxBonus, kMaxPenalty);
+}
+
+void ApplyFeedbackCost(const session::ZenzFeedbackCandidate& feedback_candidate,
+                       converter::Candidate* candidate) {
+  const int delta = FeedbackCostDelta(feedback_candidate);
+  candidate->cost = ClampCost(static_cast<int64_t>(candidate->cost) + delta);
+  candidate->wcost = ClampCost(static_cast<int64_t>(candidate->wcost) + delta);
+}
+
+int FindSyntheticInsertPosition(const Segment& segment, int adjusted_cost) {
+  int position = 0;
+  for (size_t i = 0; i < segment.candidates_size(); ++i) {
+    if (segment.candidate(i).cost <= adjusted_cost) {
+      ++position;
+    }
+  }
+  return position;
+}
+
+int FindMovePosition(const Segment& segment, int existing_pos,
+                     int adjusted_cost) {
+  int position = 0;
+  for (size_t i = 0; i < segment.candidates_size(); ++i) {
+    if (static_cast<int>(i) == existing_pos) {
+      continue;
+    }
+    if (segment.candidate(i).cost <= adjusted_cost) {
+      ++position;
+    }
+  }
+  return std::min<int>(position, segment.candidates_size() - 1);
+}
+
+void MarkFeedbackCandidate(Segment* segment, int candidate_pos) {
+  if (segment == nullptr || candidate_pos < 0 ||
+      candidate_pos >= static_cast<int>(segment->candidates_size())) {
+    return;
+  }
+
+  converter::Candidate* candidate = segment->mutable_candidate(candidate_pos);
+  candidate->attributes |=
+      converter::Attribute::RERANKED |
+      converter::Attribute::USER_SEGMENT_HISTORY_REWRITER;
+
+  if (candidate_pos == 0) {
+    for (size_t i = 0; i < segment->candidates_size(); ++i) {
+      segment->mutable_candidate(i)->attributes &=
+          ~converter::Attribute::BEST_CANDIDATE;
+    }
+    candidate->attributes |= converter::Attribute::BEST_CANDIDATE;
+  } else {
+    candidate->attributes &= ~converter::Attribute::BEST_CANDIDATE;
+  }
 }
 
 std::string BuildFullConversionKey(const Segments& segments) {
@@ -163,10 +233,10 @@ bool ZenzFeedbackCandidateRewriter::Rewrite(
   }
 
   session::ZenzFeedbackStore store;
-  const std::vector<session::ZenzFeedbackCandidate> accepted_candidates =
-      store.GetAcceptedCandidates(full_key, kContextClass);
+  const std::vector<session::ZenzFeedbackCandidate> ranked_candidates =
+      store.GetRankedCandidates(full_key, kContextClass);
 
-  if (accepted_candidates.empty()) {
+  if (ranked_candidates.empty()) {
     return false;
   }
 
@@ -176,7 +246,7 @@ bool ZenzFeedbackCandidateRewriter::Rewrite(
   }
 
   for (const session::ZenzFeedbackCandidate& feedback_candidate :
-       accepted_candidates) {
+       ranked_candidates) {
     const absl::string_view zenz_value = feedback_candidate.value;
 
     if (!IsSafeCandidateText(full_key, zenz_value)) {
@@ -193,26 +263,31 @@ bool ZenzFeedbackCandidateRewriter::Rewrite(
     }
 
     if (existing_pos > 0) {
-      segment->move_candidate(existing_pos, 0);
-
-      for (size_t i = 0; i < segment->candidates_size(); ++i) {
-        segment->mutable_candidate(i)->attributes &=
-            ~converter::Attribute::BEST_CANDIDATE;
-      }
-
-      segment->mutable_candidate(0)->attributes |=
-          converter::Attribute::RERANKED |
-          converter::Attribute::USER_SEGMENT_HISTORY_REWRITER;
+      converter::Candidate* existing_candidate =
+          segment->mutable_candidate(existing_pos);
+      ApplyFeedbackCost(feedback_candidate, existing_candidate);
+      const int insert_pos = FindMovePosition(
+          *segment, existing_pos, existing_candidate->cost);
+      segment->move_candidate(existing_pos, insert_pos);
+      MarkFeedbackCandidate(segment, insert_pos);
       return true;
     }
 
     const converter::Candidate base_candidate = segment->candidate(0);
-    converter::Candidate* candidate = segment->insert_candidate(0);
+    converter::Candidate synthetic_candidate;
+    FillSyntheticCandidate(base_candidate, full_key, zenz_value,
+                           &synthetic_candidate);
+    ApplyFeedbackCost(feedback_candidate, &synthetic_candidate);
+
+    const int insert_pos =
+        FindSyntheticInsertPosition(*segment, synthetic_candidate.cost);
+    converter::Candidate* candidate = segment->insert_candidate(insert_pos);
     if (candidate == nullptr) {
       return false;
     }
 
-    FillSyntheticCandidate(base_candidate, full_key, zenz_value, candidate);
+    *candidate = synthetic_candidate;
+    MarkFeedbackCandidate(segment, insert_pos);
     return true;
   }
 

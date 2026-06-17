@@ -26,7 +26,17 @@ namespace session {
 namespace {
 
 constexpr int kAcceptThreshold = 1;
-constexpr int kRejectThreshold = 1;
+
+// Feedback is interpreted as a ranking signal.  Accepted feedback is a strong
+// positive observation.  Rejected feedback is usually a weak or medium negative
+// observation: Space after a visible Zenz result often means "show me the
+// normal candidates now", not "never show this candidate again".
+constexpr int kAcceptedFeedbackWeight = 1000;
+constexpr int kSpaceRevertRejectWeight = 150;
+constexpr int kPredictAfterZenzRejectWeight = 200;
+constexpr int kExplicitConversionRejectWeight = 400;
+constexpr int kLegacyRejectWeight = 400;
+constexpr int kHardRejectWeight = 2000;
 
 #if defined(_WIN32)
 
@@ -485,7 +495,56 @@ bool ParseFeedbackRecord(const std::vector<std::string>& fields,
 struct Counts {
   int accepted = 0;
   int rejected = 0;
+  int positive_score = 0;
+  int negative_score = 0;
+  bool hard_rejected = false;
 };
+
+int TotalScore(const Counts& c) {
+  return c.positive_score - c.negative_score;
+}
+
+bool IsHardRejectReason(absl::string_view reason) {
+  return reason == "hard_reject" ||
+         reason == "user_hard_reject" ||
+         reason == "manual_hard_reject" ||
+         reason == "explicit_hard_reject";
+}
+
+int RejectWeightForReason(absl::string_view reason) {
+  if (IsHardRejectReason(reason)) {
+    return kHardRejectWeight;
+  }
+  if (reason == "space_revert_zenz_to_mozc") {
+    return kSpaceRevertRejectWeight;
+  }
+  if (reason == "predict_after_zenz") {
+    return kPredictAfterZenzRejectWeight;
+  }
+  if (reason == "explicit_conversion_after_zenz") {
+    return kExplicitConversionRejectWeight;
+  }
+  return kLegacyRejectWeight;
+}
+
+void AddAccepted(Counts* c) {
+  ++c->accepted;
+  c->positive_score += kAcceptedFeedbackWeight;
+}
+
+void AddRejected(absl::string_view reason, Counts* c) {
+  ++c->rejected;
+  c->negative_score += RejectWeightForReason(reason);
+  c->hard_rejected |= IsHardRejectReason(reason);
+}
+
+void MergeCounts(const Counts& src, Counts* dest) {
+  dest->accepted += src.accepted;
+  dest->rejected += src.rejected;
+  dest->positive_score += src.positive_score;
+  dest->negative_score += src.negative_score;
+  dest->hard_rejected |= src.hard_rejected;
+}
 
 using FeedbackKey = std::tuple<std::string, std::string, std::string>;
 
@@ -622,21 +681,26 @@ ZenzFeedbackDecision BuildDecisionFromCounts(const Counts& c) {
   ZenzFeedbackDecision decision;
   decision.accepted_count = c.accepted;
   decision.rejected_count = c.rejected;
+  decision.positive_score = c.positive_score;
+  decision.negative_score = c.negative_score;
+  decision.total_score = TotalScore(c);
+  decision.hard_rejected = c.hard_rejected;
 
-  if (c.rejected >= kRejectThreshold && c.rejected >= c.accepted) {
+  if (c.hard_rejected) {
     decision.action = ZenzFeedbackAction::kReject;
-    decision.reason = "feedback_rejected";
+    decision.reason = "feedback_hard_rejected";
     return decision;
   }
 
-  if (c.accepted >= kAcceptThreshold && c.accepted > c.rejected) {
+  if (c.accepted >= kAcceptThreshold && decision.total_score > 0) {
     decision.action = ZenzFeedbackAction::kPrefer;
     decision.reason = "feedback_preferred";
     return decision;
   }
 
   decision.action = ZenzFeedbackAction::kNeutral;
-  decision.reason = "feedback_neutral";
+  decision.reason = c.rejected > 0 ? "feedback_downgraded"
+                                   : "feedback_neutral";
   return decision;
 }
 
@@ -765,9 +829,9 @@ std::map<FeedbackKey, Counts> LoadCounts() {
         record.key, record.context_class, record.value)];
 
     if (record.action == "accepted") {
-      ++c.accepted;
+      AddAccepted(&c);
     } else if (record.action == "rejected") {
-      ++c.rejected;
+      AddRejected(record.reason, &c);
     }
   }
 
@@ -973,14 +1037,13 @@ ZenzFeedbackDecision ZenzFeedbackStore::Decide(
       continue;
     }
 
-    aggregated.accepted += c.accepted;
-    aggregated.rejected += c.rejected;
+    MergeCounts(c, &aggregated);
   }
 
   return BuildDecisionFromCounts(aggregated);
 }
 
-std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
+std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
     absl::string_view key,
     absl::string_view context_class) const {
   const std::map<FeedbackKey, Counts> counts = LoadCounts();
@@ -1009,8 +1072,7 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
     }
 
     Counts& aggregated = value_counts[record_value];
-    aggregated.accepted += c.accepted;
-    aggregated.rejected += c.rejected;
+    MergeCounts(c, &aggregated);
   }
 
   std::vector<ZenzFeedbackCandidate> candidates;
@@ -1019,11 +1081,8 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
     const std::string& value = item.first;
     const Counts& c = item.second;
 
-    if (c.rejected >= kRejectThreshold && c.rejected >= c.accepted) {
-      continue;
-    }
-
-    if (c.accepted < kAcceptThreshold || c.accepted <= c.rejected) {
+    if (c.hard_rejected || c.accepted < kAcceptThreshold ||
+        TotalScore(c) <= 0) {
       continue;
     }
 
@@ -1031,6 +1090,10 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
     candidate.value = value;
     candidate.accepted_count = c.accepted;
     candidate.rejected_count = c.rejected;
+    candidate.positive_score = c.positive_score;
+    candidate.negative_score = c.negative_score;
+    candidate.total_score = TotalScore(c);
+    candidate.hard_rejected = c.hard_rejected;
     candidate.reason = "feedback_preferred";
     candidates.push_back(std::move(candidate));
   }
@@ -1038,18 +1101,25 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
   std::sort(candidates.begin(), candidates.end(),
             [](const ZenzFeedbackCandidate& a,
                const ZenzFeedbackCandidate& b) {
-              const int a_margin = a.accepted_count - a.rejected_count;
-              const int b_margin = b.accepted_count - b.rejected_count;
-              if (a_margin != b_margin) {
-                return a_margin > b_margin;
+              if (a.total_score != b.total_score) {
+                return a.total_score > b.total_score;
               }
-              if (a.accepted_count != b.accepted_count) {
-                return a.accepted_count > b.accepted_count;
+              if (a.positive_score != b.positive_score) {
+                return a.positive_score > b.positive_score;
+              }
+              if (a.negative_score != b.negative_score) {
+                return a.negative_score < b.negative_score;
               }
               return a.value < b.value;
             });
 
   return candidates;
+}
+
+std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
+    absl::string_view key,
+    absl::string_view context_class) const {
+  return GetRankedCandidates(key, context_class);
 }
 
 std::vector<ZenzFeedbackEntry> ZenzFeedbackStore::ListEntries() const {
