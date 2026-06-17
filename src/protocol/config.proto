@@ -328,10 +328,10 @@ message Config {
   // 「を」, and 「が」 from being converted too eagerly while typing.
   optional uint32 live_conversion_min_key_length = 71 [default = 2];
 
-  // When live conversion is disabled, a pure Space key in composition mode
-  // opens the conversion candidate window on the initial conversion without
-  // advancing the focused candidate.
-  optional bool show_candidate_window_on_initial_space_conversion = 72
+  // When live conversion is disabled, the initial Convert command in
+  // composition mode opens the conversion candidate window without advancing
+  // the focused candidate.
+  optional bool show_candidate_window_on_initial_conversion = 72
       [default = false];
 
   // Experimental: use asynchronous zenz live correction after normal live
