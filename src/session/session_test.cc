@@ -1803,6 +1803,100 @@ TEST_F(SessionTest, TabDuringLiveConversionFocusesPredictionCandidates) {
   EXPECT_PREEDIT("ありがとう", command);
 }
 
+TEST_F(SessionTest,
+       TabDuringLiveConversionClearsStalePreviousSuggestionsBeforePrediction) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(0);
+  config.set_live_conversion_min_key_length(1);
+  config.set_session_keymap(config::Config::MSIME);
+  session.SetConfig(config);
+
+  // Build the current composition "ふる" without keeping any real suggestions.
+  EXPECT_CALL(*converter, StartPrediction(_, _)).WillRepeatedly(Return(false));
+
+  commands::Command command;
+  InsertCharacterString("ふる", "fr", &session, &command);
+  ASSERT_TRUE(EnsurePreedit("ふる", command));
+  Mock::VerifyAndClearExpectations(converter.get());
+
+  // Simulate a stale real-converter previous_suggestions_ entry for the older
+  // prefix "ふ".  This models the bug where Tab after seeing a passive
+  // live-conversion suggestion for "ふる" could still enter prediction with
+  // candidates originating from "ふ".
+  Segments stale_suggestion_segments;
+  Segment* stale_suggestion_segment = stale_suggestion_segments.add_segment();
+  stale_suggestion_segment->set_key("ふ");
+  AddCandidate("ふ", "ふ候補", stale_suggestion_segment);
+
+  EXPECT_CALL(*converter, StartPrediction(_, _))
+      .Times(1)
+      .WillOnce(
+          DoAll(SetArgPointee<1>(stale_suggestion_segments), Return(true)));
+
+  ASSERT_TRUE(session_peer.context_()->mutable_converter()->Suggest(
+      session_peer.context_()->composer(), commands::Context::default_instance()));
+  Mock::VerifyAndClearExpectations(converter.get());
+
+  // Enter live-conversion state for the current full composition "ふる" while
+  // the real converter still has the stale previous_suggestions_ above.
+  Segments live_segments;
+  Segment* live_segment = live_segments.add_segment();
+  live_segment->set_key("ふる");
+  AddCandidate("ふる", "フル", live_segment);
+  AddCandidate("ふる", "振る", live_segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(1)
+      .WillOnce(DoAll(SetArgPointee<1>(live_segments), Return(true)));
+
+  ASSERT_TRUE(session_peer.context_()->mutable_converter()->Convert(
+      session_peer.context_()->composer()));
+  session_peer.context_()->set_state(ImeContext::CONVERSION);
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "ふる";
+  session_peer.live_conversion_preedit_() = "ふる";
+  session_peer.live_conversion_value_() = "フル";
+  Mock::VerifyAndClearExpectations(converter.get());
+
+  Segments prediction_segments;
+  Segment* prediction_segment = prediction_segments.add_segment();
+  prediction_segment->set_key("ふる");
+  AddCandidate("ふる", "フルサイズ", prediction_segment);
+  AddCandidate("ふる", "フルーツ", prediction_segment);
+
+  EXPECT_CALL(*converter, StartPredictionWithPreviousSuggestion(_, _, _))
+      .Times(1)
+      .WillOnce([&prediction_segments](
+                    const ConversionRequest& request,
+                    const Segment& previous_segment, Segments* segments) {
+        EXPECT_EQ(previous_segment.candidates_size(), 0);
+        EXPECT_EQ(previous_segment.meta_candidates_size(), 0);
+        *segments = prediction_segments;
+        return true;
+      });
+
+  command.Clear();
+  EXPECT_TRUE(SendSpecialKey(commands::KeyEvent::TAB, &session, &command));
+
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  EXPECT_FALSE(command.output().live_conversion());
+  ASSERT_TRUE(command.output().has_candidate_window());
+  ASSERT_TRUE(command.output().candidate_window().has_focused_index());
+  EXPECT_EQ(command.output().candidate_window().focused_index(), 0);
+  EXPECT_PREEDIT("フルサイズ", command);
+}
+
 TEST_F(SessionTest, SpaceDuringLiveConversionKeepsNormalCandidateNavigation) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);

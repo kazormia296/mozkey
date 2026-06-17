@@ -7798,7 +7798,14 @@ bool Session::PredictAndConvertFromLiveConversion(commands::Command* command) {
   }
   ClearZenzLiveCorrectionState();
 
-  live_conversion_active_ = false;
+  // Passive suggestions shown during live conversion are generated from a cloned
+  // context and are not the real converter's current suggestion state.  Reset the
+  // real converter before entering prediction selection so stale previous
+  // suggestions from an older prefix, e.g. "ふ" before "ふる", are not reused.
+  ClearLiveConversionState();
+  SetSessionState(ImeContext::COMPOSITION, context_.get());
+  context_->mutable_converter()->Cancel();
+
   if (context_->mutable_converter()->Predict(context_->composer())) {
     SetSessionState(ImeContext::CONVERSION, context_.get());
     Output(command);
@@ -7806,8 +7813,6 @@ bool Session::PredictAndConvertFromLiveConversion(commands::Command* command) {
     // EngineConverter::Predict() resets its internal state on a first-prediction
     // failure.  Keep Session and EngineConverter aligned and fall back to the
     // same composition output that ordinary PredictAndConvert() uses on failure.
-    ClearLiveConversionState();
-    SetSessionState(ImeContext::COMPOSITION, context_.get());
     OutputComposition(command);
   }
   return true;
