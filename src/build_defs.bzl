@@ -467,6 +467,11 @@ def mozc_win32_cc_prod_binary(
         visibility = visibility,
     )
 
+register_extension_info(
+    extension = mozc_win32_cc_prod_binary,
+    label_regex_for_dep = "{extension_name}",
+)
+
 def mozc_cc_win32_library(
         name,
         srcs = [],
@@ -752,6 +757,11 @@ def mozc_macos_application(name, bundle_name, infoplists, strings = [], bundle_i
         **kwargs
     )
 
+register_extension_info(
+    extension = mozc_macos_application,
+    label_regex_for_dep = "{extension_name}",
+)
+
 def mozc_macos_bundle(name, bundle_name, infoplists, strings = [], bundle_id = None, tags = [], **kwargs):
     """Rule to create .bundle for macOS.
 
@@ -776,6 +786,11 @@ def mozc_macos_bundle(name, bundle_name, infoplists, strings = [], bundle_id = N
         tags = tags + MOZC_TAGS.MAC_ONLY,
         **kwargs
     )
+
+register_extension_info(
+    extension = mozc_macos_bundle,
+    label_regex_for_dep = "{extension_name}",
+)
 
 def _get_value(args):
     for arg in args:
