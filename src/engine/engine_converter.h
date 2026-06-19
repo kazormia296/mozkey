@@ -281,6 +281,10 @@ class EngineConverter : public EngineConverterInterface {
   static constexpr size_t kConsumedAllCharacters =
       std::numeric_limits<size_t>::max();
 
+  void LookupUserDictionaryPrefixEntries(
+      absl::string_view key,
+      std::vector<UserDictionaryLookupResult>* results) const override;
+
  private:
   // Uses default copy operator to simply copy all members.
   EngineConverter& operator=(const EngineConverter&) = default;

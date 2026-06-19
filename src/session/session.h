@@ -49,6 +49,7 @@
 #include "protocol/config.pb.h"
 #include "session/ime_context.h"
 #include "session/keymap.h"
+#include "session/zenz_adoption_policy.h"
 #include "session/zenz_context_sanitizer.h"
 #include "session/zenz_feedback_store.h"
 #include "session/zenz_live_corrector.h"
@@ -336,6 +337,11 @@ class Session {
   // to avoid display-attribute flicker.
   commands::Preedit live_conversion_preedit_output_;
 
+  // User-dictionary surfaces selected by the latest normal live conversion.
+  // Zenz live correction may improve the surrounding sentence, but these
+  // surfaces must be preserved or safely repaired before adoption.
+  std::vector<ProtectedConversionSpan> live_conversion_protected_spans_;
+
   // Set only after an explicit conversion Cancel command, such as Esc or Ctrl+Z
   // in the default keymap.  If the user commits the unchanged hiragana preedit
   // immediately after that cancel, the raw preedit should be learned like an
@@ -354,6 +360,7 @@ class Session {
     std::string mozc_value;
     std::string symbol_style_source;
     std::string prompt;
+    std::vector<ProtectedConversionSpan> protected_spans;
     absl::Time issued_at;
     bool pending = false;
     bool submitted = false;
@@ -406,6 +413,7 @@ class Session {
 
   ZenzContextSanitizer zenz_context_sanitizer_;
   ZenzOutputValidator zenz_output_validator_;
+  ZenzAdoptionPolicy zenz_adoption_policy_;
   ZenzFeedbackStore zenz_feedback_store_;
   std::unique_ptr<ZenzLiveCorrector> zenz_live_corrector_;
 

@@ -43,6 +43,7 @@
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
@@ -1392,6 +1393,386 @@ bool ShouldSkipLiveConversionForCompositionKey(
   }
 
   return Util::IsScriptType(core, Util::HIRAGANA);
+}
+
+
+bool CandidateWordHasAttribute(const commands::CandidateWord& candidate,
+                               commands::CandidateAttribute attribute) {
+  for (int i = 0; i < candidate.attributes_size(); ++i) {
+    if (candidate.attributes(i) == attribute) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool IsAsciiIdentityChar(const unsigned char c) {
+  return (('0' <= c) && (c <= '9')) || (('A' <= c) && (c <= 'Z')) ||
+         (('a' <= c) && (c <= 'z')) || c == '_' || c == '-' || c == '.' ||
+         c == '+' || c == '#';
+}
+
+bool HasAsciiLetterOrDigit(absl::string_view value) {
+  for (const unsigned char c : value) {
+    if ((('0' <= c) && (c <= '9')) || (('A' <= c) && (c <= 'Z')) ||
+        (('a' <= c) && (c <= 'z'))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<std::string> ExtractAsciiIdentitySurfaces(
+    absl::string_view value) {
+  std::vector<std::string> surfaces;
+  size_t start = absl::string_view::npos;
+
+  auto flush = [&](size_t end) {
+    if (start == absl::string_view::npos || end <= start) {
+      start = absl::string_view::npos;
+      return;
+    }
+    const absl::string_view surface = value.substr(start, end - start);
+    if (HasAsciiLetterOrDigit(surface)) {
+      surfaces.emplace_back(surface);
+    }
+    start = absl::string_view::npos;
+  };
+
+  for (size_t i = 0; i < value.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(value[i]);
+    if (IsAsciiIdentityChar(c)) {
+      if (start == absl::string_view::npos) {
+        start = i;
+      }
+    } else {
+      flush(i);
+    }
+  }
+  flush(value.size());
+
+  return surfaces;
+}
+
+std::string FindPreeditKeyForValue(const commands::Preedit& preedit,
+                                   absl::string_view value) {
+  for (int i = 0; i < preedit.segment_size(); ++i) {
+    const commands::Preedit::Segment& segment = preedit.segment(i);
+    if (segment.value() == value) {
+      return segment.key();
+    }
+  }
+  return std::string();
+}
+
+ProtectedConversionSpan* FindProtectedSurface(
+    std::vector<ProtectedConversionSpan>* protected_spans,
+    absl::string_view value) {
+  if (protected_spans == nullptr) {
+    return nullptr;
+  }
+  for (ProtectedConversionSpan& span : *protected_spans) {
+    if (span.value == value) {
+      return &span;
+    }
+  }
+  return nullptr;
+}
+
+size_t CountSurfaceOccurrences(absl::string_view value,
+                               absl::string_view surface) {
+  if (surface.empty()) {
+    return 0;
+  }
+
+  size_t count = 0;
+  size_t pos = 0;
+  while ((pos = value.find(surface, pos)) != absl::string_view::npos) {
+    ++count;
+    pos += surface.size();
+  }
+  return count;
+}
+
+
+std::string InferProtectedKeyForEmbeddedSurface(absl::string_view segment_key,
+                                                absl::string_view segment_value,
+                                                absl::string_view surface) {
+  if (segment_key.empty() || segment_value.empty() || surface.empty()) {
+    return std::string();
+  }
+
+  if (segment_value == surface) {
+    return std::string(segment_key);
+  }
+
+  // Keep this inference deliberately narrow.  It is safe to infer the protected
+  // reading when the protected surface starts the segment and the remaining
+  // value suffix appears literally at the end of the segment key, e.g.
+  //   key:   もずきーを
+  //   value: Mozkeyを
+  //   span:  もずきー -> Mozkey
+  // For converted suffixes such as "Mozkeyを使用しています" vs
+  // "もずきーをしようしています", this returns empty and leaves the span
+  // reject-only instead of guessing a boundary.
+  if (!absl::StartsWith(segment_value, surface)) {
+    return std::string();
+  }
+
+  const absl::string_view suffix = segment_value.substr(surface.size());
+  if (suffix.empty() || suffix.size() >= segment_key.size()) {
+    return std::string();
+  }
+  if (!absl::EndsWith(segment_key, suffix)) {
+    return std::string();
+  }
+
+  return std::string(segment_key.substr(0, segment_key.size() - suffix.size()));
+}
+
+std::string FindPreeditKeyForProtectedSurface(
+    const commands::Preedit& preedit, absl::string_view surface,
+    absl::string_view candidate_key) {
+  if (surface.empty()) {
+    return std::string();
+  }
+
+  for (int i = 0; i < preedit.segment_size(); ++i) {
+    const commands::Preedit::Segment& segment = preedit.segment(i);
+    if (segment.value().empty()) {
+      continue;
+    }
+
+    const std::string segment_key =
+        segment.has_key() ? segment.key() : std::string();
+    const std::string protected_key = InferProtectedKeyForEmbeddedSurface(
+        segment_key, segment.value(), surface);
+    if (!protected_key.empty()) {
+      return protected_key;
+    }
+
+    // Some live-conversion preedit segments can be larger than the protected
+    // word, e.g. "じしょごのてんてきです" -> "辞書語の点滴です".
+    // In that case the visible suffix is converted, so literal suffix matching
+    // cannot infer the boundary.  If the user-dictionary key and value both
+    // start the same preedit segment, use the candidate key as the protected
+    // reading.
+    if (!candidate_key.empty() && absl::StartsWith(segment.value(), surface) &&
+        absl::StartsWith(segment_key, candidate_key)) {
+      return std::string(candidate_key);
+    }
+  }
+  return std::string();
+}
+
+void AddOrUpdateProtectedSpan(
+    absl::string_view key, absl::string_view value,
+    ProtectedConversionSpan::Tier tier, bool repairable,
+    absl::string_view mozc_value,
+    std::vector<ProtectedConversionSpan>* protected_spans) {
+  if (protected_spans == nullptr || value.empty() ||
+      !absl::StrContains(mozc_value, value)) {
+    return;
+  }
+
+  size_t required_occurrences = CountSurfaceOccurrences(mozc_value, value);
+  if (required_occurrences == 0) {
+    required_occurrences = 1;
+  }
+
+  if (ProtectedConversionSpan* existing =
+          FindProtectedSurface(protected_spans, value)) {
+    if (existing->required_occurrences < required_occurrences) {
+      existing->required_occurrences = required_occurrences;
+    }
+    if (existing->key.empty() && !key.empty()) {
+      existing->key = std::string(key);
+    }
+    if (tier == ProtectedConversionSpan::Tier::kIdentityCritical) {
+      existing->tier = tier;
+    }
+    if (!existing->repairable && repairable && !key.empty()) {
+      existing->repairable = true;
+    }
+    return;
+  }
+
+  ProtectedConversionSpan span;
+  span.key = !key.empty() ? std::string(key) : std::string();
+  span.value = std::string(value);
+  span.tier = tier;
+  span.repairable = repairable && !span.key.empty();
+  span.required_occurrences = required_occurrences;
+  protected_spans->push_back(std::move(span));
+}
+
+void AddPreeditIdentityProtectedSpans(
+    const commands::Preedit& preedit, absl::string_view mozc_value,
+    std::vector<ProtectedConversionSpan>* protected_spans) {
+  for (int i = 0; i < preedit.segment_size(); ++i) {
+    const commands::Preedit::Segment& segment = preedit.segment(i);
+    if (segment.value().empty()) {
+      continue;
+    }
+
+    const std::string segment_key =
+        segment.has_key() ? segment.key() : std::string();
+    const std::vector<std::string> identity_surfaces =
+        ExtractAsciiIdentitySurfaces(segment.value());
+    for (const std::string& surface : identity_surfaces) {
+      const std::string surface_key = InferProtectedKeyForEmbeddedSurface(
+          segment_key, segment.value(), surface);
+      AddOrUpdateProtectedSpan(
+          surface_key, surface, ProtectedConversionSpan::Tier::kIdentityCritical,
+          !surface_key.empty(), mozc_value, protected_spans);
+    }
+  }
+}
+
+
+bool IsSafeDirectUserDictionaryProtectedEntry(absl::string_view key,
+                                              absl::string_view value) {
+  if (key.empty() || value.empty()) {
+    return false;
+  }
+
+  // Very short entries are too ambiguous for direct global matching. They can
+  // still be protected through candidate provenance when the converter exposes
+  // the selected user-dictionary candidate.
+  if (Util::CharsLen(key) < 2 || Util::CharsLen(value) < 2) {
+    return false;
+  }
+
+  return true;
+}
+
+std::vector<absl::string_view> GetUtf8SuffixesForUserDictionaryLookup(
+    absl::string_view key) {
+  std::vector<absl::string_view> suffixes;
+  if (key.empty()) {
+    return suffixes;
+  }
+
+  suffixes.reserve(Util::CharsLen(key));
+  for (size_t i = 0; i < key.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(key[i]);
+    if (i != 0 && (c & 0xC0) == 0x80) {
+      continue;
+    }
+    suffixes.push_back(key.substr(i));
+  }
+  return suffixes;
+}
+
+void AddDirectUserDictionaryEntryProtectedSpans(
+    const engine::EngineConverterInterface& converter,
+    absl::string_view live_key, absl::string_view mozc_value,
+    std::vector<ProtectedConversionSpan>* protected_spans) {
+  if (protected_spans == nullptr || live_key.empty() || mozc_value.empty()) {
+    return;
+  }
+
+  for (const absl::string_view suffix :
+       GetUtf8SuffixesForUserDictionaryLookup(live_key)) {
+    std::vector<UserDictionaryLookupResult> entries;
+    converter.LookupUserDictionaryPrefixEntries(suffix, &entries);
+    for (const UserDictionaryLookupResult& entry : entries) {
+      const absl::string_view entry_key(entry.key);
+      const absl::string_view entry_value(entry.value);
+      if (!IsSafeDirectUserDictionaryProtectedEntry(entry_key, entry_value)) {
+        continue;
+      }
+      if (!absl::StartsWith(suffix, entry_key) ||
+          !absl::StrContains(mozc_value, entry_value)) {
+        continue;
+      }
+
+      AddOrUpdateProtectedSpan(
+          entry_key, entry_value, ProtectedConversionSpan::Tier::kUserPreferred,
+          false, mozc_value, protected_spans);
+    }
+  }
+}
+
+std::vector<ProtectedConversionSpan> BuildZenzProtectedConversionSpans(
+    const engine::EngineConverterInterface& converter,
+    const commands::Output& output, absl::string_view live_key,
+    absl::string_view mozc_value) {
+  std::vector<ProtectedConversionSpan> protected_spans;
+
+  if (output.has_all_candidate_words()) {
+    const commands::CandidateList& candidate_list = output.all_candidate_words();
+    const uint32_t focused_index = candidate_list.has_focused_index()
+                                     ? candidate_list.focused_index()
+                                     : 0;
+
+    for (int i = 0; i < candidate_list.candidates_size(); ++i) {
+      const commands::CandidateWord& candidate = candidate_list.candidates(i);
+      const bool focused_candidate = candidate.index() == focused_index;
+
+      if (!CandidateWordHasAttribute(candidate, commands::USER_DICTIONARY)) {
+        continue;
+      }
+
+      if (candidate.value().empty()) {
+        continue;
+      }
+
+      std::string candidate_key =
+          candidate.has_key() ? candidate.key() : std::string();
+      if (candidate_key.empty() && output.has_preedit()) {
+        candidate_key =
+            FindPreeditKeyForValue(output.preedit(), candidate.value());
+      }
+
+      std::string preedit_protected_key;
+      if (output.has_preedit()) {
+        preedit_protected_key = FindPreeditKeyForProtectedSurface(
+            output.preedit(), candidate.value(), candidate_key);
+      }
+
+      // For non-focused candidates, protect only when the same surface is
+      // actually visible in the current preedit.  This recovers embedded
+      // user-dictionary words such as "じしょごの" -> "辞書語の" without pinning
+      // unrelated user-dictionary candidates that merely exist in the candidate
+      // list.
+      if (!focused_candidate && preedit_protected_key.empty()) {
+        continue;
+      }
+
+      const std::string protected_key = !preedit_protected_key.empty()
+                                            ? preedit_protected_key
+                                            : candidate_key;
+
+      const std::vector<std::string> identity_surfaces =
+          ExtractAsciiIdentitySurfaces(candidate.value());
+      if (!identity_surfaces.empty()) {
+        for (const std::string& surface : identity_surfaces) {
+          const std::string surface_key = InferProtectedKeyForEmbeddedSurface(
+              protected_key, candidate.value(), surface);
+          AddOrUpdateProtectedSpan(
+              surface_key, surface, ProtectedConversionSpan::Tier::kIdentityCritical,
+              !surface_key.empty(), mozc_value, &protected_spans);
+        }
+        continue;
+      }
+
+      AddOrUpdateProtectedSpan(
+          protected_key, candidate.value(),
+          ProtectedConversionSpan::Tier::kUserPreferred, false, mozc_value,
+          &protected_spans);
+    }
+  }
+
+  if (output.has_preedit()) {
+    AddPreeditIdentityProtectedSpans(output.preedit(), mozc_value,
+                                     &protected_spans);
+  }
+
+  AddDirectUserDictionaryEntryProtectedSpans(converter, live_key, mozc_value,
+                                             &protected_spans);
+
+  return protected_spans;
 }
 
 uint32_t GetLiveConversionDelayMillisec(const config::Config& config) {
@@ -4095,6 +4476,7 @@ void Session::ClearLiveConversionState() {
   live_conversion_preedit_.clear();
   live_conversion_value_.clear();
   live_conversion_preedit_output_.Clear();
+  live_conversion_protected_spans_.clear();
   ClearZenzLiveCorrectionState();
 }
 
@@ -4205,6 +4587,13 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   } else {
     live_conversion_preedit_output_.Clear();
     live_conversion_value_ = context_->composer().GetStringForSubmission();
+  }
+
+  live_conversion_protected_spans_.clear();
+  if (context_->GetConfig().use_zenz_live_correction()) {
+    live_conversion_protected_spans_ = BuildZenzProtectedConversionSpans(
+        context_->converter(), command->output(), live_conversion_key_,
+        live_conversion_value_);
   }
 
   ClearZenzLiveCorrectionState();
@@ -5153,6 +5542,28 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
       continue;
     }
 
+    ZenzAdoptionInput adoption_input;
+    adoption_input.key = live_conversion_key_;
+    adoption_input.mozc_value = live_conversion_value_;
+    adoption_input.zenz_value = feedback_value;
+    adoption_input.protected_spans = live_conversion_protected_spans_;
+
+    const ZenzAdoptionResult adoption =
+        zenz_adoption_policy_.Decide(adoption_input);
+    if (adoption.action == ZenzAdoptionResult::Action::kReject) {
+      ZenzDebugOutput(absl::StrCat(
+          "[zenz-feedback] fast path candidate rejected reason=",
+          adoption.reason,
+          " ", ZenzRedactedTextStats("key", live_conversion_key_),
+          " ", ZenzRedactedTextStats("value", feedback_value),
+          " context_class=", context_class,
+          " accepted_count=", feedback_candidate.accepted_count,
+          " rejected_count=", feedback_candidate.rejected_count));
+      continue;
+    }
+
+    const std::string adopted_feedback_value = adoption.value;
+
     ++zenz_live_generation_;
     pending_zenz_live_ = PendingZenzLiveCorrection();
 
@@ -5161,7 +5572,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
     zenz_live_display_key_ = live_conversion_preedit_.empty()
                                  ? live_conversion_key_
                                  : live_conversion_preedit_;
-    zenz_live_value_ = feedback_value;
+    zenz_live_value_ = adopted_feedback_value;
     zenz_live_mozc_value_ = live_conversion_value_;
     zenz_live_context_class_ = context_class;
     zenz_live_left_context_ = left_context_for_validation;
@@ -5171,11 +5582,12 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
         ZenzRedactedTextStats("key", zenz_live_key_),
         " ", ZenzRedactedTextStats("value", zenz_live_value_),
         " ", ZenzRedactedTextStats("mozc_value", zenz_live_mozc_value_),
+        " adoption=", adoption.reason,
         " context_class=", zenz_live_context_class_,
         " accepted_count=", feedback_candidate.accepted_count,
         " rejected_count=", feedback_candidate.rejected_count));
 
-    return OutputZenzLiveCorrection(feedback_value, command);
+    return OutputZenzLiveCorrection(adopted_feedback_value, command);
   }
 
   return false;
@@ -5270,9 +5682,15 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
   prompt_options.style = config.zenz_live_correction_style();
   prompt_options.settings = config.zenz_live_correction_settings();
 
+  ZenzProtectedPromptInput protected_prompt_input;
+  protected_prompt_input.key = live_conversion_key_;
+  protected_prompt_input.protected_spans = live_conversion_protected_spans_;
+  const ZenzProtectedPromptResult protected_prompt =
+      zenz_adoption_policy_.ProtectPromptKey(protected_prompt_input);
+
   ZenzPromptBuilder prompt_builder;
   const std::string prompt =
-      prompt_builder.Build(live_conversion_key_, prompt_options);
+      prompt_builder.Build(protected_prompt.key, prompt_options);
 
   ++zenz_live_generation_;
 
@@ -5286,6 +5704,7 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
       live_conversion_preedit_.empty() ? live_conversion_key_
                                        : live_conversion_preedit_;
   pending_zenz_live_.prompt = prompt;
+  pending_zenz_live_.protected_spans = protected_prompt.protected_spans;
   pending_zenz_live_.issued_at = Clock::GetAbslTime();
   pending_zenz_live_.pending = true;
   pending_zenz_live_.submitted = false;
@@ -5300,7 +5719,9 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
       " context_reason=", context_result.reason,
       " right_context_allowed=",
       ZenzBool(right_context_result.allowed_for_prompt),
-      " right_context_reason=", right_context_result.reason));
+      " right_context_reason=", right_context_result.reason,
+      " protected_prompt_replacements=",
+      protected_prompt.placeholder_count));
 
   const uint32_t delay_msec = GetZenzLiveCorrectionDelayMsec(config);
   if (delay_msec == 0) {
@@ -5735,6 +6156,18 @@ bool Session::ApplyZenzLiveCorrectionResult(
         " context_class=", pending_zenz_live_.context_class));
   }
 
+  const std::string zenz_value_before_placeholder_restore = zenz_value;
+  zenz_value = zenz_adoption_policy_.RestorePlaceholders(
+      zenz_value, pending_zenz_live_.protected_spans);
+  if (zenz_value != zenz_value_before_placeholder_restore) {
+    ZenzDebugOutput(absl::StrCat(
+        "[zenz] restored protected placeholders ",
+        ZenzRedactedTextStats("value", zenz_value),
+        " ", ZenzRedactedTextStats(
+                 "raw_value", zenz_value_before_placeholder_restore),
+        " context_class=", pending_zenz_live_.context_class));
+  }
+
   const absl::string_view zenz_symbol_style_source =
       pending_zenz_live_.symbol_style_source.empty()
           ? pending_zenz_live_.key
@@ -5867,6 +6300,62 @@ bool Session::ApplyZenzLiveCorrectionResult(
     return true;
   }
 
+  ZenzAdoptionInput adoption_input;
+  adoption_input.key = pending_zenz_live_.key;
+  adoption_input.mozc_value = pending_zenz_live_.mozc_value;
+  adoption_input.zenz_value = zenz_value;
+  adoption_input.protected_spans = pending_zenz_live_.protected_spans;
+
+  const ZenzAdoptionResult adoption =
+      zenz_adoption_policy_.Decide(adoption_input);
+  if (adoption.action == ZenzAdoptionResult::Action::kReject) {
+    ZenzDebugOutput(absl::StrCat(
+        "[zenz] adoption rejected reason=", adoption.reason,
+        " ", ZenzRedactedTextStats("value", zenz_value),
+        " ", ZenzRedactedTextStats("mozc_value",
+                                    pending_zenz_live_.mozc_value),
+        " context_class=", context_class));
+
+    CancelPendingZenzLiveCorrection();
+    Output(command);
+
+    if (command->output().has_preedit()) {
+      RestorePreeditSegmentKeysForSymbolStyle(
+          live_conversion_preedit_.empty()
+              ? live_conversion_key_
+              : live_conversion_preedit_,
+          command->mutable_output()->mutable_preedit());
+    }
+
+    command->mutable_output()->set_live_conversion(true);
+    command->mutable_output()->set_live_conversion_pending(false);
+    command->mutable_output()->set_zenz_live_correction_pending(false);
+    command->mutable_output()->set_zenz_live_correction_debug(adoption.reason);
+    return true;
+  }
+
+  zenz_value = adoption.value;
+
+  const ZenzTextPrivacyDecision adopted_value_privacy =
+      EvaluateZenzLiveValuePrivacy(zenz_value);
+  if (!adopted_value_privacy.allow) {
+    ZenzDebugOutput(absl::StrCat(
+        "[zenz] adoption rejected reason=adopted_value_privacy_",
+        adopted_value_privacy.reason,
+        " ", ZenzRedactedTextStats("value", zenz_value),
+        " context_class=", context_class));
+
+    CancelPendingZenzLiveCorrection();
+    Output(command);
+    command->mutable_output()->set_live_conversion(true);
+    command->mutable_output()->set_live_conversion_pending(false);
+    command->mutable_output()->set_zenz_live_correction_pending(false);
+    command->mutable_output()->set_zenz_live_correction_debug(
+        absl::StrCat("adopted_value_privacy_",
+                     adopted_value_privacy.reason));
+    return true;
+  }
+
   std::string feedback_reason = "feedback_learning_disabled";
 
   if (UseZenzFeedbackLearning(config)) {
@@ -5901,6 +6390,7 @@ bool Session::ApplyZenzLiveCorrectionResult(
       " ", ZenzRedactedTextStats("old_mozc_value",
                                   pending_zenz_live_.mozc_value),
       " context_class=", context_class,
+      " adoption=", adoption.reason,
       " feedback=", feedback_reason));
 
   zenz_live_visible_generation_ = pending_zenz_live_.generation;

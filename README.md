@@ -109,6 +109,9 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - 複数文節に分かれるライブ変換では、全文補正の学習を保つため、accepted Zenz feedback を session-level live correction fast path として再利用
 - sensitive-like context で得られた feedback は、通常文脈の候補 ranking / reuse には使わない
 - accepted として確定した Zenz 候補は、条件を満たす場合は Mozc の user history にも外部変換結果として学習
+- 通常 Mozc ライブ変換で現在の結果として現れているユーザー辞書由来候補や ASCII / mixed-script 表記を、Zenz live correction の採用時に保護
+- ASCII / mixed-script 表記は、読みを安全に特定できる場合に Zenz prompt 内で一時 placeholder 化し、応答後に元の表記へ復元。`もずきー -> Mozkey` のような表記が `モズキー` へ上書きされるのを避けつつ、前後の文は補正できるようにした
+- 日本語のみのユーザー辞書語は、自然な読みを Zenz prompt に残したまま、Zenz 応答後に表記の境界を検証し、余分なかな付着を安全に修復できる場合だけ採用するようにした
 - Zenz prompt に使う左文脈は sanitizer を通し、URL、email、file path、token、長い数字列など sensitive-like な文脈は prompt に含めない
 - Zenz feedback には raw left context を保存せず、非可逆な context class のみを保存
 - Zenz model / llama.cpp runtime の third-party license notice を MSI に同梱
@@ -226,6 +229,12 @@ Zenz request は `mozc_server` から Windows named pipe 経由で `mozc_zenz_sc
 Zenz 補正は設定可能なデバウンス時間の後に実行されます。デフォルトは 1000 ms です。また、Zenz 補正を開始する最小文字数も設定画面から変更できます。Zenz 結果が返る前に入力内容が変わった場合、古い結果は generation / key の検査により破棄されます。
 
 Zenz 出力は表示前に検証されます。空出力、短すぎる入力、Mozc 結果と同一の出力、長すぎる出力、不正な文字列、安全でない可能性のある文字列は拒否されます。拒否された場合は、通常の Mozc ライブ変換結果をそのまま表示します。
+
+通常 Mozc ライブ変換で現在の結果として現れているユーザー辞書由来候補や ASCII / mixed-script 表記は、Zenz 採用時に保護されます。ASCII / mixed-script 表記は、読みを安全に特定できる場合に Zenz prompt 内で一時 placeholder 化し、Zenz 応答後に元の表記へ復元します。これにより、`もずきー -> Mozkey` のような表記が `モズキー` のように上書きされることを避けつつ、対象語の前後にある文の補正は採用できるようにしています。
+
+日本語のみのユーザー辞書語は、自然な読みを Zenz prompt に残したまま、Zenz 応答後に表記の境界を検証します。たとえば保護対象の直後に余分なかなが付着した場合は、安全に修復できる場合だけ採用し、修復できない場合は通常の Mozc ライブ変換結果に戻します。
+
+Zenz が保護対象の表記を落としたり変更したりし、placeholder 復元や安全な repair でも必要な出現数を満たせない場合、その Zenz 結果は採用せず、通常の Mozc ライブ変換結果を表示します。保護対象はユーザー辞書に登録されている全候補ではなく、現在の通常ライブ変換結果に実際に現れた表記です。
 
 Zenz ライブ補正は password field では実行されません。また、入力途中の raw romaji のように日本語文字シグナルを含まない読みは補正対象外です。日本語文字を含む英字混じりの入力は、privacy gate を通る場合に限り補正対象になり得ます。
 
@@ -619,6 +628,9 @@ Main features added in this fork
 - Reuses accepted Zenz feedback via the session-level live-correction fast path for multi-segment live conversion to preserve learned full-phrase corrections
 - Does not reuse feedback obtained from `sensitive_like` context for ordinary-context candidate ranking
 - Learns accepted Zenz candidates into Mozc user history as external conversion results when the runtime conditions allow it
+- Protects user-dictionary candidates and ASCII / mixed-script surfaces that appear in the current normal Mozc live-conversion result before adopting Zenz live-correction output
+- For ASCII / mixed-script surfaces, temporarily replaces the reading with a placeholder in the Zenz prompt when it can be identified safely, then restores the selected surface after the response, so entries such as `もずきー -> Mozkey` are not silently overwritten as `モズキー` while surrounding text can still be corrected
+- For Japanese-only user-dictionary surfaces, keeps the natural reading in the Zenz prompt and validates the selected surface boundaries after the response, accepting the result only when any extra kana attachment can be repaired safely
 - Sanitizes left context before using it in Zenz prompts, and excludes sensitive-like context such as URLs, email addresses, file paths, tokens, and long digit sequences
 - Stores only non-reversible context classes in Zenz feedback and never stores raw left context
 - Bundles third-party license notices for the Zenz model and llama.cpp runtime in the MSI
@@ -698,6 +710,28 @@ Zenz output is validated before display. Outputs that are empty, too short,
 identical to the Mozc result, too long, malformed, or likely to contain unsafe
 text are rejected. If validation fails, the normal Mozc live conversion result
 remains visible.
+
+User-dictionary candidates and ASCII / mixed-script surfaces that appear in the
+current normal Mozc live-conversion result are protected before Zenz output is
+adopted. For ASCII / mixed-script surfaces, when the protected reading can be
+identified safely, such as in `もずきー -> Mozkey`, the reading is temporarily
+replaced with a placeholder in the Zenz prompt and restored to the selected
+surface after the response. This prevents Zenz from silently overwriting the
+protected word as `モズキー` while still allowing correction of the surrounding
+sentence.
+
+Japanese-only user-dictionary surfaces keep their natural reading in the Zenz
+prompt. After the Zenz response, Mozkey validates the selected surface
+boundaries. If extra kana is attached immediately after the protected surface,
+the result is accepted only when the attachment can be repaired safely; otherwise
+the normal Mozc live-conversion result remains visible.
+
+If a Zenz response drops or changes a protected surface and placeholder
+restoration or safe repair cannot preserve the required number of occurrences,
+the response is rejected and the normal Mozc live conversion result remains
+visible. This does not pin every candidate that merely exists in the user
+dictionary. Protection is based on surfaces that actually appear in the current
+normal live-conversion result.
 
 Zenz live correction is disabled for password fields and for composition text
 that has no Japanese-script signal, such as intermediate raw romaji input.

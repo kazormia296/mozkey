@@ -40,6 +40,7 @@
 
 #include "absl/strings/string_view.h"
 #include "composer/composer.h"
+#include "converter/converter_interface.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "transliteration/transliteration.h"
@@ -290,6 +291,15 @@ class EngineConverterInterface {
       config::Config::SelectionShortcut selection_shortcut) = 0;
 
   virtual void set_use_cascading_window(bool use_cascading_window) = 0;
+
+  // Looks up user-dictionary entries whose key is a prefix of |key|.
+  virtual void LookupUserDictionaryPrefixEntries(
+      absl::string_view key,
+      std::vector<UserDictionaryLookupResult>* results) const {
+    if (results != nullptr) {
+      results->clear();
+    }
+  }
 };
 
 }  // namespace engine

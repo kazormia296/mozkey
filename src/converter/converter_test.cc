@@ -1445,6 +1445,48 @@ TEST_F(ConverterTest, LimitCandidatesSize) {
             original_meta_candidates_size);
 }
 
+TEST_F(ConverterTest,
+       LookupUserDictionaryPrefixEntriesUsesExistingUserDictionaryIndex) {
+  using user_dictionary::UserDictionary;
+
+  std::vector<UserDefinedEntry> user_defined_entries;
+  user_defined_entries.push_back(
+      UserDefinedEntry("じしょご", "辞書語", UserDictionary::NOUN));
+  user_defined_entries.push_back(
+      UserDefinedEntry("もずきー", "Mozkey", UserDictionary::NOUN));
+
+  std::unique_ptr<Converter> converter = CreateConverterWithUserDefinedEntries(
+      user_defined_entries, STUB_PREDICTOR);
+
+  auto has_entry = [](const std::vector<UserDictionaryLookupResult>& results,
+                      absl::string_view key,
+                      absl::string_view value) {
+    for (const UserDictionaryLookupResult& result : results) {
+      if (result.key == key && result.value == value) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  std::vector<UserDictionaryLookupResult> results;
+  converter->LookupUserDictionaryPrefixEntries(
+      "じしょごのてんてきです", &results);
+  EXPECT_TRUE(has_entry(results, "じしょご", "辞書語"));
+
+  results.clear();
+  converter->LookupUserDictionaryPrefixEntries(
+      "もずきーをつかっています", &results);
+  EXPECT_TRUE(has_entry(results, "もずきー", "Mozkey"));
+
+  UserDictionaryLookupResult stale_result;
+  stale_result.key = "stale";
+  stale_result.value = "stale";
+  results.push_back(stale_result);
+  converter->LookupUserDictionaryPrefixEntries("", &results);
+  EXPECT_TRUE(results.empty());
+}
+
 TEST_F(ConverterTest, UserEntryShouldBePromoted) {
   using user_dictionary::UserDictionary;
   std::vector<UserDefinedEntry> user_defined_entries;

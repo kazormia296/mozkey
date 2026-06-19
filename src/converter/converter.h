@@ -195,6 +195,10 @@ class Converter final : public ConverterInterface {
   // Utility method to make history result passed to ConversionRequest.
   static prediction::Result MakeHistoryResult(const Segments& segments);
 
+  void LookupUserDictionaryPrefixEntries(
+      absl::string_view key,
+      std::vector<UserDictionaryLookupResult>* results) const override;
+
  private:
   friend class ConverterTestPeer;
 

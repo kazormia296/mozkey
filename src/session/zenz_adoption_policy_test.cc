@@ -1,0 +1,328 @@
+// Copyright 2010-2021, Google Inc.
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+// copyright notice, this list of conditions and the following disclaimer
+// in the documentation and/or other materials provided with the
+// distribution.
+//     * Neither the name of Google Inc. nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+#include "session/zenz_adoption_policy.h"
+
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "testing/gunit.h"
+
+namespace mozc::session {
+namespace {
+
+ProtectedConversionSpan BuildSpan(
+    std::string key, std::string value, ProtectedConversionSpan::Tier tier,
+    bool repairable) {
+  ProtectedConversionSpan span;
+  span.key = std::move(key);
+  span.value = std::move(value);
+  span.tier = tier;
+  span.repairable = repairable;
+  return span;
+}
+
+TEST(ZenzAdoptionPolicyTest, ProtectPromptKeyAndRestorePlaceholder) {
+  ZenzAdoptionPolicy policy;
+  ZenzProtectedPromptInput input;
+  input.key = "てんてきのかれはもずきーをつかっています";
+  input.protected_spans = {
+      BuildSpan("もずきー", "Mozkey",
+                ProtectedConversionSpan::Tier::kIdentityCritical, true),
+  };
+
+  const ZenzProtectedPromptResult prompt = policy.ProtectPromptKey(input);
+  ASSERT_EQ(prompt.protected_spans.size(), 1);
+  EXPECT_EQ(prompt.placeholder_count, 1);
+  EXPECT_EQ(prompt.key,
+            "てんてきのかれは__MOZC_ZENZ_PROTECTED_0__をつかっています");
+
+  const std::string restored = policy.RestorePlaceholders(
+      "点滴の彼は__MOZC_ZENZ_PROTECTED_0__を使用しています",
+      prompt.protected_spans);
+  EXPECT_EQ(restored, "点滴の彼はMozkeyを使用しています");
+}
+
+TEST(ZenzAdoptionPolicyTest, DoesNotPlaceholderUserPreferredJapaneseSurface) {
+  ZenzAdoptionPolicy policy;
+  ZenzProtectedPromptInput prompt_input;
+  prompt_input.key = "かれはじしょごのてんてきです";
+  prompt_input.protected_spans = {
+      BuildSpan("じしょご", "辞書語",
+                ProtectedConversionSpan::Tier::kUserPreferred, false),
+  };
+
+  const ZenzProtectedPromptResult prompt = policy.ProtectPromptKey(prompt_input);
+  ASSERT_EQ(prompt.protected_spans.size(), 1);
+  EXPECT_EQ(prompt.placeholder_count, 0);
+  EXPECT_EQ(prompt.key, "かれはじしょごのてんてきです");
+  EXPECT_TRUE(prompt.protected_spans[0].placeholder.empty());
+
+  ZenzAdoptionInput adoption_input;
+  adoption_input.key = prompt.key;
+  adoption_input.mozc_value = "彼は辞書語の点滴です";
+  adoption_input.zenz_value = "彼は辞書語けの天敵です";
+  adoption_input.protected_spans = prompt.protected_spans;
+
+  const ZenzAdoptionResult result = policy.Decide(adoption_input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptWithRepair);
+  EXPECT_EQ(result.value, "彼は辞書語の天敵です");
+}
+
+TEST(ZenzAdoptionPolicyTest, UserPreferredJapaneseSurfaceIsGuardedOnOutputSide) {
+  ZenzAdoptionPolicy policy;
+
+  ProtectedConversionSpan span;
+  span.key = "じしょご";
+  span.value = "辞書語";
+  span.tier = ProtectedConversionSpan::Tier::kUserPreferred;
+  span.repairable = false;
+  span.required_occurrences = 1;
+
+  ZenzProtectedPromptInput prompt_input;
+  prompt_input.key = "かれはじしょごのてんてきです";
+  prompt_input.protected_spans = {span};
+
+  const ZenzProtectedPromptResult prompt =
+      policy.ProtectPromptKey(prompt_input);
+  EXPECT_EQ(prompt.placeholder_count, 0);
+  EXPECT_EQ(prompt.key, "かれはじしょごのてんてきです");
+
+  ZenzAdoptionInput adoption_input;
+  adoption_input.key = "かれはじしょごのてんてきです";
+  adoption_input.mozc_value = "彼は辞書語の点滴です";
+  adoption_input.zenz_value = "彼は辞書語けの天敵です";
+  adoption_input.protected_spans = {span};
+
+  const ZenzAdoptionResult result = policy.Decide(adoption_input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptWithRepair);
+  EXPECT_EQ(result.value, "彼は辞書語の天敵です");
+}
+
+
+TEST(ZenzAdoptionPolicyTest, ProtectPromptKeyHandlesRepeatedSurface) {
+  ZenzAdoptionPolicy policy;
+  ZenzProtectedPromptInput input;
+  input.key = "もずきーともずきーをくらべます";
+  ProtectedConversionSpan span = BuildSpan(
+      "もずきー", "Mozkey",
+      ProtectedConversionSpan::Tier::kIdentityCritical, true);
+  span.required_occurrences = 2;
+  input.protected_spans = {span};
+
+  const ZenzProtectedPromptResult prompt = policy.ProtectPromptKey(input);
+  ASSERT_EQ(prompt.protected_spans.size(), 1);
+  EXPECT_EQ(prompt.placeholder_count, 2);
+  EXPECT_EQ(prompt.key,
+            "__MOZC_ZENZ_PROTECTED_0__と"
+            "__MOZC_ZENZ_PROTECTED_0__をくらべます");
+
+  const std::string restored = policy.RestorePlaceholders(
+      "__MOZC_ZENZ_PROTECTED_0__と"
+      "__MOZC_ZENZ_PROTECTED_0__を比較します",
+      prompt.protected_spans);
+  EXPECT_EQ(restored, "MozkeyとMozkeyを比較します");
+}
+
+TEST(ZenzAdoptionPolicyTest, AcceptsWhenProtectedSurfaceIsPreserved) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "もずきーをつかっています";
+  input.mozc_value = "Mozkeyを使っています";
+  input.zenz_value = "Mozkeyを使用しています";
+  input.protected_spans = {
+      BuildSpan("もずきー", "Mozkey", ProtectedConversionSpan::Tier::kIdentityCritical, true),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptAsIs);
+  EXPECT_EQ(result.value, "Mozkeyを使用しています");
+}
+
+TEST(ZenzAdoptionPolicyTest, RepairsIdentityCriticalKanaSurface) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "もずきーをつかっています";
+  input.mozc_value = "Mozkeyを使っています";
+  input.zenz_value = "モズキーを使用しています";
+  input.protected_spans = {
+      BuildSpan("もずきー", "Mozkey", ProtectedConversionSpan::Tier::kIdentityCritical, true),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptWithRepair);
+  EXPECT_EQ(result.value, "Mozkeyを使用しています");
+}
+
+
+TEST(ZenzAdoptionPolicyTest, AcceptsJapaneseUserDictionarySurfaceWithParticle) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "かれはじしょごのてんてきです";
+  input.mozc_value = "彼は辞書語の点滴です";
+  input.zenz_value = "彼は辞書語の天敵です";
+  input.protected_spans = {
+      BuildSpan("じしょご", "辞書語",
+                ProtectedConversionSpan::Tier::kUserPreferred, false),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptAsIs);
+  EXPECT_EQ(result.value, "彼は辞書語の天敵です");
+}
+
+TEST(ZenzAdoptionPolicyTest, RepairsAttachedKanaAfterProtectedSurface) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "かれはじしょごのてんてきです";
+  input.mozc_value = "彼は辞書語の点滴です";
+  input.zenz_value = "彼は辞書語けの天敵です";
+  input.protected_spans = {
+      BuildSpan("じしょご", "辞書語",
+                ProtectedConversionSpan::Tier::kUserPreferred, false),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptWithRepair);
+  EXPECT_EQ(result.value, "彼は辞書語の天敵です");
+}
+
+TEST(ZenzAdoptionPolicyTest, RejectsAttachedKanaWithoutSafeBoundaryRepair) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "かれはじしょご";
+  input.mozc_value = "彼は辞書語";
+  input.zenz_value = "彼は辞書語け";
+  input.protected_spans = {
+      BuildSpan("じしょご", "辞書語",
+                ProtectedConversionSpan::Tier::kUserPreferred, false),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kReject);
+  EXPECT_EQ(result.value, "彼は辞書語");
+}
+
+TEST(ZenzAdoptionPolicyTest, RejectsAsciiIdentitySurfaceAttachment) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "もずきーをつかっています";
+  input.mozc_value = "Mozkeyを使っています";
+  input.zenz_value = "MozkeyXを使用しています";
+  input.protected_spans = {
+      BuildSpan("もずきー", "Mozkey",
+                ProtectedConversionSpan::Tier::kIdentityCritical, true),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kReject);
+  EXPECT_EQ(result.value, "Mozkeyを使っています");
+}
+
+TEST(ZenzAdoptionPolicyTest, RejectsAmbiguousRepair) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "もずきー";
+  input.mozc_value = "MozkeyとMozkey";
+  input.zenz_value = "モズキーとモズキー";
+  input.protected_spans = {
+      BuildSpan("もずきー", "Mozkey", ProtectedConversionSpan::Tier::kIdentityCritical, true),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kReject);
+  EXPECT_EQ(result.reason, "protected_user_dictionary_surface_not_preserved");
+}
+
+TEST(ZenzAdoptionPolicyTest, RepairsOneMissingRepeatedSurface) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "もずきーともずきー";
+  input.mozc_value = "MozkeyとMozkey";
+  input.zenz_value = "Mozkeyとモズキー";
+
+  ProtectedConversionSpan span = BuildSpan(
+      "もずきー", "Mozkey",
+      ProtectedConversionSpan::Tier::kIdentityCritical, true);
+  span.required_occurrences = 2;
+  input.protected_spans = {span};
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptWithRepair);
+  EXPECT_EQ(result.value, "MozkeyとMozkey");
+}
+
+TEST(ZenzAdoptionPolicyTest, RejectsWhenRequiredOccurrenceIsMissing) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "もずきーともずきー";
+  input.mozc_value = "MozkeyとMozkey";
+  input.zenz_value = "Mozkeyだけ";
+
+  ProtectedConversionSpan span = BuildSpan(
+      "もずきー", "Mozkey",
+      ProtectedConversionSpan::Tier::kIdentityCritical, true);
+  span.required_occurrences = 2;
+  input.protected_spans = {span};
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kReject);
+}
+
+TEST(ZenzAdoptionPolicyTest, DoesNotRepairUserPreferredSurface) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "わたなべ";
+  input.mozc_value = "渡邊さんに送る";
+  input.zenz_value = "渡辺さんへ送ります";
+  input.protected_spans = {
+      BuildSpan("わたなべ", "渡邊", ProtectedConversionSpan::Tier::kUserPreferred, false),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kReject);
+}
+
+TEST(ZenzAdoptionPolicyTest, DoesNotRepairShortAsciiSurface) {
+  ZenzAdoptionPolicy policy;
+  ZenzAdoptionInput input;
+  input.key = "えーあい";
+  input.mozc_value = "AIを使う";
+  input.zenz_value = "エーアイを使います";
+  input.protected_spans = {
+      BuildSpan("えーあい", "AI", ProtectedConversionSpan::Tier::kIdentityCritical, true),
+  };
+
+  const ZenzAdoptionResult result = policy.Decide(input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kReject);
+}
+
+}  // namespace
+}  // namespace mozc::session
