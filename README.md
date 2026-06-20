@@ -111,6 +111,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - accepted として確定した Zenz 候補は、条件を満たす場合は Mozc の user history にも外部変換結果として学習
 - 通常 Mozc ライブ変換で現在の結果として現れているユーザー辞書由来候補や ASCII / mixed-script 表記を、Zenz live correction の採用時に保護
 - ASCII / mixed-script 表記は、読みを安全に特定できる場合に Zenz prompt 内で一時 placeholder 化し、応答後に元の表記へ復元。`もずきー -> Mozkey` のような表記が `モズキー` へ上書きされるのを避けつつ、前後の文は補正できるようにした
+- Zenz が `（ ）` / `( )`、`？` / `?`、`！` / `!`、`：` / `:` などの記号幅・記号スタイルを正規化して返した場合でも、元の未確定文字列または通常 Mozc ライブ変換結果でユーザーが使っていた表記へ復元
 - 日本語のみのユーザー辞書語は、自然な読みを Zenz prompt に残したまま、Zenz 応答後に表記の境界を検証し、余分なかな付着を安全に修復できる場合だけ採用するようにした
 - Zenz prompt に使う左文脈は sanitizer を通し、URL、email、file path、token、長い数字列など sensitive-like な文脈は prompt に含めない
 - Zenz feedback には raw left context を保存せず、非可逆な context class のみを保存
@@ -231,6 +232,8 @@ Zenz 補正は設定可能なデバウンス時間の後に実行されます。
 Zenz 出力は表示前に検証されます。空出力、短すぎる入力、Mozc 結果と同一の出力、長すぎる出力、不正な文字列、安全でない可能性のある文字列は拒否されます。拒否された場合は、通常の Mozc ライブ変換結果をそのまま表示します。
 
 通常 Mozc ライブ変換で現在の結果として現れているユーザー辞書由来候補や ASCII / mixed-script 表記は、Zenz 採用時に保護されます。ASCII / mixed-script 表記は、読みを安全に特定できる場合に Zenz prompt 内で一時 placeholder 化し、Zenz 応答後に元の表記へ復元します。これにより、`もずきー -> Mozkey` のような表記が `モズキー` のように上書きされることを避けつつ、対象語の前後にある文の補正は採用できるようにしています。
+
+また、Zenz が括弧、疑問符、感嘆符、一部の全角 ASCII 記号 などを正規化して返した場合でも、採用前にユーザー可視の記号スタイルを復元します。これは全角化ではなく、現在の未確定文字列または通常 Mozc ライブ変換結果に現れていた表記の保存です。たとえば `（テスト）` は `（ ）` のまま、`(test)` は `( )` のまま維持します。URL、path、ASCII token 風の文脈では、ASCII 記号を不用意に全角化しないよう保守的に扱います。
 
 日本語のみのユーザー辞書語は、自然な読みを Zenz prompt に残したまま、Zenz 応答後に表記の境界を検証します。たとえば保護対象の直後に余分なかなが付着した場合は、安全に修復できる場合だけ採用し、修復できない場合は通常の Mozc ライブ変換結果に戻します。
 
@@ -630,6 +633,7 @@ Main features added in this fork
 - Learns accepted Zenz candidates into Mozc user history as external conversion results when the runtime conditions allow it
 - Protects user-dictionary candidates and ASCII / mixed-script surfaces that appear in the current normal Mozc live-conversion result before adopting Zenz live-correction output
 - For ASCII / mixed-script surfaces, temporarily replaces the reading with a placeholder in the Zenz prompt when it can be identified safely, then restores the selected surface after the response, so entries such as `もずきー -> Mozkey` are not silently overwritten as `モズキー` while surrounding text can still be corrected
+- Preserves user-visible punctuation style when adopting Zenz live-correction output, so brackets and symbols such as `（ ）` / `( )`, `？` / `?`, and `！` / `!` stay in the style chosen by the current composition or Mozc live-conversion result
 - For Japanese-only user-dictionary surfaces, keeps the natural reading in the Zenz prompt and validates the selected surface boundaries after the response, accepting the result only when any extra kana attachment can be repaired safely
 - Sanitizes left context before using it in Zenz prompts, and excludes sensitive-like context such as URLs, email addresses, file paths, tokens, and long digit sequences
 - Stores only non-reversible context classes in Zenz feedback and never stores raw left context
@@ -719,6 +723,13 @@ replaced with a placeholder in the Zenz prompt and restored to the selected
 surface after the response. This prevents Zenz from silently overwriting the
 protected word as `モズキー` while still allowing correction of the surrounding
 sentence.
+
+Zenz output may also normalize visible punctuation style. Before adoption,
+Mozkey restores the symbol style from the current composition or normal Mozc
+live-conversion result. This is preservation rather than fullwidth
+normalization: `（test）` stays fullwidth when that was the source style, while
+`(test)` stays ASCII. ASCII-token-like contexts such as code-like words, paths,
+and URLs are handled conservatively to avoid unwanted widening.
 
 Japanese-only user-dictionary surfaces keep their natural reading in the Zenz
 prompt. After the Zenz response, Mozkey validates the selected surface

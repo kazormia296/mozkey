@@ -90,13 +90,6 @@ struct Utf8CharForSymbolRestore {
   std::string bytes;
 };
 
-bool IsAsciiTilde(char32_t cp) { return cp == 0x007E; }
-
-bool IsJapaneseWaveDash(char32_t cp) {
-  return cp == 0xFF5E ||  // FULLWIDTH TILDE: ～
-         cp == 0x301C;    // WAVE DASH: 〜
-}
-
 std::vector<Utf8CharForSymbolRestore> SplitUtf8ForSymbolRestore(
     absl::string_view text) {
   std::vector<Utf8CharForSymbolRestore> chars;
@@ -112,76 +105,71 @@ std::vector<Utf8CharForSymbolRestore> SplitUtf8ForSymbolRestore(
   return chars;
 }
 
-int CountCodePoint(absl::string_view text, char32_t target) {
-  int count = 0;
-  size_t index = 0;
-  while (index < text.size()) {
-    char32_t cp = 0;
-    if (!DecodeOneUtf8(text, &index, &cp)) {
-      return 0;
-    }
-    if (cp == target) {
-      ++count;
+int FindSymbolStyleVariantIndex(char32_t cp,
+                                const std::vector<char32_t>& variants) {
+  for (size_t i = 0; i < variants.size(); ++i) {
+    if (variants[i] == cp) {
+      return static_cast<int>(i);
     }
   }
-  return count;
+  return -1;
 }
 
-int CountJapaneseWaveDashFamily(absl::string_view text) {
-  return CountCodePoint(text, 0xFF5E) + CountCodePoint(text, 0x301C);
+bool IsAsciiTokenCharForSymbolRestore(char32_t cp) {
+  if (cp > 0x7F) {
+    return false;
+  }
+
+  return (U'0' <= cp && cp <= U'9') ||
+         (U'A' <= cp && cp <= U'Z') ||
+         (U'a' <= cp && cp <= U'z') ||
+         cp == U'_' || cp == U'-' || cp == U'.' || cp == U'+' ||
+         cp == U'#' || cp == U'/' || cp == U'\\';
 }
 
-int CountAsciiTilde(absl::string_view text) {
-  return CountCodePoint(text, 0x007E);
+bool HasAsciiTokenNeighborForSymbolRestore(
+    const std::vector<Utf8CharForSymbolRestore>& chars, size_t index) {
+  if (index > 0 && IsAsciiTokenCharForSymbolRestore(chars[index - 1].cp)) {
+    return true;
+  }
+  if (index + 1 < chars.size() &&
+      IsAsciiTokenCharForSymbolRestore(chars[index + 1].cp)) {
+    return true;
+  }
+  return false;
 }
 
-std::string FirstJapaneseWaveDashBytes(absl::string_view text) {
-  const std::vector<Utf8CharForSymbolRestore> chars =
-      SplitUtf8ForSymbolRestore(text);
+std::string FirstSymbolVariantBytes(
+    const std::vector<Utf8CharForSymbolRestore>& chars, char32_t target) {
   for (const Utf8CharForSymbolRestore& ch : chars) {
-    if (IsJapaneseWaveDash(ch.cp)) {
+    if (ch.cp == target) {
       return ch.bytes;
     }
   }
   return {};
 }
 
-}  // namespace
-
-std::string ZenzOutputValidator::RestoreUserVisibleSymbolStyle(
-    absl::string_view key,
-    absl::string_view mozc_value,
-    absl::string_view zenz_value) {
-  const int key_wave_dash_count = CountJapaneseWaveDashFamily(key);
-  const int mozc_wave_dash_count = CountJapaneseWaveDashFamily(mozc_value);
-
-  // Prefer `key` because the caller passes raw-preedit-derived text here for
-  // live correction.  `mozc_value` may already contain an ASCII tilde due to
-  // converter or feedback influence, and must not cancel restoration of the
-  // user-entered Japanese wave dash style.
-  absl::string_view style_source;
-  if (key_wave_dash_count > 0) {
-    style_source = key;
-  } else if (mozc_wave_dash_count > 0) {
-    style_source = mozc_value;
-  } else {
-    return std::string(zenz_value);
+bool ContainsAnySymbolStyleVariant(absl::string_view text,
+                                   const std::vector<char32_t>& variants) {
+  size_t index = 0;
+  while (index < text.size()) {
+    char32_t cp = 0;
+    if (!DecodeOneUtf8(text, &index, &cp)) {
+      return false;
+    }
+    if (FindSymbolStyleVariantIndex(cp, variants) >= 0) {
+      return true;
+    }
   }
+  return false;
+}
 
-  const int source_wave_dash_count =
-      CountJapaneseWaveDashFamily(style_source);
-  const int zenz_wave_dash_count = CountJapaneseWaveDashFamily(zenz_value);
-  const int missing_wave_dash_count =
-      source_wave_dash_count - zenz_wave_dash_count;
-  if (missing_wave_dash_count <= 0) {
-    return std::string(zenz_value);
-  }
-
-  const int source_ascii_tilde_count = CountAsciiTilde(style_source);
-  const int zenz_ascii_tilde_count = CountAsciiTilde(zenz_value);
-  int replacement_budget = std::min(
-      missing_wave_dash_count, zenz_ascii_tilde_count - source_ascii_tilde_count);
-  if (replacement_budget <= 0) {
+std::string RestoreSymbolGroupStyle(
+    absl::string_view style_source,
+    absl::string_view zenz_value,
+    const std::vector<char32_t>& variants,
+    bool avoid_ascii_token_fallback_when_widening) {
+  if (style_source.empty() || zenz_value.empty() || variants.empty()) {
     return std::string(zenz_value);
   }
 
@@ -193,35 +181,183 @@ std::string ZenzOutputValidator::RestoreUserVisibleSymbolStyle(
     return std::string(zenz_value);
   }
 
-  const std::string default_replacement =
-      FirstJapaneseWaveDashBytes(style_source);
-  if (default_replacement.empty()) {
+  std::vector<int> source_counts(variants.size(), 0);
+  std::vector<int> zenz_counts(variants.size(), 0);
+
+  for (const Utf8CharForSymbolRestore& ch : source_chars) {
+    const int index = FindSymbolStyleVariantIndex(ch.cp, variants);
+    if (index >= 0) {
+      ++source_counts[index];
+    }
+  }
+  for (const Utf8CharForSymbolRestore& ch : zenz_chars) {
+    const int index = FindSymbolStyleVariantIndex(ch.cp, variants);
+    if (index >= 0) {
+      ++zenz_counts[index];
+    }
+  }
+
+  int active_source_variant_count = 0;
+  for (const int count : source_counts) {
+    if (count > 0) {
+      ++active_source_variant_count;
+    }
+  }
+  if (active_source_variant_count == 0) {
     return std::string(zenz_value);
+  }
+
+  std::vector<int> missing_counts(variants.size(), 0);
+  std::vector<int> excess_counts(variants.size(), 0);
+  bool needs_restore = false;
+  for (size_t i = 0; i < variants.size(); ++i) {
+    missing_counts[i] = std::max(0, source_counts[i] - zenz_counts[i]);
+    excess_counts[i] = std::max(0, zenz_counts[i] - source_counts[i]);
+    needs_restore = needs_restore || missing_counts[i] > 0;
+  }
+  if (!needs_restore) {
+    return std::string(zenz_value);
+  }
+
+  std::vector<std::string> default_replacements(variants.size());
+  for (size_t i = 0; i < variants.size(); ++i) {
+    if (missing_counts[i] > 0) {
+      default_replacements[i] =
+          FirstSymbolVariantBytes(source_chars, variants[i]);
+      if (default_replacements[i].empty()) {
+        missing_counts[i] = 0;
+      }
+    }
   }
 
   std::string restored;
   restored.reserve(zenz_value.size());
   for (size_t i = 0; i < zenz_chars.size(); ++i) {
     const Utf8CharForSymbolRestore& ch = zenz_chars[i];
-    const bool positional_restore =
-        i < source_chars.size() && IsJapaneseWaveDash(source_chars[i].cp);
+    const int current_index =
+        FindSymbolStyleVariantIndex(ch.cp, variants);
 
-    // If the source did not contain ASCII tilde at all, any extra ASCII tilde
-    // returned by Zenz is highly likely to be a normalized Japanese wave dash.
-    // If the source did contain ASCII tilde, avoid broad fallback replacement
-    // and only restore exact character positions to preserve intentional ASCII.
-    const bool safe_fallback_restore = source_ascii_tilde_count == 0;
+    int target_index = -1;
+    bool positional_restore = false;
+    if (current_index >= 0 && i < source_chars.size()) {
+      const int source_index =
+          FindSymbolStyleVariantIndex(source_chars[i].cp, variants);
+      if (source_index >= 0 && source_index != current_index &&
+          missing_counts[source_index] > 0) {
+        target_index = source_index;
+        positional_restore = true;
+      }
+    }
 
-    if (replacement_budget > 0 && IsAsciiTilde(ch.cp) &&
-        (positional_restore || safe_fallback_restore)) {
-      restored.append(positional_restore ? source_chars[i].bytes
-                                         : default_replacement);
-      --replacement_budget;
+    if (target_index < 0 && current_index >= 0 &&
+        excess_counts[current_index] > 0 && active_source_variant_count == 1) {
+      for (size_t j = 0; j < variants.size(); ++j) {
+        if (missing_counts[j] <= 0) {
+          continue;
+        }
+
+        const bool widening_from_ascii =
+            ch.cp <= 0x7F && variants[j] > 0x7F;
+        if (avoid_ascii_token_fallback_when_widening && widening_from_ascii &&
+            HasAsciiTokenNeighborForSymbolRestore(zenz_chars, i)) {
+          continue;
+        }
+
+        target_index = static_cast<int>(j);
+        break;
+      }
+    }
+
+    if (target_index >= 0) {
+      if (positional_restore) {
+        restored.append(source_chars[i].bytes);
+      } else {
+        restored.append(default_replacements[target_index]);
+      }
+      --missing_counts[target_index];
+      if (current_index >= 0 && excess_counts[current_index] > 0) {
+        --excess_counts[current_index];
+      }
       continue;
     }
 
     restored.append(ch.bytes);
   }
+
+  return restored;
+}
+
+std::string RestoreSymbolGroupStyleFromKeyOrMozc(
+    absl::string_view key,
+    absl::string_view mozc_value,
+    absl::string_view zenz_value,
+    const std::vector<char32_t>& variants,
+    bool avoid_ascii_token_fallback_when_widening) {
+  absl::string_view style_source;
+  if (ContainsAnySymbolStyleVariant(key, variants)) {
+    style_source = key;
+  } else if (ContainsAnySymbolStyleVariant(mozc_value, variants)) {
+    style_source = mozc_value;
+  } else {
+    return std::string(zenz_value);
+  }
+
+  return RestoreSymbolGroupStyle(style_source, zenz_value, variants,
+                                 avoid_ascii_token_fallback_when_widening);
+}
+
+}  // namespace
+
+std::string ZenzOutputValidator::RestoreUserVisibleSymbolStyle(
+    absl::string_view key,
+    absl::string_view mozc_value,
+    absl::string_view zenz_value) {
+  std::string restored(zenz_value);
+
+  // Preserve the user's visible orthographic choice.  This is not fullwidth
+  // normalization: if the source text used ASCII punctuation, a fullwidth Zenz
+  // response is repaired back to ASCII; if the source text used Japanese-width
+  // punctuation, an ASCII-normalized Zenz response is repaired back to that
+  // source style.
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'~', U'～', U'〜'},
+      /*avoid_ascii_token_fallback_when_widening=*/false);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'(', U'（'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U')', U'）'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'[', U'［'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U']', U'］'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'{', U'｛'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'}', U'｝'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'!', U'！'},
+      /*avoid_ascii_token_fallback_when_widening=*/false);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'?', U'？'},
+      /*avoid_ascii_token_fallback_when_widening=*/false);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U':', U'：'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U';', U'；'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U',', U'，'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
+  restored = RestoreSymbolGroupStyleFromKeyOrMozc(
+      key, mozc_value, restored, {U'.', U'．'},
+      /*avoid_ascii_token_fallback_when_widening=*/true);
 
   return restored;
 }

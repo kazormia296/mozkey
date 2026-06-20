@@ -29,11 +29,13 @@ class ZenzOutputValidator {
  public:
   ZenzValidationResult Validate(const ZenzValidationInput& input) const;
 
-  // Restores user-visible Japanese symbol style that Zenz may normalize to
-  // ASCII.  This currently protects wave-dash-like Japanese tildes: when the
-  // key or the original Mozc value contains U+FF5E FULLWIDTH TILDE or U+301C
-  // WAVE DASH, and Zenz returns U+007E ASCII TILDE instead, the returned value
-  // is restored before validation, display, commit, and feedback recording.
+  // Restores user-visible symbol style that Zenz may normalize. This preserves
+  // the user's current composition style instead of normalizing to either
+  // fullwidth or ASCII: if the key or original Mozc value used Japanese-width
+  // punctuation, ASCII-normalized Zenz punctuation is restored; if the source
+  // used ASCII punctuation, fullwidth Zenz punctuation is restored to ASCII.
+  // The returned value is used before validation, display, commit, and
+  // feedback recording.
   static std::string RestoreUserVisibleSymbolStyle(
       absl::string_view key,
       absl::string_view mozc_value,
