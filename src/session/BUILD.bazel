@@ -133,6 +133,21 @@ mozc_cc_test(
 )
 
 mozc_cc_test(
+    name = "zenz_output_validator_test",
+    size = "small",
+    srcs = [
+        "zenz_output_validator.cc",
+        "zenz_output_validator.h",
+        "zenz_output_validator_test.cc",
+    ],
+    deps = [
+        "//base:util",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_test(
     name = "session_test",
     size = "small",
     timeout = "moderate",
