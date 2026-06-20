@@ -39,7 +39,8 @@ class RubyWindow
   void Initialize();
   void Destroy();
   void Hide();
-  void OnUpdate(const commands::RendererCommand& command);
+  void OnUpdate(const commands::RendererCommand& command,
+                const RECT* avoid_rect = nullptr);
 
  private:
   LRESULT OnEraseBkgnd(UINT msg_id, WPARAM wparam, LPARAM lparam,

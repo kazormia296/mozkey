@@ -78,6 +78,8 @@ class WindowManager {
   // without candidate_window; in that case the renderer can keep the existing
   // passive suggestion window visible instead of hiding it.
   bool last_live_conversion_passive_suggestion_visible_;
+  RECT last_live_conversion_passive_suggestion_rect_;
+  bool has_last_live_conversion_passive_suggestion_rect_;
   int candidates_finger_print_;
   DWORD thread_id_;
 };

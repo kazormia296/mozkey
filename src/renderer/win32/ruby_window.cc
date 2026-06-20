@@ -22,7 +22,9 @@ namespace {
 // Theme-aware translucent pill UI.
 constexpr int kPaddingX = 14;
 constexpr int kPaddingY = 6;
-constexpr int kGapFromComposition = 0;
+// Keep a real gap from the host application text. A zero gap makes a
+// topmost overlay visually merge with, or cover, editor glyphs.
+constexpr int kGapFromComposition = 4;
 constexpr int kFontPointSize = 13;
 constexpr uint32_t kDefaultDpi = 96;
 
@@ -135,6 +137,25 @@ int GetPreeditWidth(const commands::RendererCommand& command) {
   const commands::RendererCommand::Rectangle& rect =
       command.preedit_rectangle();
   return std::max(0, rect.right() - rect.left());
+}
+
+bool Intersects(const RECT& lhs, const RECT& rhs) {
+  return lhs.left < rhs.right && rhs.left < lhs.right &&
+         lhs.top < rhs.bottom && rhs.top < lhs.bottom;
+}
+
+bool IsUsableRubyRect(const RECT& rect, const RECT& work_area,
+                      const RECT* avoid_rect) {
+  if (rect.left >= rect.right || rect.top >= rect.bottom) {
+    return false;
+  }
+  if (rect.top < work_area.top || rect.bottom > work_area.bottom) {
+    return false;
+  }
+  if (avoid_rect != nullptr && Intersects(rect, *avoid_rect)) {
+    return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -342,7 +363,8 @@ SIZE RubyWindow::MeasureText() const {
   return size;
 }
 
-void RubyWindow::OnUpdate(const commands::RendererCommand& command) {
+void RubyWindow::OnUpdate(const commands::RendererCommand& command,
+                          const RECT* avoid_rect) {
   if (!command.visible()) {
     Hide();
     return;
@@ -377,27 +399,47 @@ void RubyWindow::OnUpdate(const commands::RendererCommand& command) {
     return;
   }
 
+  const RendererStyleHandler::RubyWindowStyle theme = GetRubyWindowTheme();
+  const int gap = ScaleByPercent(kGapFromComposition, theme.size_percent);
+
   const RECT work_area = GetWorkAreaForPoint(base_point);
 
-  // Horizontally center over the preedit rectangle when possible.
-  // If preedit width is unavailable, align to the preedit/caret x position.
+  // Keep the left edge stable while the reading text grows. Centering a ruby
+  // chip that is wider than the preedit makes the window expand both left and
+  // right on every keystroke, which is visually noisy in live conversion.
   const int preedit_width = GetPreeditWidth(command);
 
   int left = base_point.x;
-  if (preedit_width > 0) {
+  if (preedit_width > window_size_.cx) {
     left = base_point.x + (preedit_width - window_size_.cx) / 2;
   }
-
-  // Attach tightly above the preedit.
-  int top = base_point.y - window_size_.cy - kGapFromComposition;
-
-  // If there is no room above, place below the composition line.
-  if (top < work_area.top) {
-    top = base_point.y + line_height + kGapFromComposition;
-  }
-
   left = ClampInt(left, work_area.left, work_area.right - window_size_.cx);
-  top = ClampInt(top, work_area.top, work_area.bottom - window_size_.cy);
+
+  const int above_top = base_point.y - window_size_.cy - gap;
+  const int below_top = base_point.y + line_height + gap;
+
+  const auto ruby_rect_at = [&](int top) {
+    return RECT{left, top, left + window_size_.cx, top + window_size_.cy};
+  };
+
+  const auto try_place = [&](int top, int* chosen_top) {
+    const RECT rect = ruby_rect_at(top);
+    if (!IsUsableRubyRect(rect, work_area, avoid_rect)) {
+      return false;
+    }
+    *chosen_top = top;
+    return true;
+  };
+
+  int top = 0;
+  // Prefer the conventional ruby-like placement above the preedit.  Use below
+  // only when the above side is unavailable or occupied by candidate/suggestion
+  // UI.  If neither side is usable, hide the ruby window rather than overlapping
+  // other renderer UI.
+  if (!try_place(above_top, &top) && !try_place(below_top, &top)) {
+    Hide();
+    return;
+  }
 
   const int radius = ScaleCornerRadius(
       RendererStyleHandler::GetRubyWindowStyle().corner_radius,
