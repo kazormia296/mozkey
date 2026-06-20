@@ -396,6 +396,7 @@ mozc_cc_library(
     visibility = ["//session:__pkg__"],
     deps = [
         "//composer",
+        "//converter:converter_interface",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
         "//transliteration",

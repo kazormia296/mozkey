@@ -69,6 +69,15 @@ mozc_cc_test(
 )
 
 mozc_cc_library(
+    name = "zenz_adoption_policy",
+    srcs = ["zenz_adoption_policy.cc"],
+    hdrs = ["zenz_adoption_policy.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_library(
     name = "session",
     srcs = [
         "session.cc",
@@ -93,12 +102,14 @@ mozc_cc_library(
         ":ime_context",
         ":key_event_transformer",
         ":keymap",
+        ":zenz_adoption_policy",
         ":zenz_feedback_store",
         "//base:clock",
         "//base:util",
         "//composer",
         "//composer:key_event_util",
         "//composer:table",
+        "//converter:converter_interface",
         "//engine:engine_converter_interface",
         "//engine:engine_interface",
         "//protocol:commands_cc_proto",
@@ -108,6 +119,16 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_test(
+    name = "zenz_adoption_policy_test",
+    size = "small",
+    srcs = ["zenz_adoption_policy_test.cc"],
+    deps = [
+        ":zenz_adoption_policy",
+        "//testing:gunit_main",
     ],
 )
 

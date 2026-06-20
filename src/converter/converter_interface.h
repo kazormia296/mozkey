@@ -32,6 +32,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
@@ -43,6 +45,11 @@ namespace mozc {
 namespace composer {
 class Composer;
 }  // namespace composer
+
+struct UserDictionaryLookupResult {
+  std::string key;
+  std::string value;
+};
 
 class ConverterInterface {
  public:
@@ -95,6 +102,17 @@ class ConverterInterface {
       absl::string_view key,
       absl::string_view value) const {
     return false;
+  }
+
+  // Looks up user-dictionary entries whose key is a prefix of |key|.
+  // This narrow read-only API lets session code use the existing user
+  // dictionary index instead of loading UserDictionaryStorage directly.
+  virtual void LookupUserDictionaryPrefixEntries(
+      absl::string_view key,
+      std::vector<UserDictionaryLookupResult>* results) const {
+    if (results != nullptr) {
+      results->clear();
+    }
   }
 
   // Clear segments and keep the context

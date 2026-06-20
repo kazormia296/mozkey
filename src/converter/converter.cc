@@ -60,6 +60,7 @@
 #include "converter/inner_segment.h"
 #include "converter/reverse_converter.h"
 #include "converter/segments.h"
+#include "dictionary/dictionary_interface.h"
 #include "dictionary/pos_matcher.h"
 #include "engine/modules.h"
 #include "prediction/predictor_interface.h"
@@ -421,6 +422,35 @@ bool Converter::LearnExternalConversionResult(
 
   FinishConversion(request, &learning_segments);
   return true;
+}
+
+void Converter::LookupUserDictionaryPrefixEntries(
+    absl::string_view key,
+    std::vector<UserDictionaryLookupResult>* results) const {
+  if (results == nullptr) {
+    return;
+  }
+  results->clear();
+  if (key.empty()) {
+    return;
+  }
+
+  using Callback = dictionary::DictionaryInterface::Callback;
+  dictionary::InlineCallback callback;
+  callback.OnToken([results](absl::string_view, absl::string_view,
+                             const dictionary::Token& token) {
+    if (token.key.empty() || token.value.empty()) {
+      return Callback::TRAVERSE_CONTINUE;
+    }
+
+    UserDictionaryLookupResult result;
+    result.key = std::string(token.key);
+    result.value = std::string(token.value);
+    results->push_back(std::move(result));
+    return Callback::TRAVERSE_CONTINUE;
+  });
+
+  user_dictionary_.LookupPrefix(key, &callback);
 }
 
 void Converter::CancelConversion(Segments* segments) const {

@@ -841,6 +841,19 @@ bool EngineConverter::LearnExternalConversionResult(
       conversion_request, key, value);
 }
 
+void EngineConverter::LookupUserDictionaryPrefixEntries(
+    absl::string_view key,
+    std::vector<UserDictionaryLookupResult>* results) const {
+  if (results == nullptr) {
+    return;
+  }
+  results->clear();
+  if (!converter_) {
+    return;
+  }
+  converter_->LookupUserDictionaryPrefixEntries(key, results);
+}
+
 bool EngineConverter::CommitSuggestionInternal(
     const composer::Composer& composer, const commands::Context& context,
     size_t* consumed_key_size) {
