@@ -551,6 +551,7 @@ Composer::Composer(std::shared_ptr<const Table> table,
       comeback_input_mode_(transliteration::HIRAGANA),
       input_field_type_(commands::Context::NORMAL),
       shifted_sequence_count_(0),
+      is_in_shifted_ascii_revert_context_(false),
       max_length_(kMaxPreeditLength),
       request_(std::move(request)),
       config_(std::move(config)),
@@ -603,17 +604,20 @@ void Composer::SetTable(std::shared_ptr<const Table> table) {
 void Composer::SetRequest(std::shared_ptr<const commands::Request> request) {
   DCHECK(request);
   request_ = std::move(request);
+  is_in_shifted_ascii_revert_context_ = false;
 }
 
 void Composer::SetConfig(std::shared_ptr<const config::Config> config) {
   DCHECK(config);
   config_ = std::move(config);
+  is_in_shifted_ascii_revert_context_ = false;
 }
 
 void Composer::SetInputMode(transliteration::TransliterationType mode) {
   comeback_input_mode_ = mode;
   input_mode_ = mode;
   shifted_sequence_count_ = 0;
+  is_in_shifted_ascii_revert_context_ = false;
   is_new_input_ = true;
   composition_.SetInputMode(GetTransliterator(mode));
 }
@@ -624,6 +628,7 @@ void Composer::SetTemporaryInputMode(
   comeback_input_mode_ = input_mode_;
   input_mode_ = mode;
   shifted_sequence_count_ = 0;
+  is_in_shifted_ascii_revert_context_ = false;
   is_new_input_ = true;
   composition_.SetInputMode(GetTransliterator(mode));
 }
@@ -640,6 +645,7 @@ void Composer::UpdateInputMode() {
       //   "A|B" and "あ|い", the input mode follows the character type.
       input_mode_ = GetTransliterationType(current_t12r, comeback_input_mode_);
       shifted_sequence_count_ = 0;
+      is_in_shifted_ascii_revert_context_ = false;
       is_new_input_ = true;
       composition_.SetInputMode(GetTransliterator(input_mode_));
       return;
@@ -688,6 +694,7 @@ void Composer::ApplyTemporaryInputMode(const absl::string_view input,
   // When input is not an ASCII code, reset the input mode to the one before
   // temporary input mode.
   if (OneCharLen(input.front()) != 1) {
+    is_in_shifted_ascii_revert_context_ = false;
     // Call SetInputMode() only when the current input mode is temporary, which
     // is detected by the if-condition below.  Without this check,
     // SetInputMode() is called always for multi-byte charactesrs.  This causes
@@ -709,6 +716,7 @@ void Composer::ApplyTemporaryInputMode(const absl::string_view input,
       (!caps_locked && ('a' <= key && key <= 'z'));
 
   if (alpha_with_shift) {
+    is_in_shifted_ascii_revert_context_ = false;
     if (switch_mode == config::Config::ASCII_INPUT_MODE) {
       if (input_mode_ == transliteration::HALF_ASCII ||
           input_mode_ == transliteration::FULL_ASCII) {
@@ -730,6 +738,7 @@ void Composer::ApplyTemporaryInputMode(const absl::string_view input,
     if (shifted_sequence_count_ > 1 &&
         switch_mode == config::Config::ASCII_INPUT_MODE) {
       SetInputMode(comeback_input_mode_);
+      is_in_shifted_ascii_revert_context_ = true;
     }
     if (switch_mode == config::Config::KATAKANA_INPUT_MODE) {
       SetInputMode(comeback_input_mode_);
@@ -740,6 +749,7 @@ void Composer::ApplyTemporaryInputMode(const absl::string_view input,
     // because "Continuous shifted input" feature should be reset
     // when the input meets non-alphabet character.
     shifted_sequence_count_ = 0;
+    is_in_shifted_ascii_revert_context_ = false;
   }
 }
 
@@ -1372,7 +1382,10 @@ bool Composer::TransformCharactersForNumbers(std::string* query) {
   return true;
 }
 
-void Composer::SetNewInput() { is_new_input_ = true; }
+void Composer::SetNewInput() {
+  is_in_shifted_ascii_revert_context_ = false;
+  is_new_input_ = true;
+}
 
 bool Composer::IsToggleable() const {
   // When |is_new_input_| is true, a new chunk is always created and, hence, key

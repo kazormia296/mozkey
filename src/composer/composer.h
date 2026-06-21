@@ -355,6 +355,9 @@ class Composer final {
 
   bool is_new_input() const { return is_new_input_; }
   size_t shifted_sequence_count() const { return shifted_sequence_count_; }
+  bool is_in_shifted_ascii_revert_context() const {
+    return is_in_shifted_ascii_revert_context_;
+  }
   absl::string_view source_text() const { return source_text_; }
   std::string* mutable_source_text() { return &source_text_; }
   void set_source_text(absl::string_view source_text);
@@ -391,6 +394,12 @@ class Composer final {
   commands::Context::InputFieldType input_field_type_;
 
   size_t shifted_sequence_count_;
+
+  // True while the current ASCII-letter run follows a reverted temporary
+  // shifted ASCII sequence.  This is a semantic latch for the pattern where
+  // two or more shifted alphabet keys temporarily enter ASCII mode, and the
+  // following unshifted alphabet key returns input to the comeback mode.
+  bool is_in_shifted_ascii_revert_context_;
 
   // The original text for the composition.  The value is usually
   // empty, and used for reverse conversion.

@@ -97,6 +97,8 @@ void ExpectSameComposer(const Composer& lhs, const Composer& rhs) {
   EXPECT_EQ(lhs.GetOutputMode(), rhs.GetOutputMode());
   EXPECT_EQ(lhs.GetComebackInputMode(), rhs.GetComebackInputMode());
   EXPECT_EQ(lhs.shifted_sequence_count(), rhs.shifted_sequence_count());
+  EXPECT_EQ(lhs.is_in_shifted_ascii_revert_context(),
+            rhs.is_in_shifted_ascii_revert_context());
   EXPECT_EQ(lhs.source_text(), rhs.source_text());
   EXPECT_EQ(lhs.max_length(), rhs.max_length());
   EXPECT_EQ(lhs.GetInputFieldType(), rhs.GetInputFieldType());
@@ -1206,6 +1208,38 @@ TEST_F(ComposerTest, ShiftKeyOperation) {
 
     EXPECT_EQ(composer_->GetStringForPreedit(), "Aa");
   }
+}
+
+TEST_F(ComposerTest, ShiftedAsciiRevertContext) {
+  table_->AddRule("a", "あ", "");
+  config_->set_shift_key_mode_switch(Config::ASCII_INPUT_MODE);
+
+  composer_->Reset();
+  composer_->SetInputMode(transliteration::HIRAGANA);
+
+  ASSERT_TRUE(InsertKey("A", composer_.get()));
+  EXPECT_FALSE(composer_->is_in_shifted_ascii_revert_context());
+
+  ASSERT_TRUE(InsertKey("A", composer_.get()));
+  EXPECT_FALSE(composer_->is_in_shifted_ascii_revert_context());
+
+  ASSERT_TRUE(InsertKey("a", composer_.get()));
+  EXPECT_TRUE(composer_->is_in_shifted_ascii_revert_context());
+  EXPECT_EQ(composer_->GetInputMode(), transliteration::HIRAGANA);
+  EXPECT_EQ(composer_->GetStringForPreedit(), "AAあ");
+
+  // Keep the latch for the following unshifted alphabet run.  This lets the
+  // session suppress the whole passive ASCII-rescue suggestion window, not only
+  // the first letter after the temporary ASCII mode is reverted.
+  ASSERT_TRUE(InsertKey("a", composer_.get()));
+  EXPECT_TRUE(composer_->is_in_shifted_ascii_revert_context());
+  EXPECT_EQ(composer_->GetStringForPreedit(), "AAああ");
+
+  ASSERT_TRUE(InsertKey(".", composer_.get()));
+  EXPECT_FALSE(composer_->is_in_shifted_ascii_revert_context());
+
+  ASSERT_TRUE(InsertKey("A", composer_.get()));
+  EXPECT_FALSE(composer_->is_in_shifted_ascii_revert_context());
 }
 
 TEST_F(ComposerTest, ShiftKeyOperationForKatakana) {
