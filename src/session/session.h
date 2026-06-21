@@ -535,7 +535,7 @@ class Session {
       const mozc::commands::Input& input,
       mozc::commands::Output* output);
   bool AttachCachedLiveConversionSuggestionCandidateWindow(
-      mozc::commands::Output* output) const;
+      mozc::commands::Output* output);
   bool CommitLiveConversionResult(mozc::commands::Command* command);
   bool CommitPendingLiveConversionDisplayDirectly(
       mozc::commands::Command* command);

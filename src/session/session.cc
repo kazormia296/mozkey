@@ -4493,6 +4493,12 @@ void Session::CancelLiveConversionForEditing() {
   context_->mutable_converter()->Cancel();
 }
 
+namespace {
+bool ShouldSuppressShiftedAsciiAutoSuggestion(
+    const config::Config& config,
+    const composer::Composer& composer);
+}  // namespace
+
 bool Session::MaybeStartLiveConversion(commands::Command* command) {
   if (!context_->GetConfig().use_live_conversion()) {
     return false;
@@ -4602,7 +4608,16 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
     return true;
   }
 
-  if (!AttachLiveConversionSuggestionCandidateWindow(
+  const bool should_suppress_shifted_ascii_suggestion =
+      ShouldSuppressShiftedAsciiAutoSuggestion(context_->GetConfig(),
+                                               context_->composer());
+
+  if (should_suppress_shifted_ascii_suggestion) {
+    live_conversion_suggestion_candidate_window_.Clear();
+    pending_live_conversion_suggestion_candidate_window_.Clear();
+    command->mutable_output()->clear_candidate_window();
+  } else if (
+      !AttachLiveConversionSuggestionCandidateWindow(
           live_conversion_suggestion_input, command->mutable_output()) &&
       pending_live_conversion_suggestion_candidate_window.candidate_size() > 0) {
     live_conversion_suggestion_candidate_window_ =
@@ -7435,10 +7450,73 @@ bool SuppressSuggestion(const commands::Input& input) {
   }
   return false;
 }
+
+bool IsAsciiUpperAlpha(const char c) {
+  return 'A' <= c && c <= 'Z';
+}
+
+bool IsAsciiLowerAlpha(const char c) {
+  return 'a' <= c && c <= 'z';
+}
+
+bool LooksLikeShiftedAsciiRomanizedSuggestionContext(
+    const composer::Composer& composer) {
+  const transliteration::TransliterationType input_mode =
+      composer.GetInputMode();
+  if (input_mode == transliteration::HALF_ASCII ||
+      input_mode == transliteration::FULL_ASCII) {
+    return false;
+  }
+
+  const std::string raw = composer.GetRawString();
+  if (raw.size() < 3 || !IsAsciiUpperAlpha(raw[0]) ||
+      !IsAsciiUpperAlpha(raw[1])) {
+    return false;
+  }
+
+  bool has_lower_alpha = false;
+  for (const char c : raw) {
+    if (static_cast<unsigned char>(c) >= 0x80) {
+      return false;
+    }
+    if (IsAsciiLowerAlpha(c)) {
+      has_lower_alpha = true;
+    }
+  }
+  if (!has_lower_alpha) {
+    return false;
+  }
+
+  // Example:
+  //   raw     = "AIde"
+  //   preedit = "AI + Japanese text"
+  //
+  // This is the ambiguity caused by the shifted ASCII sequence being reverted
+  // to Japanese input.  When dictionary suggest is disabled, do not surface the
+  // raw ASCII rescue candidate automatically.
+  return raw != composer.GetStringForPreedit();
+}
+
+bool ShouldSuppressShiftedAsciiAutoSuggestion(
+    const config::Config& config,
+    const composer::Composer& composer) {
+  if (config.use_dictionary_suggest()) {
+    return false;
+  }
+  return composer.is_in_shifted_ascii_revert_context() ||
+         LooksLikeShiftedAsciiRomanizedSuggestionContext(composer);
+}
 }  // namespace
 
 bool Session::Suggest(const commands::Input& input) {
   if (SuppressSuggestion(input)) {
+    return false;
+  }
+
+  if (ShouldSuppressShiftedAsciiAutoSuggestion(context_->GetConfig(),
+                                               context_->composer())) {
+    live_conversion_suggestion_candidate_window_.Clear();
+    pending_live_conversion_suggestion_candidate_window_.Clear();
     return false;
   }
 
@@ -7478,6 +7556,13 @@ bool Session::AttachLiveConversionSuggestionCandidateWindow(
   output->clear_candidate_window();
 
   if (SuppressSuggestion(input)) {
+    return false;
+  }
+
+  if (ShouldSuppressShiftedAsciiAutoSuggestion(context_->GetConfig(),
+                                               context_->composer())) {
+    live_conversion_suggestion_candidate_window_.Clear();
+    pending_live_conversion_suggestion_candidate_window_.Clear();
     return false;
   }
 
@@ -7531,10 +7616,17 @@ bool Session::AttachLiveConversionSuggestionCandidateWindow(
 }
 
 bool Session::AttachCachedLiveConversionSuggestionCandidateWindow(
-    commands::Output* output) const {
+    commands::Output* output) {
   DCHECK(output);
 
   output->clear_candidate_window();
+
+  if (ShouldSuppressShiftedAsciiAutoSuggestion(context_->GetConfig(),
+                                               context_->composer())) {
+    live_conversion_suggestion_candidate_window_.Clear();
+    pending_live_conversion_suggestion_candidate_window_.Clear();
+    return false;
+  }
 
   const commands::CandidateWindow* candidate_window = nullptr;
   if (live_conversion_suggestion_candidate_window_.has_category() &&

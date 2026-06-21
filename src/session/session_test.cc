@@ -99,6 +99,10 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_METHOD(DiscardPendingDirectCommitLearning);
   PEER_METHOD(HandlePendingDirectCommitLearningForKeyEvent);
   PEER_METHOD(HandlePendingDirectCommitLearningForSessionCommand);
+  PEER_METHOD(Suggest);
+  PEER_METHOD(MaybeStartLiveConversion);
+  PEER_METHOD(AttachLiveConversionSuggestionCandidateWindow);
+  PEER_METHOD(AttachCachedLiveConversionSuggestionCandidateWindow);
 
   PEER_VARIABLE(context_);
   PEER_VARIABLE(undo_contexts_);
@@ -108,6 +112,8 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_VARIABLE(live_conversion_preedit_);
   PEER_VARIABLE(live_conversion_value_);
   PEER_VARIABLE(live_conversion_preedit_output_);
+  PEER_VARIABLE(pending_live_conversion_suggestion_candidate_window_);
+  PEER_VARIABLE(live_conversion_suggestion_candidate_window_);
   PEER_VARIABLE(zenz_live_key_);
   PEER_VARIABLE(zenz_live_value_);
   PEER_VARIABLE(zenz_live_mozc_value_);
@@ -1743,6 +1749,123 @@ TEST_F(SessionTest, LiveConversionAttachesPassiveSuggestionCandidateWindow) {
   EXPECT_FALSE(session_peer.live_conversion_active_());
   EXPECT_FALSE(command.output().live_conversion());
   EXPECT_PREEDIT("阿", command);
+}
+
+TEST_F(SessionTest,
+       ShiftedAsciiRevertSuppressesPassiveSuggestionWhenDictionarySuggestOff) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_dictionary_suggest(false);
+  config.set_shift_key_mode_switch(config::Config::ASCII_INPUT_MODE);
+  session.SetConfig(config);
+
+  commands::Command command;
+  ASSERT_TRUE(SendKey("A", &session, &command));
+  ASSERT_TRUE(SendKey("A", &session, &command));
+  ASSERT_TRUE(SendKey("a", &session, &command));
+  ASSERT_TRUE(session.context()
+                  .composer()
+                  .is_in_shifted_ascii_revert_context());
+
+  commands::Input input;
+  input.set_type(commands::Input::SEND_KEY);
+  commands::Output output;
+
+  EXPECT_CALL(*converter, StartPrediction(_, _)).Times(0);
+  EXPECT_FALSE(session_peer.Suggest(input));
+  EXPECT_FALSE(output.has_candidate_window());
+
+  EXPECT_FALSE(session_peer.AttachLiveConversionSuggestionCandidateWindow(
+      input, &output));
+  EXPECT_FALSE(output.has_candidate_window());
+
+  commands::CandidateWindow& cached_window =
+      session_peer.live_conversion_suggestion_candidate_window_();
+  cached_window.set_category(commands::SUGGESTION);
+  cached_window.add_candidate()->set_value("AAa");
+
+  EXPECT_FALSE(session_peer.AttachCachedLiveConversionSuggestionCandidateWindow(
+      &output));
+  EXPECT_FALSE(output.has_candidate_window());
+  EXPECT_EQ(session_peer.live_conversion_suggestion_candidate_window_()
+                .candidate_size(),
+            0);
+}
+
+TEST_F(
+    SessionTest,
+    ShiftedAsciiRevertSuppressesPendingSuggestionRestoreInMaybeStartLiveConversion) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(false);
+  config.set_use_dictionary_suggest(false);
+  config.set_shift_key_mode_switch(config::Config::ASCII_INPUT_MODE);
+  session.SetConfig(config);
+
+  commands::Command command;
+  ASSERT_TRUE(SendKey("A", &session, &command));
+  ASSERT_TRUE(SendKey("I", &session, &command));
+  ASSERT_TRUE(SendKey("d", &session, &command));
+  ASSERT_TRUE(SendKey("e", &session, &command));
+  ASSERT_EQ(session.context().state(), ImeContext::COMPOSITION);
+
+  const std::string raw = session.context().composer().GetRawString();
+  const std::string preedit =
+      session.context().composer().GetStringForPreedit();
+  ASSERT_EQ(raw, "AIde");
+  ASSERT_NE(preedit, raw);
+
+  // Re-applying the config clears the transient Composer latch.  This verifies
+  // that the raw/preedit shape guard also suppresses delayed pending restore,
+  // which covers cases such as AInara and editing/backspace paths where the
+  // original input-path latch is no longer reliable.
+  config.set_use_live_conversion(true);
+  session.SetConfig(config);
+  ASSERT_FALSE(
+      session.context().composer().is_in_shifted_ascii_revert_context());
+
+  commands::CandidateWindow& pending_window =
+      session_peer.pending_live_conversion_suggestion_candidate_window_();
+  pending_window.set_category(commands::SUGGESTION);
+  pending_window.add_candidate()->set_value(raw);
+
+  Segments live_segments;
+  Segment* live_segment = live_segments.add_segment();
+  live_segment->set_key(session.context().composer().GetQueryForConversion());
+  AddCandidate(session.context().composer().GetQueryForConversion(), preedit,
+               live_segment);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(1)
+      .WillOnce(DoAll(SetArgPointee<1>(live_segments), Return(true)));
+  EXPECT_CALL(*converter, StartPrediction(_, _)).Times(0);
+
+  command.Clear();
+  ASSERT_TRUE(session_peer.MaybeStartLiveConversion(&command));
+
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_FALSE(command.output().has_candidate_window());
+  EXPECT_EQ(session_peer.pending_live_conversion_suggestion_candidate_window_()
+                .candidate_size(),
+            0);
+  EXPECT_EQ(session_peer.live_conversion_suggestion_candidate_window_()
+                .candidate_size(),
+            0);
 }
 
 TEST_F(SessionTest, TabDuringLiveConversionFocusesPredictionCandidates) {
