@@ -828,6 +828,9 @@ bool EngineConverter::LearnExternalConversionResult(
   options.request_type = ConversionRequest::CONVERSION;
   options.enable_user_history_for_conversion = true;
 
+  // This path intentionally learns exactly one external full-sequence
+  // conversion result.  It must not write Zenz feedback TSV records or infer
+  // segment-local evidence.
   const ConversionRequest conversion_request =
       ConversionRequestBuilder()
           .SetRequestView(*request_)

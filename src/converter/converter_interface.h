@@ -93,9 +93,11 @@ class ConverterInterface {
   virtual void FinishConversion(const ConversionRequest& request,
                                 Segments* segments) const = 0;
 
-  // Learns an externally committed conversion result, such as a Zenz-generated
-  // candidate accepted by the user.  The default implementation is a no-op so
-  // lightweight converter implementations are not forced to support it.
+  // Learns an externally committed full-sequence conversion result, such as a
+  // Zenz-generated candidate accepted by the user.  This API records one
+  // complete key/value pair and does not infer segment-local or lexical-unit
+  // evidence.  The default implementation is a no-op so lightweight converter
+  // implementations are not forced to support it.
   [[nodiscard]]
   virtual bool LearnExternalConversionResult(
       const ConversionRequest& request,

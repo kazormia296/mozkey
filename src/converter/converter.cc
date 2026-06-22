@@ -395,6 +395,10 @@ bool Converter::LearnExternalConversionResult(
     return false;
   }
 
+  // Learn the accepted external result as one complete committed conversion.
+  // Segment-local or lexical-unit extraction is intentionally not performed
+  // here; callers that need it must route it through a separate Mozc-history
+  // path with explicit safety rules.
   Segments learning_segments;
   learning_segments.InitForCommit(key, value);
 

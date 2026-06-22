@@ -95,6 +95,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_METHOD(ObservePendingZenzFeedbackCommittedResult);
   PEER_METHOD(ConfirmPendingZenzFeedback);
   PEER_METHOD(DiscardPendingZenzFeedback);
+  PEER_METHOD(MaybeLearnZenzCandidateToMozcHistory);
   PEER_METHOD(HandlePendingZenzFeedbackForKeyEvent);
   PEER_METHOD(SetPendingDirectCommitLearningFromCommittedResult);
   PEER_METHOD(ConfirmPendingDirectCommitLearning);
@@ -1275,6 +1276,124 @@ TEST_F(SessionTest, PendingZenzFeedbackStoresContextClassOnly) {
   EXPECT_EQ(
       session_peer.pending_zenz_feedback_().context_class.find("hunter2"),
       std::string::npos);
+}
+
+
+class RecordingExternalLearningConverter : public MockConverter {
+ public:
+  bool LearnExternalConversionResult(
+      const ConversionRequest& request,
+      absl::string_view key,
+      absl::string_view value) const override {
+    ++learn_call_count;
+    last_request_type = request.request_type();
+    last_enable_user_history =
+        request.options().enable_user_history_for_conversion;
+    last_key = std::string(key);
+    last_value = std::string(value);
+    return learn_result;
+  }
+
+  mutable int learn_call_count = 0;
+  mutable ConversionRequest::RequestType last_request_type =
+      ConversionRequest::CONVERSION;
+  mutable bool last_enable_user_history = false;
+  mutable std::string last_key;
+  mutable std::string last_value;
+  bool learn_result = true;
+};
+
+std::shared_ptr<RecordingExternalLearningConverter>
+CreateRecordingExternalLearningConverter(MockEngine* mock_engine) {
+  auto converter = std::make_shared<RecordingExternalLearningConverter>();
+  EXPECT_CALL(*mock_engine, CreateEngineConverter)
+      .WillRepeatedly([converter]() {
+        return std::make_unique<engine::EngineConverter>(converter);
+      });
+  return converter;
+}
+
+TEST_F(SessionTest, ZenzMozcHistoryLearningRequiresFeedbackLearningEnabled) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  EXPECT_FALSE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
+      "かれはてんきです", "彼は天気です"));
+  EXPECT_EQ(converter->learn_call_count, 0);
+}
+
+TEST_F(SessionTest, ZenzMozcHistoryLearningPassesFullSequenceToConverter) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  EXPECT_TRUE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
+      "かれはてんきです", "彼は天気です"));
+  EXPECT_EQ(converter->learn_call_count, 1);
+  EXPECT_EQ(converter->last_request_type, ConversionRequest::CONVERSION);
+  EXPECT_TRUE(converter->last_enable_user_history);
+  EXPECT_EQ(converter->last_key, "かれはてんきです");
+  EXPECT_EQ(converter->last_value, "彼は天気です");
+}
+
+TEST_F(SessionTest, ZenzMozcHistoryLearningRejectsEmptyKeyOrValue) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  EXPECT_FALSE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
+      "", "彼は天気です"));
+  EXPECT_FALSE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
+      "かれはてんきです", ""));
+  EXPECT_EQ(converter->learn_call_count, 0);
+}
+
+TEST_F(SessionTest, ZenzMozcHistoryLearningRejectsUnsafeText) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  EXPECT_FALSE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
+      "https://example.com/token/12345", "彼は天気です"));
+  EXPECT_FALSE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
+      "かれはてんきです", "secret@example.com"));
+  EXPECT_EQ(converter->learn_call_count, 0);
+}
+
+TEST_F(SessionTest, ZenzMozcHistoryLearningIsDisabledInPasswordField) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+  SwitchInputFieldType(commands::Context::PASSWORD, &session);
+
+  EXPECT_FALSE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
+      "かれはてんきです", "彼は天気です"));
+  EXPECT_EQ(converter->learn_call_count, 0);
 }
 
 
