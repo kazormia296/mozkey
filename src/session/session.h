@@ -383,6 +383,12 @@ class Session {
     std::string context_class;
     std::string value;
     std::string reason;
+
+    // Set when a rejected Zenz candidate is followed by a real commit.
+    // This lets ambiguous operations such as Space revert become neutral when
+    // the final committed text is identical to the Zenz value.
+    bool has_final_committed_value = false;
+    std::string final_committed_value;
   };
 
   PendingZenzFeedback pending_zenz_feedback_;
@@ -604,6 +610,9 @@ class Session {
       absl::string_view context_class,
       absl::string_view value);
   void SetPendingZenzFeedbackRejected(absl::string_view reason);
+  void ObservePendingZenzFeedbackCommittedResult(
+      const mozc::commands::Command& command,
+      absl::string_view reason);
   void ConfirmPendingZenzFeedback();
   void DiscardPendingZenzFeedback(absl::string_view reason);
   void HandlePendingZenzFeedbackForKeyEvent(

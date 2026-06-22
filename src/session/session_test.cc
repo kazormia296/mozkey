@@ -92,6 +92,8 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_METHOD(MaybeApplyZenzFeedbackLiveCorrection);
   PEER_METHOD(SetPendingZenzFeedbackAccepted);
   PEER_METHOD(SetPendingZenzFeedbackRejected);
+  PEER_METHOD(ObservePendingZenzFeedbackCommittedResult);
+  PEER_METHOD(ConfirmPendingZenzFeedback);
   PEER_METHOD(DiscardPendingZenzFeedback);
   PEER_METHOD(HandlePendingZenzFeedbackForKeyEvent);
   PEER_METHOD(SetPendingDirectCommitLearningFromCommittedResult);
@@ -114,6 +116,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_VARIABLE(live_conversion_preedit_output_);
   PEER_VARIABLE(pending_live_conversion_suggestion_candidate_window_);
   PEER_VARIABLE(live_conversion_suggestion_candidate_window_);
+  PEER_VARIABLE(zenz_live_visible_generation_);
   PEER_VARIABLE(zenz_live_key_);
   PEER_VARIABLE(zenz_live_value_);
   PEER_VARIABLE(zenz_live_mozc_value_);
@@ -1272,6 +1275,123 @@ TEST_F(SessionTest, PendingZenzFeedbackStoresContextClassOnly) {
   EXPECT_EQ(
       session_peer.pending_zenz_feedback_().context_class.find("hunter2"),
       std::string::npos);
+}
+
+
+#if defined(_WIN32)
+void SetPendingRejectedZenzFeedbackForTest(SessionTestPeer* session_peer) {
+  session_peer->context_()->set_state(ImeContext::CONVERSION);
+  session_peer->live_conversion_active_() = true;
+  session_peer->live_conversion_key_() = "かれはてんてきです";
+  session_peer->live_conversion_value_() = "彼は点滴です";
+  session_peer->zenz_live_visible_generation_() = 1;
+  session_peer->zenz_live_key_() = "かれはてんてきです";
+  session_peer->zenz_live_value_() = "彼は天敵です";
+  session_peer->zenz_live_mozc_value_() = "彼は点滴です";
+  session_peer->zenz_live_context_class_() = "empty";
+
+  session_peer->SetPendingZenzFeedbackRejected("space_revert_zenz_to_mozc");
+  session_peer->context_()->set_state(ImeContext::PRECOMPOSITION);
+}
+#endif  // defined(_WIN32)
+
+TEST_F(SessionTest, PendingRejectedZenzFeedbackIsNeutralWithoutFinalCommit) {
+#if defined(_WIN32)
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+  SetPendingRejectedZenzFeedbackForTest(&session_peer);
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+
+  session_peer.ConfirmPendingZenzFeedback();
+
+  EXPECT_FALSE(session_peer.pending_zenz_feedback_().pending);
+  EXPECT_TRUE(session_peer.zenz_feedback_store_().ListEntries().empty());
+#else
+  GTEST_SKIP() << "Zenz feedback store persists only on Windows.";
+#endif
+}
+
+TEST_F(SessionTest, PendingRejectedZenzFeedbackIsNeutralWhenFinalCommitMatches) {
+#if defined(_WIN32)
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+  SetPendingRejectedZenzFeedbackForTest(&session_peer);
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+
+  commands::Command command;
+  command.mutable_output()->mutable_result()->set_type(
+      commands::Result::STRING);
+  command.mutable_output()->mutable_result()->set_key("かれはてんてきです");
+  command.mutable_output()->mutable_result()->set_value("彼は天敵です");
+
+  session_peer.ObservePendingZenzFeedbackCommittedResult(command, "test");
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_()
+                  .has_final_committed_value);
+  EXPECT_EQ(session_peer.pending_zenz_feedback_().final_committed_value,
+            "彼は天敵です");
+
+  session_peer.ConfirmPendingZenzFeedback();
+
+  EXPECT_FALSE(session_peer.pending_zenz_feedback_().pending);
+  EXPECT_TRUE(session_peer.zenz_feedback_store_().ListEntries().empty());
+#else
+  GTEST_SKIP() << "Zenz feedback store persists only on Windows.";
+#endif
+}
+
+TEST_F(SessionTest, PendingRejectedZenzFeedbackIsRecordedWhenFinalCommitDiffers) {
+#if defined(_WIN32)
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+  SetPendingRejectedZenzFeedbackForTest(&session_peer);
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+
+  commands::Command command;
+  command.mutable_output()->mutable_result()->set_type(
+      commands::Result::STRING);
+  command.mutable_output()->mutable_result()->set_key("かれはてんてきです");
+  command.mutable_output()->mutable_result()->set_value("彼は点滴です");
+
+  session_peer.ObservePendingZenzFeedbackCommittedResult(command, "test");
+  session_peer.ConfirmPendingZenzFeedback();
+
+  EXPECT_FALSE(session_peer.pending_zenz_feedback_().pending);
+
+  const std::vector<ZenzFeedbackEntry> entries =
+      session_peer.zenz_feedback_store_().ListEntries();
+  ASSERT_EQ(entries.size(), 1);
+  EXPECT_EQ(entries[0].key, "かれはてんてきです");
+  EXPECT_EQ(entries[0].context_class, "empty");
+  EXPECT_EQ(entries[0].value, "彼は天敵です");
+  EXPECT_EQ(entries[0].accepted_count, 0);
+  EXPECT_EQ(entries[0].rejected_count, 1);
+#else
+  GTEST_SKIP() << "Zenz feedback store persists only on Windows.";
+#endif
 }
 
 #if defined(_WIN32)

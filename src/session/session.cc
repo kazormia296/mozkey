@@ -1842,6 +1842,13 @@ bool UseZenzFeedbackLearning(const config::Config& config) {
   return config.use_zenz_feedback_learning();
 }
 
+bool IsExplicitZenzHardRejectReason(absl::string_view reason) {
+  return reason == "hard_reject" ||
+         reason == "user_hard_reject" ||
+         reason == "manual_hard_reject" ||
+         reason == "explicit_hard_reject";
+}
+
 bool StartsWithString(absl::string_view text, absl::string_view prefix) {
   return text.size() >= prefix.size() &&
          text.substr(0, prefix.size()) == prefix;
@@ -3970,12 +3977,12 @@ bool Session::IMEOn(commands::Command* command) {
 
 bool Session::IMEOff(commands::Command* command) {
   ConfirmPendingDirectCommitLearning("ime_off_after_direct_commit_learning");
-  ConfirmPendingZenzFeedback();
 
   command->mutable_output()->set_consumed(true);
   ClearUndoContext();
 
   Commit(command);
+  ConfirmPendingZenzFeedback();
 
   // Reset the context.
   context_->mutable_converter()->Reset();
@@ -4010,7 +4017,6 @@ bool Session::MakeSureIMEOn(mozc::commands::Command* command) {
 bool Session::MakeSureIMEOff(mozc::commands::Command* command) {
   ConfirmPendingDirectCommitLearning(
       "make_sure_ime_off_after_direct_commit_learning");
-  ConfirmPendingZenzFeedback();
 
   if (command->input().has_command() &&
       command->input().command().has_composition_mode() &&
@@ -4027,6 +4033,7 @@ bool Session::MakeSureIMEOff(mozc::commands::Command* command) {
     context_->mutable_converter()->Reset();
     SetSessionState(ImeContext::DIRECT, context_.get());
   }
+  ConfirmPendingZenzFeedback();
   if (command->input().has_command() &&
       command->input().command().has_composition_mode()) {
     ApplyCompositionMode(command->input().command().composition_mode(),
@@ -5103,6 +5110,8 @@ void Session::SetPendingZenzFeedbackAccepted(
       context_class.empty() ? "empty" : std::string(context_class);
   pending_zenz_feedback_.value = std::string(value);
   pending_zenz_feedback_.reason.clear();
+  pending_zenz_feedback_.has_final_committed_value = false;
+  pending_zenz_feedback_.final_committed_value.clear();
 
   ZenzDebugOutput(absl::StrCat(
       "[zenz-feedback] pending accepted ",
@@ -5149,6 +5158,8 @@ void Session::SetPendingZenzFeedbackRejected(absl::string_view reason) {
       zenz_live_context_class_.empty() ? "empty" : zenz_live_context_class_;
   pending_zenz_feedback_.value = zenz_live_value_;
   pending_zenz_feedback_.reason = std::string(reason);
+  pending_zenz_feedback_.has_final_committed_value = false;
+  pending_zenz_feedback_.final_committed_value.clear();
 
   ZenzDebugOutput(absl::StrCat(
       "[zenz-feedback] pending rejected ",
@@ -5156,6 +5167,40 @@ void Session::SetPendingZenzFeedbackRejected(absl::string_view reason) {
       " ", ZenzRedactedTextStats("value", pending_zenz_feedback_.value),
       " context_class=", pending_zenz_feedback_.context_class,
       " reason=", pending_zenz_feedback_.reason));
+}
+
+void Session::ObservePendingZenzFeedbackCommittedResult(
+    const commands::Command& command,
+    absl::string_view reason) {
+  if (!pending_zenz_feedback_.pending ||
+      pending_zenz_feedback_.action != PendingZenzFeedback::Action::kRejected) {
+    return;
+  }
+
+  // Only a fully committed conversion/direct commit should resolve pending
+  // rejected feedback. Partial segment commits stay in CONVERSION and must not
+  // be interpreted as the user's final full-sequence decision.
+  if (context_->state() != ImeContext::PRECOMPOSITION) {
+    return;
+  }
+
+  if (!command.output().has_result() ||
+      !command.output().result().has_value()) {
+    return;
+  }
+
+  pending_zenz_feedback_.has_final_committed_value = true;
+  pending_zenz_feedback_.final_committed_value =
+      command.output().result().value();
+
+  ZenzDebugOutput(absl::StrCat(
+      "[zenz-feedback] observed final committed value reason=", reason,
+      " ", ZenzRedactedTextStats("key", pending_zenz_feedback_.key),
+      " ", ZenzRedactedTextStats("zenz_value", pending_zenz_feedback_.value),
+      " ", ZenzRedactedTextStats("final_value",
+                                  pending_zenz_feedback_.final_committed_value),
+      " context_class=", pending_zenz_feedback_.context_class,
+      " pending_reason=", pending_zenz_feedback_.reason));
 }
 
 void Session::ConfirmPendingZenzFeedback() {
@@ -5194,18 +5239,37 @@ void Session::ConfirmPendingZenzFeedback() {
         " context_class=", pending_zenz_feedback_.context_class));
   } else if (pending_zenz_feedback_.action ==
              PendingZenzFeedback::Action::kRejected) {
-    ZenzDebugOutput(absl::StrCat(
-        "[zenz-feedback] confirm pending rejected ",
-        ZenzRedactedTextStats("key", pending_zenz_feedback_.key),
-        " ", ZenzRedactedTextStats("value", pending_zenz_feedback_.value),
-        " context_class=", pending_zenz_feedback_.context_class,
-        " reason=", pending_zenz_feedback_.reason));
+    if (!IsExplicitZenzHardRejectReason(pending_zenz_feedback_.reason) &&
+        !pending_zenz_feedback_.has_final_committed_value) {
+      ZenzDebugOutput(absl::StrCat(
+          "[zenz-feedback] neutralize pending rejected without final commit ",
+          ZenzRedactedTextStats("key", pending_zenz_feedback_.key),
+          " ", ZenzRedactedTextStats("value", pending_zenz_feedback_.value),
+          " context_class=", pending_zenz_feedback_.context_class,
+          " reason=", pending_zenz_feedback_.reason));
+    } else if (!IsExplicitZenzHardRejectReason(pending_zenz_feedback_.reason) &&
+               pending_zenz_feedback_.final_committed_value ==
+                   pending_zenz_feedback_.value) {
+      ZenzDebugOutput(absl::StrCat(
+          "[zenz-feedback] neutralize pending rejected same final value ",
+          ZenzRedactedTextStats("key", pending_zenz_feedback_.key),
+          " ", ZenzRedactedTextStats("value", pending_zenz_feedback_.value),
+          " context_class=", pending_zenz_feedback_.context_class,
+          " reason=", pending_zenz_feedback_.reason));
+    } else {
+      ZenzDebugOutput(absl::StrCat(
+          "[zenz-feedback] confirm pending rejected ",
+          ZenzRedactedTextStats("key", pending_zenz_feedback_.key),
+          " ", ZenzRedactedTextStats("value", pending_zenz_feedback_.value),
+          " context_class=", pending_zenz_feedback_.context_class,
+          " reason=", pending_zenz_feedback_.reason));
 
-    zenz_feedback_store_.RecordRejected(
-        pending_zenz_feedback_.key,
-        pending_zenz_feedback_.context_class,
-        pending_zenz_feedback_.value,
-        pending_zenz_feedback_.reason);
+      zenz_feedback_store_.RecordRejected(
+          pending_zenz_feedback_.key,
+          pending_zenz_feedback_.context_class,
+          pending_zenz_feedback_.value,
+          pending_zenz_feedback_.reason);
+    }
   }
 
   pending_zenz_feedback_ = PendingZenzFeedback();
@@ -8436,6 +8500,7 @@ void Session::Output(commands::Command* command) {
   OutputMode(command);
   context_->mutable_converter()->PopOutput(context_->composer(),
                                            command->mutable_output());
+  ObservePendingZenzFeedbackCommittedResult(*command, "output_result");
 }
 
 void Session::OutputMode(commands::Command* command) const {
