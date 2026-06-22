@@ -96,6 +96,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_METHOD(ConfirmPendingZenzFeedback);
   PEER_METHOD(DiscardPendingZenzFeedback);
   PEER_METHOD(MaybeLearnZenzCandidateToMozcHistory);
+  PEER_METHOD(MaybeLearnZenzReverseSegmentsToMozcHistory);
   PEER_METHOD(HandlePendingZenzFeedbackForKeyEvent);
   PEER_METHOD(SetPendingDirectCommitLearningFromCommittedResult);
   PEER_METHOD(ConfirmPendingDirectCommitLearning);
@@ -1291,6 +1292,8 @@ class RecordingExternalLearningConverter : public MockConverter {
         request.options().enable_user_history_for_conversion;
     last_key = std::string(key);
     last_value = std::string(value);
+    learned_keys.push_back(last_key);
+    learned_values.push_back(last_value);
     return learn_result;
   }
 
@@ -1300,6 +1303,8 @@ class RecordingExternalLearningConverter : public MockConverter {
   mutable bool last_enable_user_history = false;
   mutable std::string last_key;
   mutable std::string last_value;
+  mutable std::vector<std::string> learned_keys;
+  mutable std::vector<std::string> learned_values;
   bool learn_result = true;
 };
 
@@ -1394,6 +1399,98 @@ TEST_F(SessionTest, ZenzMozcHistoryLearningIsDisabledInPasswordField) {
   EXPECT_FALSE(session_peer.MaybeLearnZenzCandidateToMozcHistory(
       "かれはてんきです", "彼は天気です"));
   EXPECT_EQ(converter->learn_call_count, 0);
+}
+
+
+TEST_F(SessionTest,
+       PendingAcceptedZenzFeedbackLearnsReverseProjectedChangedSegment) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  commands::Preedit& live_preedit =
+      session_peer.live_conversion_preedit_output_();
+  live_preedit.Clear();
+
+  commands::Preedit::Segment* segment = live_preedit.add_segment();
+  segment->set_key("かれは");
+  segment->set_value("彼は");
+  segment->set_value_length(Util::CharsLen("彼は"));
+
+  segment = live_preedit.add_segment();
+  segment->set_key("てんてきです");
+  segment->set_value("点滴です");
+  segment->set_value_length(Util::CharsLen("点滴です"));
+
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かれはてんてきです", "empty", "彼は天敵です");
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+  ASSERT_EQ(session_peer.pending_zenz_feedback_()
+                .reverse_learning_segments.size(),
+            1);
+
+  session_peer.ConfirmPendingZenzFeedback();
+
+  ASSERT_EQ(converter->learn_call_count, 2);
+  EXPECT_EQ(converter->learned_keys[0], "かれはてんてきです");
+  EXPECT_EQ(converter->learned_values[0], "彼は天敵です");
+  EXPECT_EQ(converter->learned_keys[1], "てんてきです");
+  EXPECT_EQ(converter->learned_values[1], "天敵です");
+
+  const std::vector<ZenzFeedbackEntry> entries =
+      session_peer.zenz_feedback_store_().ListEntries();
+  ASSERT_EQ(entries.size(), 1);
+  EXPECT_EQ(entries[0].key, "かれはてんてきです");
+  EXPECT_EQ(entries[0].value, "彼は天敵です");
+}
+
+TEST_F(SessionTest,
+       PendingAcceptedZenzFeedbackSkipsReverseLearningWhenAlignmentBreaks) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  commands::Preedit& live_preedit =
+      session_peer.live_conversion_preedit_output_();
+  live_preedit.Clear();
+
+  commands::Preedit::Segment* segment = live_preedit.add_segment();
+  segment->set_key("かれは");
+  segment->set_value("彼は");
+  segment->set_value_length(Util::CharsLen("彼は"));
+
+  segment = live_preedit.add_segment();
+  segment->set_key("てんてきです");
+  segment->set_value("点滴です");
+  segment->set_value_length(Util::CharsLen("点滴です"));
+
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かれはてんてきです", "empty", "天敵です彼は");
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+  EXPECT_TRUE(session_peer.pending_zenz_feedback_()
+                  .reverse_learning_segments.empty());
+
+  session_peer.ConfirmPendingZenzFeedback();
+
+  ASSERT_EQ(converter->learn_call_count, 1);
+  EXPECT_EQ(converter->learned_keys[0], "かれはてんてきです");
+  EXPECT_EQ(converter->learned_values[0], "天敵です彼は");
 }
 
 

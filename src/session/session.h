@@ -389,6 +389,12 @@ class Session {
     // the final committed text is identical to the Zenz value.
     bool has_final_committed_value = false;
     std::string final_committed_value;
+
+    // Snapshot of reverse-projected segment-local learning pairs derived from
+    // the Mozc live-conversion segments that were visible when the Zenz result
+    // was accepted.  These pairs are learned only through Mozc history; they
+    // are never written to ZenzFeedbackStore.
+    std::vector<std::pair<std::string, std::string>> reverse_learning_segments;
   };
 
   PendingZenzFeedback pending_zenz_feedback_;
@@ -589,6 +595,8 @@ class Session {
   bool MaybeLearnZenzCandidateToMozcHistory(
       absl::string_view key,
       absl::string_view value);
+  int MaybeLearnZenzReverseSegmentsToMozcHistory(
+      const std::vector<std::pair<std::string, std::string>>& segments);
 
   bool SetPendingDirectCommitLearning(
       absl::string_view key,
