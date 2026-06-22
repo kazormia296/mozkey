@@ -434,6 +434,44 @@ TEST(ZenzFeedbackStoreTest, ListEntriesAggregatesExactEntries) {
   EXPECT_GT(store.Decide("b", "empty", "B").total_score, 0);
 }
 
+TEST(ZenzFeedbackStoreTest,
+     FullSequenceFeedbackDoesNotMatchSegmentLocalLookup) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+
+  // ZenzFeedbackStore is scoped to the complete Zenz reading/correction pair.
+  // Recording a full-sequence observation must not implicitly create
+  // segment-local or lexical-unit feedback.
+  store.RecordAccepted("full_sequence_reading", "japanese_only",
+                       "full_sequence_correction");
+  store.RecordRejected("full_sequence_reading", "japanese_only",
+                       "full_sequence_correction",
+                       "space_revert_zenz_to_mozc");
+
+  const std::vector<ZenzFeedbackCandidate> full_candidates =
+      store.GetRankedCandidates("full_sequence_reading", "empty");
+  ASSERT_EQ(full_candidates.size(), 1);
+  EXPECT_EQ(full_candidates[0].value, "full_sequence_correction");
+  EXPECT_EQ(full_candidates[0].accepted_count, 1);
+  EXPECT_EQ(full_candidates[0].rejected_count, 1);
+  EXPECT_GT(full_candidates[0].total_score, 0);
+
+  EXPECT_TRUE(store.GetRankedCandidates("segment_reading", "empty").empty());
+  EXPECT_EQ(store.Decide("segment_reading", "empty", "segment_correction")
+                .action,
+            ZenzFeedbackAction::kNeutral);
+
+  const std::vector<ZenzFeedbackEntry> entries = store.ListEntries();
+  ASSERT_EQ(entries.size(), 1);
+  EXPECT_EQ(entries[0].key, "full_sequence_reading");
+  EXPECT_EQ(entries[0].context_class, "japanese_only");
+  EXPECT_EQ(entries[0].value, "full_sequence_correction");
+  EXPECT_EQ(entries[0].accepted_count, 1);
+  EXPECT_EQ(entries[0].rejected_count, 1);
+}
+
 TEST(ZenzFeedbackStoreTest, DeleteEntryRemovesOnlyMatchingRawRecords) {
   ScopedUserProfileForZenzFeedbackStoreTest profile;
   ASSERT_TRUE(profile.ok());

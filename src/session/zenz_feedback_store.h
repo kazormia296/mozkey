@@ -52,6 +52,17 @@ struct ZenzFeedbackEntry {
   std::string reason = "feedback_neutral";
 };
 
+// Persistent local feedback for Zenz live correction.
+//
+// Scope is intentionally full-sequence only:
+//   key   = the complete reading submitted to Zenz
+//   value = the complete Zenz correction shown to or accepted by the user
+//
+// This store does not own segment-local or lexical-unit learning.  If an
+// accepted full-sequence correction is later decomposed into safe local units,
+// those units belong to Mozc history/user-segment learning, not to this TSV.
+// The context dimension is also a coarse, non-reversible class.  Raw left
+// context must never be persisted here.
 class ZenzFeedbackStore {
  public:
   ZenzFeedbackDecision Decide(absl::string_view key,
@@ -107,10 +118,13 @@ class ZenzFeedbackStore {
   [[nodiscard]]
   bool ClearAll();
 
+  // Records one accepted full-sequence Zenz correction.
   void RecordAccepted(absl::string_view key,
                       absl::string_view context_class,
                       absl::string_view value);
 
+  // Records one rejected full-sequence Zenz correction.  Ordinary rejects are
+  // later interpreted as ranking signals; they are not segment-local negatives.
   void RecordRejected(absl::string_view key,
                       absl::string_view context_class,
                       absl::string_view value,

@@ -27,6 +27,11 @@ namespace {
 
 constexpr int kAcceptThreshold = 1;
 
+// Stored records are full-sequence observations for one Zenz request/response
+// pair.  Do not add segment-local or lexical-unit records here; those should be
+// learned through Mozc history so phrase-boundary and dictionary semantics stay
+// owned by the converter/history layers.
+//
 // Feedback is interpreted as a ranking signal.  Accepted feedback is a strong
 // positive observation.  Rejected feedback is usually a weak or medium negative
 // observation: Space after a visible Zenz result often means "show me the
@@ -448,6 +453,10 @@ bool ParseFeedbackRecord(const std::vector<std::string>& fields,
 
   // v2:
   //   v2  accepted|rejected  key  context_class  value  reason
+  //
+  // The key/value fields are full-sequence reading/correction pairs.  The TSV
+  // intentionally has no columns for segment-local evidence or raw left
+  // context.  Context is persisted only as a coarse non-reversible class.
   if (fields.size() >= 5 && fields[0] == "v2") {
     ParsedFeedbackRecord parsed;
     parsed.action = UnescapeTsv(fields[1]);
@@ -1242,6 +1251,8 @@ void ZenzFeedbackStore::RecordAccepted(
     absl::string_view key,
     absl::string_view context_class,
     absl::string_view value) {
+  // The caller is responsible for passing the complete Zenz reading/correction
+  // pair.  This store must not synthesize or persist segment-local derivatives.
   AppendRecord("accepted", key, context_class, value, "");
 }
 
@@ -1250,6 +1261,8 @@ void ZenzFeedbackStore::RecordRejected(
     absl::string_view context_class,
     absl::string_view value,
     absl::string_view reason) {
+  // A rejected record is also full-sequence scoped.  It may lower ranking of the
+  // same full correction, but it must not become lexical-unit negative evidence.
   AppendRecord("rejected", key, context_class, value, reason);
 }
 

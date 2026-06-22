@@ -4995,6 +4995,9 @@ void Session::RecordZenzLiveCorrectionAccepted(
       " ", ZenzRedactedTextStats("value", value),
       " context_class=", context_class));
 
+  // ZenzFeedbackStore owns only the full request/response pair.  More general
+  // learning from an accepted correction is handled separately through Mozc
+  // history below.
   zenz_feedback_store_.RecordAccepted(key, context_class, value);
 
   ZenzDebugOutput("[zenz-feedback] RecordAccepted returned");
@@ -5007,6 +5010,9 @@ bool Session::MaybeLearnZenzCandidateToMozcHistory(
     return false;
   }
 
+  // Mozc history learning is intentionally separate from ZenzFeedbackStore.
+  // The feedback TSV remains full-sequence scoped, while Mozc history can learn
+  // the accepted external conversion result using converter/history semantics.
   if (key.empty() || value.empty()) {
     return false;
   }
@@ -5221,6 +5227,8 @@ void Session::ConfirmPendingZenzFeedback() {
         " ", ZenzRedactedTextStats("value", pending_zenz_feedback_.value),
         " context_class=", pending_zenz_feedback_.context_class));
 
+    // Accepted feedback stored in the TSV remains full-sequence scoped.
+    // Any broader generalization is delegated to Mozc history learning below.
     zenz_feedback_store_.RecordAccepted(
         pending_zenz_feedback_.key,
         pending_zenz_feedback_.context_class,
@@ -5264,6 +5272,8 @@ void Session::ConfirmPendingZenzFeedback() {
           " context_class=", pending_zenz_feedback_.context_class,
           " reason=", pending_zenz_feedback_.reason));
 
+      // Rejected feedback is full-sequence scoped too.  A final mismatch after
+      // Space revert should not create segment-local negative evidence.
       zenz_feedback_store_.RecordRejected(
           pending_zenz_feedback_.key,
           pending_zenz_feedback_.context_class,
