@@ -104,6 +104,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - Zenz 補正表示後に Space や候補移動など通常変換操作へ移った場合、その Zenz 候補は rejected feedback として扱う。ただし Space などの通常操作による rejected feedback は候補を殺す hard reject ではなく、順位調整用の弱い negative signal として扱う
 - Zenz 補正表示中に Space で Mozc 通常変換結果へ戻した場合は、次の文字入力で戻した変換結果を確定してから新しい入力を開始
 - Zenz 学習データを設定画面から安全に管理できる UI を追加。TSV を直接編集せず、検索、インポート、エクスポート、選択項目削除、全削除が可能
+- Zenz 学習データ管理画面から、選択した Zenz 補正を明示的にブロック可能。ブロック済みの補正は再ブロックできず、解除したい場合は該当エントリを削除して必要に応じて再学習する
 - Zenz feedback を通常変換候補の ranking に利用。1 文節の通常変換では、保存済み feedback を score 化し、既存候補があれば cost を調整し、候補にない場合は synthetic candidate として候補集合の自然な位置へ追加。accepted feedback は順位を上げ、通常操作由来の rejected feedback は候補を除外せず順位を下げる
 - 文節境界を壊さないため、複数文節に分かれた通常変換では Zenz feedback による通常候補 ranking を行わない
 - 複数文節に分かれるライブ変換では、全文補正の学習を保つため、accepted Zenz feedback を session-level live correction fast path として再利用
@@ -260,6 +261,7 @@ Zenz feedback の再利用方法は、単文節と複数文節で異なります
 
 Zenz 学習データは設定画面から管理できます。管理画面では、学習済みエントリを読み取り専用 table で表示し、検索、インポート、エクスポート、選択項目削除、全削除を行えます。ユーザーが TSV ファイルを直接編集する必要はありません。
 
+また、選択した補正を「この補正をブロック」から明示的にブロックできます。ブロック済みの補正は再ブロックできません。ブロックを解除したい場合は、該当エントリを削除してから必要に応じて再学習します。
 
 #### Zenzai v3/v3.2 条件フィールド
 
@@ -631,6 +633,7 @@ Main features added in this fork
 - Treats a visible Zenz correction as rejected feedback when the user moves to normal conversion operations such as Space or candidate movement. Ordinary rejected feedback from these operations is used as a negative ranking signal rather than as a hard command to suppress the candidate
 - When Space restores the underlying Mozc normal conversion from a visible Zenz correction, the next text input commits that restored conversion before starting a new composition
 - Adds a safe Zenz feedback management UI to the config dialog. Users can search, import, export, delete selected entries, and clear all entries without directly editing the TSV file
+- Allows explicitly blocking selected Zenz corrections from the feedback management UI. Already blocked corrections cannot be blocked again; to unblock one, delete the corresponding feedback entry and relearn it if needed
 - Reuses Zenz feedback for normal conversion candidate ranking. In single-segment conversions, stored feedback is scored, existing candidates receive feedback-adjusted costs, and missing feedback candidates may be inserted as synthetic candidates at a natural cost-based position. Accepted feedback raises the candidate, while ordinary rejected feedback lowers it without deleting it
 - Does not apply Zenz feedback ranking to multi-segment normal conversions, to avoid collapsing phrase boundaries
 - Reuses accepted Zenz feedback via the session-level live-correction fast path for multi-segment live conversion to preserve learned full-phrase corrections
@@ -816,6 +819,9 @@ shows learned entries in a read-only table and supports search, import, export,
 single-entry deletion, and full deletion. This avoids requiring users to edit the
 TSV file directly.
 
+The management dialog can also explicitly block a selected Zenz correction.
+Already blocked corrections cannot be blocked again. To unblock a correction,
+delete the corresponding feedback entry and relearn it if needed.
 
 #### Zenzai v3/v3.2 condition fields
 

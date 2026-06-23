@@ -1,4 +1,4 @@
-// Copyright 2010-2021, Google Inc.
+﻿// Copyright 2010-2021, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -1401,9 +1401,9 @@ TEST_F(SessionTest, ZenzMozcHistoryLearningIsDisabledInPasswordField) {
   EXPECT_EQ(converter->learn_call_count, 0);
 }
 
-
 TEST_F(SessionTest,
        PendingAcceptedZenzFeedbackLearnsReverseProjectedChangedSegment) {
+#if defined(_WIN32)
   MockEngine engine;
   std::shared_ptr<RecordingExternalLearningConverter> converter =
       CreateRecordingExternalLearningConverter(&engine);
@@ -1450,10 +1450,14 @@ TEST_F(SessionTest,
   ASSERT_EQ(entries.size(), 1);
   EXPECT_EQ(entries[0].key, "かれはてんてきです");
   EXPECT_EQ(entries[0].value, "彼は天敵です");
+#else
+  GTEST_SKIP() << "Zenz feedback store persists only on Windows.";
+#endif
 }
 
 TEST_F(SessionTest,
        PendingAcceptedZenzFeedbackSkipsReverseLearningWhenAlignmentBreaks) {
+#if defined(_WIN32)
   MockEngine engine;
   std::shared_ptr<RecordingExternalLearningConverter> converter =
       CreateRecordingExternalLearningConverter(&engine);
@@ -1491,8 +1495,16 @@ TEST_F(SessionTest,
   ASSERT_EQ(converter->learn_call_count, 1);
   EXPECT_EQ(converter->learned_keys[0], "かれはてんてきです");
   EXPECT_EQ(converter->learned_values[0], "天敵です彼は");
-}
 
+  const std::vector<ZenzFeedbackEntry> entries =
+      session_peer.zenz_feedback_store_().ListEntries();
+  ASSERT_EQ(entries.size(), 1);
+  EXPECT_EQ(entries[0].key, "かれはてんてきです");
+  EXPECT_EQ(entries[0].value, "天敵です彼は");
+#else
+  GTEST_SKIP() << "Zenz feedback store persists only on Windows.";
+#endif
+}
 
 #if defined(_WIN32)
 void SetPendingRejectedZenzFeedbackForTest(SessionTestPeer* session_peer) {
