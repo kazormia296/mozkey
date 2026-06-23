@@ -844,6 +844,48 @@ bool EngineConverter::LearnExternalConversionResult(
       conversion_request, key, value);
 }
 
+bool EngineConverter::LearnExternalConversionSegments(
+    absl::Span<const ExternalConversionSegment> segments,
+    const commands::Context& context) {
+  if (segments.empty()) {
+    return false;
+  }
+
+  DCHECK(request_);
+  DCHECK(config_);
+
+  if (!conversion_preferences_.use_history) {
+    return false;
+  }
+
+  std::string full_key;
+  for (const ExternalConversionSegment& segment : segments) {
+    if (segment.key.empty() || segment.value.empty()) {
+      return false;
+    }
+    absl::StrAppend(&full_key, segment.key);
+  }
+
+  ConversionRequest::Options options;
+  options.request_type = ConversionRequest::CONVERSION;
+  options.enable_user_history_for_conversion = true;
+
+  // Learn one externally committed multi-segment result.  The segment list is
+  // already projected by session code and represents a virtual normal
+  // conversion commit, not segment-local Zenz feedback-store records.
+  const ConversionRequest conversion_request =
+      ConversionRequestBuilder()
+          .SetRequestView(*request_)
+          .SetContextView(context)
+          .SetConfigView(*config_)
+          .SetOptions(std::move(options))
+          .SetKey(full_key)
+          .Build();
+
+  return converter_->LearnExternalConversionSegments(
+      conversion_request, segments);
+}
+
 void EngineConverter::LookupUserDictionaryPrefixEntries(
     absl::string_view key,
     std::vector<UserDictionaryLookupResult>* results) const {

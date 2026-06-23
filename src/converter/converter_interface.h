@@ -51,6 +51,12 @@ struct UserDictionaryLookupResult {
   std::string value;
 };
 
+struct ExternalConversionSegment {
+  std::string key;
+  std::string value;
+  bool is_reranked = false;
+};
+
 class ConverterInterface {
  public:
   ConverterInterface(const ConverterInterface&) = delete;
@@ -103,6 +109,17 @@ class ConverterInterface {
       const ConversionRequest& request,
       absl::string_view key,
       absl::string_view value) const {
+    return false;
+  }
+
+  // Learns externally committed multi-segment conversion results, such as a
+  // Zenz accepted result safely projected onto Mozc live-conversion segments.
+  // This represents one virtual conversion commit with phrase boundaries, not
+  // multiple independent feedback-store records.
+  [[nodiscard]]
+  virtual bool LearnExternalConversionSegments(
+      const ConversionRequest& request,
+      absl::Span<const ExternalConversionSegment> segments) const {
     return false;
   }
 

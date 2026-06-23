@@ -1,4 +1,4 @@
-﻿// Copyright 2010-2021, Google Inc.
+// Copyright 2010-2021, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
@@ -43,6 +44,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "base/strings/assign.h"
 #include "base/strings/unicode.h"
 #include "base/vlog.h"
@@ -97,6 +99,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_METHOD(DiscardPendingZenzFeedback);
   PEER_METHOD(MaybeLearnZenzCandidateToMozcHistory);
   PEER_METHOD(MaybeLearnZenzReverseSegmentsToMozcHistory);
+  PEER_METHOD(MaybeLearnZenzProjectedSegmentsToMozcHistory);
   PEER_METHOD(HandlePendingZenzFeedbackForKeyEvent);
   PEER_METHOD(SetPendingDirectCommitLearningFromCommittedResult);
   PEER_METHOD(ConfirmPendingDirectCommitLearning);
@@ -1297,7 +1300,33 @@ class RecordingExternalLearningConverter : public MockConverter {
     return learn_result;
   }
 
+  bool LearnExternalConversionSegments(
+      const ConversionRequest& request,
+      absl::Span<const ExternalConversionSegment> segments) const override {
+    ++learn_segments_call_count;
+    last_request_type = request.request_type();
+    last_enable_user_history =
+        request.options().enable_user_history_for_conversion;
+
+    std::vector<std::string> keys;
+    std::vector<std::string> values;
+    std::vector<bool> reranked;
+    keys.reserve(segments.size());
+    values.reserve(segments.size());
+    reranked.reserve(segments.size());
+    for (const ExternalConversionSegment& segment : segments) {
+      keys.push_back(segment.key);
+      values.push_back(segment.value);
+      reranked.push_back(segment.is_reranked);
+    }
+    learned_segment_keys.push_back(std::move(keys));
+    learned_segment_values.push_back(std::move(values));
+    learned_segment_reranked.push_back(std::move(reranked));
+    return learn_segments_result;
+  }
+
   mutable int learn_call_count = 0;
+  mutable int learn_segments_call_count = 0;
   mutable ConversionRequest::RequestType last_request_type =
       ConversionRequest::CONVERSION;
   mutable bool last_enable_user_history = false;
@@ -1305,7 +1334,11 @@ class RecordingExternalLearningConverter : public MockConverter {
   mutable std::string last_value;
   mutable std::vector<std::string> learned_keys;
   mutable std::vector<std::string> learned_values;
+  mutable std::vector<std::vector<std::string>> learned_segment_keys;
+  mutable std::vector<std::vector<std::string>> learned_segment_values;
+  mutable std::vector<std::vector<bool>> learned_segment_reranked;
   bool learn_result = true;
+  bool learn_segments_result = true;
 };
 
 std::shared_ptr<RecordingExternalLearningConverter>
@@ -1436,20 +1469,104 @@ TEST_F(SessionTest,
   ASSERT_EQ(session_peer.pending_zenz_feedback_()
                 .reverse_learning_segments.size(),
             1);
+  ASSERT_EQ(session_peer.pending_zenz_feedback_()
+                .reverse_projected_learning_segments.size(),
+            2);
 
   session_peer.ConfirmPendingZenzFeedback();
 
-  ASSERT_EQ(converter->learn_call_count, 2);
+  ASSERT_EQ(converter->learn_call_count, 1);
+  ASSERT_EQ(converter->learn_segments_call_count, 1);
+  EXPECT_EQ(converter->learned_segment_keys[0],
+            std::vector<std::string>({"かれは", "てんてきです"}));
+  EXPECT_EQ(converter->learned_segment_values[0],
+            std::vector<std::string>({"彼は", "天敵です"}));
+  EXPECT_EQ(converter->learned_segment_reranked[0],
+            std::vector<bool>({false, true}));
   EXPECT_EQ(converter->learned_keys[0], "かれはてんてきです");
   EXPECT_EQ(converter->learned_values[0], "彼は天敵です");
-  EXPECT_EQ(converter->learned_keys[1], "てんてきです");
-  EXPECT_EQ(converter->learned_values[1], "天敵です");
 
   const std::vector<ZenzFeedbackEntry> entries =
       session_peer.zenz_feedback_store_().ListEntries();
   ASSERT_EQ(entries.size(), 1);
   EXPECT_EQ(entries[0].key, "かれはてんてきです");
   EXPECT_EQ(entries[0].value, "彼は天敵です");
+#else
+  GTEST_SKIP() << "Zenz feedback store persists only on Windows.";
+#endif
+}
+
+
+TEST_F(SessionTest,
+       PendingAcceptedZenzFeedbackLearnsProjectedMultiSegmentCommit) {
+#if defined(_WIN32)
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  commands::Preedit& live_preedit =
+      session_peer.live_conversion_preedit_output_();
+  live_preedit.Clear();
+
+  commands::Preedit::Segment* segment = live_preedit.add_segment();
+  segment->set_key("かたろぐに");
+  segment->set_value("カタログに");
+  segment->set_value_length(Util::CharsLen("カタログに"));
+
+  segment = live_preedit.add_segment();
+  segment->set_key("のせたほうが");
+  segment->set_value("乗せたほうが");
+  segment->set_value_length(Util::CharsLen("乗せたほうが"));
+
+  segment = live_preedit.add_segment();
+  segment->set_key("いい");
+  segment->set_value("いい");
+  segment->set_value_length(Util::CharsLen("いい"));
+
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かたろぐにのせたほうがいい",
+      "empty",
+      "カタログに載せた方がいい");
+
+  ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
+  ASSERT_EQ(session_peer.pending_zenz_feedback_()
+                .reverse_learning_segments.size(),
+            1);
+  EXPECT_EQ(session_peer.pending_zenz_feedback_()
+                .reverse_learning_segments[0].first,
+            "のせたほうが");
+  EXPECT_EQ(session_peer.pending_zenz_feedback_()
+                .reverse_learning_segments[0].second,
+            "載せた方が");
+
+  ASSERT_EQ(session_peer.pending_zenz_feedback_()
+                .reverse_projected_learning_segments.size(),
+            3);
+
+  session_peer.ConfirmPendingZenzFeedback();
+
+  ASSERT_EQ(converter->learn_call_count, 1);
+  ASSERT_EQ(converter->learn_segments_call_count, 1);
+  EXPECT_EQ(converter->learned_keys[0],
+            "かたろぐにのせたほうがいい");
+  EXPECT_EQ(converter->learned_values[0],
+            "カタログに載せた方がいい");
+  EXPECT_EQ(converter->learned_segment_keys[0],
+            std::vector<std::string>(
+                {"かたろぐに", "のせたほうが", "いい"}));
+  EXPECT_EQ(converter->learned_segment_values[0],
+            std::vector<std::string>(
+                {"カタログに", "載せた方が", "いい"}));
+  EXPECT_EQ(converter->learned_segment_reranked[0],
+            std::vector<bool>({false, true, false}));
 #else
   GTEST_SKIP() << "Zenz feedback store persists only on Windows.";
 #endif
@@ -1489,10 +1606,13 @@ TEST_F(SessionTest,
   ASSERT_TRUE(session_peer.pending_zenz_feedback_().pending);
   EXPECT_TRUE(session_peer.pending_zenz_feedback_()
                   .reverse_learning_segments.empty());
+  EXPECT_TRUE(session_peer.pending_zenz_feedback_()
+                  .reverse_projected_learning_segments.empty());
 
   session_peer.ConfirmPendingZenzFeedback();
 
   ASSERT_EQ(converter->learn_call_count, 1);
+  EXPECT_EQ(converter->learn_segments_call_count, 0);
   EXPECT_EQ(converter->learned_keys[0], "かれはてんてきです");
   EXPECT_EQ(converter->learned_values[0], "天敵です彼は");
 

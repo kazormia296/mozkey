@@ -1494,10 +1494,15 @@ size_t CountSurfaceOccurrences(absl::string_view value,
   return count;
 }
 
-std::vector<std::pair<std::string, std::string>>
-BuildZenzReverseLearningSegmentsFromPreedit(const commands::Preedit& preedit,
-                                            absl::string_view full_key,
-                                            absl::string_view full_value) {
+struct ZenzReverseLearningProjection {
+  std::vector<std::pair<std::string, std::string>> changed_segments;
+  std::vector<ZenzProjectedLearningSegment> projected_segments;
+};
+
+ZenzReverseLearningProjection BuildZenzReverseLearningSegmentsFromPreedit(
+    const commands::Preedit& preedit,
+    absl::string_view full_key,
+    absl::string_view full_value) {
   constexpr int kMaxReverseLearningPairs = 4;
 
   const int segment_size = preedit.segment_size();
@@ -1614,7 +1619,14 @@ BuildZenzReverseLearningSegmentsFromPreedit(const commands::Preedit& preedit,
     return {};
   }
 
-  std::vector<std::pair<std::string, std::string>> learning_pairs;
+  ZenzReverseLearningProjection result;
+  result.projected_segments.reserve(segment_size);
+  for (int i = 0; i < segment_size; ++i) {
+    result.projected_segments.push_back(
+        {keys[i], projected_values[i],
+         projected_values[i] != mozc_values[i]});
+  }
+
   for (int i = 0; i < segment_size; ++i) {
     // Full-sequence learning already covers the whole accepted result.  The
     // reverse path records only segments that Zenz actually changed relative to
@@ -1625,15 +1637,18 @@ BuildZenzReverseLearningSegmentsFromPreedit(const commands::Preedit& preedit,
     if (keys[i] == full_key && projected_values[i] == full_value) {
       continue;
     }
-    learning_pairs.push_back({keys[i], projected_values[i]});
-    if (learning_pairs.size() > kMaxReverseLearningPairs) {
+    result.changed_segments.push_back({keys[i], projected_values[i]});
+    if (result.changed_segments.size() > kMaxReverseLearningPairs) {
       return {};
     }
   }
 
   // If the correction rewrites too many independent segments, it is likely a
   // style-level rewrite rather than a stable local conversion preference.
-  return learning_pairs;
+  if (result.changed_segments.empty()) {
+    result.projected_segments.clear();
+  }
+  return result;
 }
 
 
@@ -5201,6 +5216,60 @@ int Session::MaybeLearnZenzReverseSegmentsToMozcHistory(
   return learned_count;
 }
 
+int Session::MaybeLearnZenzProjectedSegmentsToMozcHistory(
+    const std::vector<ZenzProjectedLearningSegment>& segments) {
+  if (!UseZenzFeedbackLearning(context_->GetConfig())) {
+    return 0;
+  }
+  if (segments.size() < 2) {
+    return 0;
+  }
+  if (context_->composer().GetInputFieldType() ==
+      commands::Context::PASSWORD) {
+    return 0;
+  }
+
+  std::vector<ExternalConversionSegment> external_segments;
+  external_segments.reserve(segments.size());
+  for (const ZenzProjectedLearningSegment& segment : segments) {
+    const std::string& key = segment.key;
+    const std::string& value = segment.value;
+    if (key.empty() || value.empty()) {
+      return 0;
+    }
+
+    const ZenzTextPrivacyDecision key_privacy =
+        EvaluateZenzLiveKeyPrivacy(key);
+    if (!key_privacy.allow) {
+      ZenzDebugOutput(absl::StrCat(
+          "[zenz-feedback] skip projected mozc history key_privacy reason=",
+          key_privacy.reason,
+          " ",
+          ZenzRedactedTextStats("key", key)));
+      return 0;
+    }
+
+    const ZenzTextPrivacyDecision value_privacy =
+        EvaluateZenzLiveValuePrivacy(value);
+    if (!value_privacy.allow) {
+      ZenzDebugOutput(absl::StrCat(
+          "[zenz-feedback] skip projected mozc history value_privacy reason=",
+          value_privacy.reason,
+          " ",
+          ZenzRedactedTextStats("value", value)));
+      return 0;
+    }
+
+    external_segments.push_back({key, value, segment.is_reranked});
+  }
+
+  if (!context_->mutable_converter()->LearnExternalConversionSegments(
+          external_segments, context_->client_context())) {
+    return 0;
+  }
+  return static_cast<int>(external_segments.size());
+}
+
 bool Session::HasVisibleZenzLiveCorrection() const {
   if (zenz_live_visible_generation_ == 0 ||
       zenz_live_key_.empty() ||
@@ -5271,9 +5340,13 @@ void Session::SetPendingZenzFeedbackAccepted(
   pending_zenz_feedback_.reason.clear();
   pending_zenz_feedback_.has_final_committed_value = false;
   pending_zenz_feedback_.final_committed_value.clear();
-  pending_zenz_feedback_.reverse_learning_segments =
+  const ZenzReverseLearningProjection reverse_learning_projection =
       BuildZenzReverseLearningSegmentsFromPreedit(
           live_conversion_preedit_output_, key, value);
+  pending_zenz_feedback_.reverse_learning_segments =
+      reverse_learning_projection.changed_segments;
+  pending_zenz_feedback_.reverse_projected_learning_segments =
+      reverse_learning_projection.projected_segments;
 
   ZenzDebugOutput(absl::StrCat(
       "[zenz-feedback] pending accepted ",
@@ -5323,6 +5396,7 @@ void Session::SetPendingZenzFeedbackRejected(absl::string_view reason) {
   pending_zenz_feedback_.has_final_committed_value = false;
   pending_zenz_feedback_.final_committed_value.clear();
   pending_zenz_feedback_.reverse_learning_segments.clear();
+  pending_zenz_feedback_.reverse_projected_learning_segments.clear();
 
   ZenzDebugOutput(absl::StrCat(
       "[zenz-feedback] pending rejected ",
@@ -5403,9 +5477,21 @@ void Session::ConfirmPendingZenzFeedback() {
         " ", ZenzRedactedTextStats("value", pending_zenz_feedback_.value),
         " context_class=", pending_zenz_feedback_.context_class));
 
-    const int reverse_segment_learning_count =
-        MaybeLearnZenzReverseSegmentsToMozcHistory(
-            pending_zenz_feedback_.reverse_learning_segments);
+    const int projected_segment_learning_count =
+        MaybeLearnZenzProjectedSegmentsToMozcHistory(
+            pending_zenz_feedback_.reverse_projected_learning_segments);
+
+    ZenzDebugOutput(absl::StrCat(
+        "[zenz-feedback] projected segment mozc history learning count=",
+        projected_segment_learning_count,
+        " context_class=", pending_zenz_feedback_.context_class));
+
+    int reverse_segment_learning_count = 0;
+    if (projected_segment_learning_count == 0) {
+      reverse_segment_learning_count =
+          MaybeLearnZenzReverseSegmentsToMozcHistory(
+              pending_zenz_feedback_.reverse_learning_segments);
+    }
 
     ZenzDebugOutput(absl::StrCat(
         "[zenz-feedback] reverse segment mozc history learning count=",

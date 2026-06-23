@@ -39,6 +39,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "composer/composer.h"
 #include "converter/converter_interface.h"
 #include "protocol/commands.pb.h"
@@ -150,6 +151,17 @@ class EngineConverterInterface {
   virtual bool LearnExternalConversionResult(
       absl::string_view key,
       absl::string_view value,
+      const commands::Context& context) {
+    return false;
+  }
+
+  // Learns an externally committed multi-segment conversion result without
+  // changing the current session-visible conversion state.  This is used when
+  // an accepted Zenz correction can be safely projected onto Mozc
+  // live-conversion phrase boundaries.
+  [[nodiscard]]
+  virtual bool LearnExternalConversionSegments(
+      absl::Span<const ExternalConversionSegment> segments,
       const commands::Context& context) {
     return false;
   }
