@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "converter/candidate.h"
 #include "converter/converter_interface.h"
 #include "converter/segments.h"
@@ -130,6 +131,11 @@ class EngineConverter : public EngineConverterInterface {
   bool LearnExternalConversionResult(
       absl::string_view key,
       absl::string_view value,
+      const commands::Context& context) override;
+
+  [[nodiscard]]
+  bool LearnExternalConversionSegments(
+      absl::Span<const ExternalConversionSegment> segments,
       const commands::Context& context) override;
 
   // Fixes the suggestion candidate. Stores the number of characters in the key

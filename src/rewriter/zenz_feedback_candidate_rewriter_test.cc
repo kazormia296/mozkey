@@ -335,6 +335,144 @@ TEST(ZenzFeedbackCandidateRewriterTest,
 }
 
 TEST(ZenzFeedbackCandidateRewriterTest,
+     KeepsSoftRejectedFeedbackCandidateButReducesItsBonus) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "japanese_only", "彼は天敵です");
+  store.RecordRejected("かれはてんてきです", "japanese_only", "彼は天敵です",
+                       "space_revert_zenz_to_mozc");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は点滴です", &segments);
+  Segment* segment = segments.mutable_conversion_segment(0);
+  segment->mutable_candidate(0)->cost = 0;
+  segment->mutable_candidate(0)->wcost = 0;
+
+  converter::Candidate* existing = segment->add_candidate();
+  existing->key = "かれはてんてきです";
+  existing->content_key = "かれはてんてきです";
+  existing->value = "彼は天敵です";
+  existing->content_value = "彼は天敵です";
+  existing->cost = 1600;
+  existing->wcost = 1600;
+
+  const ConversionRequest request = CreateZenzFeedbackConversionRequest();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_TRUE(rewriter.Rewrite(request, &segments));
+
+  ASSERT_EQ(segment->candidates_size(), 2);
+  EXPECT_EQ(segment->candidate(0).value, "彼は点滴です");
+  EXPECT_TRUE(segment->candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
+
+  // A Space-derived rejection is a soft negative signal.  It reduces the
+  // accepted feedback bonus, but it must not delete or hard-suppress the
+  // candidate while the total feedback score remains positive.
+  EXPECT_EQ(segment->candidate(1).value, "彼は天敵です");
+  EXPECT_EQ(segment->candidate(1).cost, 1175);
+  EXPECT_EQ(segment->candidate(1).wcost, 1175);
+  EXPECT_TRUE(segment->candidate(1).attributes & converter::Attribute::RERANKED);
+  EXPECT_TRUE(segment->candidate(1).attributes &
+              converter::Attribute::USER_SEGMENT_HISTORY_REWRITER);
+  EXPECT_FALSE(segment->candidate(1).attributes &
+               converter::Attribute::BEST_CANDIDATE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
+     DoesNotInsertOrPromoteHardRejectedFeedbackCandidate) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "japanese_only", "彼は天敵です");
+  store.RecordRejected("かれはてんてきです", "japanese_only", "彼は天敵です",
+                       "hard_reject");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は点滴です", &segments);
+
+  const ConversionRequest request = CreateZenzFeedbackConversionRequest();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_FALSE(rewriter.Rewrite(request, &segments));
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  const Segment& segment = segments.conversion_segment(0);
+  ASSERT_EQ(segment.candidates_size(), 1);
+  EXPECT_EQ(segment.candidate(0).value, "彼は点滴です");
+  EXPECT_TRUE(segment.candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
+     DoesNotDuplicateFeedbackWhenMozcTopAlreadyMatches) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "japanese_only", "彼は天敵です");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は天敵です", &segments);
+
+  const ConversionRequest request = CreateZenzFeedbackConversionRequest();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_FALSE(rewriter.Rewrite(request, &segments));
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  const Segment& segment = segments.conversion_segment(0);
+  ASSERT_EQ(segment.candidates_size(), 1);
+  EXPECT_EQ(segment.candidate(0).value, "彼は天敵です");
+  EXPECT_TRUE(segment.candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
+     IsNotAvailableWhenUserHistoryCannotBeUsed) {
+  config::Config config;
+  config.set_use_zenz_feedback_learning(true);
+  config.set_history_learning_level(config::Config::DEFAULT_HISTORY);
+
+  ConversionRequest::Options options;
+  options.request_type = ConversionRequest::CONVERSION;
+  options.enable_user_history_for_conversion = true;
+  options.incognito_mode = true;
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_EQ(rewriter.capability(ConversionRequestBuilder()
+                                    .SetConfig(config)
+                                    .SetOptions(options)
+                                    .SetRequestType(ConversionRequest::CONVERSION)
+                                    .SetKey("かれはてんてきです")
+                                    .Build()),
+            RewriterInterface::NOT_AVAILABLE);
+
+  options.incognito_mode = false;
+  options.enable_user_history_for_conversion = false;
+  EXPECT_EQ(rewriter.capability(ConversionRequestBuilder()
+                                    .SetConfig(config)
+                                    .SetOptions(options)
+                                    .SetRequestType(ConversionRequest::CONVERSION)
+                                    .SetKey("かれはてんてきです")
+                                    .Build()),
+            RewriterInterface::NOT_AVAILABLE);
+
+  options.enable_user_history_for_conversion = true;
+  config.set_history_learning_level(config::Config::NO_HISTORY);
+  EXPECT_EQ(rewriter.capability(ConversionRequestBuilder()
+                                    .SetConfig(config)
+                                    .SetOptions(options)
+                                    .SetRequestType(ConversionRequest::CONVERSION)
+                                    .SetKey("かれはてんてきです")
+                                    .Build()),
+            RewriterInterface::NOT_AVAILABLE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
      IsNotAvailableWhenZenzFeedbackLearningIsDisabled) {
   ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
   ASSERT_TRUE(profile.ok());

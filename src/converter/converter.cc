@@ -395,6 +395,10 @@ bool Converter::LearnExternalConversionResult(
     return false;
   }
 
+  // Learn the accepted external result as one complete committed conversion.
+  // Segment-local or lexical-unit extraction is intentionally not performed
+  // here; callers that need it must route it through a separate Mozc-history
+  // path with explicit safety rules.
   Segments learning_segments;
   learning_segments.InitForCommit(key, value);
 
@@ -419,6 +423,147 @@ bool Converter::LearnExternalConversionResult(
   // uses RERANKED to force trigger-key insertion, which is important for
   // recalling an externally generated candidate later.
   candidate->attributes |= Attribute::RERANKED;
+
+  FinishConversion(request, &learning_segments);
+  return true;
+}
+
+bool Converter::LearnExternalConversionSegments(
+    const ConversionRequest& request,
+    absl::Span<const ExternalConversionSegment> segments) const {
+  constexpr size_t kMaxSegments = 16;
+  constexpr size_t kMaxSegmentKeyChars = 128;
+  constexpr size_t kMaxSegmentValueChars = 128;
+  constexpr size_t kMaxSegmentValueBytes = 512;
+  constexpr size_t kMinTotalKeyChars = 2;
+  constexpr size_t kMaxTotalKeyChars = 256;
+  constexpr size_t kMaxTotalValueChars = 256;
+  constexpr size_t kMaxTotalValueBytes = 1024;
+
+  if (segments.empty() || segments.size() > kMaxSegments) {
+    return false;
+  }
+
+  if (request.request_type() != ConversionRequest::CONVERSION) {
+    return false;
+  }
+
+  if (request.incognito_mode()) {
+    return false;
+  }
+
+  if (!request.options().enable_user_history_for_conversion) {
+    return false;
+  }
+
+  if (request.config().history_learning_level() !=
+      config::Config::DEFAULT_HISTORY) {
+    return false;
+  }
+
+  std::vector<ExternalConversionSegment> normalized_segments;
+  normalized_segments.reserve(segments.size());
+
+  std::string total_key;
+  std::string total_value;
+  for (const ExternalConversionSegment& segment : segments) {
+    const std::string key =
+        std::string(absl::StripAsciiWhitespace(segment.key));
+    const std::string value =
+        std::string(absl::StripAsciiWhitespace(segment.value));
+
+    if (key.empty() || value.empty()) {
+      return false;
+    }
+    if (!Util::IsValidUtf8(key) || !Util::IsValidUtf8(value)) {
+      return false;
+    }
+    if (Util::CharsLen(key) > kMaxSegmentKeyChars ||
+        Util::CharsLen(value) > kMaxSegmentValueChars ||
+        value.size() > kMaxSegmentValueBytes) {
+      return false;
+    }
+
+    // Do not persist multi-line or TSV-breaking generated text.
+    if (key.find('\t') != std::string::npos ||
+        key.find('\r') != std::string::npos ||
+        key.find('\n') != std::string::npos ||
+        value.find('\t') != std::string::npos ||
+        value.find('\r') != std::string::npos ||
+        value.find('\n') != std::string::npos) {
+      return false;
+    }
+
+    absl::StrAppend(&total_key, key);
+    absl::StrAppend(&total_value, value);
+    normalized_segments.push_back({key, value, segment.is_reranked});
+  }
+
+  if (Util::CharsLen(total_key) < kMinTotalKeyChars ||
+      Util::CharsLen(total_key) > kMaxTotalKeyChars ||
+      Util::CharsLen(total_value) > kMaxTotalValueChars ||
+      total_value.size() > kMaxTotalValueBytes) {
+    return false;
+  }
+
+  // Learn the accepted external result as one multi-segment committed
+  // conversion.  This keeps the phrase boundaries derived from Mozc live
+  // conversion, so callers can approximate a normal multi-segment commit
+  // without writing segment-local records to ZenzFeedbackStore.
+  Segments learning_segments;
+  learning_segments.clear_conversion_segments();
+
+  for (const ExternalConversionSegment& segment : normalized_segments) {
+    Segment* learning_segment = learning_segments.add_segment();
+    learning_segment->set_key(segment.key);
+    learning_segment->set_segment_type(Segment::FIXED_VALUE);
+
+    Candidate* candidate = learning_segment->add_candidate();
+
+    bool copied_normal_candidate = false;
+    Segments probe_segments;
+    probe_segments.InitForConvert(segment.key);
+
+    const ConversionRequest probe_request =
+        ConversionRequestBuilder()
+            .SetConversionRequestView(request)
+            .SetKey(segment.key)
+            .Build();
+
+    if (StartConversion(probe_request, &probe_segments) &&
+        probe_segments.conversion_segments_size() == 1) {
+      const Segment& probe_segment = probe_segments.conversion_segment(0);
+      for (size_t i = 0; i < probe_segment.candidates_size(); ++i) {
+        const Candidate& probe_candidate = probe_segment.candidate(i);
+        if (probe_candidate.value == segment.value) {
+          *candidate = probe_candidate;
+          copied_normal_candidate = true;
+          break;
+        }
+      }
+    }
+
+    if (!copied_normal_candidate) {
+      candidate->key = segment.key;
+      candidate->content_key = segment.key;
+      candidate->value = segment.value;
+      candidate->content_value = segment.value;
+    }
+
+    // The copied candidate may already contain ranking-related attributes from
+    // normal conversion.  External learning should control those explicitly.
+    candidate->attributes &=
+        ~(Attribute::RERANKED |
+          Attribute::BEST_CANDIDATE |
+          Attribute::USER_SEGMENT_HISTORY_REWRITER);
+
+    // Treat only segments actually changed by Zenz as user-selected non-default
+    // commits.  Unchanged context segments are kept in the committed phrase
+    // sequence, but they should not create extra trigger-key evidence.
+    if (segment.is_reranked) {
+      candidate->attributes |= Attribute::RERANKED;
+    }
+  }
 
   FinishConversion(request, &learning_segments);
   return true;

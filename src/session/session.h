@@ -59,6 +59,12 @@
 namespace mozc {
 namespace session {
 
+struct ZenzProjectedLearningSegment {
+  std::string key;
+  std::string value;
+  bool is_reranked = false;
+};
+
 class Session {
  public:
   explicit Session(const EngineInterface& engine);
@@ -389,6 +395,18 @@ class Session {
     // the final committed text is identical to the Zenz value.
     bool has_final_committed_value = false;
     std::string final_committed_value;
+
+    // Snapshot of reverse-projected segment-local learning pairs derived from
+    // the Mozc live-conversion segments that were visible when the Zenz result
+    // was accepted.  These pairs are learned only through Mozc history; they
+    // are never written to ZenzFeedbackStore.
+    std::vector<std::pair<std::string, std::string>> reverse_learning_segments;
+
+    // Full projected Mozc live-conversion segment sequence after applying the
+    // accepted Zenz result.  This is learned as one external multi-segment
+    // conversion commit so Mozc history can observe phrase-boundary context.
+    std::vector<ZenzProjectedLearningSegment>
+        reverse_projected_learning_segments;
   };
 
   PendingZenzFeedback pending_zenz_feedback_;
@@ -589,6 +607,10 @@ class Session {
   bool MaybeLearnZenzCandidateToMozcHistory(
       absl::string_view key,
       absl::string_view value);
+  int MaybeLearnZenzReverseSegmentsToMozcHistory(
+      const std::vector<std::pair<std::string, std::string>>& segments);
+  int MaybeLearnZenzProjectedSegmentsToMozcHistory(
+      const std::vector<ZenzProjectedLearningSegment>& segments);
 
   bool SetPendingDirectCommitLearning(
       absl::string_view key,

@@ -1070,6 +1070,9 @@ QString FeedbackReasonLabel(absl::string_view reason) {
   if (reason == "feedback_preferred") {
     return QString::fromUtf8("優先");
   }
+  if (reason == "feedback_hard_rejected") {
+    return QString::fromUtf8("ブロック中");
+  }
   if (reason == "feedback_rejected") {
     return QString::fromUtf8("却下優勢");
   }
@@ -1271,13 +1274,47 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
 
   QVBoxLayout* root_layout = new QVBoxLayout(&dialog);
 
+  QWidget* description_widget = new QWidget(&dialog);
+  QHBoxLayout* description_layout = new QHBoxLayout(description_widget);
+  description_layout->setContentsMargins(0, 0, 0, 0);
+  description_layout->setSpacing(8);
+
   QLabel* description_label = new QLabel(
       QString::fromUtf8(
-          "Zenz 補正結果のローカル学習データを管理します。"
-          "TSV ファイルを直接開かず、安全な操作だけを行います。"),
+          "Zenz 補正の学習データを管理します。"
+          "ここでは、補正結果として保存された読みと候補の記録を"
+          "安全に確認・削除できます。"),
       &dialog);
   description_label->setWordWrap(true);
-  root_layout->addWidget(description_label);
+
+  QPushButton* details_button =
+      new QPushButton(QString::fromUtf8("詳しく..."), &dialog);
+  details_button->setFixedWidth(84);
+  details_button->setToolTip(QString::fromUtf8(
+      "Zenz 学習データと通常の変換履歴の違いを表示します"));
+
+  description_layout->addWidget(description_label, 1);
+  description_layout->addWidget(details_button, 0, Qt::AlignTop);
+  root_layout->addWidget(description_widget);
+
+  QObject::connect(details_button, &QPushButton::clicked,
+                   &dialog, [&]() {
+                     ShowJapaneseInformation(
+                         &dialog, dialog.windowTitle(),
+                         QString::fromUtf8(
+                             "この画面で扱うのは、Zenz が補正した入力全体の読みと"
+                             "補正後の候補の記録です。\n\n"
+                             "Zenz の結果を確定した場合、条件によっては通常の"
+                             "変換履歴にも反映されます。また、安全に判断できる場合は、"
+                             "直前の通常 Mozc ライブ変換文節列へ逆投影し、"
+                             "文節列全体を通常変換履歴に近い形で反映します。"
+                             "このとき、Zenz が実際に直した文節だけを"
+                             "強い選択履歴として扱います。\n\n"
+                             "そのため、この画面で Zenz 学習データを削除しても、"
+                             "通常の変換履歴にすでに反映された内容は削除されません。"
+                             "通常の変換履歴を消したい場合は、設定画面の辞書タブ内にある学習履歴のクリアを"
+                             "使用してください。"));
+                   });
 
   QHBoxLayout* search_layout = new QHBoxLayout;
   QLabel* search_label = new QLabel(QString::fromUtf8("検索:"), &dialog);
@@ -1311,6 +1348,10 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
       new QPushButton(QString::fromUtf8("インポート..."), &dialog);
   QPushButton* export_button =
       new QPushButton(QString::fromUtf8("エクスポート..."), &dialog);
+  QPushButton* block_button =
+      new QPushButton(QString::fromUtf8("この補正をブロック"), &dialog);
+  block_button->setToolTip(QString::fromUtf8(
+      "選択した Zenz 補正を今後の補正や候補順位に使われにくくします"));
   QPushButton* delete_button =
       new QPushButton(QString::fromUtf8("選択項目を削除"), &dialog);
   QPushButton* clear_button =
@@ -1325,11 +1366,52 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
 
   button_layout->addWidget(import_button);
   button_layout->addWidget(export_button);
+  button_layout->addWidget(block_button);
   button_layout->addWidget(delete_button);
   button_layout->addWidget(clear_button);
   button_layout->addStretch();
   button_layout->addWidget(close_buttons);
   root_layout->addLayout(button_layout);
+
+  auto selected_row_is_hard_rejected = [&]() -> bool {
+    const int row = table->currentRow();
+    if (row < 0) {
+      return false;
+    }
+    QTableWidgetItem* reason_item = table->item(row, 5);
+    if (reason_item == nullptr) {
+      return false;
+    }
+    return reason_item->data(Qt::UserRole).toString() ==
+           QStringLiteral("feedback_hard_rejected");
+  };
+
+  auto update_selection_buttons = [&]() {
+    const bool has_selected_row = table->currentRow() >= 0;
+    delete_button->setEnabled(has_selected_row);
+
+    if (!has_selected_row) {
+      block_button->setText(QString::fromUtf8("この補正をブロック"));
+      block_button->setEnabled(false);
+      block_button->setToolTip(QString::fromUtf8(
+          "選択した Zenz 補正を今後の補正や候補順位に使われにくくします"));
+      return;
+    }
+
+    if (selected_row_is_hard_rejected()) {
+      block_button->setText(QString::fromUtf8("ブロック済み"));
+      block_button->setEnabled(false);
+      block_button->setToolTip(QString::fromUtf8(
+          "この Zenz 補正はすでにブロックされています。"
+          "解除する場合は「選択項目を削除」を使用します"));
+      return;
+    }
+
+    block_button->setText(QString::fromUtf8("この補正をブロック"));
+    block_button->setEnabled(true);
+    block_button->setToolTip(QString::fromUtf8(
+        "選択した Zenz 補正を今後の補正や候補順位に使われにくくします"));
+  };
 
   auto reload_table = [&]() {
     const QString filter = search_edit->text();
@@ -1364,6 +1446,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
       table->item(row, 0)->setData(Qt::UserRole, key);
       table->item(row, 1)->setData(Qt::UserRole, value);
       table->item(row, 2)->setData(Qt::UserRole, context_class);
+      table->item(row, 5)->setData(Qt::UserRole, ToQString(entry.reason));
 
       ++visible_count;
     }
@@ -1375,11 +1458,15 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
             .arg(visible_count)
             .arg(static_cast<int>(entries.size())));
 
-    const bool has_visible_row = table->rowCount() > 0;
-    delete_button->setEnabled(has_visible_row);
     export_button->setEnabled(!entries.empty());
     clear_button->setEnabled(!entries.empty());
+    update_selection_buttons();
   };
+
+  QObject::connect(table, &QTableWidget::itemSelectionChanged,
+                   &dialog, [&]() {
+                     update_selection_buttons();
+                   });
 
   QObject::connect(search_edit, &QLineEdit::textChanged,
                    &dialog, [&](const QString&) {
@@ -1477,6 +1564,71 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
                          &dialog, dialog.windowTitle(),
                          QString::fromUtf8(
                              "Zenz 学習データをインポートしました。"));
+                   });
+
+  QObject::connect(block_button, &QPushButton::clicked,
+                   &dialog, [&]() {
+                     const int row = table->currentRow();
+                     if (row < 0 || selected_row_is_hard_rejected()) {
+                       return;
+                     }
+
+                     QTableWidgetItem* key_item = table->item(row, 0);
+                     QTableWidgetItem* value_item = table->item(row, 1);
+                     QTableWidgetItem* context_item = table->item(row, 2);
+                     if (key_item == nullptr ||
+                         value_item == nullptr ||
+                         context_item == nullptr) {
+                       return;
+                     }
+
+                     const QString key =
+                         key_item->data(Qt::UserRole).toString();
+                     const QString value =
+                         value_item->data(Qt::UserRole).toString();
+                     const QString context_class =
+                         context_item->data(Qt::UserRole).toString();
+
+                     QMessageBox message_box(&dialog);
+                     message_box.setWindowTitle(dialog.windowTitle());
+                     message_box.setIcon(QMessageBox::Warning);
+                     message_box.setText(
+                         QString::fromUtf8("選択した Zenz 補正をブロックしますか？"));
+                     message_box.setInformativeText(
+                         QString::fromUtf8(
+                             "同じ読みと候補の組み合わせは、今後の Zenz 補正や"
+                             "候補順位に使われにくくなります。\n\n"
+                             "解除したい場合は、この学習エントリを削除してから"
+                             "必要に応じて再学習してください。\n\n"
+                             "読み: %1\n候補: %2\n文脈クラス: %3")
+                             .arg(key, value, context_class));
+
+                     QPushButton* block_confirm_button =
+                         message_box.addButton(QString::fromUtf8("ブロック"),
+                                               QMessageBox::DestructiveRole);
+                     QPushButton* cancel_button =
+                         message_box.addButton(QString::fromUtf8("キャンセル"),
+                                               QMessageBox::RejectRole);
+
+                     message_box.setDefaultButton(cancel_button);
+                     message_box.exec();
+
+                     if (message_box.clickedButton() != block_confirm_button) {
+                       return;
+                     }
+
+                     store.RecordRejected(
+                         key.toUtf8().constData(),
+                         context_class.toUtf8().constData(),
+                         value.toUtf8().constData(),
+                         "hard_reject");
+
+                     reload_table();
+
+                     ShowJapaneseInformation(
+                         &dialog, dialog.windowTitle(),
+                         QString::fromUtf8(
+                             "選択した Zenz 補正をブロックしました。"));
                    });
 
   QObject::connect(delete_button, &QPushButton::clicked,

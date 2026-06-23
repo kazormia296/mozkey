@@ -1494,7 +1494,7 @@
          <item row="27" column="0" colspan="8">
           <widget class="QCheckBox" name="zenzFeedbackLearningCheckBox">
            <property name="toolTip">
-            <string>Zenz 補正結果の採用/却下をローカル TSV に記録し、次回以降の補正判断に使用します。</string>
+            <string>Zenz 補正結果の採用/却下をローカルに保存し、次回以降の補正や候補順位に反映します。確定した内容は、通常の変換履歴にも反映される場合があります。</string>
            </property>
            <property name="text">
             <string>Zenz 補正結果をローカル学習する</string>
@@ -1512,7 +1512,7 @@
          <item row="28" column="3" colspan="5">
           <widget class="QPushButton" name="editZenzFeedbackButton">
            <property name="toolTip">
-            <string>Zenz 学習データを安全な管理画面で表示し、インポート、エクスポート、エントリ削除を行います。</string>
+            <string>保存された Zenz 学習データを確認、検索、インポート、エクスポート、削除します。通常の変換履歴に反映済みの学習は、この画面の削除対象には含まれません。</string>
            </property>
            <property name="text">
             <string>管理...</string>
