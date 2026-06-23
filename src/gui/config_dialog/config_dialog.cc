@@ -1271,13 +1271,45 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
 
   QVBoxLayout* root_layout = new QVBoxLayout(&dialog);
 
+  QWidget* description_widget = new QWidget(&dialog);
+  QHBoxLayout* description_layout = new QHBoxLayout(description_widget);
+  description_layout->setContentsMargins(0, 0, 0, 0);
+  description_layout->setSpacing(8);
+
   QLabel* description_label = new QLabel(
       QString::fromUtf8(
-          "Zenz 補正結果のローカル学習データを管理します。"
-          "TSV ファイルを直接開かず、安全な操作だけを行います。"),
+          "Zenz 補正の学習データを管理します。"
+          "ここでは、補正結果として保存された読みと候補の記録を"
+          "安全に確認・削除できます。"),
       &dialog);
   description_label->setWordWrap(true);
-  root_layout->addWidget(description_label);
+
+  QPushButton* details_button =
+      new QPushButton(QString::fromUtf8("詳しく..."), &dialog);
+  details_button->setFixedWidth(84);
+  details_button->setToolTip(QString::fromUtf8(
+      "Zenz 学習データと通常の変換履歴の違いを表示します"));
+
+  description_layout->addWidget(description_label, 1);
+  description_layout->addWidget(details_button, 0, Qt::AlignTop);
+  root_layout->addWidget(description_widget);
+
+  QObject::connect(details_button, &QPushButton::clicked,
+                   &dialog, [&]() {
+                     ShowJapaneseInformation(
+                         &dialog, dialog.windowTitle(),
+                         QString::fromUtf8(
+                             "この画面で扱うのは、Zenz が補正した入力全体の読みと"
+                             "補正後の候補の記録です。\n\n"
+                             "Zenz の結果を確定した場合、条件によっては通常の"
+                             "変換履歴にも反映されます。また、安全に判断できる場合は、"
+                             "Zenz が直した一部の文節だけが通常の変換履歴に"
+                             "反映されることがあります。\n\n"
+                             "そのため、この画面で Zenz 学習データを削除しても、"
+                             "通常の変換履歴にすでに反映された内容は削除されません。"
+                             "通常の変換履歴を消したい場合は、設定画面の辞書タブ内にある学習履歴のクリアを"
+                             "使用してください。"));
+                   });
 
   QHBoxLayout* search_layout = new QHBoxLayout;
   QLabel* search_label = new QLabel(QString::fromUtf8("検索:"), &dialog);
