@@ -430,6 +430,316 @@ bool HasFunctionalPathInRange(const FunctionalReachability& reachable,
   return reachable[begin_pos][end_pos];
 }
 
+enum class BoundaryContextForRecomposition {
+  kNoHistory,
+  kClosedNominal,
+  kOpenParticle,
+  kPredicateOrFunctional,
+  kPunctuation,
+  kUnknown,
+};
+
+struct FunctionalPrefixEvidence {
+  size_t begin_pos = 0;
+  size_t end_pos = 0;
+  absl::string_view key;
+};
+
+bool EndsWithAnyStringView(
+    absl::string_view text,
+    std::initializer_list<absl::string_view> suffixes) {
+  for (absl::string_view suffix : suffixes) {
+    if (EndsWithStringView(text, suffix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool StartsWithAnyStringView(
+    absl::string_view text,
+    std::initializer_list<absl::string_view> prefixes) {
+  for (absl::string_view prefix : prefixes) {
+    if (StartsWithStringView(text, prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool EndsWithJapanesePunctuationLike(absl::string_view value) {
+  return EndsWithAnyStringView(value, {
+      "。", "、", "！", "？", "!", "?", ".", ",", " ", "　",
+  });
+}
+
+bool EndsWithOpenParticleLike(absl::string_view value) {
+  // These endings usually keep an argument/attachment slot open.  In such
+  // contexts, content predicates after the boundary can be legitimate:
+  //   責任を | になった -> 責任を担った
+  return EndsWithAnyStringView(value, {
+      "を", "が", "は", "も", "に", "で", "へ", "と", "の",
+      "から", "まで", "より", "や",
+  });
+}
+
+bool IsNominalHistoryNode(const dictionary::PosMatcher& pos_matcher,
+                          const Node& node) {
+  if (pos_matcher.IsContentNoun(node.lid) ||
+      pos_matcher.IsContentNoun(node.rid) ||
+      pos_matcher.IsPronoun(node.lid) || pos_matcher.IsPronoun(node.rid) ||
+      pos_matcher.IsUniqueNoun(node.lid) ||
+      pos_matcher.IsUniqueNoun(node.rid) ||
+      pos_matcher.IsGeneralNoun(node.lid) ||
+      pos_matcher.IsGeneralNoun(node.rid) ||
+      pos_matcher.IsUnknown(node.lid) || pos_matcher.IsUnknown(node.rid)) {
+    return true;
+  }
+
+  // Surface fallback for user dictionary history, ASCII identifiers, product
+  // names, numbers, and other committed noun-like tokens whose POS IDs are not
+  // always reliable enough at this boundary.
+  return Util::ContainsScriptType(node.value, Util::KANJI) ||
+         Util::ContainsScriptType(node.value, Util::KATAKANA) ||
+         Util::ContainsScriptType(node.value, Util::ALPHABET) ||
+         Util::ContainsScriptType(node.value, Util::NUMBER);
+}
+
+BoundaryContextForRecomposition ClassifyBoundaryContextForRecomposition(
+    const dictionary::PosMatcher& pos_matcher, const Node& node) {
+  if (node.value.empty()) {
+    return BoundaryContextForRecomposition::kUnknown;
+  }
+
+  if (EndsWithJapanesePunctuationLike(node.value)) {
+    return BoundaryContextForRecomposition::kPunctuation;
+  }
+
+  if (EndsWithOpenParticleLike(node.value)) {
+    return BoundaryContextForRecomposition::kOpenParticle;
+  }
+
+  if (IsNominalHistoryNode(pos_matcher, node)) {
+    return BoundaryContextForRecomposition::kClosedNominal;
+  }
+
+  if (pos_matcher.IsFunctional(node.lid) || pos_matcher.IsFunctional(node.rid)) {
+    return BoundaryContextForRecomposition::kPredicateOrFunctional;
+  }
+
+  return BoundaryContextForRecomposition::kUnknown;
+}
+
+BoundaryContextForRecomposition ClassifyBoundaryContextForRecomposition(
+    const dictionary::PosMatcher& pos_matcher, const Lattice& lattice,
+    size_t conversion_begin_pos) {
+  if (conversion_begin_pos == 0) {
+    return BoundaryContextForRecomposition::kNoHistory;
+  }
+
+  const Node* fallback = nullptr;
+  for (const Node* prev : lattice.end_nodes(conversion_begin_pos)) {
+    if (prev == nullptr || prev->end_pos != conversion_begin_pos) {
+      continue;
+    }
+    if (prev->node_type != Node::HIS_NODE || prev->value.empty()) {
+      continue;
+    }
+
+    // MakeLattice may insert an EOS-like HIS_NODE with rid == 0 at the end of
+    // history.  Prefer the concrete history node when available.
+    if (prev->rid != 0) {
+      return ClassifyBoundaryContextForRecomposition(pos_matcher, *prev);
+    }
+    if (fallback == nullptr) {
+      fallback = prev;
+    }
+  }
+
+  if (fallback != nullptr) {
+    return ClassifyBoundaryContextForRecomposition(pos_matcher, *fallback);
+  }
+
+  return BoundaryContextForRecomposition::kUnknown;
+}
+
+bool IsSupportedFunctionalPrefixForRecomposition(absl::string_view key) {
+  if (key.empty()) {
+    return false;
+  }
+
+  // A single "と" or "の" is too ambiguous for this generic scorer:
+  //   写真 | とった
+  //   田 | の字
+  // Compound paths such as "とは" can still be used because they carry more
+  // functional evidence.
+  if (key == "と" || key == "の") {
+    return false;
+  }
+
+  if (key == "に" || key == "で" || key == "へ" || key == "を" ||
+      key == "が" || key == "は" || key == "も") {
+    return true;
+  }
+
+  if (key.size() > absl::string_view("に").size() &&
+      StartsWithAnyStringView(key, {
+          "に", "で", "と", "の", "は", "も", "が", "を", "へ",
+          "から", "まで", "より",
+      })) {
+    return true;
+  }
+
+  return false;
+}
+
+bool IsSupportedWholeFunctionalChainForRecomposition(absl::string_view key) {
+  if (key.empty()) {
+    return false;
+  }
+
+  // Copular/adnominal functional chains after a closed nominal history.
+  //
+  // Examples:
+  //   彼 | なのか   -> 彼なのか, not 彼七日
+  //   彼 | なのだ   -> 彼なのだ
+  //   彼 | なんです -> 彼なんです
+  //
+  // Do not accept bare "な" to avoid broad lexical demotion such as ななめ.
+  return StartsWithStringView(key, "なの") || StartsWithStringView(key, "なん");
+}
+
+bool HasContinuationNodeFrom(const Lattice& lattice, size_t begin_pos,
+                             const Node& excluded_node) {
+  if (begin_pos >= lattice.key().size()) {
+    return false;
+  }
+
+  for (const Node* node : lattice.begin_nodes(begin_pos)) {
+    if (node == nullptr || node == &excluded_node) {
+      continue;
+    }
+    if (node->node_type != Node::NOR_NODE) {
+      continue;
+    }
+    if (node->end_pos <= node->begin_pos) {
+      continue;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+std::optional<FunctionalPrefixEvidence> FindFunctionalPrefixEvidence(
+    const FunctionalReachability& reachable, const Lattice& lattice,
+    size_t conversion_begin_pos, const Node& competing_node) {
+  if (competing_node.begin_pos != conversion_begin_pos) {
+    return std::nullopt;
+  }
+  if (competing_node.end_pos > lattice.key().size()) {
+    return std::nullopt;
+  }
+
+  const absl::string_view competing_key =
+      lattice.key().substr(conversion_begin_pos,
+                           competing_node.end_pos - conversion_begin_pos);
+
+  // Whole-span functional chain evidence.
+  //
+  // This covers cases like:
+  //   彼 | なのか
+  //
+  // where the competing content node consumes the whole current span
+  // ("なのか" -> "七日") and there is no separate continuation node after
+  // the functional chain.
+  if (HasFunctionalPathInRange(reachable, conversion_begin_pos,
+                               competing_node.end_pos) &&
+      IsSupportedWholeFunctionalChainForRecomposition(competing_key)) {
+    return FunctionalPrefixEvidence{conversion_begin_pos,
+                                    competing_node.end_pos, competing_key};
+  }
+
+  // Require at least two reading characters after the functional prefix.  This
+  // avoids broad demotion of compact expressions such as 二時 and keeps the
+  // scorer focused on phrase-like boundary drift.
+  constexpr size_t kMinRemainingChars = 2;
+
+  for (size_t end_pos = conversion_begin_pos + 1;
+       end_pos < competing_node.end_pos; ++end_pos) {
+    const absl::string_view remaining_key =
+        lattice.key().substr(end_pos, competing_node.end_pos - end_pos);
+    if (Util::CharsLen(remaining_key) < kMinRemainingChars) {
+      continue;
+    }
+    if (!HasFunctionalPathInRange(reachable, conversion_begin_pos, end_pos)) {
+      continue;
+    }
+
+    if (!HasContinuationNodeFrom(lattice, end_pos, competing_node)) {
+      continue;
+    }
+
+    const absl::string_view prefix_key =
+        lattice.key().substr(conversion_begin_pos,
+                             end_pos - conversion_begin_pos);
+    if (!IsSupportedFunctionalPrefixForRecomposition(prefix_key)) {
+      continue;
+    }
+
+    FunctionalPrefixEvidence evidence;
+    evidence.begin_pos = conversion_begin_pos;
+    evidence.end_pos = end_pos;
+    evidence.key = prefix_key;
+    return evidence;
+  }
+
+  return std::nullopt;
+}
+
+bool IsPrefixConsumingContentNodeForRecomposition(
+    const dictionary::PosMatcher& pos_matcher, const Node& node,
+    size_t conversion_begin_pos) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+  if ((node.attributes & Node::USER_DICTIONARY) != 0) {
+    return false;
+  }
+  if (node.begin_pos != conversion_begin_pos) {
+    return false;
+  }
+  if (node.end_pos <= node.begin_pos) {
+    return false;
+  }
+  if (node.key.empty() || node.value.empty() || node.key == node.value) {
+    return false;
+  }
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+
+  // Functional/kana nodes are the protected side, not the penalty target.
+  if (pos_matcher.IsFunctional(node.lid) || pos_matcher.IsFunctional(node.rid)) {
+    return false;
+  }
+  if (pos_matcher.IsUniqueNoun(node.lid) || pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+
+  return Util::ContainsScriptType(node.value, Util::KANJI) ||
+         Util::ContainsScriptType(node.value, Util::KATAKANA) ||
+         Util::ContainsScriptType(node.value, Util::NUMBER);
+}
+
+bool IsNumericContentNodeForRecomposition(
+    const dictionary::PosMatcher& pos_matcher, const Node& node) {
+  return pos_matcher.IsNumber(node.lid) ||
+         pos_matcher.IsNumber(node.rid) ||
+         pos_matcher.IsKanjiNumber(node.lid) ||
+         pos_matcher.IsKanjiNumber(node.rid);
+}
+
 bool HasKanaFunctionalPredecessor(const dictionary::PosMatcher& pos_matcher,
                                   const Lattice& lattice,
                                   const Node& target,
@@ -2376,6 +2686,7 @@ bool ImmutableConverter::MakeLattice(const ConversionRequest& request,
 
   if (!is_reverse && !conversion_key.empty()) {
     ApplyFunctionalKanaGuard(history_key, lattice);
+    ApplyContextualRecompositionScorer(history_key, lattice);
     ApplySahenShitaiGuard(history_key, lattice);
     ApplyAdministrativeRitsuGuard(history_key, lattice);
     ApplyPlaceSuffixGuard(history_key, lattice);
@@ -2638,6 +2949,54 @@ void ImmutableConverter::ApplyFunctionalKanaGuard(
       node->wcost += GetFunctionalKanaGuardPenalty(
           pos_matcher_, *lattice, reachable, *node);
     }
+  }
+}
+
+void ImmutableConverter::ApplyContextualRecompositionScorer(
+    absl::string_view history_key, Lattice* lattice) const {
+  if (lattice == nullptr || history_key.empty()) {
+    return;
+  }
+
+  const size_t conversion_begin_pos = history_key.size();
+  if (conversion_begin_pos >= lattice->key().size()) {
+    return;
+  }
+
+  const BoundaryContextForRecomposition context =
+      ClassifyBoundaryContextForRecomposition(pos_matcher_, *lattice,
+                                              conversion_begin_pos);
+  if (context != BoundaryContextForRecomposition::kClosedNominal) {
+    return;
+  }
+
+  const FunctionalReachability reachable =
+      BuildFunctionalReachability(pos_matcher_, *lattice, conversion_begin_pos);
+
+  constexpr int kContextualRecompositionPenalty = 1800;
+  for (Node* node : lattice->begin_nodes(conversion_begin_pos)) {
+    if (node == nullptr) {
+      continue;
+    }
+    if (!IsPrefixConsumingContentNodeForRecomposition(pos_matcher_, *node,
+                                                     conversion_begin_pos)) {
+      continue;
+    }
+
+    const std::optional<FunctionalPrefixEvidence> evidence =
+        FindFunctionalPrefixEvidence(reachable, *lattice, conversion_begin_pos,
+                                     *node);
+    if (!evidence.has_value()) {
+      continue;
+    }
+    if (IsNumericContentNodeForRecomposition(pos_matcher_, *node) &&
+        !IsSupportedWholeFunctionalChainForRecomposition(evidence->key)) {
+      // Keep ordinary numeric expressions protected unless the evidence is a
+      // strong copular functional chain such as "なのか" / "なんです".
+      continue;
+    }
+
+    node->wcost += kContextualRecompositionPenalty;
   }
 }
 
