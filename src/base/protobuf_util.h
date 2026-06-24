@@ -27,51 +27,28 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// static class for nomalizing session output
-// Class functions to be used for output by the Session class.
-
-#ifndef MOZC_BASE_TEXT_NORMALIZER_H_
-#define MOZC_BASE_TEXT_NORMALIZER_H_
+#ifndef MOZC_BASE_PROTOBUF_UTIL_H_
+#define MOZC_BASE_PROTOBUF_UTIL_H_
 
 #include <optional>
 #include <string>
 
+#include "absl/functional/function_ref.h"
 #include "absl/strings/string_view.h"
+#include "base/protobuf/message.h"
 
 namespace mozc {
+namespace protobuf_util {
 
-class TextNormalizer {
- public:
-  enum Flag {
-    kNone = 0,     // No normalization.
-    kDefault = 1,  // Default behavior (different per platform).
-    kAll = 2,      // All normalizations.
-  };
+// Applies `sanitizer` to all string fields in the given `message` (including
+// nested messages). If `sanitizer` returns a string, the field is replaced.
+// If it returns std::nullopt, the field is left unchanged.
+void SanitizeMessageStrings(
+    protobuf::Message& message,
+    absl::FunctionRef<std::optional<std::string>(absl::string_view)>
+        sanitizer);
 
-  TextNormalizer() = delete;
-  TextNormalizer(const TextNormalizer&) = delete;
-  TextNormalizer& operator=(const TextNormalizer&) = delete;
-
-  // Normalizes `input` with all configurations.
-  static std::string NormalizeTextWithFlag(absl::string_view input, Flag flag);
-
-  // Normalizes `input` considering the platform.
-  static std::string NormalizeText(absl::string_view input) {
-    return NormalizeTextWithFlag(input, kDefault);
-  }
-
-  // Normalizes Japanese CJK compatibility ideographs to SVS characters.
-  // Returns false and keeps output as is, if no character is normalized.
-  static bool NormalizeTextToSvs(absl::string_view input, std::string* output);
-  static std::string NormalizeTextToSvs(absl::string_view input);
-
-  // Sanitizes the input text by enforcing byte limit, removing ASCII control
-  // characters, and filtering ill-formed UTF-8 sequences.
-  // Returns std::nullopt if no modification is necessary.
-  static std::optional<std::string> SanitizeText(absl::string_view input,
-                                                 size_t max_bytes);
-};
-
+}  // namespace protobuf_util
 }  // namespace mozc
 
-#endif  // MOZC_BASE_TEXT_NORMALIZER_H_
+#endif  // MOZC_BASE_PROTOBUF_UTIL_H_
