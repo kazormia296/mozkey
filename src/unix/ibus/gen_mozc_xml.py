@@ -67,30 +67,6 @@ def GetXmlElement(key, value):
   return '  <%s>%s</%s>' % (key, value, key)
 
 
-def GetEnginesXml(engine_common, engines):
-  """Outputs a XML data for ibus-daemon.
-
-  Args:
-    engine_common: A dictionary from a property name to a property value that
-      are commonly used in all engines. For example, {'language': 'ja'}.
-    engines: A dictionary from a property name to a list of property values of
-      engines. For example, {'name': ['mozc-jp', 'mozc', 'mozc-dv']}.
-
-  Returns:
-    output string in XML.
-  """
-  output = ['<engines>']
-  for engine in engines:
-    output.append('<engine>')
-    for key, value in engine_common.items():
-      output.append(GetXmlElement(key, value))
-    for key, value in engine.items():
-      output.append(GetXmlElement(key, value))
-    output.append('</engine>')
-  output.append('</engines>')
-  return '\n'.join(output)
-
-
 def OutputXml(component, ibus_mozc_path):
   """Outputs a XML data for ibus-daemon.
 
@@ -119,7 +95,7 @@ def OutputCppVariable(prefix, key, value):
   print('const char k%s%s[] = "%s";' % (prefix, key.capitalize(), value))
 
 
-def OutputCpp(component, engine_common, engines):
+def OutputCpp(component, engine_common):
   """Outputs a C++ header file for mozc/unix/ibus/main.cc.
 
   Args:
@@ -127,8 +103,6 @@ def OutputCpp(component, engine_common, engines):
       ibus-mozc component. For example, {'name': 'com.google.IBus.Mozc'}.
     engine_common: A dictionary from a property name to a property value that
       are commonly used in all engines. For example, {'language': 'ja'}.
-    engines: A dictionary from a property name to a list of property values of
-      engines. For example, [{'name': 'mozc-jp',...}, {'name': 'mozc'},...]
   """
   guard_name = 'MOZC_UNIX_IBUS_MAIN_H_'
   print(CPP_HEADER % (guard_name, guard_name))
@@ -136,10 +110,6 @@ def OutputCpp(component, engine_common, engines):
     OutputCppVariable('Component', key, value)
   for key, value in engine_common.items():
     OutputCppVariable('Engine', key, value)
-  print('const size_t kEngineArrayLen = %s;' % len(engines))
-  print('const char kEnginesXml[] = R"#(', end='')
-  print(GetEnginesXml(engine_common, engines))
-  print(')#";')
   print(CPP_FOOTER % guard_name)
 
 
@@ -207,42 +177,8 @@ def main():
       'setup': setup_path + ' --mode=config_dialog',
   }
 
-  # DO NOT change the engine name 'mozc-jp'. The names is referenced by
-  # unix/ibus/mozc_engine.cc.
-  engines = [
-      {
-          'name': 'mozc-jp',
-          'longname': product_name,
-          'layout': 'default',
-          'layout_variant': '',
-          'layout_option': '',
-          'rank': 80,
-          'symbol': 'あ',
-      },
-      {
-          'name': 'mozc-on',
-          'longname': product_name + ':あ',
-          'layout': 'default',
-          'layout_variant': '',
-          'layout_option': '',
-          'rank': 99,
-          'symbol': 'あ',
-          'composition_mode': 'HIRAGANA',
-      },
-      {
-          'name': 'mozc-off',
-          'longname': product_name + ':A_',
-          'layout': 'default',
-          'layout_variant': '',
-          'layout_option': '',
-          'rank': 99,
-          'symbol': 'A',
-          'composition_mode': 'DIRECT',
-      },
-  ]
-
   if options.output_cpp:
-    OutputCpp(component, engine_common, engines)
+    OutputCpp(component, engine_common)
   else:
     OutputXml(component, ibus_mozc_path)
   return 0
