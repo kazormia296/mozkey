@@ -300,7 +300,7 @@ Zenz ライブ補正では、Zenzai v3/v3.2 の特殊トークン形式に沿っ
 
 また、名詞や数量表現の後に続く `しか + 否定表現` のような機能表現も保護します。たとえば `2めいしかいない` では、途中の `2名司会...`、`2名視界...`、`2名士会内` のような同音漢字経路よりも、`2名しかいない` を優先しやすくします。
 
-また、サ変接続名詞や行政地名・施設名のような直前文脈、地名に続く場所接尾語のような限定的な右文脈も一部補正対象にします。たとえば `追記したい` では `追記死体` のような同音名詞候補を避け、`山梨県立美術館` では `山梨県率美術館` のような接尾的構成の崩れを抑制します。また、`滋賀方面` や `佐賀空港` のような語では、`子が方面` のような短い `内容語 + が` 分割を避けやすくします。
+また、サ変接続名詞や行政地名・施設名のような直前文脈、地名に続く場所接尾語のような限定的な右文脈も一部補正対象にします。たとえば `追記したい` では `追記死体` のような同音名詞候補を避け、サ変接続名詞を確定した直後の `した`、`したの`、`したん` では `下`、`舌`、`シタン` のような内容語候補に寄りすぎる挙動を抑制します。`山梨県立美術館` では `山梨県率美術館` のような接尾的構成の崩れを抑制します。また、`滋賀方面` や `佐賀空港` のような語では、`子が方面` のような短い `内容語 + が` 分割を避けやすくします。
 
 ### 句読点・記号の単打確定
 
@@ -878,7 +878,9 @@ homophone paths such as `2名司会...`, `2名視界...`, or `2名士会内`.
 
 It also protects some context-sensitive noun and suffix constructions. For
 example, `追記したい` is biased away from homophone noun candidates such as
-`追記死体`, `山梨県立美術館` is biased away from broken suffix paths such as
+`追記死体`. After a committed sahen noun, `した`, `したの`, and `したん`
+are also biased away from content-word hijacks such as `下`, `舌`, or
+`シタン`. `山梨県立美術館` is biased away from broken suffix paths such as
 `山梨県率美術館`, and place-suffix phrases such as `滋賀方面` or `佐賀空港`
 are biased away from short `content + が` splits such as `子が方面`.
 

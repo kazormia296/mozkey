@@ -1250,6 +1250,115 @@ bool IsShitaiContentNounHijackNode(
   return true;
 }
 
+bool HasKanaSurfaceNodeAt(const Lattice& lattice, size_t begin_pos,
+                          absl::string_view surface) {
+  for (const Node* node : lattice.begin_nodes(begin_pos)) {
+    if (node == nullptr) {
+      continue;
+    }
+    if (node->node_type != Node::NOR_NODE) {
+      continue;
+    }
+    if (node->key == surface && node->value == surface) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool HasSahenShitaPredicateEvidence(const Lattice& lattice,
+                                    size_t conversion_begin_pos) {
+  // Prefer the direct kana predicate node:
+  //   した -> した
+  if (HasKanaSurfaceNodeAt(lattice, conversion_begin_pos, "した")) {
+    return true;
+  }
+
+  // Some paths may be represented as:
+  //   し -> し
+  //   た -> た
+  for (const Node* node : lattice.begin_nodes(conversion_begin_pos)) {
+    if (node == nullptr) {
+      continue;
+    }
+    if (node->node_type != Node::NOR_NODE) {
+      continue;
+    }
+    if (node->key != "し" || node->value != "し") {
+      continue;
+    }
+    if (node->end_pos <= node->begin_pos ||
+        node->end_pos >= lattice.key().size()) {
+      continue;
+    }
+    if (HasKanaSurfaceNodeAt(lattice, node->end_pos, "た")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool IsShitaContentHijackNode(
+    const dictionary::PosMatcher& pos_matcher, const Node& node,
+    size_t conversion_begin_pos) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+
+  if ((node.attributes & Node::USER_DICTIONARY) != 0) {
+    return false;
+  }
+
+  if (node.begin_pos != conversion_begin_pos) {
+    return false;
+  }
+
+  if (node.key.empty() || node.value.empty() || node.key == node.value) {
+    return false;
+  }
+
+  if (!StartsWithStringView(node.key, "した")) {
+    return false;
+  }
+
+  // Target only the "した..." content-hijack family.
+  //
+  // Examples:
+  //   確認 | した     -> 確認下
+  //   実行 | したの   -> 実行舌の
+  //   修正 | したん   -> 修正シタン
+  //   確認 | したのか -> 確認下のか / 確認舌のか
+  const bool is_shita_hijack =
+      StartsWithStringView(node.value, "下") ||
+      StartsWithStringView(node.value, "舌");
+  const bool is_shitan_hijack =
+      StartsWithStringView(node.key, "したん") &&
+      (Util::ContainsScriptType(node.value, Util::KANJI) ||
+       Util::ContainsScriptType(node.value, Util::KATAKANA));
+
+  if (!is_shita_hijack && !is_shitan_hijack) {
+    return false;
+  }
+
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+
+  if (!Util::ContainsScriptType(node.value, Util::KANJI) &&
+      !Util::ContainsScriptType(node.value, Util::KATAKANA)) {
+    return false;
+  }
+
+  // Do not suppress proper nouns.
+  if (pos_matcher.IsUniqueNoun(node.lid) ||
+      pos_matcher.IsUniqueNoun(node.rid)) {
+    return false;
+  }
+
+  return true;
+}
+
 bool EndsWithAdministrativeUnit(absl::string_view value) {
   return EndsWithLiteral(value, "都") ||
          EndsWithLiteral(value, "道") ||
@@ -2688,6 +2797,7 @@ bool ImmutableConverter::MakeLattice(const ConversionRequest& request,
     ApplyFunctionalKanaGuard(history_key, lattice);
     ApplyContextualRecompositionScorer(history_key, lattice);
     ApplySahenShitaiGuard(history_key, lattice);
+    ApplySahenShitaContentHijackGuard(history_key, lattice);
     ApplyAdministrativeRitsuGuard(history_key, lattice);
     ApplyPlaceSuffixGuard(history_key, lattice);
     ApplyAdverbialNiGuard(history_key, lattice);
@@ -3037,6 +3147,51 @@ void ImmutableConverter::ApplySahenShitaiGuard(
     }
 
     node->wcost += kSahenShitaiHijackPenalty;
+  }
+}
+
+void ImmutableConverter::ApplySahenShitaContentHijackGuard(
+    absl::string_view history_key, Lattice* lattice) const {
+  if (lattice == nullptr) {
+    return;
+  }
+
+  if (history_key.empty()) {
+    return;
+  }
+
+  const size_t key_size = lattice->key().size();
+  const size_t conversion_begin_pos = history_key.size();
+
+  if (conversion_begin_pos >= key_size) {
+    return;
+  }
+
+  const absl::string_view conversion_key =
+      lattice->key().substr(conversion_begin_pos);
+
+  if (!StartsWithStringView(conversion_key, "した")) {
+    return;
+  }
+
+  if (!HasSahenNounHistoryPredecessor(
+          pos_matcher_, *lattice, conversion_begin_pos)) {
+    return;
+  }
+
+  if (!HasSahenShitaPredicateEvidence(*lattice, conversion_begin_pos)) {
+    return;
+  }
+
+  constexpr int kSahenShitaContentHijackPenalty = 2400;
+
+  for (Node* node : lattice->begin_nodes(conversion_begin_pos)) {
+    if (!IsShitaContentHijackNode(pos_matcher_, *node,
+                                  conversion_begin_pos)) {
+      continue;
+    }
+
+    node->wcost += kSahenShitaContentHijackPenalty;
   }
 }
 

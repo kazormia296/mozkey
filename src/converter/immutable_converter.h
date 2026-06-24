@@ -133,6 +133,13 @@ class ImmutableConverter : public ImmutableConverterInterface {
   void ApplySahenShitaiGuard(absl::string_view history_key,
                              Lattice* lattice) const;
 
+  // Suppresses "した..." -> content-word hijacks such as "下", "舌", and
+  // "シタン" after a committed sahen noun.  This is intentionally separate
+  // from the generic boundary scorer because these can be legitimate words in
+  // other contexts, e.g. "机の下", "舌の痛み", or "紫檀".
+  void ApplySahenShitaContentHijackGuard(absl::string_view history_key,
+                                         Lattice* lattice) const;
+
   // Penalizes "りつ" content nodes such as "率" or "律" after administrative
   // history contexts where the suffix "立" is much more likely, as in:
   //   山梨県 + りつ + 美術館 -> 山梨県立美術館
