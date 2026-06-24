@@ -32,6 +32,7 @@
 import argparse
 import os
 import sys
+import textwrap
 
 
 def _ParseArgs():
@@ -70,7 +71,9 @@ def _EmbedAsStringView(input_path, name, output_file):
     sys.exit(1)
 
   # 3. Validate delimiter conflict
-  delimiter_conflict = f'){name}'
+  # C++ Raw String literal delimiters have a length limit of 16 characters.
+  delimiter = name[:16]
+  delimiter_conflict = f'){delimiter}'
   if delimiter_conflict in content:
     sys.stderr.write(
         f'Error: {input_path} contains the delimiter string'
@@ -79,27 +82,26 @@ def _EmbedAsStringView(input_path, name, output_file):
     )
     sys.exit(1)
 
-  output_file.write("""\
-#ifdef MOZC_EMBEDDED_FILE_%(name)s
-#error "%(name)s was already included or defined elsewhere"
-#else
-#define MOZC_EMBEDDED_FILE_%(name)s
-constexpr absl::string_view %(name)s = R"%(name)s(
-%(content)s)%(name)s";
-#endif  // MOZC_EMBEDDED_FILE_%(name)s
-""" % {'name': name, 'content': content})
+  output_file.write(textwrap.dedent(f"""\
+      #ifdef MOZC_EMBEDDED_FILE_{name}
+      #error "{name} was already included or defined elsewhere"
+      #else
+      #define MOZC_EMBEDDED_FILE_{name}
+      constexpr absl::string_view {name} = R"{delimiter}({content}){delimiter}";
+      #endif  // MOZC_EMBEDDED_FILE_{name}
+      """))
 
 
 def _EmbedAsUint64Array(input_path, name, output_file):
   """Embed file as uint64_t array using EmbeddedFile struct."""
 
-  output_file.write("""\
-#ifdef MOZC_EMBEDDED_FILE_%(name)s
-#error "%(name)s was already included or defined elsewhere"
-#else
-#define MOZC_EMBEDDED_FILE_%(name)s
-constexpr uint64_t %(name)s_data[] = {
-""" % {'name': name})
+  output_file.write(textwrap.dedent(f"""\
+      #ifdef MOZC_EMBEDDED_FILE_{name}
+      #error "{name} was already included or defined elsewhere"
+      #else
+      #define MOZC_EMBEDDED_FILE_{name}
+      constexpr uint64_t {name}_data[] = {{
+      """))
 
   with open(input_path, 'rb') as infile:
     # Read in chunks of 32 bytes (representing one printed line of 4 uint64_t
@@ -115,14 +117,15 @@ constexpr uint64_t %(name)s_data[] = {
       # Write the entire row to the output file (indenting with 2 spaces)
       output_file.write('  ' + ', '.join(hex_strings) + ',\n')
 
-  output_file.write("""\
-};
-constexpr EmbeddedFile %(name)s = {
-  %(name)s_data,
-  %(size)d,
-};
-#endif  // MOZC_EMBEDDED_FILE_%(name)s
-""" % {'name': name, 'size': os.stat(input_path).st_size})
+  size = os.stat(input_path).st_size
+  output_file.write(textwrap.dedent(f"""\
+      }};
+      constexpr EmbeddedFile {name} = {{
+        {name}_data,
+        {size},
+      }};
+      #endif  // MOZC_EMBEDDED_FILE_{name}
+      """))
 
 
 def main():
