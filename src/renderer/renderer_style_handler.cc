@@ -37,7 +37,9 @@
 #include "absl/log/check.h"
 #include "absl/strings/string_view.h"
 #include "base/protobuf/text_format.h"
+#include "base/protobuf_util.h"
 #include "base/singleton.h"
+#include "base/text_normalizer.h"
 #include "protocol/renderer_style.pb.h"
 
 namespace mozc {
@@ -67,7 +69,6 @@ uint32_t ToRgb(const RendererStyle::RGBAColor& color, uint32_t fallback) {
          ((static_cast<uint32_t>(color.g()) & 0xff) << 8) |
          (static_cast<uint32_t>(color.b()) & 0xff);
 }
-
 
 int ScaleIntegerMetric(int value, uint32_t percent) {
   if (value <= 0) {
@@ -105,7 +106,8 @@ RendererStyleHandler::RubyWindowStyle RubyStyleFromRendererStyle(
     const RendererStyle& style) {
   RendererStyleHandler::RubyWindowStyle ruby_style;
   if (style.has_border_color()) {
-    ruby_style.border_color = ToRgb(style.border_color(), ruby_style.border_color);
+    ruby_style.border_color =
+        ToRgb(style.border_color(), ruby_style.border_color);
   }
   if (style.candidate_style().has_background_color()) {
     ruby_style.background_color =
@@ -227,6 +229,17 @@ void ApplyDarkCandidateWindowTheme(RendererStyle* style) {
   SetColor(infostyle->mutable_focused_border_color(), 0x3f, 0x4b, 0x59);
 }
 
+void SanitizeRendererStyleStrings(RendererStyle* style) {
+  if (style == nullptr) {
+    return;
+  }
+  protobuf_util::SanitizeMessageStrings(*style, [](absl::string_view src) {
+    // Limit the length of the string to 100 bytes and remove ill-formed
+    // UTF-8 sequences and ASCII control characters.
+    return TextNormalizer::SanitizeText(src, 100);
+  });
+}
+
 class RendererStyleHandlerImpl {
  public:
   RendererStyleHandlerImpl();
@@ -330,6 +343,7 @@ void RendererStyleHandlerImpl::GetDefaultRendererStyle(RendererStyle* style) {
   style->Clear();
   CHECK(mozc::protobuf::TextFormat::ParseFromString(kStyleTextProto, style));
   ApplyLightCandidateWindowTheme(style);
+  SanitizeRendererStyleStrings(style);
 }
 
 uint32_t RendererStyleHandlerImpl::GetCandidateWindowCornerRadius(
