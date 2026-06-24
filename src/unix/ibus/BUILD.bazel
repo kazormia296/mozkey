@@ -44,6 +44,7 @@ load(
     "IBUS_MOZC_PATH",
     "LINUX_MOZC_SERVER_DIR",
 )
+load("//build_tools:embed_file.bzl", "mozc_embed_file")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -240,18 +241,29 @@ cc_proto_library(
     deps = ["ibus_config_proto"],
 )
 
+mozc_embed_file(
+    name = "ibus_config_textproto_inc",
+    srcs = ["ibus_config.textproto"],
+    out = "ibus_config_textproto.inc",
+    as_string_view = True,
+    var_name = "kIbusConfigTextProto",
+)
+
 mozc_cc_library(
     name = "ibus_config",
     srcs = ["ibus_config.cc"],
     hdrs = [
         "ibus_config.h",
         ":gen_main_h",
+        ":ibus_config_textproto_inc",
     ],
     copts = ["-Wno-unused-variable"],
     deps = [
         ":ibus_config_cc_proto",
         "//base:file_util",
+        "//base:protobuf_util",
         "//base:system_util",
+        "//base:text_normalizer",
         "//base/protobuf:text_format",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",

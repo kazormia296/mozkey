@@ -67,12 +67,6 @@ def GetXmlElement(key, value):
   return '  <%s>%s</%s>' % (key, value, key)
 
 
-def GetTextProtoElement(key, value):
-  if isinstance(value, int) or key == 'composition_mode':
-    return '  %s : %s' % (key, value)
-  return '  %s : "%s"' % (key, value)
-
-
 def GetEnginesXml(engine_common, engines):
   """Outputs a XML data for ibus-daemon.
 
@@ -94,42 +88,6 @@ def GetEnginesXml(engine_common, engines):
       output.append(GetXmlElement(key, value))
     output.append('</engine>')
   output.append('</engines>')
-  return '\n'.join(output)
-
-
-def GetIbusConfigTextProto(engines):
-  """Outputs a TextProto data for iBus config.
-
-  Args:
-    engines: A dictionary from a property name to a list of property values of
-      engines. For example, {'name': ['mozc-jp', 'mozc', 'mozc-dv']}.
-
-  Returns:
-    output string in TextProto.
-  """
-  output = [
-      '# `ibus write-cache; ibus restart` might be necessary to apply changes.'
-  ]
-  for engine in engines:
-    output.append('engines {')
-    for key, value in engine.items():
-      output.append(GetTextProtoElement(key, value))
-    output.append('}')
-  output.append('active_on_launch: False')
-  output.append('mozc_renderer {')
-  output.append("  # Set 'False' to use IBus' candidate window.")
-  output.append('  enabled : True')
-  output.append(
-      "  # For Wayland sessions, 'mozc_renderer' will be used if and "
-      'only if any value'
-  )
-  output.append(
-      '  # set in this field (e.g. "GNOME", "KDE") is found in '
-      '$XDG_CURRENT_DESKTOP.'
-  )
-  output.append(f'  # {XDG_CURRENT_DESKTOP_URL}')
-  output.append('  compatible_wayland_desktop_names : ["GNOME"]')
-  output.append('}')
   return '\n'.join(output)
 
 
@@ -181,9 +139,6 @@ def OutputCpp(component, engine_common, engines):
   print('const size_t kEngineArrayLen = %s;' % len(engines))
   print('const char kEnginesXml[] = R"#(', end='')
   print(GetEnginesXml(engine_common, engines))
-  print(')#";')
-  print('const char kIbusConfigTextProto[] = R"#(', end='')
-  print(GetIbusConfigTextProto(engines))
   print(')#";')
   print(CPP_FOOTER % guard_name)
 

@@ -43,35 +43,44 @@
 #include "base/file_util.h"
 #include "base/protobuf/text_format.h"
 #include "base/system_util.h"
+#include "base/protobuf_util.h"
+#include "base/text_normalizer.h"
 #include "unix/ibus/ibus_config.pb.h"
 #include "unix/ibus/main.h"
 
 namespace mozc {
 
-constexpr char kIbusConfigFile[] = "ibus_config.textproto";
+constexpr absl::string_view kIbusConfigFile = "ibus_config.textproto";
 
 namespace {
+// Defines absl::string_view kIbusConfigTextProto.
+#include "unix/ibus/ibus_config_textproto.inc"
+
 std::string UpdateConfigFile() {
   const std::string engines_file = FileUtil::JoinPath(
       SystemUtil::GetUserProfileDirectory(), kIbusConfigFile);
-  if (absl::Status s = FileUtil::FileExists(engines_file); s.ok()) {
+  absl::Status s = FileUtil::FileExists(engines_file);
+  if (s.ok()) {
     absl::StatusOr<std::string> config = FileUtil::GetContents(engines_file);
-    if (!config.ok()) {
-      LOG(ERROR) << config.status();
-      return kIbusConfigTextProto;
+    if (config.ok()) {
+      return *std::move(config);
     }
-    return *std::move(config);
-  } else if (absl::IsNotFound(s)) {
-    if (absl::Status s =
-            FileUtil::SetContents(engines_file, kIbusConfigTextProto);
-        !s.ok()) {
+
+    LOG(ERROR) << config.status();
+    return std::string(kIbusConfigTextProto);
+  }
+
+  if (absl::IsNotFound(s)) {
+    // If the file does not exist, create a new one with the default setting.
+    s = FileUtil::SetContents(engines_file, kIbusConfigTextProto);
+    if (!s.ok()) {
       LOG(ERROR) << "Failed to write " << engines_file << ": " << s;
     }
-    return kIbusConfigTextProto;
-  } else {
-    LOG(ERROR) << "Cannot check if " << engines_file << "exists: " << s;
-    return kIbusConfigTextProto;
+    return std::string(kIbusConfigTextProto);
   }
+
+  LOG(ERROR) << "Cannot check if " << engines_file << "exists: " << s;
+  return std::string(kIbusConfigTextProto);
 }
 
 std::string NormalizeLayout(const std::string& layout) {
@@ -148,6 +157,12 @@ bool IbusConfig::Initialize() {
 
 bool IbusConfig::LoadConfig(const std::string& config_data) {
   const bool valid_user_config = ParseConfig(config_data, config_);
+
+  protobuf_util::SanitizeMessageStrings(config_, [](absl::string_view src) {
+    // Limit the length of each string field to 100 bytes and remove ill-formed
+    // UTF-8 sequences and ASCII control characters.
+    return TextNormalizer::SanitizeText(src, 100);
+  });
 
   engine_xml_ = CreateEnginesXml(config_);
   if (!valid_user_config) {
