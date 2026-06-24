@@ -31,10 +31,23 @@
 
 load("//bazel:run_build_tool.bzl", "mozc_run_build_tool")
 
-def mozc_embed_file(name, srcs, out, var_name, as_string_view = False, **kwargs):
+def mozc_embed_file(name, srcs, out, var_name, as_string_view = False, skip_until = None, **kwargs):
+    """Generates a C++ source file defining a variable containing the input file's contents.
+
+    Args:
+      name: The name of the rule.
+      srcs: The input file(s) to embed.
+      out: The name of the generated C++ source file.
+      var_name: The name of the C++ variable to define.
+      as_string_view: If True, defines the variable as an absl::string_view instead of a raw array.
+      skip_until: If specified, skips lines until the string provided is encountered in a line.
+      **kwargs: Additional arguments to pass to the underlying rule.
+    """
     args = ["--name=" + var_name]
     if as_string_view:
         args.append("--as_string_view")
+    if skip_until:
+        args.append("--skip_until=" + skip_until)
 
     mozc_run_build_tool(
         name = name,
