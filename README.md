@@ -73,7 +73,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - デフォルトでは 1 文字だけの未確定文字列で、助詞などの誤変換を避けるためライブ変換を実行しない
 - `え~`、`えー`、`ん？` のような「かな1文字 + 装飾的な末尾記号」でも、短すぎる漢字化を避けるためライブ変換を抑制
 - 感嘆詞・口語評価語・くだけた挨拶の入力途中ではライブ変換のちらつきを抑えつつ、完成した `うっそ`、`くっそ`、`やっば`、`すっげぇ`、`めっちゃ`、`ちっす`、`ちょりっす`、`ほえ～`、`ほぇ～`、`ほっほーん` などは生成辞書候補として自然なかな表記を救出
-- 確定済みの左文脈や直前の文節、限定的な右文脈を参照し、`mainにマージしました`、`githubには`、`2名しかいない`、`追記したい`、`山梨県立美術館`、`滋賀方面` のような文脈で、助詞・複合機能語・機能表現・接尾的な語構成・地名接尾構成が同音漢字候補に負ける挙動を抑制
+- 確定済みの左文脈や直前の文節、限定的な右文脈を参照し、`mainにマージしました`、`githubには`、`彼になった`、`彼なのか`、`2名しかいない`、`追記したい`、`山梨県立美術館`、`滋賀方面` のような文脈で、助詞・複合機能語・名詞相当の左文脈に続く叙述・疑問の機能語列・機能表現・接尾的な語構成・地名接尾構成が同音漢字候補に負ける挙動を抑制
 - キー設定エディタで、1つのキー入力に対して複数のコマンドを順序付きで割り当て可能
 - 複数コマンドは `Commit|IMEOff` のような形式で保存され、設定画面では `Commit → IMEOff` のように編集可能
 - MS-IME 風キー設定では、確定済み文字列を選択した状態で Space を押すと再変換し、未選択時は従来どおり空白を入力
@@ -295,6 +295,8 @@ Zenz ライブ補正では、Zenzai v3/v3.2 の特殊トークン形式に沿っ
 内部的には、名詞相当の確定済み左文脈を history segment として復元し、`に`、`を`、`が`、`へ`、`で` などの短い助詞候補が、同音の漢字・数字・記号・濁点付き仮名候補に負けにくくなるように候補順位を補正します。
 
 また、名詞相当の左文脈の後では、`には`、`にも`、`では`、`でも`、`とは` のような保守的な複合機能語も補正対象にします。たとえば `github` を確定した直後に `には` と入力した場合、`github二は` よりも `githubには` を優先しやすくします。
+
+さらに、名詞相当の確定済み左文脈の直後では、現在入力の先頭にある機能語 prefix や、`なのか`、`なのだ`、`なんです` のような名詞述語に続く機能語列が、`担った` や `七日` のような内容語候補に食われるケースも抑制します。たとえば `彼` を確定してから `になった` や `なのか` と入力した場合、`彼担った` / `彼七日` ではなく、`彼になった` / `彼なのか` を優先しやすくします。
 
 また、名詞や数量表現の後に続く `しか + 否定表現` のような機能表現も保護します。たとえば `2めいしかいない` では、途中の `2名司会...`、`2名視界...`、`2名士会内` のような同音漢字経路よりも、`2名しかいない` を優先しやすくします。
 
@@ -602,7 +604,7 @@ Main features added in this fork
 - By default, suppresses live conversion for one-character compositions to avoid over-converting particles
 - Suppresses live conversion for very short kana compositions with decorative trailing symbols such as `え~`, `えー`, or `ん？`
 - Suppresses live-conversion flicker for unfinished expressive kana prefixes, while completed expressive forms such as `うっそ`, `くっそ`, `やっば`, `すっげぇ`, `めっちゃ`, `ちっす`, `ちょりっす`, `ほえ～`, `ほぇ～`, and `ほっほーん` are rescued as generated dictionary candidates
-- Uses committed left context, previous segments, and limited right context to reduce unnatural homophone results in cases such as `mainにマージしました`, `githubには`, `2名しかいない`, `追記したい`, `山梨県立美術館`, and `滋賀方面`
+- Uses committed left context, previous segments, and limited right context to reduce unnatural homophone results in cases such as `mainにマージしました`, `githubには`, `彼になった`, `彼なのか`, `2名しかいない`, `追記したい`, `山梨県立美術館`, and `滋賀方面`
 - Allows assigning multiple commands to a single key binding as an ordered command sequence
 - Stores command sequences as `Commit|IMEOff` and shows them in the keymap editor as `Commit → IMEOff`
 - In the MS-IME style keymap, pressing Space while committed text is selected reconverts that selection; with no selection, Space still inserts a normal space
@@ -863,6 +865,11 @@ It also reranks conservative compound functional-particle expressions such as
 `には`, `にも`, `では`, `でも`, and `とは` after noun-like left context. For
 example, after committing `github`, typing `には` is biased toward `githubには`
 instead of `github二は`.
+
+It also protects functional-prefix and whole functional-chain paths immediately
+after noun-like committed context. For example, after committing `彼`, typing
+`になった` or `なのか` is biased toward `彼になった` / `彼なのか` instead of
+content-node hijacks such as `彼担った` / `彼七日`.
 
 It also protects common functional expressions such as `しか` followed by a
 negative expression after a noun or quantity-like context. For example,

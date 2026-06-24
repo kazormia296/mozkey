@@ -122,6 +122,14 @@ class ImmutableConverter : public ImmutableConverterInterface {
   void ApplyFunctionalKanaGuard(absl::string_view history_key,
                                 Lattice* lattice) const;
 
+  // Applies a Viterbi-time soft prior around the history/conversion boundary
+  // to reduce ranking drift caused by splitting an input sequence into
+  // committed history and current conversion.  This scorer uses only evidence
+  // already present in the current lattice: a functional-prefix or whole
+  // functional-chain path, and a competing content node that consumes it.
+  void ApplyContextualRecompositionScorer(absl::string_view history_key,
+                                          Lattice* lattice) const;
+
   void ApplySahenShitaiGuard(absl::string_view history_key,
                              Lattice* lattice) const;
 
