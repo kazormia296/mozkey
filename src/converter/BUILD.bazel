@@ -382,7 +382,6 @@ mozc_cc_library(
     deps = [
         ":node",
         ":node_allocator",
-        "//base:singleton",
         "//base/strings:unicode",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",

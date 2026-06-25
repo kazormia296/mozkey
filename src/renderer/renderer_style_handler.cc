@@ -34,11 +34,11 @@
 #include <cstdint>
 #include <string>
 
+#include "absl/base/no_destructor.h"
 #include "absl/log/check.h"
 #include "absl/strings/string_view.h"
 #include "base/protobuf/text_format.h"
 #include "base/protobuf_util.h"
-#include "base/singleton.h"
 #include "base/text_normalizer.h"
 #include "protocol/renderer_style.pb.h"
 
@@ -276,7 +276,8 @@ class RendererStyleHandlerImpl {
 };
 
 RendererStyleHandlerImpl* GetRendererStyleHandlerImpl() {
-  return Singleton<RendererStyleHandlerImpl>::get();
+  static absl::NoDestructor<RendererStyleHandlerImpl> handler;
+  return handler.get();
 }
 
 RendererStyleHandlerImpl::RendererStyleHandlerImpl() {
