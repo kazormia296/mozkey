@@ -296,7 +296,7 @@ Zenz ライブ補正では、Zenzai v3/v3.2 の特殊トークン形式に沿っ
 
 また、名詞相当の左文脈の後では、`には`、`にも`、`では`、`でも`、`とは` のような保守的な複合機能語も補正対象にします。たとえば `github` を確定した直後に `には` と入力した場合、`github二は` よりも `githubには` を優先しやすくします。
 
-さらに、名詞相当の確定済み左文脈の直後では、現在入力の先頭にある機能語 prefix や、`なのか`、`なのだ`、`なんです` のような名詞述語に続く機能語列が、`担った` や `七日` のような内容語候補に食われるケースも抑制します。たとえば `彼` を確定してから `になった` や `なのか` と入力した場合、`彼担った` / `彼七日` ではなく、`彼になった` / `彼なのか` を優先しやすくします。
+さらに、名詞相当の確定済み左文脈の直後では、現在入力の先頭にある機能語 prefix や、`なのか`、`なのだ`、`なんです`、`なら`、`ならば`、`ならでは` のような名詞述語・条件表現に続く機能語列が、`担った`、`七日`、`奈良` のような内容語候補に食われるケースも抑制します。たとえば `彼` を確定してから `になった` や `なのか` と入力した場合、`彼担った` / `彼七日` ではなく、`彼になった` / `彼なのか` を優先しやすくします。また、`練習` を確定してから `なら` と入力した場合、`練習奈良` ではなく `練習なら` を優先しやすくします。
 
 また、名詞や数量表現の後に続く `しか + 否定表現` のような機能表現も保護します。たとえば `2めいしかいない` では、途中の `2名司会...`、`2名視界...`、`2名士会内` のような同音漢字経路よりも、`2名しかいない` を優先しやすくします。
 
@@ -869,7 +869,9 @@ instead of `github二は`.
 It also protects functional-prefix and whole functional-chain paths immediately
 after noun-like committed context. For example, after committing `彼`, typing
 `になった` or `なのか` is biased toward `彼になった` / `彼なのか` instead of
-content-node hijacks such as `彼担った` / `彼七日`.
+content-node hijacks such as `彼担った` / `彼七日`. Conditional chains such as
+`なら`, `ならば`, and `ならでは` are also protected, so after committing
+`練習`, typing `なら` is biased toward `練習なら` instead of `練習奈良`.
 
 It also protects common functional expressions such as `しか` followed by a
 negative expression after a noun or quantity-like context. For example,

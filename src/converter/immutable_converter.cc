@@ -598,15 +598,20 @@ bool IsSupportedWholeFunctionalChainForRecomposition(absl::string_view key) {
     return false;
   }
 
-  // Copular/adnominal functional chains after a closed nominal history.
+  if (StartsWithStringView(key, "なの") ||
+      StartsWithStringView(key, "なん")) {
+    return true;
+  }
+
+  // Conditional "なら" after a noun-like committed context should remain a
+  // functional chain, not be consumed as the proper noun "奈良".
   //
-  // Examples:
-  //   彼 | なのか   -> 彼なのか, not 彼七日
-  //   彼 | なのだ   -> 彼なのだ
-  //   彼 | なんです -> 彼なんです
-  //
-  // Do not accept bare "な" to avoid broad lexical demotion such as ななめ.
-  return StartsWithStringView(key, "なの") || StartsWithStringView(key, "なん");
+  // Keep this deliberately narrower than a bare "な" prefix:
+  //   練習 | なら   -> 練習なら, not 練習奈良
+  //   練習 | ならば -> 練習ならば
+  //   彼   | ならでは -> 彼ならでは
+  return key == "なら" || StartsWithStringView(key, "ならば") ||
+         StartsWithStringView(key, "ならでは");
 }
 
 bool HasContinuationNodeFrom(const Lattice& lattice, size_t begin_pos,
@@ -697,6 +702,39 @@ std::optional<FunctionalPrefixEvidence> FindFunctionalPrefixEvidence(
   return std::nullopt;
 }
 
+bool IsNaraContentNodeForRecomposition(const Node& node,
+                                       size_t conversion_begin_pos) {
+  if (node.node_type != Node::NOR_NODE) {
+    return false;
+  }
+
+  if ((node.attributes & Node::USER_DICTIONARY) != 0) {
+    return false;
+  }
+
+  if (node.begin_pos != conversion_begin_pos) {
+    return false;
+  }
+
+  if (node.key.empty() || node.value.empty() || node.key == node.value) {
+    return false;
+  }
+
+  if (!StartsWithStringView(node.key, "なら")) {
+    return false;
+  }
+
+  if (!StartsWithStringView(node.value, "奈良")) {
+    return false;
+  }
+
+  if (Util::GetScriptType(node.key) != Util::HIRAGANA) {
+    return false;
+  }
+
+  return true;
+}
+
 bool IsPrefixConsumingContentNodeForRecomposition(
     const dictionary::PosMatcher& pos_matcher, const Node& node,
     size_t conversion_begin_pos) {
@@ -723,7 +761,9 @@ bool IsPrefixConsumingContentNodeForRecomposition(
   if (pos_matcher.IsFunctional(node.lid) || pos_matcher.IsFunctional(node.rid)) {
     return false;
   }
-  if (pos_matcher.IsUniqueNoun(node.lid) || pos_matcher.IsUniqueNoun(node.rid)) {
+  if ((pos_matcher.IsUniqueNoun(node.lid) ||
+       pos_matcher.IsUniqueNoun(node.rid)) &&
+      !IsNaraContentNodeForRecomposition(node, conversion_begin_pos)) {
     return false;
   }
 
@@ -3106,7 +3146,11 @@ void ImmutableConverter::ApplyContextualRecompositionScorer(
       continue;
     }
 
-    node->wcost += kContextualRecompositionPenalty;
+    const int penalty =
+        IsNaraContentNodeForRecomposition(*node, conversion_begin_pos)
+            ? 2600
+            : kContextualRecompositionPenalty;
+    node->wcost += penalty;
   }
 }
 
