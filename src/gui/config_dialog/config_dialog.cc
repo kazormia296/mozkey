@@ -2334,6 +2334,9 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   directCommitCloseBracketCheckBox->setChecked(
       config.direct_commit_key() &
       config::Config::DIRECT_COMMIT_CLOSE_BRACKET);
+  directCommitMiddleDotCheckBox->setChecked(
+      config.direct_commit_key() &
+      config::Config::DIRECT_COMMIT_MIDDLE_DOT);
 
   SET_COMBOBOX(shiftKeyModeSwitchComboBox, ShiftKeyModeSwitch,
                shift_key_mode_switch);
@@ -2578,6 +2581,9 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   }
   if (directCommitCloseBracketCheckBox->isChecked()) {
     direct_commit_key |= config::Config::DIRECT_COMMIT_CLOSE_BRACKET;
+  }
+  if (directCommitMiddleDotCheckBox->isChecked()) {
+    direct_commit_key |= config::Config::DIRECT_COMMIT_MIDDLE_DOT;
   }
   config->set_direct_commit_key(direct_commit_key);
 
@@ -3302,6 +3308,7 @@ void ConfigDialog::SelectDirectCommitSetting(int state) {
   directCommitCloseParenthesisCheckBox->setEnabled(enabled);
   directCommitOpenBracketCheckBox->setEnabled(enabled);
   directCommitCloseBracketCheckBox->setEnabled(enabled);
+  directCommitMiddleDotCheckBox->setEnabled(enabled);
 
   if (enabled && useAutoConversion->isChecked()) {
     useAutoConversion->setChecked(false);

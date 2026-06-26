@@ -11483,7 +11483,10 @@ TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuation) {
       config::Config::DIRECT_COMMIT_KUTEN |
       config::Config::DIRECT_COMMIT_TOUTEN |
       config::Config::DIRECT_COMMIT_QUESTION_MARK |
-      config::Config::DIRECT_COMMIT_EXCLAMATION_MARK);
+      config::Config::DIRECT_COMMIT_EXCLAMATION_MARK |
+      config::Config::DIRECT_COMMIT_OPEN_BRACKET |
+      config::Config::DIRECT_COMMIT_CLOSE_BRACKET |
+      config::Config::DIRECT_COMMIT_MIDDLE_DOT);
 
   auto table = std::make_shared<composer::Table>();
   table->AddRule("te", "て", "");
@@ -11493,6 +11496,7 @@ TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuation) {
   table->AddRule("cc", "、", "");
   table->AddRule("qq", "？", "");
   table->AddRule("ee", "！", "");
+  table->AddRule("md", "・", "");
 
   {
     Session session(engine);
@@ -11549,6 +11553,21 @@ TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuation) {
     EXPECT_FALSE(command.output().has_preedit());
     EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
   }
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutomd", &session, &command);
+
+    EXPECT_RESULT("てすと・", command);
+    EXPECT_FALSE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+
 }
 
 TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuationRespectsConfig) {
@@ -11566,6 +11585,7 @@ TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuationRespectsConfig) {
   table->AddRule("to", "と", "");
   table->AddRule("zz", "。", "");
   table->AddRule("cc", "、", "");
+  table->AddRule("md", "・", "");
 
   {
     Session session(engine);
@@ -11593,6 +11613,107 @@ TEST_F(SessionTest, DirectCommitAfterCustomRomajiPunctuationRespectsConfig) {
     EXPECT_RESULT("てすと、", command);
     EXPECT_FALSE(command.output().has_preedit());
     EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+
+  {
+    Session session(engine);
+    session.SetConfig(config);
+    InitSessionToPrecomposition(&session);
+    session.get_internal_composer_only_for_unittest()->SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("tesutomd", &session, &command);
+
+    EXPECT_SINGLE_SEGMENT("てすと・", command);
+    EXPECT_FALSE(command.output().has_result());
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  }
+}
+
+TEST_F(SessionTest,
+       PendingLiveConversionMiddleDotSlashTriggerFollowsSymbolMethod) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  auto setup_pending_live_conversion = [](SessionTestPeer* session_peer) {
+    session_peer->context_()->set_state(ImeContext::COMPOSITION);
+    session_peer->live_conversion_pending_() = true;
+    session_peer->live_conversion_key_() = "きょうは";
+    session_peer->live_conversion_preedit_() = "きょうは";
+    session_peer->live_conversion_value_() = "今日は";
+
+    commands::Preedit& live_preedit =
+        session_peer->live_conversion_preedit_output_();
+    live_preedit.Clear();
+
+    commands::Preedit::Segment* segment = live_preedit.add_segment();
+    segment->set_key("きょうは");
+    segment->set_value("今日は");
+    segment->set_value_length(Util::CharsLen("今日は"));
+  };
+
+  {
+    SCOPED_TRACE("symbol method uses middle dot");
+    Session session(engine);
+    SessionTestPeer session_peer(session);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_use_direct_commit(true);
+    config.set_symbol_method(config::Config::CORNER_BRACKET_MIDDLE_DOT);
+    config.set_direct_commit_key(config::Config::DIRECT_COMMIT_MIDDLE_DOT);
+    session.SetConfig(config);
+
+    auto table = std::make_shared<composer::Table>();
+    table->InitializeWithRequestAndConfig(
+        commands::Request::default_instance(), config);
+    session.SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("kyouha", &session, &command);
+    ASSERT_EQ(session.context().composer().GetQueryForConversion(), "きょうは");
+    setup_pending_live_conversion(&session_peer);
+
+    command.Clear();
+    ASSERT_TRUE(SendKey("/", &session, &command));
+
+    EXPECT_RESULT("今日は・", command);
+    EXPECT_FALSE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  }
+
+  {
+    SCOPED_TRACE("symbol method uses slash");
+    Session session(engine);
+    SessionTestPeer session_peer(session);
+    InitSessionToPrecomposition(&session);
+
+    config::Config config;
+    config::ConfigHandler::GetDefaultConfig(&config);
+    config.set_use_live_conversion(true);
+    config.set_use_direct_commit(true);
+    config.set_symbol_method(config::Config::SQUARE_BRACKET_SLASH);
+    config.set_direct_commit_key(config::Config::DIRECT_COMMIT_MIDDLE_DOT);
+    session.SetConfig(config);
+
+    auto table = std::make_shared<composer::Table>();
+    table->InitializeWithRequestAndConfig(
+        commands::Request::default_instance(), config);
+    session.SetTable(table);
+
+    commands::Command command;
+    InsertCharacterChars("kyouha", &session, &command);
+    ASSERT_EQ(session.context().composer().GetQueryForConversion(), "きょうは");
+    setup_pending_live_conversion(&session_peer);
+
+    command.Clear();
+    ASSERT_TRUE(SendKey("/", &session, &command));
+
+    EXPECT_FALSE(command.output().has_result());
+    EXPECT_TRUE(command.output().has_preedit());
+    EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
   }
 }
 
