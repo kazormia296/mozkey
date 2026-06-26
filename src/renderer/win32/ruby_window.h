@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <string>
 
 #include <atlbase.h>
@@ -55,8 +56,28 @@ class RubyWindow
   SIZE MeasureText() const;
   bool BuildReadingText(const commands::RendererCommand& command,
                         std::string* reading) const;
-  bool GetBasePosition(const commands::RendererCommand& command,
-                       POINT* point, int* line_height) const;
+  struct TargetIdentity {
+    uint32_t process_id = 0;
+    uint32_t thread_id = 0;
+    uint32_t target_window_handle = 0;
+  };
+
+  static bool GetTargetIdentity(const commands::RendererCommand& command,
+                                TargetIdentity* identity);
+  static bool IsSameTargetIdentity(const TargetIdentity& lhs,
+                                   const TargetIdentity& rhs);
+
+  void HideWindowOnly();
+  void ClearPlacementTracking();
+  bool KeepCurrentPlacement() const;
+  bool ShouldRejectTransientGeometry(const POINT& base_point, int line_height,
+                                     const RECT& window_rect,
+                                     const RECT& work_area,
+                                     bool from_preedit_rectangle,
+                                     bool target_changed) const;
+  bool GetBasePosition(const commands::RendererCommand& command, POINT* point,
+                       int* line_height,
+                       bool* from_preedit_rectangle) const;
 
   HFONT font_ = nullptr;
   std::wstring font_face_name_;
@@ -67,6 +88,13 @@ class RubyWindow
   std::wstring text_;
   SIZE window_size_ = {};
   RendererShadowWindow shadow_window_;
+
+  TargetIdentity last_target_identity_;
+  bool has_last_target_identity_ = false;
+  RECT last_valid_window_rect_ = {};
+
+  bool has_last_valid_geometry_ = false;
+  int transient_geometry_reject_count_ = 0;
 };
 
 }  // namespace win32
