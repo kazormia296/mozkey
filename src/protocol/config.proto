@@ -264,6 +264,7 @@ message Config {
     DIRECT_COMMIT_CLOSE_PARENTHESIS = 32;
     DIRECT_COMMIT_OPEN_BRACKET = 64;
     DIRECT_COMMIT_CLOSE_BRACKET = 128;
+    DIRECT_COMMIT_MIDDLE_DOT = 256;
   }
   optional bool use_direct_commit = 1001 [default = false];
 

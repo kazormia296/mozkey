@@ -311,12 +311,15 @@ Zenz ライブ補正では、Zenzai v3/v3.2 の特殊トークン形式に沿っ
 - `tesuto.` → `てすと。`
 - `tesuto?` → `てすと？`
 - `kakko(` → `かっこ（`
+- `tesuto/` → `てすと・`（記号スタイルで `/` が中黒になる場合）
 
 のように動作します。
 
+対象は、句点、読点、疑問符、感嘆符、丸括弧、鉤括弧、中黒から選択できます。`「`、`」` はそれぞれ独立した設定で扱います。中黒 `・` は、語や句を並列・区切りとしてつなぐ日本語の約物として独立した設定で扱います。
+
 ローマ字テーブルで句読点・記号を出すように設定している場合も、出力された文字が単打確定の対象に含まれていれば、その時点で確定されます。
 
-たとえば、ローマ字テーブルで `zz -> 。` や `qq -> ？` のように設定している場合でも、句点や疑問符を単打確定の対象にしていれば、`tesutozz` → `てすと。`、`tesutoqq` → `てすと？` のように確定されます。
+たとえば、ローマ字テーブルで `zz -> 。`、`qq -> ？`、`md -> ・` のように設定している場合でも、出力先の記号を単打確定の対象にしていれば、`tesutozz` → `てすと。`、`tesutoqq` → `てすと？`、`tesutomd` → `てすと・` のように確定されます。
 
 どの句読点・記号を単打確定の対象にするかは、設定画面のチェックボックスで選択できます。
 
@@ -895,6 +898,9 @@ Examples:
 - `tesuto.` → `てすと。`
 - `tesuto?` → `てすと？`
 - `kakko(` → `かっこ（`
+- `tesuto/` → `てすと・` when the symbol style maps `/` to the middle dot
+
+The selectable targets include periods, commas, question marks, exclamation marks, parentheses, corner brackets, and the middle dot. `「` and `」` are configured independently. The middle dot `・` is handled as an independent Japanese separator symbol.
 
 You can choose which punctuations/symbols are committed directly in the config dialog.
 

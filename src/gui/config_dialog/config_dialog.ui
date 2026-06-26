@@ -1166,7 +1166,7 @@
           <widget class="QCheckBox" name="directCommitOpenBracketCheckBox">
            <property name="maximumSize">
             <size>
-             <width>55</width>
+             <width>45</width>
              <height>16777215</height>
             </size>
            </property>
@@ -1179,12 +1179,25 @@
           <widget class="QCheckBox" name="directCommitCloseBracketCheckBox">
            <property name="maximumSize">
             <size>
-             <width>55</width>
+             <width>45</width>
              <height>16777215</height>
             </size>
            </property>
            <property name="text">
             <string>」</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="7">
+          <widget class="QCheckBox" name="directCommitMiddleDotCheckBox">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>・</string>
            </property>
           </widget>
          </item>
@@ -2757,6 +2770,7 @@
   <tabstop>directCommitCloseParenthesisCheckBox</tabstop>
   <tabstop>directCommitOpenBracketCheckBox</tabstop>
   <tabstop>directCommitCloseBracketCheckBox</tabstop>
+  <tabstop>directCommitMiddleDotCheckBox</tabstop>
   <tabstop>shiftKeyModeSwitchComboBox</tabstop>
   <tabstop>useJapaneseLayout</tabstop>
   <tabstop>useModeIndicator</tabstop>

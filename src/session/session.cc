@@ -7142,6 +7142,7 @@ bool Session::InsertCharacter(commands::Command* command) {
   }
 
   const bool was_live_conversion = live_conversion_active_;
+  const bool was_pending_live_conversion = live_conversion_pending_;
 
   // Preserve the visible zenz correction before editing cancels the temporary
   // live conversion state.
@@ -7286,6 +7287,11 @@ bool Session::InsertCharacter(commands::Command* command) {
       return true;
     }
 
+    if (!learned_reranked_preedit_after_cancel &&
+        (live_conversion_pending_ || was_pending_live_conversion)) {
+      return CommitPendingLiveConversionDisplayDirectly(command);
+    }
+
     if (!learned_reranked_preedit_after_cancel && was_live_conversion &&
         CommitLiveConversionResult(command)) {
       return true;
@@ -7301,6 +7307,18 @@ bool Session::InsertCharacter(commands::Command* command) {
       SetPendingDirectCommitLearningFromCommittedResult(
           *command,
           "normal_conversion_direct_commit_punctuation");
+    }
+
+    // Most direct-commit punctuation paths can commit the current Composer
+    // contents as-is.  However,
+    // GetDirectCommitStringsWithDirectCommitSuffixFallback() may explicitly
+    // append a suffix derived from the key event when Composer has not yet
+    // reflected the trigger.  Use the rewritten strings only when they differ
+    // from the current Composer contents, keeping the ordinary path unchanged.
+    if (direct_commit_key != context_->composer().GetQueryForConversion() ||
+        direct_commit_value != context_->composer().GetStringForSubmission()) {
+      CommitStringDirectly(direct_commit_key, direct_commit_value, command);
+      return true;
     }
 
     CommitCompositionDirectly(command);
@@ -8823,11 +8841,16 @@ bool MatchesString(absl::string_view value,
   return false;
 }
 
+bool SymbolMethodUsesMiddleDot(const config::Config& config) {
+  return config.symbol_method() == config::Config::CORNER_BRACKET_MIDDLE_DOT ||
+         config.symbol_method() == config::Config::SQUARE_BRACKET_MIDDLE_DOT;
+}
+
 std::string DirectCommitFallbackSuffixFromKeyEvent(
-    const commands::KeyEvent& key_event) {
+    const config::Config& config, const commands::KeyEvent& key_event) {
   if (MatchesString(key_event.key_string(),
                     {"。", "｡", "．", "、", "､", "，", "？", "！",
-                     "（", "）", "「", "」", "［", "］"})) {
+                     "（", "）", "「", "」", "［", "］", "・", "･"})) {
     return key_event.key_string();
   }
 
@@ -8855,6 +8878,10 @@ std::string DirectCommitFallbackSuffixFromKeyEvent(
   if (MatchesString(key_event.key_string(), {"]", "］"})) {
     return "」";
   }
+  if (SymbolMethodUsesMiddleDot(config) &&
+      MatchesString(key_event.key_string(), {"/", "／"})) {
+    return "・";
+  }
 
   switch (key_event.key_code()) {
     case static_cast<uint32_t>('.'):
@@ -8873,6 +8900,11 @@ std::string DirectCommitFallbackSuffixFromKeyEvent(
       return "「";
     case static_cast<uint32_t>(']'):
       return "」";
+    case static_cast<uint32_t>('/'):
+      if (SymbolMethodUsesMiddleDot(config)) {
+        return "・";
+      }
+      break;
     default:
       break;
   }
@@ -8938,7 +8970,13 @@ bool IsValidDirectCommitTriggerKey(const config::Config& config,
          (MatchesKeyEvent(key_event, static_cast<uint32_t>(']'),
                           {"]", "］", "」"}) &&
           (config.direct_commit_key() &
-           config::Config::DIRECT_COMMIT_CLOSE_BRACKET));
+           config::Config::DIRECT_COMMIT_CLOSE_BRACKET)) ||
+         ((MatchesString(key_event.key_string(), {"・", "･"}) ||
+           (SymbolMethodUsesMiddleDot(config) &&
+            MatchesKeyEvent(key_event, static_cast<uint32_t>('/'),
+                            {"/", "／"}))) &&
+          (config.direct_commit_key() &
+           config::Config::DIRECT_COMMIT_MIDDLE_DOT));
 }
 
 bool IsValidDirectCommitChar(const config::Config& config,
@@ -8974,7 +9012,11 @@ bool IsValidDirectCommitChar(const config::Config& config,
 
       (MatchesString(last_char, {"]", "］", "」"}) &&
        (config.direct_commit_key() &
-        config::Config::DIRECT_COMMIT_CLOSE_BRACKET));
+        config::Config::DIRECT_COMMIT_CLOSE_BRACKET)) ||
+
+      (MatchesString(last_char, {"・", "･"}) &&
+       (config.direct_commit_key() &
+        config::Config::DIRECT_COMMIT_MIDDLE_DOT));
 }
 
 }  // namespace
@@ -8991,13 +9033,15 @@ Session::GetDirectCommitStringsWithDirectCommitSuffixFallback(
   std::string key_to_commit = context_->composer().GetQueryForConversion();
   std::string value_to_commit = context_->composer().GetStringForSubmission();
 
+  const std::string suffix = DirectCommitFallbackSuffixFromKeyEvent(
+      context_->GetConfig(), key);
+
   // Some test and client paths provide the direct-commit trigger as the key
   // event itself while leaving the restored preedit unchanged in Composer.
   // In that case, explicitly append the trigger suffix so that the visible
   // commit remains `きょう。`, while the strong learning target remains the
   // suffix-free `きょう` captured before insertion.
   if (value_to_commit == value_before_insert) {
-    const std::string suffix = DirectCommitFallbackSuffixFromKeyEvent(key);
     if (!suffix.empty()) {
       key_to_commit = absl::StrCat(key_before_insert, suffix);
       value_to_commit = absl::StrCat(value_before_insert, suffix);
