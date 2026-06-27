@@ -1395,6 +1395,73 @@ bool ShouldSkipLiveConversionForCompositionKey(
   return Util::IsScriptType(core, Util::HIRAGANA);
 }
 
+bool ShouldKeepPendingLiveConversionForTransientSokuon(absl::string_view key) {
+  if (key.empty() || !Util::IsScriptType(key, Util::HIRAGANA)) {
+    return false;
+  }
+
+  absl::string_view rest;
+  char32_t last = 0;
+  if (!Util::SplitLastChar32(key, &rest, &last) || last != U'っ') {
+    return false;
+  }
+
+  if (Util::CharsLen(rest) < 2) {
+    return false;
+  }
+
+  absl::string_view before_rest;
+  char32_t previous = 0;
+  if (Util::SplitLastChar32(rest, &before_rest, &previous) &&
+      previous == U'っ') {
+    return false;
+  }
+
+  // This is aimed at transient sokuon forms that commonly recover on the
+  // next kana, e.g. 「おもっ」→「おもって」 and 「くさっ」→「くさって」.
+  // Keep this list narrow so expressive atoms such as 「やっっ」 and 「ふんっ」
+  // continue to use the existing composition-only behavior.
+  const auto has_transient_stem_suffix = [&](absl::string_view stem) {
+    if (!absl::EndsWith(rest, stem)) {
+      return false;
+    }
+
+    const absl::string_view prefix = rest.substr(0, rest.size() - stem.size());
+    if (prefix.empty()) {
+      return true;
+    }
+
+    // Allow common short functional prefixes within the same composition,
+    // e.g. 「とおもっ」→「と思って」 and 「をさわっ」→「を触って」.
+    return ContainsStringView({
+        "と", "を", "に", "が", "は", "も", "で", "へ",
+        "から", "まで", "より",
+    }, prefix);
+  };
+
+  return has_transient_stem_suffix("おも") ||  // 思っ...
+         has_transient_stem_suffix("くさ") ||  // 腐っ...
+         has_transient_stem_suffix("さわ") ||  // 触っ...
+         has_transient_stem_suffix("かえ") ||  // 帰っ...
+         has_transient_stem_suffix("わら") ||  // 笑っ...
+         has_transient_stem_suffix("おこ") ||  // 怒っ...
+         has_transient_stem_suffix("まよ") ||  // 迷っ...
+         has_transient_stem_suffix("のこ") ||  // 残っ...
+         has_transient_stem_suffix("ひろ") ||  // 拾っ...
+         has_transient_stem_suffix("ふと") ||  // 太っ...
+         has_transient_stem_suffix("あた") ||  // 当たっ...
+         has_transient_stem_suffix("あら") ||  // 洗っ...
+         has_transient_stem_suffix("うつ") ||  // 打っ...
+         has_transient_stem_suffix("うた") ||  // 歌っ...
+         has_transient_stem_suffix("けず") ||  // 削っ...
+         has_transient_stem_suffix("しぼ") ||  // 絞っ...
+         has_transient_stem_suffix("すわ") ||  // 座っ...
+         has_transient_stem_suffix("とま") ||  // 止まっ...
+         has_transient_stem_suffix("なお") ||  // 直っ...
+         has_transient_stem_suffix("のぼ") ||  // 登っ...
+         has_transient_stem_suffix("はし") ||  // 走っ...
+         has_transient_stem_suffix("まわ");    // 回っ...
+}
 
 bool CandidateWordHasAttribute(const commands::CandidateWord& candidate,
                                commands::CandidateAttribute attribute) {
@@ -4722,6 +4789,12 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   pending_live_conversion_suggestion_candidate_window_.Clear();
 
   if (!context_->mutable_converter()->Convert(context_->composer())) {
+    if (ShouldKeepPendingLiveConversionForTransientSokuon(live_conversion_key) &&
+        OutputPendingLiveConversion(command)) {
+      ClearZenzLiveCorrectionState();
+      return true;
+    }
+
     OutputComposition(command);
     return true;
   }
@@ -4906,11 +4979,35 @@ bool Session::MaybeScheduleLiveConversion(commands::Command* command) {
   const size_t length = context_->composer().GetLength();
   const std::string key = context_->composer().GetQueryForConversion();
 
-  if (ShouldSkipLiveConversionForCompositionKey(
+  const bool should_skip_live_conversion =
+      ShouldSkipLiveConversionForCompositionKey(
           key,
           GetLiveConversionCommittedLeftBoundary(*context_),
-          GetLiveConversionMinKeyLength(context_->GetConfig())) ||
-      length != context_->composer().GetCursor()) {
+          GetLiveConversionMinKeyLength(context_->GetConfig()));
+  const bool cursor_at_end = length == context_->composer().GetCursor();
+
+  if (should_skip_live_conversion || !cursor_at_end) {
+    if (should_skip_live_conversion && cursor_at_end &&
+        ShouldKeepPendingLiveConversionForTransientSokuon(key)) {
+      // Inputs such as 「おもっ」 and 「くさっ」 can be transient sokuon
+      // prefixes before 「て」/「た」.  They may be skipped before Convert()
+      // is attempted, so keep the live conversion overlay as pending instead
+      // of falling back to plain composition output.
+      ++live_conversion_generation_;
+      live_conversion_pending_ = true;
+      pending_live_conversion_generation_ = live_conversion_generation_;
+      pending_live_conversion_key_ = key;
+      pending_live_conversion_input_ = command->input();
+      pending_live_conversion_suggestion_candidate_window_.Clear();
+
+      if (OutputPendingLiveConversion(command)) {
+        AttachDelayedLiveConversionCallback(command);
+        return true;
+      }
+
+      CancelPendingLiveConversion();
+    }
+
     CancelPendingLiveConversion();
     return false;
   }
@@ -5010,11 +5107,22 @@ bool Session::ApplyDelayedLiveConversion(commands::Command* command) {
   }
 
   const size_t length = context_->composer().GetLength();
-  if (ShouldSkipLiveConversionForCompositionKey(
+  const bool should_skip_live_conversion =
+      ShouldSkipLiveConversionForCompositionKey(
           current_key,
           GetLiveConversionCommittedLeftBoundary(*context_),
-          GetLiveConversionMinKeyLength(context_->GetConfig())) ||
-      length != context_->composer().GetCursor()) {
+          GetLiveConversionMinKeyLength(context_->GetConfig()));
+  const bool cursor_at_end = length == context_->composer().GetCursor();
+
+  if (should_skip_live_conversion || !cursor_at_end) {
+    if (should_skip_live_conversion && cursor_at_end &&
+        ShouldKeepPendingLiveConversionForTransientSokuon(current_key)) {
+      OutputPendingLiveConversion(command);
+      AttachCachedLiveConversionSuggestionCandidateWindow(
+          command->mutable_output());
+      return true;
+    }
+
     CancelPendingLiveConversion();
     OutputFromState(command);
     return true;
