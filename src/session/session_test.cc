@@ -115,6 +115,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_VARIABLE(undo_contexts_);
   PEER_VARIABLE(live_conversion_active_);
   PEER_VARIABLE(live_conversion_pending_);
+  PEER_VARIABLE(pending_live_conversion_key_);
   PEER_VARIABLE(live_conversion_key_);
   PEER_VARIABLE(live_conversion_preedit_);
   PEER_VARIABLE(live_conversion_value_);
@@ -2152,6 +2153,167 @@ TEST_F(SessionTest, LiveConversionAllowsSingleCharacterWhenMinKeyLengthIsOne) {
   EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
   EXPECT_TRUE(command.output().live_conversion());
   EXPECT_TRUE(EnsurePreedit("亜", command));
+}
+
+TEST_F(SessionTest,
+       LiveConversionKeepsPendingOverlayForTransientSokuonPrefix) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(0);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(::testing::AnyNumber())
+      .WillRepeatedly(Return(false));
+
+  commands::Command command;
+  InsertCharacterString("おもっ", "aaa", &session, &command);
+
+  EXPECT_EQ(session.context().composer().GetQueryForConversion(), "おもっ");
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  EXPECT_TRUE(session_peer.live_conversion_pending_());
+  EXPECT_EQ(session_peer.pending_live_conversion_key_(), "おもっ");
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_TRUE(command.output().live_conversion_pending());
+  ASSERT_TRUE(command.output().has_callback());
+  ASSERT_TRUE(command.output().callback().has_session_command());
+  EXPECT_EQ(command.output().callback().session_command().type(),
+            commands::SessionCommand::APPLY_LIVE_CONVERSION);
+  const commands::SessionCommand delayed_command =
+      command.output().callback().session_command();
+  EXPECT_PREEDIT("おもっ", command);
+
+  command.Clear();
+  command.mutable_input()->set_type(commands::Input::SEND_COMMAND);
+  *command.mutable_input()->mutable_command() = delayed_command;
+
+  EXPECT_TRUE(session.SendCommand(&command));
+  EXPECT_TRUE(session_peer.live_conversion_pending_());
+  EXPECT_EQ(session_peer.pending_live_conversion_key_(), "おもっ");
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_TRUE(command.output().live_conversion_pending());
+  EXPECT_PREEDIT("おもっ", command);
+}
+
+TEST_F(SessionTest,
+       LiveConversionKeepsPendingOverlayForParticlePlusTransientSokuonPrefix) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(0);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(::testing::AnyNumber())
+      .WillRepeatedly(Return(false));
+
+  commands::Command command;
+  InsertCharacterString("とおもっ", "aaaa", &session, &command);
+
+  EXPECT_EQ(session.context().composer().GetQueryForConversion(), "とおもっ");
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  EXPECT_TRUE(session_peer.live_conversion_pending_());
+  EXPECT_EQ(session_peer.pending_live_conversion_key_(), "とおもっ");
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_TRUE(command.output().live_conversion_pending());
+  EXPECT_PREEDIT("とおもっ", command);
+}
+
+TEST_F(SessionTest,
+       LiveConversionDoesNotKeepPendingOverlayForShortSokuonInterjection) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(0);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(::testing::AnyNumber())
+      .WillRepeatedly(Return(false));
+
+  commands::Command command;
+  InsertCharacterString("あっ", "aa", &session, &command);
+
+  EXPECT_EQ(session.context().composer().GetQueryForConversion(), "あっ");
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_FALSE(command.output().live_conversion());
+  EXPECT_FALSE(command.output().live_conversion_pending());
+  EXPECT_PREEDIT("あっ", command);
+}
+
+TEST_F(SessionTest, LiveConversionRecoversAfterTransientSokuonPrefix) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_live_conversion_delay_msec(0);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(::testing::AnyNumber())
+      .WillRepeatedly(Return(false));
+
+  commands::Command command;
+  InsertCharacterString("くさっ", "aaa", &session, &command);
+
+  EXPECT_EQ(session.context().composer().GetQueryForConversion(), "くさっ");
+  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_TRUE(command.output().live_conversion_pending());
+  EXPECT_PREEDIT("くさっ", command);
+
+  Mock::VerifyAndClearExpectations(converter.get());
+
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key("くさって");
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = "くさって";
+  candidate->content_key = "くさって";
+  candidate->value = "腐って";
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .Times(AtLeast(1))
+      .WillRepeatedly(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  command.Clear();
+  InsertCharacterString("て", "a", &session, &command);
+
+  EXPECT_EQ(session.context().composer().GetQueryForConversion(), "くさって");
+  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
+  EXPECT_TRUE(session_peer.live_conversion_active_());
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_FALSE(command.output().live_conversion_pending());
+  EXPECT_PREEDIT("腐って", command);
 }
 
 TEST_F(SessionTest, LiveConversionAttachesPassiveSuggestionCandidateWindow) {
