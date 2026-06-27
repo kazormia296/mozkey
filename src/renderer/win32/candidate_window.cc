@@ -760,7 +760,13 @@ void CandidateWindow::UpdateLayout(
   if (m_hWnd != nullptr) {
     UpdateRoundedWindowRegion(m_hWnd, table_layout_->GetTotalSize(), dpi_,
                               GetRendererStyleType(*candidate_window_));
-    UpdateEffectWindows();
+  }
+}
+
+void CandidateWindow::RedrawImmediately() {
+  if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+    ::RedrawWindow(m_hWnd, nullptr, nullptr,
+                   RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
   }
 }
 

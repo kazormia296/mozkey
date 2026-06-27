@@ -111,6 +111,7 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
 
   void UpdateLayout(const commands::CandidateWindow& candidate_window);
   void UpdateEffectWindows();
+  void RedrawImmediately();
   // Hides both the candidate window and its renderer-owned visual effects.
   // This avoids one-frame shadow remnants when WindowManager suppresses or
   // relocates candidate UI during live-conversion ruby updates.

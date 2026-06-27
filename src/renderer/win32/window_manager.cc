@@ -419,6 +419,9 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   main_window_->SetWindowPos(HWND_TOPMOST, main_window_rect.Left(),
                              main_window_rect.Top(), main_window_rect.Width(),
                              main_window_rect.Height(), set_windows_pos_flags);
+  if (is_live_conversion_passive_suggestion) {
+    main_window_->RedrawImmediately();
+  }
   main_window_->UpdateEffectWindows();
   if (is_live_conversion_passive_suggestion) {
     last_live_conversion_passive_suggestion_visible_ = true;
