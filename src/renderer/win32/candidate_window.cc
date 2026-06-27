@@ -552,6 +552,13 @@ void CandidateWindow::OnShowWindow(BOOL shown, UINT /*status*/) {
   }
 }
 
+void CandidateWindow::HideWithEffects() {
+  shadow_window_.Hide();
+  if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+    ShowWindow(SW_HIDE);
+  }
+}
+
 void CandidateWindow::OnSettingChange(UINT uFlags, LPCTSTR /*lpszSection*/) {
   // Since TextRenderer uses dialog font to render,
   // we monitor font-related parameters to know when the font style is changed.
@@ -753,7 +760,13 @@ void CandidateWindow::UpdateLayout(
   if (m_hWnd != nullptr) {
     UpdateRoundedWindowRegion(m_hWnd, table_layout_->GetTotalSize(), dpi_,
                               GetRendererStyleType(*candidate_window_));
-    UpdateEffectWindows();
+  }
+}
+
+void CandidateWindow::RedrawImmediately() {
+  if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+    ::RedrawWindow(m_hWnd, nullptr, nullptr,
+                   RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
   }
 }
 

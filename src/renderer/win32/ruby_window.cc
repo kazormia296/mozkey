@@ -30,6 +30,12 @@ constexpr uint32_t kDefaultDpi = 96;
 
 // Keep the overlay close to the preedit, but do not let it cover the glyphs.
 constexpr int kFallbackLineHeight = 22;
+constexpr int kMaxReasonableLineHeight = 512;
+constexpr int kGeometryMargin = 64;
+constexpr int kNearOriginTolerance = 2;
+constexpr int kLargeJumpMinX = 320;
+constexpr int kLargeJumpMinY = 240;
+constexpr int kTransientGeometryRejectLimit = 2;
 
 COLORREF ToColorRef(uint32_t rgb) {
   return RGB(static_cast<int>((rgb >> 16) & 0xff),
@@ -158,6 +164,14 @@ bool IsUsableRubyRect(const RECT& rect, const RECT& work_area,
   return true;
 }
 
+bool IsReasonableWorkArea(const RECT& work_area) {
+  return work_area.left < work_area.right && work_area.top < work_area.bottom;
+}
+
+int RectCenterX(const RECT& rect) { return (rect.left + rect.right) / 2; }
+
+int RectCenterY(const RECT& rect) { return (rect.top + rect.bottom) / 2; }
+
 }  // namespace
 
 RubyWindow::RubyWindow() = default;
@@ -184,11 +198,24 @@ void RubyWindow::Destroy() {
   }
 }
 
-void RubyWindow::Hide() {
+void RubyWindow::HideWindowOnly() {
   shadow_window_.Hide();
   if (IsWindow()) {
     ShowWindow(SW_HIDE);
   }
+}
+
+void RubyWindow::ClearPlacementTracking() {
+  has_last_target_identity_ = false;
+  has_last_valid_geometry_ = false;
+  transient_geometry_reject_count_ = 0;
+  last_target_identity_ = TargetIdentity();
+  last_valid_window_rect_ = {};
+}
+
+void RubyWindow::Hide() {
+  ClearPlacementTracking();
+  HideWindowOnly();
 }
 
 bool RubyWindow::BuildReadingText(
@@ -235,8 +262,8 @@ bool RubyWindow::BuildReadingText(
 }
 
 bool RubyWindow::GetBasePosition(const commands::RendererCommand& command,
-                                 POINT* point,
-                                 int* line_height) const {
+                                 POINT* point, int* line_height,
+                                 bool* from_preedit_rectangle) const {
   // Prefer the preedit rectangle. This is usually closer to the actual
   // composition text than composition_target, which tends to follow the caret.
   if (command.has_preedit_rectangle()) {
@@ -248,6 +275,9 @@ bool RubyWindow::GetBasePosition(const commands::RendererCommand& command,
       point->x = rect.left();
       point->y = rect.top();
       *line_height = height;
+      if (from_preedit_rectangle != nullptr) {
+        *from_preedit_rectangle = true;
+      }
       return true;
     }
   }
@@ -262,11 +292,98 @@ bool RubyWindow::GetBasePosition(const commands::RendererCommand& command,
       const commands::RendererCommand::CharacterPosition& target =
           app_info.composition_target();
 
+      const int target_line_height =
+          target.has_line_height() ? static_cast<int>(target.line_height())
+                                   : kFallbackLineHeight;
+      if (target_line_height <= 0) {
+        return false;
+      }
+
       point->x = target.top_left().x();
       point->y = target.top_left().y();
-      *line_height = target.has_line_height()
-                         ? static_cast<int>(target.line_height())
-                         : kFallbackLineHeight;
+      *line_height = target_line_height;
+      if (from_preedit_rectangle != nullptr) {
+        *from_preedit_rectangle = false;
+      }
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool RubyWindow::GetTargetIdentity(const commands::RendererCommand& command,
+                                   TargetIdentity* identity) {
+  if (identity == nullptr || !command.has_application_info()) {
+    return false;
+  }
+
+  const commands::RendererCommand::ApplicationInfo& app_info =
+      command.application_info();
+  if (!app_info.has_target_window_handle() ||
+      app_info.target_window_handle() == 0) {
+    return false;
+  }
+
+  identity->process_id =
+      app_info.has_process_id() ? app_info.process_id() : 0;
+  identity->thread_id = app_info.has_thread_id() ? app_info.thread_id() : 0;
+  identity->target_window_handle = app_info.target_window_handle();
+  return true;
+}
+
+bool RubyWindow::IsSameTargetIdentity(const TargetIdentity& lhs,
+                                      const TargetIdentity& rhs) {
+  return lhs.process_id == rhs.process_id &&
+         lhs.thread_id == rhs.thread_id &&
+         lhs.target_window_handle == rhs.target_window_handle;
+}
+
+bool RubyWindow::KeepCurrentPlacement() const {
+  return has_last_valid_geometry_ && m_hWnd != nullptr && ::IsWindow(m_hWnd) &&
+         ::IsWindowVisible(m_hWnd);
+}
+
+bool RubyWindow::ShouldRejectTransientGeometry(
+    const POINT& base_point, int line_height, const RECT& window_rect,
+    const RECT& work_area, bool from_preedit_rectangle,
+    bool target_changed) const {
+  if (!IsReasonableWorkArea(work_area)) {
+    return false;
+  }
+
+  if (line_height <= 0 || line_height > kMaxReasonableLineHeight) {
+    return true;
+  }
+
+  if (base_point.x < work_area.left - kGeometryMargin ||
+      base_point.x > work_area.right + kGeometryMargin ||
+      base_point.y < work_area.top - kGeometryMargin ||
+      base_point.y > work_area.bottom + kGeometryMargin) {
+    return true;
+  }
+
+  const bool base_near_work_area_origin =
+      base_point.x <= work_area.left + kNearOriginTolerance &&
+      base_point.y <= work_area.top + kNearOriginTolerance;
+  const bool window_near_work_area_origin =
+      window_rect.left <= work_area.left + kNearOriginTolerance &&
+      window_rect.top <= work_area.top + kNearOriginTolerance;
+  if ((base_near_work_area_origin || window_near_work_area_origin) &&
+      (!from_preedit_rectangle || target_changed || has_last_valid_geometry_)) {
+    return true;
+  }
+
+  if (!target_changed && has_last_valid_geometry_) {
+    const int work_width = work_area.right - work_area.left;
+    const int work_height = work_area.bottom - work_area.top;
+    const int max_jump_x = std::max(kLargeJumpMinX, work_width / 2);
+    const int max_jump_y = std::max(kLargeJumpMinY, work_height / 2);
+    const int dx = std::abs(RectCenterX(window_rect) -
+                            RectCenterX(last_valid_window_rect_));
+    const int dy = std::abs(RectCenterY(window_rect) -
+                            RectCenterY(last_valid_window_rect_));
+    if (dx > max_jump_x || dy > max_jump_y) {
       return true;
     }
   }
@@ -381,10 +498,38 @@ void RubyWindow::OnUpdate(const commands::RendererCommand& command,
     return;
   }
 
+  TargetIdentity current_target_identity;
+  const bool has_current_target_identity =
+      GetTargetIdentity(command, &current_target_identity);
+  const bool target_changed =
+      has_current_target_identity &&
+      (!has_last_target_identity_ ||
+       !IsSameTargetIdentity(last_target_identity_, current_target_identity));
+  if (target_changed) {
+    last_target_identity_ = current_target_identity;
+    has_last_target_identity_ = true;
+    has_last_valid_geometry_ = false;
+    transient_geometry_reject_count_ = 0;
+    HideWindowOnly();
+  } else if (has_current_target_identity) {
+    last_target_identity_ = current_target_identity;
+    has_last_target_identity_ = true;
+  } else {
+    has_last_target_identity_ = false;
+    has_last_valid_geometry_ = false;
+    transient_geometry_reject_count_ = 0;
+  }
+
   POINT base_point = {};
   int line_height = kFallbackLineHeight;
-  if (!GetBasePosition(command, &base_point, &line_height)) {
-    Hide();
+  bool from_preedit_rectangle = false;
+  if (!GetBasePosition(command, &base_point, &line_height,
+                       &from_preedit_rectangle)) {
+    if (KeepCurrentPlacement()) {
+      return;
+    }
+    has_last_valid_geometry_ = false;
+    HideWindowOnly();
     return;
   }
 
@@ -392,9 +537,17 @@ void RubyWindow::OnUpdate(const commands::RendererCommand& command,
   UpdateFont(dc);
   ::ReleaseDC(nullptr, dc);
 
+  const std::wstring previous_text = text_;
+  const SIZE previous_window_size = window_size_;
+  const auto restore_previous_content = [&]() {
+    text_ = previous_text;
+    window_size_ = previous_window_size;
+  };
+
   text_ = ToWide(reading);
   window_size_ = MeasureText();
   if (window_size_.cx <= 0 || window_size_.cy <= 0) {
+    restore_previous_content();
     Hide();
     return;
   }
@@ -434,12 +587,38 @@ void RubyWindow::OnUpdate(const commands::RendererCommand& command,
   int top = 0;
   // Prefer the conventional ruby-like placement above the preedit.  Use below
   // only when the above side is unavailable or occupied by candidate/suggestion
-  // UI.  If neither side is usable, hide the ruby window rather than overlapping
-  // other renderer UI.
+  // UI.  If neither side is usable, keep the last stable placement when this
+  // looks like a transient geometry frame.
+  const RECT preferred_window_rect = ruby_rect_at(above_top);
+  const bool looks_like_transient_geometry = ShouldRejectTransientGeometry(
+      base_point, line_height, preferred_window_rect, work_area,
+      from_preedit_rectangle, target_changed);
   if (!try_place(above_top, &top) && !try_place(below_top, &top)) {
-    Hide();
+    restore_previous_content();
+    if (looks_like_transient_geometry && KeepCurrentPlacement()) {
+      return;
+    }
+    has_last_valid_geometry_ = false;
+    HideWindowOnly();
     return;
   }
+
+  RECT window_rect = {left, top, left + window_size_.cx,
+                      top + window_size_.cy};
+  if (ShouldRejectTransientGeometry(base_point, line_height, window_rect,
+                                    work_area, from_preedit_rectangle,
+                                    target_changed)) {
+    restore_previous_content();
+    ++transient_geometry_reject_count_;
+    if (transient_geometry_reject_count_ <= kTransientGeometryRejectLimit) {
+      if (KeepCurrentPlacement()) {
+        return;
+      }
+      HideWindowOnly();
+      return;
+    }
+  }
+  transient_geometry_reject_count_ = 0;
 
   const int radius = ScaleCornerRadius(
       RendererStyleHandler::GetRubyWindowStyle().corner_radius,
@@ -457,7 +636,6 @@ void RubyWindow::OnUpdate(const commands::RendererCommand& command,
   SetWindowPos(HWND_TOPMOST, left, top, window_size_.cx, window_size_.cy,
                SWP_NOACTIVATE | SWP_SHOWWINDOW);
   ApplyRendererWindowOpacity(m_hWnd, GetRubyWindowTheme().opacity_percent);
-  RECT window_rect = {left, top, left + window_size_.cx, top + window_size_.cy};
   RendererWindowShadowStyle shadow_style;
   shadow_style.size = GetRubyWindowTheme().shadow.size;
   shadow_style.opacity_percent = GetRubyWindowTheme().shadow.opacity_percent;
@@ -465,6 +643,14 @@ void RubyWindow::OnUpdate(const commands::RendererCommand& command,
   shadow_style.distance = GetRubyWindowTheme().shadow.distance;
   shadow_window_.Update(m_hWnd, window_rect, GetWindowDpi(m_hWnd),
                         GetRubyWindowTheme().corner_radius, shadow_style);
+
+  last_valid_window_rect_ = window_rect;
+
+  has_last_valid_geometry_ = true;
+  if (has_current_target_identity) {
+    last_target_identity_ = current_target_identity;
+    has_last_target_identity_ = true;
+  }
 
   ShowWindow(SW_SHOWNOACTIVATE);
   Invalidate(FALSE);

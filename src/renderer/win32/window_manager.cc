@@ -57,6 +57,39 @@ namespace {
 constexpr uint32_t kHideWindowDelay = 500;  // msec
 const POINT kInvalidMousePosition = {-65535, -65535};
 
+RECT ToWinRect(const Rect& rect) {
+  return RECT{rect.Left(), rect.Top(), rect.Right(), rect.Bottom()};
+}
+
+enum class VerticalRelationToPreedit {
+  kAbove,
+  kBelow,
+  kOverlapping,
+};
+
+VerticalRelationToPreedit GetVerticalRelationToPreedit(
+    const RECT& rect, const Rect& preedit_rect) {
+  if (rect.bottom <= preedit_rect.Top()) {
+    return VerticalRelationToPreedit::kAbove;
+  }
+  if (rect.top >= preedit_rect.Bottom()) {
+    return VerticalRelationToPreedit::kBelow;
+  }
+  return VerticalRelationToPreedit::kOverlapping;
+}
+
+bool IsOppositeSideOfPreedit(const RECT& lhs, const RECT& rhs,
+                             const Rect& preedit_rect) {
+  const VerticalRelationToPreedit lhs_relation =
+      GetVerticalRelationToPreedit(lhs, preedit_rect);
+  const VerticalRelationToPreedit rhs_relation =
+      GetVerticalRelationToPreedit(rhs, preedit_rect);
+  return (lhs_relation == VerticalRelationToPreedit::kAbove &&
+          rhs_relation == VerticalRelationToPreedit::kBelow) ||
+         (lhs_relation == VerticalRelationToPreedit::kBelow &&
+          rhs_relation == VerticalRelationToPreedit::kAbove);
+}
+
 }  // namespace
 
 WindowManager::WindowManager()
@@ -82,9 +115,9 @@ void WindowManager::Initialize() {
   DCHECK(!infolist_window_->IsWindow());
 
   main_window_->Create(nullptr);
-  main_window_->ShowWindow(SW_HIDE);
+  main_window_->HideWithEffects();
   cascading_window_->Create(nullptr);
-  cascading_window_->ShowWindow(SW_HIDE);
+  cascading_window_->HideWithEffects();
   indicator_window_->Initialize();
   infolist_window_->Create(nullptr);
   infolist_window_->ShowWindow(SW_HIDE);
@@ -128,8 +161,8 @@ void WindowManager::DestroyAllWindows() {
 void WindowManager::HideAllWindows() {
   last_live_conversion_passive_suggestion_visible_ = false;
   has_last_live_conversion_passive_suggestion_rect_ = false;
-  main_window_->ShowWindow(SW_HIDE);
-  cascading_window_->ShowWindow(SW_HIDE);
+  main_window_->HideWithEffects();
+  cascading_window_->HideWithEffects();
   indicator_window_->Hide();
   infolist_window_->DelayHide(0);
   ruby_window_->Hide();
@@ -145,8 +178,8 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   if (!command.visible()) {
     last_live_conversion_passive_suggestion_visible_ = false;
     has_last_live_conversion_passive_suggestion_rect_ = false;
-    cascading_window_->ShowWindow(SW_HIDE);
-    main_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
+    main_window_->HideWithEffects();
     indicator_window_->Hide();
     infolist_window_->DelayHide(0);
     ruby_window_->Hide();
@@ -190,9 +223,9 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   }
 
   if (output.live_conversion() && !is_live_conversion_passive_suggestion) {
-    cascading_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
     if (!should_keep_previous_live_conversion_passive_suggestion) {
-      main_window_->ShowWindow(SW_HIDE);
+      main_window_->HideWithEffects();
       last_live_conversion_passive_suggestion_visible_ = false;
       has_last_live_conversion_passive_suggestion_rect_ = false;
     }
@@ -251,16 +284,16 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
 
   if (!output.has_candidate_window()) {
     // Hide candidate windows because there is no candidate to be displayed.
-    cascading_window_->ShowWindow(SW_HIDE);
-    main_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
+    main_window_->HideWithEffects();
     infolist_window_->DelayHide(0);
     return;
   }
 
   if (is_suggest && !show_suggest) {
     // The candidate list is for suggestion but the visibility bit is off.
-    cascading_window_->ShowWindow(SW_HIDE);
-    main_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
+    main_window_->HideWithEffects();
     infolist_window_->DelayHide(0);
     return;
   }
@@ -268,16 +301,16 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   if (is_convert_or_predict && !show_candidate) {
     // The candidate list is for conversion or prediction but the visibility
     // bit is off.
-    cascading_window_->ShowWindow(SW_HIDE);
-    main_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
+    main_window_->HideWithEffects();
     infolist_window_->DelayHide(0);
     return;
   }
 
   const commands::CandidateWindow& candidate_window = output.candidate_window();
   if (candidate_window.candidate_size() == 0) {
-    cascading_window_->ShowWindow(SW_HIDE);
-    main_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
+    main_window_->HideWithEffects();
     infolist_window_->DelayHide(0);
     return;
   }
@@ -288,9 +321,11 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   }
 
   if (!candidate_layout.initialized()) {
-    cascading_window_->ShowWindow(SW_HIDE);
-    main_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
+    main_window_->HideWithEffects();
     infolist_window_->DelayHide(0);
+    last_live_conversion_passive_suggestion_visible_ = false;
+    has_last_live_conversion_passive_suggestion_rect_ = false;
     if (should_defer_ruby_update) {
       ruby_window_->OnUpdate(command);
     }
@@ -306,7 +341,7 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   // Sync both windows to the DPI of the monitor where the candidate window
   // is about to be placed. This makes their first-frame layout correct when
   // the target app is on a different-DPI monitor than where the windows were
-  // last shown — WM_DPICHANGED would otherwise fire only during the
+  // last shown - WM_DPICHANGED would otherwise fire only during the
   // subsequent SetWindowPos, after the size has already been computed at
   // the stale DPI.
   const uint32_t target_dpi = GetDpiForPoint(target_point.x, target_point.y);
@@ -335,11 +370,13 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
       main_window_->GetCandidateColumnInClientCord().Left(), 0);
 
   Rect main_window_rect;
+  Rect preedit_rect_for_transition;
   {
     // Equating |exclusion_area| with |preedit_rect| generally works well and
     // makes most of users happy.
     const CRect rect(candidate_layout.exclude_region());
     const Rect preedit_rect(rect.left, rect.top, rect.Width(), rect.Height());
+    preedit_rect_for_transition = preedit_rect;
     const bool vertical = (LayoutManager::GetWritingDirection(app_info) ==
                            LayoutManager::VERTICAL_WRITING);
     // Sometimes |target_point| is set to the top-left of the exclusion area
@@ -358,22 +395,39 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
             main_window_zero_point, working_area, vertical);
   }
 
+  RECT next_live_conversion_passive_suggestion_rect = {};
   if (should_defer_ruby_update) {
-    last_live_conversion_passive_suggestion_rect_ = {
-        main_window_rect.Left(), main_window_rect.Top(),
-        main_window_rect.Right(), main_window_rect.Bottom()};
-    has_last_live_conversion_passive_suggestion_rect_ = true;
+    next_live_conversion_passive_suggestion_rect = ToWinRect(main_window_rect);
+
+    // If the passive suggestion flips across the preedit line, the old
+    // suggestion window can still occupy the side where ruby should stay.
+    // Hide the old passive suggestion first and keep ruby visible instead of
+    // expanding ruby's avoidance area to old+new rectangles.
+    if (last_live_conversion_passive_suggestion_visible_ &&
+        has_last_live_conversion_passive_suggestion_rect_ &&
+        IsOppositeSideOfPreedit(
+            last_live_conversion_passive_suggestion_rect_,
+            next_live_conversion_passive_suggestion_rect,
+            preedit_rect_for_transition)) {
+      main_window_->HideWithEffects();
+    }
     ruby_window_->OnUpdate(command,
-                           &last_live_conversion_passive_suggestion_rect_);
+                           &next_live_conversion_passive_suggestion_rect);
   }
 
   const DWORD set_windows_pos_flags = SWP_NOACTIVATE | SWP_SHOWWINDOW;
   main_window_->SetWindowPos(HWND_TOPMOST, main_window_rect.Left(),
                              main_window_rect.Top(), main_window_rect.Width(),
                              main_window_rect.Height(), set_windows_pos_flags);
+  if (is_live_conversion_passive_suggestion) {
+    main_window_->RedrawImmediately();
+  }
   main_window_->UpdateEffectWindows();
   if (is_live_conversion_passive_suggestion) {
     last_live_conversion_passive_suggestion_visible_ = true;
+    last_live_conversion_passive_suggestion_rect_ =
+        next_live_conversion_passive_suggestion_rect;
+    has_last_live_conversion_passive_suggestion_rect_ = true;
   }
   // This trick ensures that the window is certainly shown as 'inactivated'
   // in terms of visual effect on DWM-enabled desktop.
@@ -479,7 +533,7 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
     if (candidate_changed) {
       main_window_->Invalidate();
     }
-    cascading_window_->ShowWindow(SW_HIDE);
+    cascading_window_->HideWithEffects();
   }
 }
 
