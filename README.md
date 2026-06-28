@@ -87,6 +87,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - Windows 版で未確定文字の文字色・背景色・下線色を設定画面からカスタマイズ可能
 - Windows 版の IME 切り替えインジケータが、Windows のライト / ダークテーマに合わせて表示されるように改善
 - system dictionary 強化用の追加辞書生成パイプラインを追加
+- 日常語彙・実務語彙・外来語・英語綴り候補を小さな manual override 辞書として段階的に補強し、通常語彙は自然な第一候補、英語綴りは補助候補として扱う評価運用を追加
 - merge-ut-dictionaries 由来の地名・SudachiDict 系語彙を system dictionary に取り込めるようにした
 - dic-nico-intersection-pixiv 由来のネット・サブカル系固有名詞を、既存辞書との差分として daily 辞書に追加可能
 - mozcdic-ut-personal-names 由来の人名辞書を、既存辞書や nico/pixiv delta との重複を除いた弱い daily 辞書として追加可能
@@ -448,6 +449,8 @@ system dictionary の強化
 
 この fork では、外部辞書を元に Mozc の system dictionary を強化するための生成スクリプトを追加しています。
 
+また、外部辞書とは別に、Mozkey 独自の小さな manual override 辞書で、日常語彙・実務語彙・外来語・英語綴り候補を段階的に補強します。通常の日本語語彙は自然な第一候補として、英語綴り候補は第一候補ではなく補助候補として出ることを重視します。評価方針と検証手順は [Koyasi Dictionary Data](src/data/dictionary_koyasi/README.md) から参照できます。
+
 daily local 辞書は主に以下を元に生成できます。
 
 - merge-ut-dictionaries
@@ -621,6 +624,7 @@ Main features added in this fork
 - Allows customizing Windows preedit text color, background color, and underline color from the config dialog
 - Makes the Windows IME mode indicator follow the Windows light/dark theme
 - Adds an enhanced system dictionary generation pipeline
+- Adds a small tracked manual override dictionary for daily vocabulary, practical vocabulary, loanwords, and secondary English spelling candidates, with regression checks that keep Japanese candidates first
 - Allows incorporating place names and SudachiDict-derived vocabulary from merge-ut-dictionaries into the system dictionary
 - Allows adding internet/subculture proper nouns from dic-nico-intersection-pixiv as daily-dictionary differences
 - Allows adding a weak personal-name dictionary from mozcdic-ut-personal-names after removing entries already covered by the generated daily dictionary, nico/pixiv delta dictionary, or base Mozc dictionaries
@@ -1056,6 +1060,12 @@ Enhanced system dictionary
 
 This fork includes scripts to build an enhanced Mozc system dictionary from
 external dictionary sources.
+
+Separately from the external generated dictionaries, Mozkey also maintains a
+small tracked manual override dictionary for daily vocabulary, practical
+vocabulary, loanwords, and English spelling candidates. Normal Japanese entries
+are expected to remain natural first candidates, while English spelling entries
+are treated as secondary candidates. See [Koyasi Dictionary Data](src/data/dictionary_koyasi/README.md) for the detailed policy and evaluation workflow.
 
 The daily local dictionary can be generated from:
 

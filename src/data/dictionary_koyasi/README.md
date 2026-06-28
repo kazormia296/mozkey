@@ -1,4 +1,4 @@
-﻿# Koyasi Dictionary Data
+# Koyasi Dictionary Data
 
 This directory contains additional dictionary data and generated dictionary artifacts for this Mozc fork.
 
@@ -357,6 +357,18 @@ Seeded guards are acceptable only when all of the following are true:
 - The guard does not broadly suppress normal dictionary behavior.
 
 Do not use the suffix collision scanner output as a demotion list. It is diagnostic only.
+
+## General vocabulary evaluation
+
+General vocabulary coverage is evaluated separately from the large external
+dictionary workflows above.
+
+The evaluation strategy and reusable validation workflow are documented in:
+
+```text
+src/data/dictionary_koyasi/evaluation/general_vocab/README.md
+```
+
 
 ## Diagnostic tools
 

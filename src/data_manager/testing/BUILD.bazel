@@ -108,6 +108,7 @@ mozc_dataset(
     dictionary_srcs = [
         "//data/test/dictionary:dictionary_data",
         "//data/dictionary_manual:domain.txt",
+        "//data/dictionary_manual:general_override.txt",
     ],
     emoji_src = "//data/emoji:emoji_data.tsv",
     emoticon_categorized_src = (
