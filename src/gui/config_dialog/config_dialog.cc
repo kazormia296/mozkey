@@ -253,7 +253,9 @@ ConfigDialog::ConfigDialog()
       suppress_apply_button_update_(true),
       initial_preedit_method_(0),
       initial_use_keyboard_to_change_preedit_method_(false),
-      initial_use_mode_indicator_(true) {
+      initial_use_mode_indicator_(true),
+      initial_windows_ime_icon_style_(
+          static_cast<int>(config::Config::WINDOWS_IME_ICON_DEFAULT)) {
   setupUi(this);
 
   // QScrollArea has its own viewport, and the viewport may paint a different
@@ -413,6 +415,7 @@ ConfigDialog::ConfigDialog()
   useJapaneseLayout->hide();
 #endif  // !__APPLE__
 
+  InitializeWindowsImeIconStyleControls();
   InitializeRendererAppearanceControls();
 
 #ifndef _WIN32
@@ -609,6 +612,8 @@ void ConfigDialog::Reload() {
   initial_use_keyboard_to_change_preedit_method_ =
       config.use_keyboard_to_change_preedit_method();
   initial_use_mode_indicator_ = config.use_mode_indicator();
+  initial_windows_ime_icon_style_ =
+      static_cast<int>(config.windows_ime_icon_style());
 
   initial_use_custom_preedit_text_color_ =
       config.use_custom_preedit_text_color();
@@ -637,6 +642,18 @@ void ConfigDialog::Reload() {
       config.preedit_target_underline_color();
 }
 
+#ifdef _WIN32
+namespace {
+// Forward declarations for Windows TSF profile icon update.  Definitions are
+// placed near other local helpers below.
+QString TrConfigDialog(const char* source);
+bool IsTsfProfileIconCurrent(config::Config::WindowsImeIconStyle style);
+bool ApplyTsfProfileIconStyle(config::Config::WindowsImeIconStyle style,
+                              bool* refresh_succeeded);
+bool RefreshTsfProfileIcon();
+}  // namespace
+#endif  // _WIN32
+
 bool ConfigDialog::Update() {
   config::Config config;
   ConvertToProto(&config);
@@ -657,6 +674,14 @@ bool ConfigDialog::Update() {
 
   const bool use_mode_indicator_changed =
       (initial_use_mode_indicator_ != config.use_mode_indicator());
+
+#ifdef _WIN32
+  const bool windows_ime_icon_style_changed =
+      (initial_windows_ime_icon_style_ !=
+       static_cast<int>(config.windows_ime_icon_style()));
+  const bool windows_ime_icon_registry_mismatch =
+      !IsTsfProfileIconCurrent(config.windows_ime_icon_style());
+#endif  // _WIN32
 
   const bool preedit_display_color_changed =
       initial_use_custom_preedit_text_color_ !=
@@ -706,6 +731,26 @@ bool ConfigDialog::Update() {
                                 " new applications."));
     initial_use_mode_indicator_ = config.use_mode_indicator();
   }
+
+#ifdef _WIN32
+  if (windows_ime_icon_style_changed || windows_ime_icon_registry_mismatch) {
+    const bool update_succeeded = ApplyTsfProfileIconStyle(
+        config.windows_ime_icon_style(), nullptr);
+
+    QMessageBox::information(
+        this, windowTitle(),
+        update_succeeded
+            ? TrConfigDialog(
+                  "IME icon setting has been applied to Windows. "
+                  "The taskbar and IME list icons may not update immediately. "
+                  "If they do not update, restart Windows.")
+            : TrConfigDialog("IME icon setting has been saved, but it could not be "
+                             "applied to Windows. If you canceled administrator approval, "
+                             "click Apply again."));
+    initial_windows_ime_icon_style_ =
+        static_cast<int>(config.windows_ime_icon_style());
+  }
+#endif  // _WIN32
 
   if (preedit_display_color_changed) {
     NotifyDisplayAttributeUpdate();
@@ -916,6 +961,9 @@ QComboBox* FindComboBox(const QObject* parent, const char* name) {
 
 QSpinBox* FindSpinBox(const QObject* parent, const char* name) {
   return parent->findChild<QSpinBox*>(QString::fromLatin1(name));
+}
+QString TrConfigDialog(const char* source) {
+  return QCoreApplication::translate("ConfigDialog", source);
 }
 
 QPushButton* FindButton(const QObject* parent, const QString& name) {
@@ -1781,7 +1829,448 @@ void GetComboboxForPreeditMethod(const QComboBox *combobox,
     config->set_use_keyboard_to_change_preedit_method(false);
   }
 }
+#ifdef _WIN32
+
+constexpr int kTsfProfileIconIndexDefault = 0;
+
+// These values are TSF language profile icon indices in mozc_tip*.dll, not
+// resource IDs.  With the current tip_resource.rc order, IDI_IMM32 is exposed
+// as index 0, and the simple monochrome icons added immediately after it are
+// exposed as indices 15 and 16 on the generated mozc_tip32.dll in the current
+// Windows package.  Keep these values in sync with resource-order validation
+// whenever the TIP icon resource list is changed.
+constexpr int kTsfProfileIconIndexSimpleBlack = 15;
+constexpr int kTsfProfileIconIndexSimpleWhite = 16;
+
+constexpr wchar_t kTsfProfileSubKey[] =
+    L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
+    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}\\"
+    L"LanguageProfile\\0x00000411\\"
+    L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}";
+
+bool EndsWithCaseInsensitive(const std::wstring& text,
+                             const std::wstring& suffix) {
+  if (text.size() < suffix.size()) {
+    return false;
+  }
+  return ::CompareStringOrdinal(
+             text.c_str() + text.size() - suffix.size(),
+             static_cast<int>(suffix.size()), suffix.c_str(),
+             static_cast<int>(suffix.size()), TRUE) == CSTR_EQUAL;
+}
+
+int GetTsfProfileIconIndexForImeIconStyle(
+    config::Config::WindowsImeIconStyle style) {
+  switch (style) {
+    case config::Config::WINDOWS_IME_ICON_MONOCHROME_BLACK:
+      return kTsfProfileIconIndexSimpleBlack;
+    case config::Config::WINDOWS_IME_ICON_MONOCHROME_WHITE:
+      return kTsfProfileIconIndexSimpleWhite;
+    case config::Config::WINDOWS_IME_ICON_DEFAULT:
+    default:
+      return kTsfProfileIconIndexDefault;
+  }
+}
+
+bool ReadTsfProfileIconState(std::wstring* icon_file,
+                             DWORD* icon_index) {
+  using RegGetValueWFunction = LSTATUS(WINAPI *)(HKEY, LPCWSTR, LPCWSTR,
+                                                 DWORD, LPDWORD, PVOID,
+                                                 LPDWORD);
+
+  HMODULE advapi32 = ::LoadLibraryW(L"Advapi32.dll");
+  if (advapi32 == nullptr) {
+    return false;
+  }
+
+  const auto reg_get_value = reinterpret_cast<RegGetValueWFunction>(
+      ::GetProcAddress(advapi32, "RegGetValueW"));
+  if (reg_get_value == nullptr) {
+    ::FreeLibrary(advapi32);
+    return false;
+  }
+
+  DWORD current_icon_index = 0;
+  DWORD icon_index_size = sizeof(current_icon_index);
+  const LSTATUS icon_index_status = reg_get_value(
+      HKEY_LOCAL_MACHINE, kTsfProfileSubKey, L"IconIndex",
+      RRF_RT_REG_DWORD | RRF_SUBKEY_WOW6464KEY, nullptr,
+      &current_icon_index, &icon_index_size);
+
+  std::vector<wchar_t> icon_file_buffer(32768);
+  DWORD icon_file_size = static_cast<DWORD>(
+      icon_file_buffer.size() * sizeof(wchar_t));
+  const LSTATUS icon_file_status = reg_get_value(
+      HKEY_LOCAL_MACHINE, kTsfProfileSubKey, L"IconFile",
+      RRF_RT_ANY | RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY, nullptr,
+      icon_file_buffer.data(), &icon_file_size);
+
+  ::FreeLibrary(advapi32);
+
+  if (icon_index_status != ERROR_SUCCESS ||
+      icon_file_status != ERROR_SUCCESS) {
+    return false;
+  }
+
+  *icon_index = current_icon_index;
+  *icon_file = icon_file_buffer.data();
+  return true;
+}
+
+bool IsTsfProfileIconCurrent(config::Config::WindowsImeIconStyle style) {
+  std::wstring icon_file;
+  DWORD icon_index = 0;
+  if (!ReadTsfProfileIconState(&icon_file, &icon_index)) {
+    return false;
+  }
+
+  return icon_index ==
+             static_cast<DWORD>(GetTsfProfileIconIndexForImeIconStyle(style)) &&
+         EndsWithCaseInsensitive(icon_file, L"\\mozc_tip32.dll");
+}
+
+const wchar_t* GetTsfProfileIconStyleFlagValue(
+    config::Config::WindowsImeIconStyle style) {
+  switch (style) {
+    case config::Config::WINDOWS_IME_ICON_MONOCHROME_BLACK:
+      return L"monochrome_black";
+    case config::Config::WINDOWS_IME_ICON_MONOCHROME_WHITE:
+      return L"monochrome_white";
+    case config::Config::WINDOWS_IME_ICON_DEFAULT:
+    default:
+      return L"default";
+  }
+}
+
+std::wstring GetCurrentExecutablePath() {
+  std::vector<wchar_t> buffer(MAX_PATH);
+  for (;;) {
+    const DWORD length = ::GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0) {
+      return std::wstring();
+    }
+    if (length < buffer.size() - 1) {
+      return std::wstring(buffer.data(), length);
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+}
+
+std::wstring GetMozcToolExecutablePath() {
+  const std::wstring current_executable = GetCurrentExecutablePath();
+  if (current_executable.empty()) {
+    return std::wstring();
+  }
+
+  constexpr wchar_t kMozcToolFileName[] = L"mozc_tool.exe";
+  const size_t separator = current_executable.find_last_of(L"\\/");
+  const std::wstring current_file_name =
+      separator == std::wstring::npos
+          ? current_executable
+          : current_executable.substr(separator + 1);
+
+  if (::CompareStringOrdinal(
+          current_file_name.c_str(),
+          static_cast<int>(current_file_name.size()),
+          kMozcToolFileName,
+          static_cast<int>(std::char_traits<wchar_t>::length(kMozcToolFileName)),
+          TRUE) == CSTR_EQUAL) {
+    return current_executable;
+  }
+
+  if (separator == std::wstring::npos) {
+    LOG(ERROR) << "Cannot resolve mozc_tool.exe path from current executable";
+    return std::wstring();
+  }
+
+  const std::wstring current_dir = current_executable.substr(0, separator);
+  const std::wstring mozc_tool = current_dir + L"\\mozc_tool.exe";
+  const DWORD attributes = ::GetFileAttributesW(mozc_tool.c_str());
+  if (attributes != INVALID_FILE_ATTRIBUTES &&
+      (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+    return mozc_tool;
+  }
+
+  LOG(ERROR) << "mozc_tool.exe is not found next to current executable";
+  return std::wstring();
+}
+
+bool LaunchElevatedTsfProfileIconUpdate(
+    config::Config::WindowsImeIconStyle style) {
+  const std::wstring executable_path = GetMozcToolExecutablePath();
+  if (executable_path.empty()) {
+    return false;
+  }
+
+  const std::wstring parameters =
+      L"--mode=tsf_profile_icon_style_update --windows_ime_icon_style=" +
+      std::wstring(GetTsfProfileIconStyleFlagValue(style));
+
+  SHELLEXECUTEINFOW execute_info = {};
+  execute_info.cbSize = sizeof(execute_info);
+  execute_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+  execute_info.lpVerb = L"runas";
+  execute_info.lpFile = executable_path.c_str();
+  execute_info.lpParameters = parameters.c_str();
+  execute_info.nShow = SW_SHOWNORMAL;
+
+  if (!::ShellExecuteExW(&execute_info) ||
+      execute_info.hProcess == nullptr) {
+    return false;
+  }
+
+  ::WaitForSingleObject(execute_info.hProcess, INFINITE);
+
+  DWORD exit_code = 1;
+  const bool got_exit_code =
+      ::GetExitCodeProcess(execute_info.hProcess, &exit_code);
+  ::CloseHandle(execute_info.hProcess);
+
+  return got_exit_code && exit_code == 0;
+}
+
+bool ApplyTsfProfileIconStyle(config::Config::WindowsImeIconStyle style,
+                              bool* refresh_succeeded) {
+  if (refresh_succeeded != nullptr) {
+    *refresh_succeeded = false;
+  }
+
+  if (!IsTsfProfileIconCurrent(style) &&
+      !LaunchElevatedTsfProfileIconUpdate(style)) {
+    return false;
+  }
+
+  const bool refreshed = RefreshTsfProfileIcon();
+  if (refresh_succeeded != nullptr) {
+    *refresh_succeeded = refreshed;
+  }
+  return true;
+}
+
+bool ActivateMozkeyTsfProfile(ITfInputProcessorProfileMgr* profile_mgr,
+                             const CLSID& mozc_tip_guid,
+                             const GUID& mozc_profile_guid,
+                             DWORD sleep_msec) {
+  if (profile_mgr == nullptr) {
+    return false;
+  }
+
+  const HRESULT hr = profile_mgr->ActivateProfile(
+      TF_PROFILETYPE_INPUTPROCESSOR, 0x0411, mozc_tip_guid,
+      mozc_profile_guid, nullptr, TF_IPPMF_FORSESSION);
+  ::Sleep(sleep_msec);
+  return SUCCEEDED(hr);
+}
+
+bool RefreshTsfProfileIconViaInstalledInputProcessorProfile(
+    ITfInputProcessorProfileMgr* profile_mgr,
+    const CLSID& mozc_tip_guid,
+    const GUID& mozc_profile_guid) {
+  if (profile_mgr == nullptr) {
+    return false;
+  }
+
+  IEnumTfInputProcessorProfiles* profiles = nullptr;
+  const HRESULT enum_hr = profile_mgr->EnumProfiles(0x0411, &profiles);
+  if (FAILED(enum_hr) || profiles == nullptr) {
+    return false;
+  }
+
+  bool result = false;
+  for (;;) {
+    TF_INPUTPROCESSORPROFILE profile = {};
+    ULONG fetched = 0;
+    const HRESULT next_hr = profiles->Next(1, &profile, &fetched);
+    if (next_hr != S_OK || fetched != 1) {
+      break;
+    }
+
+    if (profile.dwProfileType != TF_PROFILETYPE_INPUTPROCESSOR ||
+        profile.langid != 0x0411) {
+      continue;
+    }
+
+    if (::IsEqualGUID(profile.clsid, mozc_tip_guid) &&
+        ::IsEqualGUID(profile.guidProfile, mozc_profile_guid)) {
+      continue;
+    }
+
+    const HRESULT other_hr = profile_mgr->ActivateProfile(
+        TF_PROFILETYPE_INPUTPROCESSOR, profile.langid, profile.clsid,
+        profile.guidProfile, nullptr, TF_IPPMF_FORSESSION);
+    if (FAILED(other_hr)) {
+      continue;
+    }
+
+    ::Sleep(700);
+    if (ActivateMozkeyTsfProfile(profile_mgr, mozc_tip_guid,
+                                 mozc_profile_guid, 500)) {
+      result = true;
+      break;
+    }
+  }
+
+  profiles->Release();
+  return result;
+}
+
+bool RefreshTsfProfileIconViaTemporaryKeyboardLayout(
+    ITfInputProcessorProfileMgr* profile_mgr,
+    const CLSID& mozc_tip_guid,
+    const GUID& mozc_profile_guid) {
+  if (profile_mgr == nullptr) {
+    return false;
+  }
+
+  constexpr DWORD kLoadKeyboardFlags =
+      KLF_SUBSTITUTE_OK | KLF_NOTELLSHELL;
+  const HKL hkl = ::LoadKeyboardLayoutW(L"00000409", kLoadKeyboardFlags);
+
+  CLSID null_clsid = CLSID_NULL;
+  GUID null_guid = GUID_NULL;
+
+  HRESULT keyboard_hr = E_FAIL;
+  if (hkl != nullptr) {
+    keyboard_hr = profile_mgr->ActivateProfile(
+        TF_PROFILETYPE_KEYBOARDLAYOUT, 0x0409, null_clsid, null_guid,
+        hkl, TF_IPPMF_FORSESSION);
+  }
+
+  ::Sleep(500);
+  const bool mozc_activated = ActivateMozkeyTsfProfile(
+      profile_mgr, mozc_tip_guid, mozc_profile_guid, 300);
+
+  bool unloaded = true;
+  if (hkl != nullptr) {
+    unloaded = ::UnloadKeyboardLayout(hkl) != FALSE;
+  }
+
+  return SUCCEEDED(keyboard_hr) && mozc_activated && unloaded;
+}
+
+bool RefreshTsfProfileIcon() {
+  HRESULT coinit_result = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool should_uninitialize =
+      (coinit_result == S_OK || coinit_result == S_FALSE);
+
+  bool result = false;
+  if (SUCCEEDED(coinit_result) || coinit_result == RPC_E_CHANGED_MODE) {
+    ITfInputProcessorProfileMgr* profile_mgr = nullptr;
+    const HRESULT create_hr = ::CoCreateInstance(
+        CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+        IID_ITfInputProcessorProfileMgr,
+        reinterpret_cast<void**>(&profile_mgr));
+
+    if (SUCCEEDED(create_hr) && profile_mgr != nullptr) {
+      CLSID mozc_tip_guid = {};
+      GUID mozc_profile_guid = {};
+      const HRESULT clsid_hr = ::CLSIDFromString(
+          L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}", &mozc_tip_guid);
+      const HRESULT profile_guid_hr = ::CLSIDFromString(
+          L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}", &mozc_profile_guid);
+
+      if (SUCCEEDED(clsid_hr) && SUCCEEDED(profile_guid_hr)) {
+        result = RefreshTsfProfileIconViaInstalledInputProcessorProfile(
+                     profile_mgr, mozc_tip_guid, mozc_profile_guid) ||
+                 RefreshTsfProfileIconViaTemporaryKeyboardLayout(
+                     profile_mgr, mozc_tip_guid, mozc_profile_guid);
+      }
+
+      profile_mgr->Release();
+    }
+  }
+
+  if (should_uninitialize) {
+    ::CoUninitialize();
+  }
+
+  return result;
+}
+
+#endif  // _WIN32
 }  // namespace
+
+void ConfigDialog::InitializeWindowsImeIconStyleControls() {
+#ifndef _WIN32
+  return;
+#else   // _WIN32
+  QWidget* group = new QWidget(widgetMisc);
+  group->setObjectName(QStringLiteral("windowsImeIconStyleGroup"));
+  group->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+  QVBoxLayout* group_layout = new QVBoxLayout(group);
+  group_layout->setSpacing(10);
+  group_layout->setContentsMargins(0, 0, 5, 0);
+
+  QWidget* header = new QWidget(group);
+  header->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+  QHBoxLayout* header_layout = new QHBoxLayout(header);
+  header_layout->setSpacing(6);
+  header_layout->setContentsMargins(0, 0, 0, 0);
+
+  QLabel* title = new QLabel(TrConfigDialog("IME icon"), header);
+  title->setObjectName(QStringLiteral("windowsImeIconStyleTitle"));
+  header_layout->addWidget(title);
+
+  QFrame* line = new QFrame(header);
+  line->setObjectName(QStringLiteral("windowsImeIconStyleLine"));
+  line->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+  line->setFrameShape(QFrame::HLine);
+  line->setFrameShadow(QFrame::Sunken);
+  header_layout->addWidget(line);
+
+  group_layout->addWidget(header);
+
+  QWidget* body = new QWidget(group);
+  body->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+  QGridLayout* body_layout = new QGridLayout(body);
+  body_layout->setContentsMargins(12, 0, 0, 0);
+
+  QLabel* label = new QLabel(TrConfigDialog("IME icon style"), body);
+  label->setObjectName(QStringLiteral("windowsImeIconStyleLabel"));
+  label->setMinimumHeight(24);
+
+  QComboBox* combo = new QComboBox(body);
+  combo->setObjectName(QStringLiteral("windowsImeIconStyleComboBox"));
+  combo->setMinimumHeight(24);
+  combo->setMinimumWidth(180);
+  combo->setToolTip(TrConfigDialog(
+      "Changes the IME icon shown next to the input mode indicator."));
+  combo->addItem(TrConfigDialog("Default"),
+                 static_cast<int>(
+                     config::Config::WINDOWS_IME_ICON_DEFAULT));
+  combo->addItem(TrConfigDialog("Monochrome (Black)"),
+                 static_cast<int>(
+                     config::Config::WINDOWS_IME_ICON_MONOCHROME_BLACK));
+  combo->addItem(TrConfigDialog("Monochrome (White)"),
+                 static_cast<int>(
+                     config::Config::WINDOWS_IME_ICON_MONOCHROME_WHITE));
+
+  body_layout->addWidget(label, 0, 0);
+  body_layout->setColumnStretch(1, 1);
+  body_layout->addWidget(combo, 0, 2);
+
+  group_layout->addWidget(body);
+
+  QLabel* note = new QLabel(
+      TrConfigDialog("* Administrator approval may be required when applying "
+                     "this setting. The taskbar and IME list icons may not "
+                     "update immediately. If they do not update, restart "
+                     "Windows."),
+      group);
+  note->setObjectName(QStringLiteral("windowsImeIconStyleNote"));
+  note->setWordWrap(true);
+  note->setContentsMargins(12, 0, 5, 0);
+  group_layout->addWidget(note);
+
+  const int insert_index = verticalLayout->indexOf(miscAdministrationWidget);
+  verticalLayout->insertWidget(
+      insert_index >= 0 ? insert_index : verticalLayout->count(), group);
+#endif  // _WIN32
+}
 
 // TODO(taku)
 // Actually ConvertFromProto and ConvertToProto are almost the same.
@@ -2344,6 +2833,9 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(useJapaneseLayout, use_japanese_layout);
 
   SET_CHECKBOX(useModeIndicator, use_mode_indicator);
+  SetComboCurrentData(
+      FindComboBox(this, "windowsImeIconStyleComboBox"),
+      static_cast<int>(config.windows_ime_icon_style()));
 
   ConvertRendererAppearanceFromProto(config);
 
@@ -2495,6 +2987,15 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(useJapaneseLayout, use_japanese_layout);
 
   GET_CHECKBOX(useModeIndicator, use_mode_indicator);
+  if (const QComboBox* combo =
+          FindComboBox(this, "windowsImeIconStyleComboBox")) {
+    config->set_windows_ime_icon_style(
+        static_cast<config::Config::WindowsImeIconStyle>(
+            GetComboCurrentData(
+                combo,
+                static_cast<int>(
+                    config::Config::WINDOWS_IME_ICON_DEFAULT))));
+  }
 
   ConvertRendererAppearanceToProto(config);
 
@@ -3458,6 +3959,10 @@ bool ConfigDialog::IsModified() const {
   }
 
 #ifdef _WIN32
+  if (!IsTsfProfileIconCurrent(current_config.windows_ime_icon_style())) {
+    return true;
+  }
+
   if (IMEHotKeyDisabledCheckBox->isChecked() !=
       initial_ime_hot_key_disabled_) {
     return true;

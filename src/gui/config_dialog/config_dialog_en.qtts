@@ -420,6 +420,46 @@
         <source>Reset to defaults</source>
         <translation></translation>
     </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon</source>
+        <translation>IME icon</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon style</source>
+        <translation>IME icon style</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Changes the IME icon shown next to the input mode indicator.</source>
+        <translation>Changes the IME icon shown next to the input mode indicator.</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Monochrome (Black)</source>
+        <translation>Monochrome (Black)</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Monochrome (White)</source>
+        <translation>Monochrome (White)</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>* Administrator approval may be required when applying this setting. The taskbar and IME list icons may not update immediately. If they do not update, restart Windows.</source>
+        <translation>* Administrator approval may be required when applying this setting. The taskbar and IME list icons may not update immediately. If they do not update, restart Windows.</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon setting has been applied to Windows. The taskbar and IME list icons may not update immediately. If they do not update, restart Windows.</source>
+        <translation>IME icon setting has been applied to Windows. The taskbar and IME list icons may not update immediately. If they do not update, restart Windows.</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon setting has been saved, but it could not be applied to Windows. If you canceled administrator approval, click Apply again.</source>
+        <translation>IME icon setting has been saved, but it could not be applied to Windows. If you canceled administrator approval, click Apply again.</translation>
+    </message>
 </context>
 <context>
     <name>GenericTableEditorDialog</name>
