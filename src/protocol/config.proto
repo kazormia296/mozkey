@@ -566,6 +566,14 @@ message Config {
   optional uint32 ruby_window_shadow_angle_degrees = 161 [default = 90];
   optional uint32 ruby_window_shadow_distance = 162 [default = 4];
 
+  enum WindowsImeIconStyle {
+    WINDOWS_IME_ICON_DEFAULT = 0;
+    WINDOWS_IME_ICON_MONOCHROME_BLACK = 1;
+    WINDOWS_IME_ICON_MONOCHROME_WHITE = 2;
+  }
+  optional WindowsImeIconStyle windows_ime_icon_style = 163
+      [default = WINDOWS_IME_ICON_DEFAULT];
+
   //////////////////////////////////////////////////////////////
   //
   // Cloud (300-319)

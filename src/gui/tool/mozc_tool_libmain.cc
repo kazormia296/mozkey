@@ -31,6 +31,7 @@
 
 #include <QtGui>
 #include <string>
+#include <vector>
 
 #include "absl/flags/declare.h"
 #include "absl/flags/flag.h"
@@ -57,6 +58,8 @@
 #endif  // _WIN32
 
 ABSL_FLAG(std::string, mode, "about_dialog", "mozc_tool mode");
+ABSL_FLAG(std::string, windows_ime_icon_style, "default",
+          "Windows IME icon style for internal TSF profile icon update");
 ABSL_DECLARE_FLAG(std::string, error_type);
 
 // Run* are defined in each qt module
@@ -75,6 +78,158 @@ int RunAdministrationDialog(int argc, char *argv[]);
 #ifdef __APPLE__
 int RunPrelaunchProcesses(int argc, char *argv[]);
 #endif  // __APPLE__
+
+
+#ifdef _WIN32
+namespace {
+
+constexpr int kTsfProfileIconIndexDefault = 0;
+constexpr int kTsfProfileIconIndexSimpleBlack = 15;
+constexpr int kTsfProfileIconIndexSimpleWhite = 16;
+
+constexpr wchar_t kTsfProfileSubKey[] =
+    L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
+    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}\\"
+    L"LanguageProfile\\0x00000411\\"
+    L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}";
+
+bool EndsWithCaseInsensitive(const std::wstring& text,
+                             const std::wstring& suffix) {
+  if (text.size() < suffix.size()) {
+    return false;
+  }
+  return ::CompareStringOrdinal(
+             text.c_str() + text.size() - suffix.size(),
+             static_cast<int>(suffix.size()), suffix.c_str(),
+             static_cast<int>(suffix.size()), TRUE) == CSTR_EQUAL;
+}
+
+int GetTsfProfileIconIndexForStyleName(const std::string& style) {
+  if (style == "monochrome_black") {
+    return kTsfProfileIconIndexSimpleBlack;
+  }
+  if (style == "monochrome_white") {
+    return kTsfProfileIconIndexSimpleWhite;
+  }
+  if (style == "default") {
+    return kTsfProfileIconIndexDefault;
+  }
+  return -1;
+}
+
+std::wstring GetCurrentModuleDirectory() {
+  std::vector<wchar_t> buffer(MAX_PATH);
+  for (;;) {
+    const DWORD length = ::GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0) {
+      return std::wstring();
+    }
+    if (length < buffer.size() - 1) {
+      std::wstring path(buffer.data(), length);
+      const size_t separator = path.find_last_of(L"\\/");
+      if (separator == std::wstring::npos) {
+        return std::wstring();
+      }
+      return path.substr(0, separator);
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+}
+
+std::wstring GetFallbackTsfProfileIconFile() {
+  const std::wstring module_dir = GetCurrentModuleDirectory();
+  if (!module_dir.empty()) {
+    return module_dir + L"\\mozc_tip32.dll";
+  }
+
+  wchar_t program_files_x86[MAX_PATH] = {};
+  const DWORD length = ::GetEnvironmentVariableW(
+      L"ProgramFiles(x86)", program_files_x86, MAX_PATH);
+  if (length > 0 && length < MAX_PATH) {
+    return std::wstring(program_files_x86) + L"\\Mozc\\mozc_tip32.dll";
+  }
+  return L"C:\\Program Files (x86)\\Mozc\\mozc_tip32.dll";
+}
+
+bool ReadTsfProfileIconFile(std::wstring* icon_file) {
+  if (icon_file == nullptr) {
+    return false;
+  }
+
+  std::vector<wchar_t> icon_file_buffer(32768);
+  DWORD icon_file_size = static_cast<DWORD>(
+      icon_file_buffer.size() * sizeof(wchar_t));
+  const LSTATUS status = ::RegGetValueW(
+      HKEY_LOCAL_MACHINE, kTsfProfileSubKey, L"IconFile",
+      RRF_RT_ANY | RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY, nullptr,
+      icon_file_buffer.data(), &icon_file_size);
+  if (status != ERROR_SUCCESS) {
+    return false;
+  }
+
+  *icon_file = icon_file_buffer.data();
+  return true;
+}
+
+std::wstring GetTsfProfileIconFileToWrite() {
+  std::wstring icon_file;
+  if (ReadTsfProfileIconFile(&icon_file) &&
+      EndsWithCaseInsensitive(icon_file, L"\\mozc_tip32.dll")) {
+    return icon_file;
+  }
+  return GetFallbackTsfProfileIconFile();
+}
+
+int RunTsfProfileIconStyleUpdate() {
+  const int icon_index = GetTsfProfileIconIndexForStyleName(
+      absl::GetFlag(FLAGS_windows_ime_icon_style));
+  if (icon_index < 0) {
+    LOG(ERROR) << "Unknown Windows IME icon style: "
+               << absl::GetFlag(FLAGS_windows_ime_icon_style);
+    return 2;
+  }
+
+  const std::wstring icon_file = GetTsfProfileIconFileToWrite();
+  if (icon_file.empty()) {
+    LOG(ERROR) << "Failed to resolve TSF profile icon file";
+    return 3;
+  }
+
+  HKEY key = nullptr;
+  const LSTATUS open_status = ::RegOpenKeyExW(
+      HKEY_LOCAL_MACHINE, kTsfProfileSubKey, 0,
+      KEY_SET_VALUE | KEY_WOW64_64KEY, &key);
+  if (open_status != ERROR_SUCCESS || key == nullptr) {
+    LOG(ERROR) << "RegOpenKeyExW failed: " << open_status;
+    return 4;
+  }
+
+  const DWORD icon_index_dword = static_cast<DWORD>(icon_index);
+  const LSTATUS file_status = ::RegSetValueExW(
+      key, L"IconFile", 0, REG_SZ,
+      reinterpret_cast<const BYTE*>(icon_file.c_str()),
+      static_cast<DWORD>((icon_file.size() + 1) * sizeof(wchar_t)));
+  const LSTATUS index_status = ::RegSetValueExW(
+      key, L"IconIndex", 0, REG_DWORD,
+      reinterpret_cast<const BYTE*>(&icon_index_dword),
+      sizeof(icon_index_dword));
+  ::RegCloseKey(key);
+
+  if (file_status != ERROR_SUCCESS) {
+    LOG(ERROR) << "RegSetValueExW(IconFile) failed: " << file_status;
+    return 5;
+  }
+  if (index_status != ERROR_SUCCESS) {
+    LOG(ERROR) << "RegSetValueExW(IconIndex) failed: " << index_status;
+    return 6;
+  }
+
+  return 0;
+}
+
+}  // namespace
+#endif  // _WIN32
 
 #ifdef __APPLE__
 namespace {
@@ -123,6 +278,12 @@ int RunMozcTool(int argc, char *argv[]) {
     absl::SetFlag(&FLAGS_mode, "prelauncher");
   }
 #endif  // __APPLE__
+
+#ifdef _WIN32
+  if (absl::GetFlag(FLAGS_mode) == "tsf_profile_icon_style_update") {
+    return RunTsfProfileIconStyleUpdate();
+  }
+#endif  // _WIN32
 
   if (absl::GetFlag(FLAGS_mode) != "administration_dialog" &&
       !mozc::RunLevel::IsValidClientRunLevel()) {

@@ -76,6 +76,8 @@
 #define IDI_HALF_KATAKANA_NT 121
 #define IDI_DISABLED 122
 #define IDI_DISABLED_NT 123
+#define IDI_IMM32_SIMPLE_BLACK 124
+#define IDI_IMM32_SIMPLE_WHITE 125
 
 // Next default values for new objects
 //

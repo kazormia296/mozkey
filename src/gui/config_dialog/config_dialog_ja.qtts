@@ -420,6 +420,46 @@
         <source>Reset to defaults</source>
         <translation>初期値に戻す</translation>
     </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon</source>
+        <translation>IME アイコン</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon style</source>
+        <translation>IME アイコンの種類</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Changes the IME icon shown next to the input mode indicator.</source>
+        <translation>入力モード表示の右側に表示される IME アイコンを切り替えます。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Monochrome (Black)</source>
+        <translation>モノクロ（黒）</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Monochrome (White)</source>
+        <translation>モノクロ（白）</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>* Administrator approval may be required when applying this setting. The taskbar and IME list icons may not update immediately. If they do not update, restart Windows.</source>
+        <translation>※ この設定の適用時に管理者権限の確認が表示されることがあります。タスクバーと IME 一覧のアイコンがすぐに更新されない場合は、Windows を再起動してください。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon setting has been applied to Windows. The taskbar and IME list icons may not update immediately. If they do not update, restart Windows.</source>
+        <translation>IME アイコン設定を Windows に反映しました。タスクバーと IME 一覧のアイコンがすぐに更新されない場合は、Windows を再起動してください。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>IME icon setting has been saved, but it could not be applied to Windows. If you canceled administrator approval, click Apply again.</source>
+        <translation>IME アイコン設定は保存されましたが、Windows への反映を開始できませんでした。管理者権限の確認をキャンセルした場合は、もう一度［適用］をクリックしてください。</translation>
+    </message>
 </context>
 <context>
     <name>GenericTableEditorDialog</name>

@@ -100,6 +100,7 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   bool SetConfig(const config::Config &config);
   void ConvertToProto(config::Config *config) const;
   void InitializeRendererAppearanceControls();
+  void InitializeWindowsImeIconStyleControls();
   void ConvertRendererAppearanceFromProto(const config::Config &config);
   void ConvertRendererAppearanceToProto(config::Config *config) const;
   void ConvertFromProto(const config::Config &config);
@@ -122,6 +123,7 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   int initial_preedit_method_;
   bool initial_use_keyboard_to_change_preedit_method_;
   bool initial_use_mode_indicator_;
+  int initial_windows_ime_icon_style_;
 
   bool initial_use_custom_preedit_text_color_;
   uint32_t initial_preedit_text_color_;

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="440" viewBox="0 0 440 440" fill="none">
+  <title>Mozkey simple icon</title>
+  <defs>
+    <mask id="mozkeySimpleMask" maskUnits="userSpaceOnUse" x="0" y="0" width="440" height="440">
+      <rect width="440" height="440" fill="black"/>
+
+      <!-- Base silhouette -->
+      <circle cx="187" cy="215" r="181" fill="white"/>
+      <circle cx="350" cy="305" r="84" fill="white"/>
+
+      <!-- Transparent separation between large and right lobe -->
+      <circle cx="350" cy="305" r="84" fill="none" stroke="black" stroke-width="12"/>
+
+      <!-- Foreground accent, separated by a transparent gutter -->
+      <circle cx="300" cy="345" r="58" fill="black"/>
+      <circle cx="300" cy="345" r="46" fill="white"/>
+    </mask>
+  </defs>
+
+  <rect width="440" height="440" fill="#111315" mask="url(#mozkeySimpleMask)"/>
+</svg>
