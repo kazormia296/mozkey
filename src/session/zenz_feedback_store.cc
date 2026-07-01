@@ -577,6 +577,27 @@ bool IsAutoBlockedByPolicy(
          c.auto_block_rejected >= policy.reject_threshold;
 }
 
+bool IsRejectCountDominant(const Counts& c) {
+  return c.auto_block_rejected > c.accepted;
+}
+
+void ApplyRejectDominanceDecision(const Counts& exact_counts,
+                                  ZenzFeedbackDecision* decision) {
+  if (decision == nullptr || decision->hard_rejected ||
+      decision->auto_blocked ||
+      decision->action != ZenzFeedbackAction::kPrefer) {
+    return;
+  }
+
+  decision->auto_block_reject_count = exact_counts.auto_block_rejected;
+  if (!IsRejectCountDominant(exact_counts)) {
+    return;
+  }
+
+  decision->action = ZenzFeedbackAction::kNeutral;
+  decision->reason = "feedback_reject_count_dominant";
+}
+
 void ApplyAutoBlockDecision(
     const Counts& exact_counts,
     const ZenzFeedbackAutoBlockPolicy& auto_block_policy,
@@ -1104,6 +1125,7 @@ ZenzFeedbackDecision ZenzFeedbackStore::Decide(
   }
 
   ZenzFeedbackDecision decision = BuildDecisionFromCounts(aggregated);
+  ApplyRejectDominanceDecision(exact, &decision);
   ApplyAutoBlockDecision(exact, auto_block_policy, &decision);
   return decision;
 }
@@ -1166,6 +1188,7 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
 
     if (c.hard_rejected ||
         IsAutoBlockedByPolicy(exact_counts, auto_block_policy) ||
+        IsRejectCountDominant(exact_counts) ||
         c.accepted < kAcceptThreshold ||
         TotalScore(c) <= 0) {
       continue;
@@ -1231,6 +1254,7 @@ std::vector<ZenzFeedbackEntry> ZenzFeedbackStore::ListEntries(
     const FeedbackKey& feedback_key = item.first;
     const Counts& c = item.second;
     ZenzFeedbackDecision decision = BuildDecisionFromCounts(c);
+    ApplyRejectDominanceDecision(c, &decision);
     ApplyAutoBlockDecision(c, auto_block_policy, &decision);
 
     ZenzFeedbackEntry entry;

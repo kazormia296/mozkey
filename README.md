@@ -102,6 +102,7 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - Zenz 補正開始の最小文字数を設定画面から変更可能
 - Zenz 補正結果のローカル feedback learning を追加。設定画面から ON/OFF 可能
 - Zenz 補正結果と異なる値で確定した回数が指定回数に達した場合、同じ読み全体・同じ文脈クラス・同じ補正結果の Zenz 補正を自動ブロックする opt-in 設定を追加。自動ブロックは TSV に hard reject を固定保存せず、現在の ON/OFF と拒否回数しきい値から既存データを動的に再評価します。
+- 同じ読み全体・同じ文脈クラス・同じ補正結果で通常却下回数が採用回数を上回る場合は、auto-block 無効時でも Zenz feedback による優先候補・保存済み feedback による即時補正としては使わず、「却下数優勢」の中立状態として扱います。これは hard block ではなく、Zenz が新しく同じ補正を返すことや通常 Mozc 候補を削除することはありません。
 - Zenz feedback は、Zenz 補正結果が表示されただけでは保存されません。Enter や句読点・記号の単打確定などで表示中の Zenz 結果が明示的に確定された場合だけ、accepted feedback の候補として保留されます。
 - 保留された accepted feedback は、次の実テキスト入力まで Backspace / Escape / Revert / Undo などで取り消されなかった場合にローカル TSV へ保存。IMEOff / MakeSureIMEOff は取り消しではなく確定後のモード変更として扱う
 - Zenz 補正表示後に Space や候補移動など通常変換操作へ移った場合、その Zenz 候補は rejected feedback として扱う。ただし Space などの通常操作による rejected feedback は候補を殺す hard reject ではなく、順位調整用の弱い negative signal として扱う
@@ -655,6 +656,7 @@ Main features added in this fork
 - Allows configuring the minimum number of characters to start Zenz correction
 - Adds optional local feedback learning for Zenz correction results
 - Adds an opt-in auto-block setting for Zenz corrections repeatedly committed as a different value. Auto-blocking does not persist irreversible hard-reject rows; it dynamically re-evaluates existing feedback data from the current ON/OFF state and rejection-count threshold.
+- Stops reusing a Zenz feedback entry as a preferred candidate or live-correction fast path when ordinary rejected observations outnumber accepted observations for the same full reading, context class, and correction value. This is a neutral reject-count-dominant state, not a hard block, so it does not delete ordinary Mozc candidates or prevent newly produced Zenz corrections by itself.
 - Does not store Zenz feedback just because a Zenz correction was displayed. A visible Zenz result becomes pending accepted feedback only when the user explicitly commits it, such as with Enter or a direct-commit punctuation/symbol
 - Writes pending accepted feedback to the local TSV only if it is not canceled by Backspace, Escape, Revert, Undo, or similar correction actions before the next real text input. IMEOff / MakeSureIMEOff are treated as post-commit mode changes rather than cancellation
 - Treats a visible Zenz correction as rejected feedback when the user moves to normal conversion operations such as Space or candidate movement. Ordinary rejected feedback from these operations is used as a negative ranking signal rather than as a hard command to suppress the candidate

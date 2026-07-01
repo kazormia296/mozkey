@@ -1130,7 +1130,7 @@ QString ToQString(absl::string_view s) {
 
 QString FeedbackReasonLabel(absl::string_view reason) {
   if (reason == "feedback_preferred") {
-    return QString::fromUtf8("優先");
+    return QString::fromUtf8("優先スコアあり");
   }
   if (reason == "feedback_hard_rejected") {
     return QString::fromUtf8("手動ブロック中");
@@ -1138,8 +1138,11 @@ QString FeedbackReasonLabel(absl::string_view reason) {
   if (reason == "feedback_auto_blocked") {
     return QString::fromUtf8("自動ブロック中");
   }
+  if (reason == "feedback_reject_count_dominant") {
+    return QString::fromUtf8("却下数優勢");
+  }
   if (reason == "feedback_rejected" || reason == "feedback_downgraded") {
-    return QString::fromUtf8("却下優勢");
+    return QString::fromUtf8("却下スコアあり");
   }
   return QString::fromUtf8("中立");
 }
@@ -1363,7 +1366,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
       new QPushButton(QString::fromUtf8("詳しく..."), &dialog);
   details_button->setFixedWidth(84);
   details_button->setToolTip(QString::fromUtf8(
-      "Zenz 学習データと通常の変換履歴の違いを表示します"));
+      "状態ラベル、Zenz 学習の記録条件、通常の変換履歴との違いを表示します"));
 
   description_layout->addWidget(description_label, 1);
   description_layout->addWidget(details_button, 0, Qt::AlignTop);
@@ -1374,18 +1377,69 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
                      ShowJapaneseInformation(
                          &dialog, dialog.windowTitle(),
                          QString::fromUtf8(
-                             "この画面で扱うのは、Zenz が補正した入力全体の読みと"
-                             "補正後の候補の記録です。\n\n"
-                             "Zenz の結果を確定した場合、条件によっては通常の"
-                             "変換履歴にも反映されます。また、安全に判断できる場合は、"
-                             "直前の通常 Mozc ライブ変換文節列へ逆投影し、"
-                             "文節列全体を通常変換履歴に近い形で反映します。"
-                             "このとき、Zenz が実際に直した文節だけを"
+                             "【この画面で扱うデータ】\n"
+                             "この画面で扱うのは、Zenz 補正が実際に表示・反映されたときの"
+                             "読み全体、補正後の候補、文脈クラス、採用/却下の記録です。"
+                             "通常変換だけを操作した履歴は、この Zenz 学習データの"
+                             "採用数・却下数・スコアには入りません。\n\n"
+                             "Zenz 学習データは full-sequence 単位です。"
+                             "単語や文節ごとの学習ではなく、同じ読み全体、同じ文脈クラス、"
+                             "同じ補正結果の組み合わせごとに集計します。"
+                             "左文脈そのものは保存せず、empty / japanese_only / "
+                             "mixed_japanese_ascii / sensitive_like などの"
+                             "非可逆な文脈クラスだけを保存します。\n\n"
+                             "【いつ採用として記録されるか】\n"
+                             "Zenz 補正が表示され、その補正結果を Enter や"
+                             "句読点・記号の単打確定などでそのまま確定した場合、"
+                             "採用候補として一時保留されます。"
+                             "その後、次の実テキスト入力までに Backspace / Escape / "
+                             "Revert / Undo などで取り消されなかった場合だけ、"
+                             "採用として保存されます。"
+                             "Zenz 補正が表示されただけでは保存されません。\n\n"
+                             "【いつ却下として記録されるか】\n"
+                             "Zenz 補正が表示された後に Space や候補移動などで"
+                             "通常変換へ戻り、最終的に Zenz 補正とは異なる値で"
+                             "確定された場合、その Zenz 補正は却下として保存されます。"
+                             "これは通常候補を削除する命令ではなく、次回以降の"
+                             "候補順位や保存済み Zenz feedback による即時補正を調整するための"
+                             "弱いマイナス信号です。\n\n"
+                             "【記録されない操作】\n"
+                             "Zenz 補正が走っていないときの通常変換、通常候補の選択、"
+                             "通常変換の確定は、この画面の Zenz 学習スコアには影響しません。"
+                             "また、Zenz が通常 Mozc と同じ値を返した場合、"
+                             "出力検証や採用ポリシーで不採用になった場合、"
+                             "password / privacy gate で止められた場合も、"
+                             "表示済み Zenz 補正としては扱われません。\n\n"
+                             "【状態ラベルの意味】\n"
+                             "優先スコアあり: 採用・却下を重み付きで見た結果、"
+                             "この Zenz 補正を優先候補や保存済み feedback による即時補正として"
+                             "再利用できる状態です。\n"
+                             "却下スコアあり: 却下履歴により順位を下げる信号があります。"
+                             "ただし、手動ブロックや自動ブロックではありません。\n"
+                             "却下数優勢: 同じ読み全体・同じ文脈クラス・同じ補正結果で、"
+                             "通常却下回数が採用回数を上回っています。"
+                             "この場合、auto-block が OFF でも、Zenz feedback による"
+                             "優先候補や保存済み feedback による即時補正としては使いません。"
+                             "ただし hard block ではないため、Zenz が新しく同じ補正を"
+                             "返すこと自体や、通常 Mozc 候補を消すことはありません。\n"
+                             "自動ブロック中: auto-block が ON で、通常却下回数が"
+                             "設定したしきい値に達しています。TSV に hard reject を"
+                             "固定保存するのではなく、現在の ON/OFF としきい値から"
+                             "動的に判定します。\n"
+                             "手動ブロック中: この画面で明示的にブロックされた状態です。"
+                             "解除したい場合は、該当エントリを削除して必要に応じて"
+                             "再学習してください。\n"
+                             "中立: 優先にもブロックにも使うだけの有効な信号がない状態です。\n\n"
+                             "【通常の変換履歴との違い】\n"
+                             "Zenz の結果を確定した場合、条件によっては通常の変換履歴にも"
+                             "反映されます。また、安全に判断できる場合は、直前の通常 Mozc "
+                             "ライブ変換文節列へ逆投影し、文節列全体を通常変換履歴に近い形で"
+                             "反映します。このとき、Zenz が実際に直した文節だけを"
                              "強い選択履歴として扱います。\n\n"
                              "そのため、この画面で Zenz 学習データを削除しても、"
                              "通常の変換履歴にすでに反映された内容は削除されません。"
-                             "通常の変換履歴を消したい場合は、設定画面の辞書タブ内にある学習履歴のクリアを"
-                             "使用してください。"));
+                             "通常の変換履歴を消したい場合は、設定画面の辞書タブ内にある"
+                             "学習履歴のクリアを使用してください。"));
                    });
 
   QHBoxLayout* search_layout = new QHBoxLayout;
@@ -1405,7 +1459,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
                                    << QString::fromUtf8("文脈クラス")
                                    << QString::fromUtf8("採用")
                                    << QString::fromUtf8("却下")
-                                   << QString::fromUtf8("判定"));
+                                   << QString::fromUtf8("状態"));
   table->setSelectionBehavior(QAbstractItemView::SelectRows);
   table->setSelectionMode(QAbstractItemView::SingleSelection);
   table->setEditTriggers(QAbstractItemView::NoEditTriggers);

@@ -414,6 +414,8 @@ TEST(ZenzFeedbackCandidateRewriterTest,
 
   session::ZenzFeedbackStore store;
   store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
+  store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
+  store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
   store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
                        "space_revert_zenz_to_mozc");
   store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
@@ -440,6 +442,34 @@ TEST(ZenzFeedbackCandidateRewriterTest,
           .SetRequestType(ConversionRequest::CONVERSION)
           .SetKey("かれはてんてきです")
           .Build();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_FALSE(rewriter.Rewrite(request, &segments));
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  const Segment& segment = segments.conversion_segment(0);
+  ASSERT_EQ(segment.candidates_size(), 1);
+  EXPECT_EQ(segment.candidate(0).value, "彼は点滴です");
+  EXPECT_TRUE(segment.candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
+     DoesNotInsertOrPromoteRejectDominantFeedbackCandidate) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
+  store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
+                       "space_revert_zenz_to_mozc");
+  store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
+                       "space_revert_zenz_to_mozc");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は点滴です", &segments);
+
+  const ConversionRequest request = CreateZenzFeedbackConversionRequest();
 
   ZenzFeedbackCandidateRewriter rewriter;
   EXPECT_FALSE(rewriter.Rewrite(request, &segments));
