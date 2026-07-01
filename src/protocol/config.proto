@@ -370,6 +370,17 @@ message Config {
   // Raw left context is not stored.
   optional bool use_zenz_feedback_learning = 1011 [default = false];
 
+  // When enabled, repeated divergent commits of the same full-sequence Zenz
+  // correction dynamically suppress that correction as an effective block.
+  // This does not write an irreversible hard-reject record; changing this
+  // setting or the threshold re-evaluates existing feedback data.
+  optional bool use_zenz_auto_block_rejected_correction = 1018
+      [default = false];
+
+  // Number of ordinary rejected observations required before the auto-block
+  // policy suppresses the same key/context/value correction.
+  optional uint32 zenz_auto_block_reject_threshold = 1019 [default = 3];
+
   // Zenzai v3/v3.2 condition fields. Empty values are omitted from the prompt.
   // These are not chat prompts; they are mapped to zenz special-token fields:
   // U+EE03 profile, U+EE04 topic, U+EE05 style, U+EE06 settings.

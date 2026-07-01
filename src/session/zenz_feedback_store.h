@@ -21,6 +21,11 @@ enum class ZenzFeedbackImportMode {
   kReplace = 1,
 };
 
+struct ZenzFeedbackAutoBlockPolicy {
+  bool enabled = false;
+  int reject_threshold = 0;
+};
+
 struct ZenzFeedbackDecision {
   ZenzFeedbackAction action = ZenzFeedbackAction::kNeutral;
   std::string reason = "feedback_neutral";
@@ -29,7 +34,9 @@ struct ZenzFeedbackDecision {
   int positive_score = 0;
   int negative_score = 0;
   int total_score = 0;
+  int auto_block_reject_count = 0;
   bool hard_rejected = false;
+  bool auto_blocked = false;
 };
 
 struct ZenzFeedbackCandidate {
@@ -39,7 +46,9 @@ struct ZenzFeedbackCandidate {
   int positive_score = 0;
   int negative_score = 0;
   int total_score = 0;
+  int auto_block_reject_count = 0;
   bool hard_rejected = false;
+  bool auto_blocked = false;
   std::string reason = "feedback_neutral";
 };
 
@@ -49,6 +58,9 @@ struct ZenzFeedbackEntry {
   std::string value;
   int accepted_count = 0;
   int rejected_count = 0;
+  int auto_block_reject_count = 0;
+  bool hard_rejected = false;
+  bool auto_blocked = false;
   std::string reason = "feedback_neutral";
 };
 
@@ -69,6 +81,12 @@ class ZenzFeedbackStore {
                               absl::string_view context_class,
                               absl::string_view value) const;
 
+  ZenzFeedbackDecision Decide(
+      absl::string_view key,
+      absl::string_view context_class,
+      absl::string_view value,
+      const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const;
+
   // Returns feedback-scored values for the given key/context_class.
   //
   // Compatible non-sensitive context classes are aggregated, as in Decide().
@@ -87,16 +105,29 @@ class ZenzFeedbackStore {
       absl::string_view key,
       absl::string_view context_class) const;
 
+  std::vector<ZenzFeedbackCandidate> GetRankedCandidates(
+      absl::string_view key,
+      absl::string_view context_class,
+      const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const;
+
   // Compatibility wrapper for older call sites.  Prefer GetRankedCandidates()
   // for new code so rejected feedback can be used as a cost/ranking signal.
   std::vector<ZenzFeedbackCandidate> GetAcceptedCandidates(
       absl::string_view key,
       absl::string_view context_class) const;
 
+  std::vector<ZenzFeedbackCandidate> GetAcceptedCandidates(
+      absl::string_view key,
+      absl::string_view context_class,
+      const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const;
+
   // Returns exact persisted feedback entries aggregated by
   // key/context_class/value.  Unlike ranked candidate lookup, this method does
   // not merge compatible context classes.  It is intended for management UI.
   std::vector<ZenzFeedbackEntry> ListEntries() const;
+
+  std::vector<ZenzFeedbackEntry> ListEntries(
+      const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const;
 
   // Exports the raw feedback history as normalized v2 UTF-8 TSV.
   [[nodiscard]]

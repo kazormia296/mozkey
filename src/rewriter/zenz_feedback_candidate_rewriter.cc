@@ -173,6 +173,15 @@ void FillSyntheticCandidate(const converter::Candidate& base_candidate,
   candidate->display_value.clear();
 }
 
+session::ZenzFeedbackAutoBlockPolicy GetZenzFeedbackAutoBlockPolicy(
+    const config::Config& config) {
+  session::ZenzFeedbackAutoBlockPolicy policy;
+  policy.enabled = config.use_zenz_auto_block_rejected_correction();
+  policy.reject_threshold =
+      static_cast<int>(config.zenz_auto_block_reject_threshold());
+  return policy;
+}
+
 }  // namespace
 
 int ZenzFeedbackCandidateRewriter::capability(
@@ -234,7 +243,9 @@ bool ZenzFeedbackCandidateRewriter::Rewrite(
 
   session::ZenzFeedbackStore store;
   const std::vector<session::ZenzFeedbackCandidate> ranked_candidates =
-      store.GetRankedCandidates(full_key, kContextClass);
+      store.GetRankedCandidates(
+          full_key, kContextClass,
+          GetZenzFeedbackAutoBlockPolicy(request.config()));
 
   if (ranked_candidates.empty()) {
     return false;

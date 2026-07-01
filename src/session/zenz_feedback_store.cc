@@ -504,6 +504,7 @@ bool ParseFeedbackRecord(const std::vector<std::string>& fields,
 struct Counts {
   int accepted = 0;
   int rejected = 0;
+  int auto_block_rejected = 0;
   int positive_score = 0;
   int negative_score = 0;
   bool hard_rejected = false;
@@ -544,15 +545,54 @@ void AddAccepted(Counts* c) {
 void AddRejected(absl::string_view reason, Counts* c) {
   ++c->rejected;
   c->negative_score += RejectWeightForReason(reason);
+  if (!IsHardRejectReason(reason)) {
+    ++c->auto_block_rejected;
+  }
   c->hard_rejected |= IsHardRejectReason(reason);
 }
 
 void MergeCounts(const Counts& src, Counts* dest) {
   dest->accepted += src.accepted;
   dest->rejected += src.rejected;
+  dest->auto_block_rejected += src.auto_block_rejected;
   dest->positive_score += src.positive_score;
   dest->negative_score += src.negative_score;
   dest->hard_rejected |= src.hard_rejected;
+}
+
+ZenzFeedbackAutoBlockPolicy NormalizeAutoBlockPolicy(
+    ZenzFeedbackAutoBlockPolicy policy) {
+  if (!policy.enabled || policy.reject_threshold <= 0) {
+    return ZenzFeedbackAutoBlockPolicy();
+  }
+  return policy;
+}
+
+bool IsAutoBlockedByPolicy(
+    const Counts& c,
+    const ZenzFeedbackAutoBlockPolicy& auto_block_policy) {
+  const ZenzFeedbackAutoBlockPolicy policy =
+      NormalizeAutoBlockPolicy(auto_block_policy);
+  return policy.enabled &&
+         c.auto_block_rejected >= policy.reject_threshold;
+}
+
+void ApplyAutoBlockDecision(
+    const Counts& exact_counts,
+    const ZenzFeedbackAutoBlockPolicy& auto_block_policy,
+    ZenzFeedbackDecision* decision) {
+  if (decision == nullptr || decision->hard_rejected) {
+    return;
+  }
+
+  decision->auto_block_reject_count = exact_counts.auto_block_rejected;
+  if (!IsAutoBlockedByPolicy(exact_counts, auto_block_policy)) {
+    return;
+  }
+
+  decision->action = ZenzFeedbackAction::kReject;
+  decision->reason = "feedback_auto_blocked";
+  decision->auto_blocked = true;
 }
 
 using FeedbackKey = std::tuple<std::string, std::string, std::string>;
@@ -690,6 +730,7 @@ ZenzFeedbackDecision BuildDecisionFromCounts(const Counts& c) {
   ZenzFeedbackDecision decision;
   decision.accepted_count = c.accepted;
   decision.rejected_count = c.rejected;
+  decision.auto_block_reject_count = c.auto_block_rejected;
   decision.positive_score = c.positive_score;
   decision.negative_score = c.negative_score;
   decision.total_score = TotalScore(c);
@@ -1020,6 +1061,14 @@ ZenzFeedbackDecision ZenzFeedbackStore::Decide(
     absl::string_view key,
     absl::string_view context_class,
     absl::string_view value) const {
+  return Decide(key, context_class, value, ZenzFeedbackAutoBlockPolicy());
+}
+
+ZenzFeedbackDecision ZenzFeedbackStore::Decide(
+    absl::string_view key,
+    absl::string_view context_class,
+    absl::string_view value,
+    const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const {
   const std::map<FeedbackKey, Counts> counts = LoadCounts();
 
   const std::string normalized_key(key);
@@ -1028,6 +1077,7 @@ ZenzFeedbackDecision ZenzFeedbackStore::Decide(
   const std::string normalized_value(value);
 
   Counts aggregated;
+  Counts exact;
 
   for (const auto& item : counts) {
     const FeedbackKey& feedback_key = item.first;
@@ -1041,6 +1091,10 @@ ZenzFeedbackDecision ZenzFeedbackStore::Decide(
       continue;
     }
 
+    if (record_context_class == normalized_context_class) {
+      MergeCounts(c, &exact);
+    }
+
     if (!IsDecisionCompatibleContextClass(
             normalized_context_class, record_context_class)) {
       continue;
@@ -1049,12 +1103,22 @@ ZenzFeedbackDecision ZenzFeedbackStore::Decide(
     MergeCounts(c, &aggregated);
   }
 
-  return BuildDecisionFromCounts(aggregated);
+  ZenzFeedbackDecision decision = BuildDecisionFromCounts(aggregated);
+  ApplyAutoBlockDecision(exact, auto_block_policy, &decision);
+  return decision;
 }
 
 std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
     absl::string_view key,
     absl::string_view context_class) const {
+  return GetRankedCandidates(key, context_class,
+                             ZenzFeedbackAutoBlockPolicy());
+}
+
+std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
+    absl::string_view key,
+    absl::string_view context_class,
+    const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const {
   const std::map<FeedbackKey, Counts> counts = LoadCounts();
 
   const std::string normalized_key(key);
@@ -1062,6 +1126,7 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
       NormalizeContextClass(context_class);
 
   std::map<std::string, Counts> value_counts;
+  std::map<std::string, Counts> exact_value_counts;
 
   for (const auto& item : counts) {
     const FeedbackKey& feedback_key = item.first;
@@ -1073,6 +1138,11 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
 
     if (record_key != normalized_key) {
       continue;
+    }
+
+    if (record_context_class == normalized_context_class) {
+      Counts& exact = exact_value_counts[record_value];
+      MergeCounts(c, &exact);
     }
 
     if (!IsPromotionCompatibleContextClass(
@@ -1090,7 +1160,13 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
     const std::string& value = item.first;
     const Counts& c = item.second;
 
-    if (c.hard_rejected || c.accepted < kAcceptThreshold ||
+    const auto exact_it = exact_value_counts.find(value);
+    const Counts exact_counts =
+        exact_it == exact_value_counts.end() ? Counts() : exact_it->second;
+
+    if (c.hard_rejected ||
+        IsAutoBlockedByPolicy(exact_counts, auto_block_policy) ||
+        c.accepted < kAcceptThreshold ||
         TotalScore(c) <= 0) {
       continue;
     }
@@ -1102,7 +1178,9 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetRankedCandidates(
     candidate.positive_score = c.positive_score;
     candidate.negative_score = c.negative_score;
     candidate.total_score = TotalScore(c);
+    candidate.auto_block_reject_count = exact_counts.auto_block_rejected;
     candidate.hard_rejected = c.hard_rejected;
+    candidate.auto_blocked = false;
     candidate.reason = "feedback_preferred";
     candidates.push_back(std::move(candidate));
   }
@@ -1131,7 +1209,19 @@ std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
   return GetRankedCandidates(key, context_class);
 }
 
+std::vector<ZenzFeedbackCandidate> ZenzFeedbackStore::GetAcceptedCandidates(
+    absl::string_view key,
+    absl::string_view context_class,
+    const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const {
+  return GetRankedCandidates(key, context_class, auto_block_policy);
+}
+
 std::vector<ZenzFeedbackEntry> ZenzFeedbackStore::ListEntries() const {
+  return ListEntries(ZenzFeedbackAutoBlockPolicy());
+}
+
+std::vector<ZenzFeedbackEntry> ZenzFeedbackStore::ListEntries(
+    const ZenzFeedbackAutoBlockPolicy& auto_block_policy) const {
   const std::map<FeedbackKey, Counts> counts = LoadCounts();
 
   std::vector<ZenzFeedbackEntry> entries;
@@ -1140,7 +1230,8 @@ std::vector<ZenzFeedbackEntry> ZenzFeedbackStore::ListEntries() const {
   for (const auto& item : counts) {
     const FeedbackKey& feedback_key = item.first;
     const Counts& c = item.second;
-    const ZenzFeedbackDecision decision = BuildDecisionFromCounts(c);
+    ZenzFeedbackDecision decision = BuildDecisionFromCounts(c);
+    ApplyAutoBlockDecision(c, auto_block_policy, &decision);
 
     ZenzFeedbackEntry entry;
     entry.key = std::get<0>(feedback_key);
@@ -1148,6 +1239,9 @@ std::vector<ZenzFeedbackEntry> ZenzFeedbackStore::ListEntries() const {
     entry.value = std::get<2>(feedback_key);
     entry.accepted_count = c.accepted;
     entry.rejected_count = c.rejected;
+    entry.auto_block_reject_count = c.auto_block_rejected;
+    entry.hard_rejected = decision.hard_rejected;
+    entry.auto_blocked = decision.auto_blocked;
     entry.reason = decision.reason;
     entries.push_back(std::move(entry));
   }

@@ -351,6 +351,11 @@ ConfigDialog::ConfigDialog()
   zenzLiveCorrectionRightContextLengthSpinBox->setSpecialValueText(
       QString::fromUtf8("使わない"));
 
+  zenzFeedbackAutoBlockRejectThresholdSpinBox->setRange(1, 999);
+  zenzFeedbackAutoBlockRejectThresholdSpinBox->setSingleStep(1);
+  zenzFeedbackAutoBlockRejectThresholdSpinBox->setSuffix(
+      QString::fromUtf8(" 回"));
+
   punctuationsSettingComboBox->addItem(QString::fromUtf8("、。"));
   punctuationsSettingComboBox->addItem(QString::fromUtf8("，．"));
   punctuationsSettingComboBox->addItem(QString::fromUtf8("、．"));
@@ -466,6 +471,12 @@ ConfigDialog::ConfigDialog()
   QObject::connect(zenzLiveCorrectionRightContextCheckBox,
                    SIGNAL(stateChanged(int)), this,
                    SLOT(SelectZenzRightContextSetting(int)));
+  QObject::connect(zenzFeedbackLearningCheckBox,
+                   SIGNAL(stateChanged(int)), this,
+                   SLOT(SelectZenzFeedbackLearningSetting(int)));
+  QObject::connect(zenzFeedbackAutoBlockCheckBox,
+                   SIGNAL(stateChanged(int)), this,
+                   SLOT(SelectZenzFeedbackLearningSetting(int)));
   QObject::connect(useAutoConversion, SIGNAL(stateChanged(int)), this,
                    SLOT(SelectAutoConversionSetting(int)));
   QObject::connect(useDirectCommit, SIGNAL(stateChanged(int)), this,
@@ -849,6 +860,9 @@ constexpr uint32_t kMinZenzLiveCorrectionMinKeyLength = 2;
 constexpr uint32_t kMaxZenzLiveCorrectionMinKeyLength = 20;
 constexpr uint32_t kDefaultZenzLiveCorrectionRightContextLength = 10;
 constexpr uint32_t kMaxZenzLiveCorrectionRightContextLength = 128;
+constexpr uint32_t kDefaultZenzAutoBlockRejectThreshold = 3;
+constexpr uint32_t kMinZenzAutoBlockRejectThreshold = 1;
+constexpr uint32_t kMaxZenzAutoBlockRejectThreshold = 999;
 
 constexpr uint32_t kDefaultInputPreeditTextColor = 0xff5000;
 constexpr uint32_t kDefaultInputPreeditBackgroundColor = 0xffffcc;
@@ -1119,9 +1133,12 @@ QString FeedbackReasonLabel(absl::string_view reason) {
     return QString::fromUtf8("優先");
   }
   if (reason == "feedback_hard_rejected") {
-    return QString::fromUtf8("ブロック中");
+    return QString::fromUtf8("手動ブロック中");
   }
-  if (reason == "feedback_rejected") {
+  if (reason == "feedback_auto_blocked") {
+    return QString::fromUtf8("自動ブロック中");
+  }
+  if (reason == "feedback_rejected" || reason == "feedback_downgraded") {
     return QString::fromUtf8("却下優勢");
   }
   return QString::fromUtf8("中立");
@@ -1313,12 +1330,19 @@ std::wstring BuildRestoreDefaultImeScript() {
 }
 #endif  // _WIN32
 
-void ShowZenzFeedbackManagementDialog(QWidget* parent) {
+void ShowZenzFeedbackManagementDialog(QWidget* parent,
+                                      const config::Config& current_config) {
   QDialog dialog(parent);
   dialog.setWindowTitle(QString::fromUtf8("Zenz 学習データの管理"));
   dialog.resize(760, 440);
 
   session::ZenzFeedbackStore store;
+
+  session::ZenzFeedbackAutoBlockPolicy auto_block_policy;
+  auto_block_policy.enabled =
+      current_config.use_zenz_auto_block_rejected_correction();
+  auto_block_policy.reject_threshold =
+      static_cast<int>(current_config.zenz_auto_block_reject_threshold());
 
   QVBoxLayout* root_layout = new QVBoxLayout(&dialog);
 
@@ -1464,7 +1488,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
   auto reload_table = [&]() {
     const QString filter = search_edit->text();
     const std::vector<session::ZenzFeedbackEntry> entries =
-        store.ListEntries();
+        store.ListEntries(auto_block_policy);
 
     table->setRowCount(0);
 
@@ -1501,10 +1525,16 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent) {
 
     table->resizeColumnsToContents();
 
+    const QString auto_block_status =
+        auto_block_policy.enabled
+            ? QString::fromUtf8(" / 自動ブロックしきい値 %1 回")
+                  .arg(auto_block_policy.reject_threshold)
+            : QString::fromUtf8(" / 自動ブロック OFF");
     status_label->setText(
-        QString::fromUtf8("表示 %1 件 / 全 %2 件")
+        QString::fromUtf8("表示 %1 件 / 全 %2 件%3")
             .arg(visible_count)
-            .arg(static_cast<int>(entries.size())));
+            .arg(static_cast<int>(entries.size()))
+            .arg(auto_block_status));
 
     export_button->setEnabled(!entries.empty());
     clear_button->setEnabled(!entries.empty());
@@ -2786,6 +2816,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
 
   SET_CHECKBOX(zenzFeedbackLearningCheckBox, use_zenz_feedback_learning);
 
+  SET_CHECKBOX(zenzFeedbackAutoBlockCheckBox,
+               use_zenz_auto_block_rejected_correction);
+  const uint32_t zenz_auto_block_reject_threshold =
+      config.has_zenz_auto_block_reject_threshold()
+          ? config.zenz_auto_block_reject_threshold()
+          : kDefaultZenzAutoBlockRejectThreshold;
+  zenzFeedbackAutoBlockRejectThresholdSpinBox->setValue(
+      static_cast<int>(
+          std::clamp(zenz_auto_block_reject_threshold,
+                     kMinZenzAutoBlockRejectThreshold,
+                     kMaxZenzAutoBlockRejectThreshold)));
+  SelectZenzFeedbackLearningSetting(
+      static_cast<int>(zenzFeedbackLearningCheckBox->isChecked()));
+
   SET_CHECKBOX(useAutoConversion, use_auto_conversion);
   kutenCheckBox->setChecked(config.auto_conversion_key() &
                             config::Config::AUTO_CONVERSION_KUTEN);
@@ -2981,6 +3025,11 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
           zenzLiveCorrectionRightContextLengthSpinBox->value()));
 
   GET_CHECKBOX(zenzFeedbackLearningCheckBox, use_zenz_feedback_learning);
+  GET_CHECKBOX(zenzFeedbackAutoBlockCheckBox,
+               use_zenz_auto_block_rejected_correction);
+  config->set_zenz_auto_block_reject_threshold(
+      static_cast<uint32_t>(
+          zenzFeedbackAutoBlockRejectThresholdSpinBox->value()));
 
   GET_CHECKBOX(useAutoConversion, use_auto_conversion);
   GET_CHECKBOX(useDirectCommit, use_direct_commit);
@@ -3690,7 +3739,7 @@ void ConfigDialog::ClearUnusedUserPrediction() {
 }
 
 void ConfigDialog::EditZenzFeedback() {
-  ShowZenzFeedbackManagementDialog(this);
+  ShowZenzFeedbackManagementDialog(this, base_config_);
 }
 
 void ConfigDialog::EditUserDictionary() {
@@ -3774,6 +3823,22 @@ void ConfigDialog::SelectZenzLiveCorrectionSetting(int state) {
                     zenzLiveCorrectionRightContextCheckBox->isChecked())
               : 0);
   zenzFeedbackLearningCheckBox->setEnabled(enabled);
+  SelectZenzFeedbackLearningSetting(
+      enabled ? static_cast<int>(zenzFeedbackLearningCheckBox->isChecked()) : 0);
+}
+
+void ConfigDialog::SelectZenzFeedbackLearningSetting(int state) {
+  const bool enabled =
+      liveConversionCheckBox->isChecked() &&
+      zenzLiveCorrectionCheckBox->isChecked() &&
+      static_cast<bool>(state);
+
+  zenzFeedbackAutoBlockCheckBox->setEnabled(enabled);
+
+  const bool auto_block_enabled =
+      enabled && zenzFeedbackAutoBlockCheckBox->isChecked();
+  zenzFeedbackAutoBlockRejectThresholdLabel->setEnabled(auto_block_enabled);
+  zenzFeedbackAutoBlockRejectThresholdSpinBox->setEnabled(auto_block_enabled);
 }
 
 void ConfigDialog::SelectZenzRightContextSetting(int state) {

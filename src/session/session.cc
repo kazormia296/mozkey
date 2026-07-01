@@ -2066,6 +2066,15 @@ bool UseZenzFeedbackLearning(const config::Config& config) {
   return config.use_zenz_feedback_learning();
 }
 
+ZenzFeedbackAutoBlockPolicy GetZenzFeedbackAutoBlockPolicy(
+    const config::Config& config) {
+  ZenzFeedbackAutoBlockPolicy policy;
+  policy.enabled = config.use_zenz_auto_block_rejected_correction();
+  policy.reject_threshold =
+      static_cast<int>(config.zenz_auto_block_reject_threshold());
+  return policy;
+}
+
 bool IsExplicitZenzHardRejectReason(absl::string_view reason) {
   return reason == "hard_reject" ||
          reason == "user_hard_reject" ||
@@ -5941,7 +5950,8 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
 
   const std::vector<ZenzFeedbackCandidate> feedback_candidates =
       zenz_feedback_store_.GetAcceptedCandidates(
-          live_conversion_key_, context_class);
+          live_conversion_key_, context_class,
+          GetZenzFeedbackAutoBlockPolicy(config));
 
   if (feedback_candidates.empty()) {
     return false;
@@ -6810,7 +6820,8 @@ bool Session::ApplyZenzLiveCorrectionResult(
   if (UseZenzFeedbackLearning(config)) {
     const ZenzFeedbackDecision feedback_decision =
         zenz_feedback_store_.Decide(
-            pending_zenz_live_.key, context_class, zenz_value);
+            pending_zenz_live_.key, context_class, zenz_value,
+            GetZenzFeedbackAutoBlockPolicy(config));
 
     feedback_reason = feedback_decision.reason;
 

@@ -1801,6 +1801,68 @@ TEST_F(SessionTest,
   EXPECT_EQ(session_peer.zenz_live_context_class_(), "empty");
 }
 
+TEST_F(SessionTest, ZenzFeedbackFastPathSkipsAutoBlockedCandidate) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  ScopedUserProfileForZenzFeedbackSessionTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_use_zenz_live_correction(true);
+  config.set_use_zenz_feedback_learning(true);
+  config.set_use_zenz_synthetic_candidate(true);
+  config.set_zenz_live_correction_min_key_length(2);
+  config.set_use_zenz_auto_block_rejected_correction(true);
+  config.set_zenz_auto_block_reject_threshold(2);
+  session.SetConfig(config);
+
+  session_peer.zenz_feedback_store_().RecordAccepted(
+      "かれはてんてきです",
+      "japanese_only",
+      "彼は天敵です");
+  session_peer.zenz_feedback_store_().RecordRejected(
+      "かれはてんてきです",
+      "empty",
+      "彼は天敵です",
+      "space_revert_zenz_to_mozc");
+  session_peer.zenz_feedback_store_().RecordRejected(
+      "かれはてんてきです",
+      "empty",
+      "彼は天敵です",
+      "space_revert_zenz_to_mozc");
+
+  session_peer.context_()->set_state(ImeContext::CONVERSION);
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "かれはてんてきです";
+  session_peer.live_conversion_value_() = "彼は点滴です";
+
+  commands::Preedit& live_preedit =
+      session_peer.live_conversion_preedit_output_();
+  live_preedit.Clear();
+
+  commands::Preedit::Segment* segment = live_preedit.add_segment();
+  segment->set_key("かれは");
+  segment->set_value("彼は");
+  segment->set_value_length(Util::CharsLen("彼は"));
+
+  segment = live_preedit.add_segment();
+  segment->set_key("てんてきです");
+  segment->set_value("点滴です");
+  segment->set_value_length(Util::CharsLen("点滴です"));
+
+  commands::Command command;
+  EXPECT_FALSE(session_peer.MaybeApplyZenzFeedbackLiveCorrection(&command));
+  EXPECT_TRUE(session_peer.zenz_live_key_().empty());
+  EXPECT_TRUE(session_peer.zenz_live_value_().empty());
+}
+
 TEST_F(SessionTest,
        SpaceWhileZenzLiveCorrectionVisibleRevertsToMozcNormalConversion) {
   MockEngine engine;
