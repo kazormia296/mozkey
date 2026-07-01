@@ -197,6 +197,100 @@ TEST(ZenzFeedbackStoreTest, DecideTreatsOrdinaryRejectedAsSoftSignal) {
   EXPECT_GT(decision.total_score, 0);
 }
 
+TEST(ZenzFeedbackStoreTest,
+     DecideAutoBlockPolicySuppressesAfterThresholdDynamically) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordAccepted("k", "empty", "v");
+  store.RecordAccepted("k", "empty", "v");
+  store.RecordAccepted("k", "empty", "v");
+  store.RecordRejected("k", "empty", "v", "space_revert_zenz_to_mozc");
+  store.RecordRejected("k", "empty", "v", "space_revert_zenz_to_mozc");
+
+  ZenzFeedbackAutoBlockPolicy policy;
+  policy.enabled = true;
+  policy.reject_threshold = 2;
+
+  ZenzFeedbackDecision decision = store.Decide("k", "empty", "v", policy);
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kReject);
+  EXPECT_EQ(decision.reason, "feedback_auto_blocked");
+  EXPECT_TRUE(decision.auto_blocked);
+  EXPECT_FALSE(decision.hard_rejected);
+  EXPECT_EQ(decision.accepted_count, 3);
+  EXPECT_EQ(decision.rejected_count, 2);
+  EXPECT_EQ(decision.auto_block_reject_count, 2);
+
+  policy.reject_threshold = 3;
+  decision = store.Decide("k", "empty", "v", policy);
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kPrefer);
+  EXPECT_EQ(decision.reason, "feedback_preferred");
+  EXPECT_FALSE(decision.auto_blocked);
+
+  policy.enabled = false;
+  policy.reject_threshold = 1;
+  decision = store.Decide("k", "empty", "v", policy);
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kPrefer);
+  EXPECT_EQ(decision.reason, "feedback_preferred");
+  EXPECT_FALSE(decision.auto_blocked);
+}
+
+TEST(ZenzFeedbackStoreTest,
+     DecideStopsPreferenceWhenOrdinaryRejectCountDominates) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordAccepted("k", "empty", "v");
+  store.RecordRejected("k", "empty", "v", "space_revert_zenz_to_mozc");
+  store.RecordRejected("k", "empty", "v", "space_revert_zenz_to_mozc");
+
+  ZenzFeedbackDecision decision = store.Decide("k", "empty", "v");
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kNeutral);
+  EXPECT_EQ(decision.reason, "feedback_reject_count_dominant");
+  EXPECT_FALSE(decision.auto_blocked);
+  EXPECT_FALSE(decision.hard_rejected);
+  EXPECT_EQ(decision.accepted_count, 1);
+  EXPECT_EQ(decision.rejected_count, 2);
+  EXPECT_EQ(decision.auto_block_reject_count, 2);
+  EXPECT_GT(decision.total_score, 0);
+
+  EXPECT_TRUE(store.GetRankedCandidates("k", "empty").empty());
+
+  const std::vector<ZenzFeedbackEntry> entries = store.ListEntries();
+  ASSERT_EQ(entries.size(), 1);
+  EXPECT_EQ(entries[0].reason, "feedback_reject_count_dominant");
+}
+
+TEST(ZenzFeedbackStoreTest, AutoBlockPolicyUsesExactContextClass) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordAccepted("k", "japanese_only", "v");
+  store.RecordRejected("k", "japanese_only", "v",
+                       "space_revert_zenz_to_mozc");
+  store.RecordRejected("k", "japanese_only", "v",
+                       "space_revert_zenz_to_mozc");
+
+  ZenzFeedbackAutoBlockPolicy policy;
+  policy.enabled = true;
+  policy.reject_threshold = 2;
+
+  ZenzFeedbackDecision decision = store.Decide("k", "empty", "v", policy);
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kPrefer);
+  EXPECT_EQ(decision.reason, "feedback_preferred");
+  EXPECT_FALSE(decision.auto_blocked);
+  EXPECT_EQ(decision.auto_block_reject_count, 0);
+
+  decision = store.Decide("k", "japanese_only", "v", policy);
+  EXPECT_EQ(decision.action, ZenzFeedbackAction::kReject);
+  EXPECT_EQ(decision.reason, "feedback_auto_blocked");
+  EXPECT_TRUE(decision.auto_blocked);
+  EXPECT_EQ(decision.auto_block_reject_count, 2);
+}
+
 TEST(ZenzFeedbackStoreTest, DecideAllowsFutureHardRejectReason) {
   ScopedUserProfileForZenzFeedbackStoreTest profile;
   ASSERT_TRUE(profile.ok());
@@ -244,6 +338,63 @@ TEST(ZenzFeedbackStoreTest, GetRankedCandidatesExcludesHardRejectedValue) {
   ASSERT_EQ(candidates.size(), 1);
   EXPECT_EQ(candidates[0].value, "kept");
   EXPECT_FALSE(candidates[0].hard_rejected);
+}
+
+TEST(ZenzFeedbackStoreTest,
+     GetRankedCandidatesExcludesAutoBlockedValueOnlyWhenPolicyEnabled) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordAccepted("k", "empty", "kept");
+  store.RecordAccepted("k", "empty", "blocked");
+  store.RecordAccepted("k", "empty", "blocked");
+  store.RecordAccepted("k", "empty", "blocked");
+  store.RecordRejected("k", "empty", "blocked",
+                       "space_revert_zenz_to_mozc");
+  store.RecordRejected("k", "empty", "blocked",
+                       "space_revert_zenz_to_mozc");
+
+  ZenzFeedbackAutoBlockPolicy policy;
+  policy.enabled = true;
+  policy.reject_threshold = 2;
+
+  std::vector<ZenzFeedbackCandidate> candidates =
+      store.GetRankedCandidates("k", "empty", policy);
+
+  ASSERT_EQ(candidates.size(), 1);
+  EXPECT_EQ(candidates[0].value, "kept");
+
+  policy.enabled = false;
+  candidates = store.GetRankedCandidates("k", "empty", policy);
+
+  ASSERT_EQ(candidates.size(), 2);
+  EXPECT_EQ(candidates[0].value, "blocked");
+  EXPECT_EQ(candidates[1].value, "kept");
+}
+
+TEST(ZenzFeedbackStoreTest,
+     GetRankedCandidatesExcludesRejectDominantValueWithoutAutoBlock) {
+  ScopedUserProfileForZenzFeedbackStoreTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  ZenzFeedbackStore store;
+  store.RecordAccepted("k", "empty", "kept");
+  store.RecordAccepted("k", "empty", "dominant");
+  store.RecordRejected("k", "empty", "dominant",
+                       "space_revert_zenz_to_mozc");
+  store.RecordRejected("k", "empty", "dominant",
+                       "space_revert_zenz_to_mozc");
+
+  ZenzFeedbackAutoBlockPolicy policy;
+  policy.enabled = false;
+  policy.reject_threshold = 1;
+
+  const std::vector<ZenzFeedbackCandidate> candidates =
+      store.GetRankedCandidates("k", "empty", policy);
+
+  ASSERT_EQ(candidates.size(), 1);
+  EXPECT_EQ(candidates[0].value, "kept");
 }
 
 TEST(ZenzFeedbackStoreTest,

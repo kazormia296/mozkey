@@ -408,6 +408,81 @@ TEST(ZenzFeedbackCandidateRewriterTest,
 }
 
 TEST(ZenzFeedbackCandidateRewriterTest,
+     DoesNotInsertOrPromoteAutoBlockedFeedbackCandidate) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
+  store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
+  store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
+  store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
+                       "space_revert_zenz_to_mozc");
+  store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
+                       "space_revert_zenz_to_mozc");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は点滴です", &segments);
+
+  config::Config config;
+  config.set_use_zenz_feedback_learning(true);
+  config.set_history_learning_level(config::Config::DEFAULT_HISTORY);
+  config.set_use_zenz_auto_block_rejected_correction(true);
+  config.set_zenz_auto_block_reject_threshold(2);
+
+  ConversionRequest::Options options;
+  options.request_type = ConversionRequest::CONVERSION;
+  options.enable_user_history_for_conversion = true;
+  options.incognito_mode = false;
+
+  const ConversionRequest request =
+      ConversionRequestBuilder()
+          .SetConfig(config)
+          .SetOptions(std::move(options))
+          .SetRequestType(ConversionRequest::CONVERSION)
+          .SetKey("かれはてんてきです")
+          .Build();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_FALSE(rewriter.Rewrite(request, &segments));
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  const Segment& segment = segments.conversion_segment(0);
+  ASSERT_EQ(segment.candidates_size(), 1);
+  EXPECT_EQ(segment.candidate(0).value, "彼は点滴です");
+  EXPECT_TRUE(segment.candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
+     DoesNotInsertOrPromoteRejectDominantFeedbackCandidate) {
+  ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
+  ASSERT_TRUE(profile.ok());
+
+  session::ZenzFeedbackStore store;
+  store.RecordAccepted("かれはてんてきです", "empty", "彼は天敵です");
+  store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
+                       "space_revert_zenz_to_mozc");
+  store.RecordRejected("かれはてんてきです", "empty", "彼は天敵です",
+                       "space_revert_zenz_to_mozc");
+
+  Segments segments;
+  AddSegment("かれはてんてきです", "彼は点滴です", &segments);
+
+  const ConversionRequest request = CreateZenzFeedbackConversionRequest();
+
+  ZenzFeedbackCandidateRewriter rewriter;
+  EXPECT_FALSE(rewriter.Rewrite(request, &segments));
+
+  ASSERT_EQ(segments.conversion_segments_size(), 1);
+  const Segment& segment = segments.conversion_segment(0);
+  ASSERT_EQ(segment.candidates_size(), 1);
+  EXPECT_EQ(segment.candidate(0).value, "彼は点滴です");
+  EXPECT_TRUE(segment.candidate(0).attributes &
+              converter::Attribute::BEST_CANDIDATE);
+}
+
+TEST(ZenzFeedbackCandidateRewriterTest,
      DoesNotDuplicateFeedbackWhenMozcTopAlreadyMatches) {
   ScopedUserProfileForZenzFeedbackCandidateRewriterTest profile;
   ASSERT_TRUE(profile.ok());
