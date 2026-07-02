@@ -41,6 +41,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -345,6 +346,8 @@ CandidateWindow::CandidateWindow()
       footer_logo_display_size_(0, 0),
       send_command_interface_(nullptr),
       table_layout_(std::make_unique<TableLayout>()),
+      cached_bitmap_size_(0, 0),
+      cached_bitmap_valid_(false),
       dpi_(::GetDpiForSystem()),
       text_renderer_(TextRenderer::Create(dpi_)),
       indicator_width_(0),
@@ -398,6 +401,7 @@ void CandidateWindow::UpdateDpi(uint32_t dpi) {
   if (dpi == dpi_) {
     return;
   }
+  ClearBitmapCache();
   dpi_ = dpi;
   UpdateDpiDependentResources();
   text_renderer_->OnDpiChanged(dpi_);
@@ -416,6 +420,7 @@ void CandidateWindow::EnableOrDisableWindowForWorkaround() {
 }
 
 void CandidateWindow::OnDestroy() {
+  ClearBitmapCache();
   shadow_window_.Destroy();
   // PostQuitMessage may stop the message loop even though other
   // windows are not closed. WindowManager should close these windows
@@ -502,6 +507,10 @@ void CandidateWindow::OnPaint(HDC dc) {
   }
   HDC target_dc = paint_dc.is_valid() ? paint_dc.get() : dc;
 
+  if (BitBltCachedBitmapTo(target_dc, client_rect)) {
+    return;
+  }
+
   // Render to offline bitmap first to avoid tearing.
   wil::unique_hdc memdc(::CreateCompatibleDC(target_dc));
   wil::unique_hbitmap bitmap(::CreateCompatibleBitmap(
@@ -514,6 +523,92 @@ void CandidateWindow::OnPaint(HDC dc) {
 }
 
 void CandidateWindow::OnPrintClient(HDC dc, UINT uFlags) { OnPaint(dc); }
+
+bool CandidateWindow::RenderToBitmapCache() {
+  ClearBitmapCache();
+
+  if (!table_layout_->IsLayoutFrozen()) {
+    return false;
+  }
+
+  const Size layout_size = table_layout_->GetTotalSize();
+  if (layout_size.width <= 0 || layout_size.height <= 0) {
+    return false;
+  }
+
+  HDC screen_dc = ::GetDC(nullptr);
+  if (screen_dc == nullptr) {
+    return false;
+  }
+
+  wil::unique_hdc memdc(::CreateCompatibleDC(screen_dc));
+  wil::unique_hbitmap bitmap(::CreateCompatibleBitmap(
+      screen_dc, layout_size.width, layout_size.height));
+  ::ReleaseDC(nullptr, screen_dc);
+
+  if (!memdc.is_valid() || !bitmap.is_valid()) {
+    return false;
+  }
+
+  wil::unique_select_object old_bitmap =
+      wil::SelectObject(memdc.get(), bitmap.get());
+  DoPaint(memdc.get());
+
+  cached_bitmap_ = std::move(bitmap);
+  cached_bitmap_size_ = layout_size;
+  cached_bitmap_valid_ = true;
+  return true;
+}
+
+bool CandidateWindow::BitBltCachedBitmapTo(HDC target_dc,
+                                           const RECT& target_rect) const {
+  if (target_dc == nullptr || !cached_bitmap_valid_ ||
+      !cached_bitmap_.is_valid()) {
+    return false;
+  }
+
+  const int width = target_rect.right - target_rect.left;
+  const int height = target_rect.bottom - target_rect.top;
+  if (width <= 0 || height <= 0 || cached_bitmap_size_.width != width ||
+      cached_bitmap_size_.height != height) {
+    return false;
+  }
+
+  wil::unique_hdc memdc(::CreateCompatibleDC(target_dc));
+  if (!memdc.is_valid()) {
+    return false;
+  }
+
+  wil::unique_select_object old_bitmap =
+      wil::SelectObject(memdc.get(), cached_bitmap_.get());
+  return ::BitBlt(target_dc, target_rect.left, target_rect.top, width, height,
+                  memdc.get(), 0, 0, SRCCOPY) != FALSE;
+}
+
+void CandidateWindow::ClearBitmapCache() {
+  cached_bitmap_.reset();
+  cached_bitmap_size_ = Size(0, 0);
+  cached_bitmap_valid_ = false;
+}
+
+void CandidateWindow::PresentCachedBitmapImmediately() {
+  if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+    return;
+  }
+
+  RECT client_rect = {};
+  if (!::GetClientRect(m_hWnd, &client_rect)) {
+    return;
+  }
+
+  HDC target_dc = ::GetDC(m_hWnd);
+  if (target_dc == nullptr) {
+    return;
+  }
+
+  BitBltCachedBitmapTo(target_dc, client_rect);
+  ::ReleaseDC(m_hWnd, target_dc);
+}
 
 void CandidateWindow::DoPaint(HDC dc) {
   switch (candidate_window_->category()) {
@@ -570,6 +665,7 @@ void CandidateWindow::OnSettingChange(UINT uFlags, LPCTSTR /*lpszSection*/) {
     case SPI_SETFONTSMOOTHINGTYPE:
     case SPI_SETNONCLIENTMETRICS:
       metrics_changed_ = true;
+      ClearBitmapCache();
       break;
     case SPI_SETACTIVEWINDOWTRACKING:
       EnableOrDisableWindowForWorkaround();
@@ -582,6 +678,7 @@ void CandidateWindow::OnSettingChange(UINT uFlags, LPCTSTR /*lpszSection*/) {
 
 void CandidateWindow::UpdateLayout(
     const commands::CandidateWindow& candidates) {
+  ClearBitmapCache();
   *candidate_window_ = candidates;
 
   const RendererStyleHandler::RendererStyleType style_type =
@@ -756,6 +853,8 @@ void CandidateWindow::UpdateLayout(
   table_layout_->EnsureCellSize(COLUMN_GAP2, gap2_size);
 
   table_layout_->FreezeLayout();
+
+  RenderToBitmapCache();
 
   if (m_hWnd != nullptr) {
     UpdateRoundedWindowRegion(m_hWnd, table_layout_->GetTotalSize(), dpi_,
