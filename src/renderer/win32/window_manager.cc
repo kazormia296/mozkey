@@ -443,6 +443,7 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
                              main_window_rect.Top(), main_window_rect.Width(),
                              main_window_rect.Height(), set_windows_pos_flags);
   if (is_live_conversion_passive_suggestion) {
+    main_window_->PresentCachedBitmapImmediately();
     main_window_->RedrawImmediately();
   }
   main_window_->UpdateEffectWindows();

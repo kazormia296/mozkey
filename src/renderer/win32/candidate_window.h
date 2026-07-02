@@ -112,6 +112,12 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   void UpdateLayout(const commands::CandidateWindow& candidate_window);
   void UpdateEffectWindows();
   void RedrawImmediately();
+  // Paints the pre-rendered candidate window bitmap to the window DC
+  // immediately.  This is used just after SWP_SHOWWINDOW for live passive
+  // suggestion UI so that the first visible frame already contains the
+  // completed candidate contents.  If the cache is unavailable, this method
+  // is a no-op and the normal WM_PAINT path remains the fallback.
+  void PresentCachedBitmapImmediately();
   // Hides both the candidate window and its renderer-owned visual effects.
   // This avoids one-frame shadow remnants when WindowManager suppresses or
   // relocates candidate UI during live-conversion ruby updates.
@@ -127,6 +133,10 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
 
  private:
   void DoPaint(HDC dc);
+
+  bool RenderToBitmapCache();
+  bool BitBltCachedBitmapTo(HDC target_dc, const RECT& target_rect) const;
+  void ClearBitmapCache();
 
   void DrawCells(HDC dc);
   void DrawVScrollBar(HDC dc);
@@ -214,6 +224,9 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   Size footer_logo_display_size_;
   client::SendCommandInterface* send_command_interface_;
   std::unique_ptr<TableLayout> table_layout_;
+  wil::unique_hbitmap cached_bitmap_;
+  Size cached_bitmap_size_;
+  bool cached_bitmap_valid_;
   uint32_t dpi_;
   std::unique_ptr<TextRenderer> text_renderer_;
   int indicator_width_;
