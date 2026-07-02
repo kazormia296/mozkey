@@ -90,6 +90,28 @@ bool IsOppositeSideOfPreedit(const RECT& lhs, const RECT& rhs,
           rhs_relation == VerticalRelationToPreedit::kAbove);
 }
 
+bool HasRenderableCandidateMainText(
+    const commands::CandidateWindow& candidate_window) {
+  for (int i = 0; i < candidate_window.candidate_size(); ++i) {
+    const commands::CandidateWindow::Candidate& candidate =
+        candidate_window.candidate(i);
+
+    if (candidate.has_value() && !candidate.value().empty()) {
+      return true;
+    }
+
+    if (!candidate.has_annotation()) {
+      continue;
+    }
+    const commands::Annotation& annotation = candidate.annotation();
+    if ((annotation.has_prefix() && !annotation.prefix().empty()) ||
+        (annotation.has_suffix() && !annotation.suffix().empty())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 WindowManager::WindowManager()
@@ -201,6 +223,7 @@ void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
       output.has_candidate_window() && output.candidate_window().has_category() &&
       output.candidate_window().category() == commands::SUGGESTION &&
       output.candidate_window().candidate_size() > 0 &&
+      HasRenderableCandidateMainText(output.candidate_window()) &&
       !output.candidate_window().has_focused_index();
   const bool is_live_conversion_passive_suggestion =
       output.live_conversion() && has_passive_suggestion_window;
