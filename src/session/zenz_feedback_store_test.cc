@@ -6,6 +6,8 @@
 
 #include "testing/gunit.h"
 
+#include "base/system_util.h"
+
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -13,6 +15,34 @@
 namespace mozc {
 namespace session {
 namespace {
+
+// Converts a wide string to UTF-8 for direct file access in tests.
+// This is a test-only helper, separate from the implementation's WideToUtf8.
+std::string WideToUtf8ForTest(const std::wstring& w) {
+  if (w.empty()) {
+    return "";
+  }
+  std::string out;
+  out.reserve(w.size() * 3 + 1);
+  for (const wchar_t wc : w) {
+    if (wc < 0x80) {
+      out.push_back(static_cast<char>(wc));
+    } else if (wc < 0x800) {
+      out.push_back(0xC0 | (wc >> 6));
+      out.push_back(0x80 | (wc & 0x3F));
+    } else if (wc < 0x10000) {
+      out.push_back(0xE0 | (wc >> 12));
+      out.push_back(0x80 | ((wc >> 6) & 0x3F));
+      out.push_back(0x80 | (wc & 0x3F));
+    } else if (wc < 0x200000) {
+      out.push_back(0xF0 | (wc >> 18));
+      out.push_back(0x80 | ((wc >> 12) & 0x3F));
+      out.push_back(0x80 | ((wc >> 6) & 0x3F));
+      out.push_back(0x80 | (wc & 0x3F));
+    }
+  }
+  return out;
+}
 
 #if defined(_WIN32)
 
@@ -96,8 +126,20 @@ class ScopedUserProfileForZenzFeedbackStoreTest {
     return JoinPath(mozc_dir, L"zenz_feedback.tsv");
   }
 
+  // For direct std::ofstream access (std::ofstream accepts std::wstring on Win32).
+  const std::wstring& feedback_wide_path() const { return feedback_path(); }
+  // For direct std::ofstream access on Linux.
+  std::string feedback_utf8_path() const {
+    return WideToUtf8ForTest(feedback_path());
+  }
+
   std::wstring temp_file_path(const std::wstring& name) const {
     return JoinPath(profile_dir_, name);
+  }
+
+  // UTF-8 path for std::ofstream on Linux.
+  std::string temp_file_utf8_path(const std::wstring& name) const {
+    return WideToUtf8ForTest(JoinPath(profile_dir_, name));
   }
 
  private:
@@ -106,6 +148,84 @@ class ScopedUserProfileForZenzFeedbackStoreTest {
   std::wstring old_profile_;
   std::wstring profile_dir_;
 };
+
+#else  // !defined(_WIN32)
+
+class ScopedUserProfileForZenzFeedbackStoreTest {
+ public:
+  ScopedUserProfileForZenzFeedbackStoreTest() {
+    // Save current Mozc user profile directory.
+    old_profile_ = SystemUtil::GetUserProfileDirectory();
+    has_old_profile_ = true;
+
+    // Create a temporary directory.
+    const std::string tmp_template =
+        std::string("/tmp/mozc_zenz_feedback_store_test_XXXXXX");
+    char* tmp_buf = strdup(tmp_template.c_str());
+    char* result = mkdtemp(tmp_buf);
+    if (result == nullptr) {
+      free(tmp_buf);
+      return;
+    }
+    profile_dir_ = std::string(result);
+    free(tmp_buf);
+
+    SystemUtil::SetUserProfileDirectory(profile_dir_);
+    ok_ = true;
+  }
+
+  ~ScopedUserProfileForZenzFeedbackStoreTest() {
+    // Restore original profile directory.
+    if (has_old_profile_) {
+      SystemUtil::SetUserProfileDirectory(old_profile_);
+    }
+
+    // Clean up the feedback file and directory.
+    unlink(feedback_utf8_path().c_str());
+    rmdir(profile_dir_.c_str());
+  }
+
+  bool ok() const { return ok_; }
+
+  std::wstring feedback_path() const {
+    std::string path = profile_dir_ + "/zenz_feedback.tsv";
+    // Widen for the wstring-based API.
+    std::wstring result;
+    result.reserve(path.size());
+    for (const char c : path) {
+      result.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
+    }
+    return result;
+  }
+
+  std::string feedback_utf8_path() const {
+    return profile_dir_ + "/zenz_feedback.tsv";
+  }
+
+  std::wstring temp_file_path(const std::wstring& name) const {
+    std::string name_utf8 = WideToUtf8ForTest(name);
+    std::string full_utf8 = profile_dir_ + "/" + name_utf8;
+    std::wstring result;
+    result.reserve(full_utf8.size());
+    for (const char c : full_utf8) {
+      result.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
+    }
+    return result;
+  }
+
+  std::string temp_file_utf8_path(const std::wstring& name) const {
+    std::string name_utf8 = WideToUtf8ForTest(name);
+    return profile_dir_ + "/" + name_utf8;
+  }
+
+ private:
+  bool ok_ = false;
+  bool has_old_profile_ = false;
+  std::string old_profile_;
+  std::string profile_dir_;
+};
+
+#endif  // defined(_WIN32)
 
 TEST(ZenzFeedbackStoreTest, GetAcceptedCandidatesAllowsSingleAcceptedAndSorts) {
   ScopedUserProfileForZenzFeedbackStoreTest profile;
@@ -507,13 +627,13 @@ TEST(ZenzFeedbackStoreTest, GetAcceptedCandidatesAcceptsUtf8Bom) {
 
   ZenzFeedbackStore store;
 
-  // Create %USERPROFILE%\AppData\LocalLow\Mozc first.  This test intentionally
+  // Create the Mozc directory first.  This test intentionally
   // overwrites the TSV directly to simulate a file saved by tools/editors that
   // write UTF-8 with BOM.
   store.RecordAccepted("__mkdir__", "empty", "__mkdir__");
 
   {
-    std::ofstream file(profile.feedback_path(),
+    std::ofstream file(profile.feedback_utf8_path(),
                        std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(file);
     file << "\xEF\xBB\xBF"
@@ -683,7 +803,7 @@ TEST(ZenzFeedbackStoreTest, ClearAllRemovesAllEntries) {
   EXPECT_TRUE(store.ClearAll());
   EXPECT_TRUE(store.ListEntries().empty());
 
-  std::ifstream file(profile.feedback_path(), std::ios::binary);
+  std::ifstream file(profile.feedback_utf8_path(), std::ios::binary);
   EXPECT_FALSE(file);
 }
 
@@ -727,7 +847,8 @@ TEST(ZenzFeedbackStoreTest, ImportAppendKeepsExistingRecords) {
 
   const std::wstring import_path = profile.temp_file_path(L"import_append.tsv");
   {
-    std::ofstream file(import_path, std::ios::binary | std::ios::trunc);
+    std::ofstream file(profile.temp_file_utf8_path(L"import_append.tsv"),
+                       std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(file);
     file << "v2\taccepted\timported\tempty\t追加\t\n";
   }
@@ -755,7 +876,8 @@ TEST(ZenzFeedbackStoreTest, ImportRejectsMalformedFileWithoutChangingExisting) {
   const std::wstring import_path =
       profile.temp_file_path(L"import_malformed.tsv");
   {
-    std::ofstream file(import_path, std::ios::binary | std::ios::trunc);
+    std::ofstream file(profile.temp_file_utf8_path(L"import_malformed.tsv"),
+                       std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(file);
     file << "v2\tunknown_action\tk\tempty\tv\t\n";
   }
@@ -772,14 +894,6 @@ TEST(ZenzFeedbackStoreTest, ImportRejectsMalformedFileWithoutChangingExisting) {
   EXPECT_EQ(entries[0].accepted_count, 1);
   EXPECT_EQ(entries[0].rejected_count, 0);
 }
-
-#else  // defined(_WIN32)
-
-TEST(ZenzFeedbackStoreTest, SkippedOnNonWindows) {
-  GTEST_SKIP() << "ZenzFeedbackStore persists to LocalLow on Windows.";
-}
-
-#endif  // defined(_WIN32)
 
 }  // namespace
 }  // namespace session
