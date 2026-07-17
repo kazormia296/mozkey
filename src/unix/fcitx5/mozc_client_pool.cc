@@ -31,11 +31,10 @@
 
 #include <fcitx-utils/charutils.h>
 #include <fcitx-utils/macros.h>
-#include <fcitx-utils/stringutils.h>
 #include <fcitx/inputcontext.h>
-#include <fcitx/inputcontextmanager.h>
 
 #include <cassert>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -45,21 +44,14 @@
 
 namespace fcitx {
 
-MozcClientPool::MozcClientPool(PropertyPropagatePolicy initialPolicy)
-    : policy_(initialPolicy) {}
-
-void MozcClientPool::setPolicy(PropertyPropagatePolicy policy) {
-  if (policy_ == policy) {
-    return;
-  }
-
-  assert(clients_.empty());
-  policy_ = policy;
+MozcClientPool::MozcClientPool(ClientFactory client_factory)
+    : client_factory_(std::move(client_factory)) {
+  assert(client_factory_);
 }
 
-std::string uuidKey(InputContext* ic) {
+std::string uuidKey(const ICUUID& uuid) {
   std::string key = "u:";
-  for (auto v : ic->uuid()) {
+  for (auto v : uuid) {
     auto lower = v % 16;
     auto upper = v / 16;
     key.push_back(charutils::toHex(upper));
@@ -69,28 +61,16 @@ std::string uuidKey(InputContext* ic) {
 }
 
 std::shared_ptr<MozcClientInterface> MozcClientPool::requestClient(
-    InputContext* ic) {
-  std::string key;
-  switch (policy_) {
-    case PropertyPropagatePolicy::No:
-      key = uuidKey(ic);
-      break;
-    case PropertyPropagatePolicy::Program:
-      if (!ic->program().empty()) {
-        key = stringutils::concat("p:", ic->program());
-      } else {
-        key = uuidKey(ic);
-      }
-      break;
-    case PropertyPropagatePolicy::All:
-      key = "g:";
-      break;
-  }
+    const ICUUID& uuid) {
+  const std::string key = uuidKey(uuid);
   auto iter = clients_.find(key);
   if (iter != clients_.end()) {
     return iter->second.lock();
   }
-  std::unique_ptr<MozcClientInterface> newclient = createClient();
+  std::unique_ptr<MozcClientInterface> newclient = client_factory_();
+  if (!newclient) {
+    return nullptr;
+  }
   // Currently client capability is fixed.
   mozc::commands::Capability capability;
   capability.set_text_deletion(

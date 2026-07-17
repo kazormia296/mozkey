@@ -16,11 +16,6 @@ class MozcClientInterface {
  public:
   virtual ~MozcClientInterface() = default;
   virtual bool EnsureConnection() = 0;
-  bool SendCommand(const mozc::commands::SessionCommand& command,
-                   mozc::commands::Output* output) {
-    return SendCommandWithContext(
-        command, mozc::commands::Context::default_instance(), output);
-  }
   virtual bool SendKeyWithContext(const mozc::commands::KeyEvent& key,
                                   const mozc::commands::Context& context,
                                   mozc::commands::Output* output) = 0;

@@ -68,7 +68,11 @@ class MozcState : public InputContextProperty {
   void Reset();
   void FocusIn();
   void FocusOut(const InputContextEvent& event);
+  void CapabilityAboutToChange();
+  void CapabilityChanged();
   bool Paging(bool prev);
+
+  bool IsSecureInput() const;
 
   // Functions called by the MozcResponseParser class to update UI.
 
@@ -138,6 +142,9 @@ class MozcState : public InputContextProperty {
                          mozc::commands::Output* out,
                          std::string* out_error) const;
 
+  mozc::commands::Context BuildContext(bool include_surrounding_text) const;
+  void AdvanceFocusEpoch();
+
   // Parses the response from mozc_server. Returns whether the server consumes
   // the input or not (true means 'consumed').
   bool ParseResponse(const mozc::commands::Output& raw_response);
@@ -152,6 +159,7 @@ class MozcState : public InputContextProperty {
   InputContext* ic_;
   MozcEngine* engine_;
   mutable std::shared_ptr<MozcClientInterface> client_;
+  uint64_t focus_epoch_ = 1;
 
   mozc::commands::CompositionMode composition_mode_ = mozc::commands::HIRAGANA;
   mozc::config::Config::PreeditMethod preedit_method_ =

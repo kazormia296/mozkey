@@ -313,11 +313,15 @@ void MozcResponseParser::ExecuteCallback(const mozc::commands::Output& response,
   // because you cannot safely use |-relative_selected_length| nor
   // |abs(relative_selected_length)| in this case due to integer overflow.
   SurroundingTextInfo surrounding_text_info;
+  auto* mozc_state = engine_->mozcState(ic);
 
   switch (callback_command.type()) {
     case mozc::commands::SessionCommand::UNDO:
       break;
     case mozc::commands::SessionCommand::CONVERT_REVERSE: {
+      if (mozc_state->IsSecureInput()) {
+        return;
+      }
       if (!GetSurroundingText(ic, &surrounding_text_info,
                               engine_->clipboardAddon())) {
         return;
@@ -328,6 +332,9 @@ void MozcResponseParser::ExecuteCallback(const mozc::commands::Output& response,
     }
     case mozc::commands::SessionCommand::APPLY_LIVE_CONVERSION:
     case mozc::commands::SessionCommand::APPLY_ZENZ_LIVE_CORRECTION: {
+      if (mozc_state->IsSecureInput()) {
+        return;
+      }
       if (callback_command.has_live_conversion_generation()) {
         session_command.set_live_conversion_generation(
             callback_command.live_conversion_generation());
@@ -340,7 +347,6 @@ void MozcResponseParser::ExecuteCallback(const mozc::commands::Output& response,
       uint32_t delay = response.callback().has_delay_millisec()
                            ? response.callback().delay_millisec()
                            : 0;
-      auto* mozc_state = engine_->mozcState(ic);
       mozc_state->ScheduleLiveConversion(session_command, delay);
       return;
     }
@@ -348,7 +354,6 @@ void MozcResponseParser::ExecuteCallback(const mozc::commands::Output& response,
       return;
   }
 
-  auto* mozc_state = engine_->mozcState(ic);
   mozc::commands::Output new_output;
   if (!mozc_state->SendCommand(session_command, &new_output)) {
     LOG(ERROR) << "Callback Command Failed";

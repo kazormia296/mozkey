@@ -3,6 +3,7 @@ load(
     "//:build_defs.bzl",
     "mozc_cc_binary",
     "mozc_cc_library",
+    "mozc_cc_test",
 )
 
 package(default_visibility = ["//:__subpackages__"])
@@ -42,6 +43,53 @@ mozc_cc_library(
         ":mozc_client_interface",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
+        "@fcitx5",
+    ],
+)
+
+mozc_cc_library(
+    name = "grimodex_context",
+    srcs = [
+        "grimodex_context.cc",
+    ],
+    hdrs = [
+        "grimodex_context.h",
+    ],
+    deps = [
+        ":mozc_client_interface",
+        "//protocol:commands_cc_proto",
+    ],
+)
+
+mozc_cc_test(
+    name = "grimodex_context_test",
+    size = "small",
+    srcs = [
+        "grimodex_context_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":grimodex_context",
+        ":mozc_client_interface",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "mozc_client_pool_test",
+    size = "small",
+    srcs = [
+        "mozc_client_pool_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":mozc_client_interface",
+        ":mozc_client_pool",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//testing:gunit_main",
         "@fcitx5",
     ],
 )
@@ -108,6 +156,7 @@ mozc_cc_library(
     ],
     deps = [
         ":fcitx_key_util",
+        ":grimodex_context",
         ":i18nwrapper",
         ":mozc_client_pool",
         ":surrounding_text_util",

@@ -141,9 +141,8 @@ Instance* Init(Instance* instance) {
 MozcEngine::MozcEngine(Instance* instance)
     : instance_(Init(instance)),
       parser_(std::make_unique<MozcResponseParser>(this)),
-      client_(createClient()),
       factory_([this](InputContext& ic) { return new MozcState(&ic, this); }) {
-  pool_ = std::make_unique<MozcClientPool>(GetSharedStatePolicy());
+  pool_ = std::make_unique<MozcClientPool>([] { return createClient(); });
   for (auto command :
        {mozc::commands::DIRECT, mozc::commands::HIRAGANA,
         mozc::commands::FULL_KATAKANA, mozc::commands::FULL_ASCII,
@@ -216,12 +215,25 @@ MozcEngine::MozcEngine(Instance* instance)
 
   toolAction_.setMenu(&toolMenu_);
 
-  globalConfigReloadHandle_ =
-      instance_->watchEvent(EventType::GlobalConfigReloaded,
-                            EventWatcherPhase::Default, [this](Event&) {
-                              ResetClientPool();
-                              return true;
-                            });
+  capabilityAboutToChangeHandle_ = instance_->watchEvent(
+      EventType::InputContextCapabilityAboutToChange,
+      EventWatcherPhase::PreInputMethod, [this](Event& event) {
+        auto& capability_event =
+            static_cast<CapabilityAboutToChangeEvent&>(event);
+        InputContext* ic = capability_event.inputContext();
+        if (instance_->inputMethod(ic) == "mozkey") {
+          mozcState(ic)->CapabilityAboutToChange();
+        }
+      });
+  capabilityChangedHandle_ = instance_->watchEvent(
+      EventType::InputContextCapabilityChanged,
+      EventWatcherPhase::PreInputMethod, [this](Event& event) {
+        auto& capability_event = static_cast<CapabilityChangedEvent&>(event);
+        InputContext* ic = capability_event.inputContext();
+        if (instance_->inputMethod(ic) == "mozkey") {
+          mozcState(ic)->CapabilityChanged();
+        }
+      });
 
   reloadConfig();
 }
@@ -231,18 +243,13 @@ MozcEngine::~MozcEngine() {}
 void MozcEngine::setConfig(const RawConfig& config) {
   config_.load(config, true);
   safeSaveAsIni(config_, "conf/mozkey.conf");
-  ResetClientPool();
 }
 
 void MozcEngine::reloadConfig() {
   readAsIni(config_, "conf/mozkey.conf");
-  ResetClientPool();
 }
 void MozcEngine::activate(const fcitx::InputMethodEntry& /*entry*/,
                           fcitx::InputContextEvent& event) {
-  if (client_) {
-    client_->EnsureConnection();
-  }
   auto* ic = event.inputContext();
   auto* mozc_state = mozcState(ic);
   mozc_state->FocusIn();
@@ -281,10 +288,11 @@ void MozcEngine::reset(const InputMethodEntry& /*entry*/,
 }
 
 void MozcEngine::save() {
-  if (client_ == nullptr) {
-    return;
+  // SyncData is not tied to an input domain.  Use a short-lived maintenance
+  // client so no engine-global session can ever be shared by InputContexts.
+  if (std::unique_ptr<MozcClientInterface> client = createClient()) {
+    client->SyncData();
   }
-  client_->SyncData();
 }
 
 std::string MozcEngine::subMode(const fcitx::InputMethodEntry& /*entry*/,
@@ -311,31 +319,5 @@ void MozcEngine::compositionModeUpdated(InputContext* ic) {
 }
 
 AddonInstance* MozcEngine::clipboardAddon() { return clipboard(); }
-
-void MozcEngine::ResetClientPool() {
-  if (pool_->policy() != GetSharedStatePolicy()) {
-    instance_->inputContextManager().foreach ([this](InputContext* ic) {
-      if (auto* state = this->mozcState(ic)) {
-        state->ReleaseClient();
-      }
-      return true;
-    });
-    pool_->setPolicy(GetSharedStatePolicy());
-  }
-}
-
-PropertyPropagatePolicy MozcEngine::GetSharedStatePolicy() {
-  switch (*config_.sharedStatePolicy) {
-    case SharedStatePolicy::All:
-      return PropertyPropagatePolicy::All;
-    case SharedStatePolicy::Program:
-      return PropertyPropagatePolicy::Program;
-    case SharedStatePolicy::No:
-      return PropertyPropagatePolicy::No;
-    case SharedStatePolicy::FollowGlobalConfig:
-    default:
-      return instance_->globalConfig().shareInputState();
-  }
-}
 
 }  // namespace fcitx

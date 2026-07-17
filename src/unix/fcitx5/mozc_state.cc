@@ -56,6 +56,7 @@
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "unix/fcitx5/fcitx_key_event_handler.h"
+#include "unix/fcitx5/grimodex_context.h"
 #include "unix/fcitx5/i18nwrapper.h"
 #include "unix/fcitx5/mozc_engine.h"
 #include "unix/fcitx5/mozc_response_parser.h"
@@ -135,16 +136,11 @@ bool MozcState::TrySendKeyEvent(InputContext* ic,
     return false;  // not consumed.
   }
 
-  mozc::commands::Context context;
-  SurroundingTextInfo surrounding_text_info;
-  if (GetSurroundingText(ic, &surrounding_text_info,
-                         engine_->clipboardAddon())) {
-    context.set_preceding_text(surrounding_text_info.preceding_text);
-    context.set_following_text(surrounding_text_info.following_text);
-  }
+  const mozc::commands::Context context =
+      BuildContext(/*include_surrounding_text=*/true);
 
   MOZC_VLOG(1) << "TrySendKeyEvent: " << event.DebugString();
-  if (!client->SendKeyWithContext(event, context, out)) {
+  if (!SendKeyWithGrimodexContext(client, event, context, out)) {
     *out_error = "SendKey failed";
     MOZC_VLOG(1) << "ERROR";
     return false;
@@ -196,7 +192,9 @@ bool MozcState::TrySendRawCommand(const mozc::commands::SessionCommand& command,
                                   mozc::commands::Output* out,
                                   std::string* out_error) const {
   MOZC_VLOG(1) << "TrySendRawCommand: " << command.DebugString();
-  if (!GetClient()->SendCommand(command, out)) {
+  const mozc::commands::Context context =
+      BuildContext(/*include_surrounding_text=*/false);
+  if (!SendCommandWithGrimodexContext(GetClient(), command, context, out)) {
     *out_error = "SendCommand failed";
     MOZC_VLOG(1) << "ERROR";
     return false;
@@ -326,6 +324,8 @@ bool MozcState::Paging(bool prev) {
 void MozcState::FocusIn() {
   MOZC_VLOG(1) << "MozcState::FocusIn()";
 
+  AdvanceFocusEpoch();
+  handler_->Clear();
   UpdatePreeditMethod();
   DrawAll();
 }
@@ -348,6 +348,39 @@ void MozcState::FocusOut(const InputContextEvent& event) {
   ClearAll();  // just in case.
   DrawAll();
   engine_->instance()->resetCompose(ic_);
+  handler_->Clear();
+  displayUsage_ = false;
+  ReleaseClient();
+}
+
+void MozcState::CapabilityAboutToChange() {
+  MOZC_VLOG(1) << "MozcState::CapabilityAboutToChange()";
+  AdvanceFocusEpoch();
+
+  // This event is delivered before Fcitx installs the new capability flags.
+  // Do not send a final command with the old domain.  Destroy the uniquely
+  // owned session first, then purge every adapter-side reference and timer.
+  ReleaseClient();
+  displayUsage_ = false;
+  title_.clear();
+  description_.clear();
+  handler_->Clear();
+  ClearAll();
+  DrawAll();
+  engine_->instance()->resetCompose(ic_);
+}
+
+void MozcState::CapabilityChanged() {
+  MOZC_VLOG(1) << "MozcState::CapabilityChanged()";
+  // The old session was destroyed in CapabilityAboutToChange.  Create the
+  // replacement only after Fcitx has installed the new security-domain flags,
+  // so its first command already carries the new typed context.
+  UpdatePreeditMethod();
+  DrawAll();
+}
+
+bool MozcState::IsSecureInput() const {
+  return ic_->capabilityFlags().test(CapabilityFlag::PasswordOrSensitive);
 }
 
 bool MozcState::ParseResponse(const mozc::commands::Output& raw_response) {
@@ -473,12 +506,39 @@ void MozcState::DisplayUsage() {
 
 MozcClientInterface* MozcState::GetClient() const {
   if (!client_) {
-    client_ = engine_->pool()->requestClient(ic_);
+    client_ = engine_->pool()->requestClient(ic_->uuid());
   }
   return client_.get();
 }
 
 void MozcState::ReleaseClient() { client_.reset(); }
+
+mozc::commands::Context MozcState::BuildContext(
+    bool include_surrounding_text) const {
+  GrimodexSurroundingTextProvider surrounding_text_provider;
+  if (include_surrounding_text) {
+    surrounding_text_provider = [this]()
+        -> std::optional<GrimodexSurroundingText> {
+      SurroundingTextInfo info;
+      if (!GetSurroundingText(ic_, &info, engine_->clipboardAddon())) {
+        return std::nullopt;
+      }
+      return GrimodexSurroundingText{
+          .preceding_text = std::move(info.preceding_text),
+          .following_text = std::move(info.following_text),
+      };
+    };
+  }
+
+  const char* frontend = ic_->frontend();
+  return BuildGrimodexContext(
+      ic_->program(), frontend == nullptr ? std::string_view() : frontend,
+      IsSecureInput(), focus_epoch_, surrounding_text_provider);
+}
+
+void MozcState::AdvanceFocusEpoch() {
+  focus_epoch_ = AdvanceGrimodexFocusEpoch(focus_epoch_);
+}
 
 void MozcState::ScheduleLiveConversion(
     const mozc::commands::SessionCommand& command, uint32_t delay_millisec) {

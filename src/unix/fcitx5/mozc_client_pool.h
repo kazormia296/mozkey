@@ -32,8 +32,8 @@
 
 #include <fcitx-utils/trackableobject.h>
 #include <fcitx/inputcontext.h>
-#include <fcitx/inputcontextmanager.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -46,18 +46,20 @@ class MozcClientPool : public TrackableObject<MozcClientPool> {
   friend class MozcClientInterface;
 
  public:
-  MozcClientPool(PropertyPropagatePolicy initialPolicy);
+  using ClientFactory =
+      std::function<std::unique_ptr<MozcClientInterface>()>;
 
-  void setPolicy(PropertyPropagatePolicy policy);
-  PropertyPropagatePolicy policy() const { return policy_; }
+  explicit MozcClientPool(ClientFactory client_factory);
 
-  std::shared_ptr<MozcClientInterface> requestClient(InputContext* ic);
+  // One Mozc client/session is owned by exactly one Fcitx InputContext UUID.
+  // Program/global sharing is intentionally not representable in this API.
+  std::shared_ptr<MozcClientInterface> requestClient(const ICUUID& uuid);
 
  private:
   std::shared_ptr<MozcClientInterface> registerClient(
       const std::string& key, std::unique_ptr<MozcClientInterface> client);
   void unregisterClient(const std::string& key);
-  PropertyPropagatePolicy policy_;
+  ClientFactory client_factory_;
   std::unordered_map<std::string, std::weak_ptr<MozcClientInterface>> clients_;
 };
 
