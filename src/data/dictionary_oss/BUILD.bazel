@@ -32,6 +32,11 @@ load("//converter:evaluation.bzl", "evaluation")
 
 package(default_visibility = ["//:__subpackages__"])
 
+config_setting(
+    name = "mozkey_release_approved_dictionary",
+    define_values = {"mozkey_dictionary_profile": "release-approved-only"},
+)
+
 exports_files(
     srcs = ["id.def"],
     visibility = [
@@ -71,7 +76,14 @@ filegroup(
         "dictionary07.txt",
         "dictionary08.txt",
         "dictionary09.txt",
-        "//data/dictionary_koyasi:mozcdic_ut_daily_local",
+    ] + select({
+        ":mozkey_release_approved_dictionary": [
+            "//data/dictionary_koyasi:mozcdic_ut_daily_release_local",
+        ],
+        "//conditions:default": [
+            "//data/dictionary_koyasi:mozcdic_ut_daily_local",
+        ],
+    }) + [
         "//dictionary:zip_code_data",
     ],
     visibility = ["//visibility:private"],

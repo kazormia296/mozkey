@@ -20,13 +20,22 @@ import sys
 import tempfile
 from collections.abc import Sequence
 
+try:
+    from tools.dictionary import daily_source_lock
+except ModuleNotFoundError:  # Direct script execution from the repository root.
+    import daily_source_lock  # type: ignore[no-redef]
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 PREPARE_SCRIPT = REPO_ROOT / "tools" / "dictionary" / "prepare_daily_dictionary.ps1"
 SOURCE_MANIFEST = (
     REPO_ROOT / "dist" / "dictionary" / "linux-daily-source-manifest.json"
 )
-SOURCE_MANIFEST_SCHEMA = "mozkey.daily_dictionary_sources.v1"
+SOURCE_MANIFEST_SCHEMA = "mozkey.daily_dictionary_sources.v2"
+RELEASE_OUTPUT_MANIFEST = (
+    REPO_ROOT / "dist" / "dictionary" / "linux-release-approved-output-manifest.json"
+)
+RELEASE_OUTPUT_MANIFEST_SCHEMA = "mozkey.release_dictionary_outputs.v1"
 TRACKED_SAMPLE_PATH = (
     REPO_ROOT
     / "src"
@@ -36,15 +45,38 @@ TRACKED_SAMPLE_PATH = (
     / "mozcdic-ut-sample.txt"
 )
 
-CACHED_SOURCE_PATHS = (
-    pathlib.Path("src/data/dictionary_koyasi/generated/mozcdic-ut-safe.txt"),
+MERGE_OUTPUT_PATH = pathlib.Path(
+    "src/data/dictionary_koyasi/generated/mozcdic-ut-safe.txt"
+)
+NICO_INPUT_PATH = pathlib.Path(
+    "src/data/dictionary_koyasi/generated/nico_pixiv/"
+    "dic-nico-intersection-pixiv-google.txt"
+)
+PERSONAL_NAMES_INPUT_PATH = pathlib.Path(
+    "src/data/dictionary_koyasi/generated/personal_names/"
+    "mozcdic-ut-personal-names.txt"
+)
+CACHED_SOURCE_PATHS_BY_PROFILE = {
+    daily_source_lock.LOCAL_PROFILE: (
+        MERGE_OUTPUT_PATH,
+        NICO_INPUT_PATH,
+        PERSONAL_NAMES_INPUT_PATH,
+    ),
+    daily_source_lock.RELEASE_PROFILE: (
+        MERGE_OUTPUT_PATH,
+        PERSONAL_NAMES_INPUT_PATH,
+    ),
+}
+RELEASE_OUTPUT_PATHS = (
     pathlib.Path(
-        "src/data/dictionary_koyasi/generated/nico_pixiv/"
-        "dic-nico-intersection-pixiv-google.txt"
+        "src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-daily.txt"
     ),
     pathlib.Path(
-        "src/data/dictionary_koyasi/generated/personal_names/"
-        "mozcdic-ut-personal-names.txt"
+        "src/data/dictionary_koyasi/generated/profiled/"
+        "mozcdic-ut-personal-names-daily.txt"
+    ),
+    pathlib.Path(
+        "src/data/dictionary_koyasi/generated/profiled/koyasi-syntax-guard.txt"
     ),
 )
 
@@ -60,12 +92,25 @@ def resolve_pwsh(requested: str | None) -> str | None:
     return shutil.which("pwsh")
 
 
-def cached_sources(repo_root: pathlib.Path = REPO_ROOT) -> list[pathlib.Path]:
-    return [repo_root / relative for relative in CACHED_SOURCE_PATHS]
+def cached_source_paths(profile: str) -> tuple[pathlib.Path, ...]:
+    try:
+        return CACHED_SOURCE_PATHS_BY_PROFILE[profile]
+    except KeyError as error:
+        raise ValueError(f"unknown dictionary profile: {profile}") from error
 
 
-def missing_cached_sources(repo_root: pathlib.Path = REPO_ROOT) -> list[pathlib.Path]:
-    return [path for path in cached_sources(repo_root) if not path.is_file()]
+def cached_sources(
+    repo_root: pathlib.Path = REPO_ROOT,
+    profile: str = daily_source_lock.LOCAL_PROFILE,
+) -> list[pathlib.Path]:
+    return [repo_root / relative for relative in cached_source_paths(profile)]
+
+
+def missing_cached_sources(
+    repo_root: pathlib.Path = REPO_ROOT,
+    profile: str = daily_source_lock.LOCAL_PROFILE,
+) -> list[pathlib.Path]:
+    return [path for path in cached_sources(repo_root, profile) if not path.is_file()]
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -76,10 +121,13 @@ def sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def source_records(repo_root: pathlib.Path = REPO_ROOT) -> list[dict[str, object]]:
+def source_records(
+    repo_root: pathlib.Path = REPO_ROOT,
+    profile: str = daily_source_lock.LOCAL_PROFILE,
+) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     for relative, path in zip(
-        CACHED_SOURCE_PATHS, cached_sources(repo_root), strict=True
+        cached_source_paths(profile), cached_sources(repo_root, profile), strict=True
     ):
         record: dict[str, object] = {
             "path": relative.as_posix(),
@@ -97,9 +145,13 @@ def write_source_manifest(
     status: str,
     records: list[dict[str, object]],
     output: pathlib.Path = SOURCE_MANIFEST,
+    profile: str = daily_source_lock.LOCAL_PROFILE,
 ) -> None:
     manifest = {
+        "profile": profile,
         "schema_version": SOURCE_MANIFEST_SCHEMA,
+        "source_lock_path": daily_source_lock.LOCK_PATH.relative_to(REPO_ROOT).as_posix(),
+        "source_lock_sha256": sha256_file(daily_source_lock.LOCK_PATH),
         "source_mode": source_mode,
         "status": status,
         "files": records,
@@ -110,12 +162,50 @@ def write_source_manifest(
         stream.write("\n")
 
 
+def release_output_records(
+    repo_root: pathlib.Path = REPO_ROOT,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for relative in RELEASE_OUTPUT_PATHS:
+        path = repo_root / relative
+        if not path.is_file():
+            raise RuntimeError(f"release dictionary output is missing: {path}")
+        records.append(
+            {
+                "path": relative.as_posix(),
+                "sha256": sha256_file(path),
+                "size_bytes": path.stat().st_size,
+            }
+        )
+    return records
+
+
+def write_release_output_manifest(
+    records: list[dict[str, object]],
+    output: pathlib.Path = RELEASE_OUTPUT_MANIFEST,
+) -> None:
+    manifest = {
+        "excluded_source_ids": ["dic-nico-intersection-pixiv"],
+        "files": records,
+        "profile": daily_source_lock.RELEASE_PROFILE,
+        "schema_version": RELEASE_OUTPUT_MANIFEST_SCHEMA,
+        "source_lock_path": daily_source_lock.LOCK_PATH.relative_to(REPO_ROOT).as_posix(),
+        "source_lock_sha256": sha256_file(daily_source_lock.LOCK_PATH),
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def build_prepare_command(
     pwsh: str,
     source_mode: str,
     sample_lines: int,
     bash_path: str | None,
     prepare_script: pathlib.Path = PREPARE_SCRIPT,
+    profile: str = daily_source_lock.LOCAL_PROFILE,
 ) -> list[str]:
     command = [
         pwsh,
@@ -129,6 +219,8 @@ def build_prepare_command(
     ]
     if source_mode == "cached":
         command.append("-SkipDownload")
+    if profile == daily_source_lock.RELEASE_PROFILE:
+        command.append("-ReleaseApprovedOnly")
     if bash_path:
         command.extend(["-BashPath", bash_path])
     return command
@@ -185,6 +277,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="Prepare or smoke-test Mozkey's daily dictionary on Linux."
     )
     parser.add_argument(
+        "--profile",
+        choices=(daily_source_lock.LOCAL_PROFILE, daily_source_lock.RELEASE_PROFILE),
+        default=daily_source_lock.LOCAL_PROFILE,
+        help=(
+            "local-evaluation includes pinned nico/pixiv data; "
+            "release-approved-only excludes it from public outputs"
+        ),
+    )
+    parser.add_argument(
         "--source-mode",
         choices=("download", "cached", "sample"),
         required=True,
@@ -219,12 +320,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     pwsh = resolve_pwsh(args.pwsh)
     print(f"source mode: {args.source_mode}")
+    print(f"profile: {args.profile}")
     print(f"pwsh: {pwsh or 'not found'}")
 
     if args.source_mode == "sample":
         print(f"tracked sample sha256: {sha256_file(TRACKED_SAMPLE_PATH)}")
         run_sample_smoke()
         return 0
+
+    lock = daily_source_lock.load_lock()
 
     if pwsh is None:
         print(
@@ -236,7 +340,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     before_records: list[dict[str, object]] | None = None
     if args.source_mode == "cached":
-        missing = missing_cached_sources()
+        missing = missing_cached_sources(profile=args.profile)
         if missing:
             print("error: cached mode requires these existing inputs:", file=sys.stderr)
             for path in missing:
@@ -248,14 +352,41 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 2
         print("cached mode: forwarding -SkipDownload to the PowerShell pipeline")
-        before_records = source_records()
+        before_records = source_records(profile=args.profile)
+        daily_source_lock.verify_payload(
+            lock,
+            "mozcdic-ut-personal-names",
+            "dictionary_txt",
+            REPO_ROOT / PERSONAL_NAMES_INPUT_PATH,
+        )
+        if args.profile == daily_source_lock.LOCAL_PROFILE:
+            daily_source_lock.verify_payload(
+                lock,
+                "dic-nico-intersection-pixiv",
+                "dictionary",
+                REPO_ROOT / NICO_INPUT_PATH,
+            )
         for record in before_records:
             print(f"cached sha256: {record['sha256']}  {record['path']}")
+
+    outputs: list[dict[str, object]] | None = None
+    if args.profile == daily_source_lock.RELEASE_PROFILE:
+        try:
+            outputs = release_output_records()
+        except RuntimeError:
+            write_source_manifest(
+                source_mode=args.source_mode,
+                status="release_output_incomplete",
+                records=after_records,
+                profile=args.profile,
+            )
+            raise
 
     write_source_manifest(
         source_mode=args.source_mode,
         status="running",
-        records=source_records(),
+        records=source_records(profile=args.profile),
+        profile=args.profile,
     )
 
     command = build_prepare_command(
@@ -263,6 +394,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_mode=args.source_mode,
         sample_lines=args.sample_lines,
         bash_path=args.bash_path,
+        profile=args.profile,
     )
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
@@ -273,16 +405,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_source_manifest(
             source_mode=args.source_mode,
             status="failed",
-            records=source_records(),
+            records=source_records(profile=args.profile),
+            profile=args.profile,
         )
         raise
 
-    after_records = source_records()
+    after_records = source_records(profile=args.profile)
     if any(not record["exists"] for record in after_records):
         write_source_manifest(
             source_mode=args.source_mode,
             status="incomplete",
             records=after_records,
+            profile=args.profile,
         )
         raise RuntimeError("daily dictionary pipeline left a raw source input missing")
     if before_records is not None and after_records != before_records:
@@ -290,6 +424,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_mode=args.source_mode,
             status="cache_changed_during_run",
             records=after_records,
+            profile=args.profile,
         )
         raise RuntimeError("cached dictionary inputs changed while the pipeline ran")
 
@@ -297,7 +432,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_mode=args.source_mode,
         status="complete",
         records=after_records,
+        profile=args.profile,
     )
+    if outputs is not None:
+        write_release_output_manifest(outputs)
+        print(f"release output manifest: {RELEASE_OUTPUT_MANIFEST}")
     print(f"source manifest: {SOURCE_MANIFEST}")
     return 0
 

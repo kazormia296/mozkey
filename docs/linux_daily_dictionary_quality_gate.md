@@ -1,10 +1,9 @@
 # Linux daily dictionary and fixed-corpus quality gate
 
 This is the reproducible Linux entry point for Mozkey's existing daily
-dictionary innovations.  It does not reimplement the merge-ut, Nico/Pixiv,
-personal-name, syntax-guard, or profile-selection logic.  Production modes
-invoke `tools/dictionary/prepare_daily_dictionary.ps1`; the existing Python
-helpers remain the source of truth.
+dictionary innovations. Production modes invoke
+`tools/dictionary/prepare_daily_dictionary.ps1`; source revisions and payload
+SHA-256 values are locked in `tools/dictionary/daily_sources.lock.json`.
 
 ## Daily dictionary source modes
 
@@ -19,27 +18,45 @@ python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode sample
 Refresh all external inputs, generate the daily profile, and select it:
 
 ```bash
-python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode download
+python tools/dictionary/prepare_daily_dictionary_linux.py \
+  --source-mode download \
+  --profile local-evaluation
 ```
 
 Use repository-local cached inputs without a network fallback:
 
 ```bash
-python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode cached
+python tools/dictionary/prepare_daily_dictionary_linux.py \
+  --source-mode cached \
+  --profile local-evaluation
 ```
+
+Generate the public Linux dictionary allowlist:
+
+```bash
+python tools/dictionary/prepare_daily_dictionary_linux.py \
+  --source-mode download \
+  --profile release-approved-only
+```
+
+`local-evaluation` retains the pinned Nico/Pixiv delta for quality experiments.
+`release-approved-only` contains merge-ut with pinned place-name/SudachiDict,
+pinned personal names, and the Mozkey syntax guard. It excludes Nico/Pixiv from
+generation, CI transfer, the Bazel release target, and the installed product.
 
 `download` and `cached` require `pwsh` in `PATH`.  An explicit executable and
 bash can be supplied when needed:
 
 ```bash
 python tools/dictionary/prepare_daily_dictionary_linux.py \
-  --source-mode cached \
+  --source-mode cached --profile release-approved-only \
   --pwsh /usr/bin/pwsh \
   --bash-path /bin/bash
 ```
 
-Cached mode forwards `-SkipDownload` and fails before running the pipeline if
-any of these inputs are absent:
+Cached mode forwards `-SkipDownload`, verifies locked direct-download digests,
+and fails before running the pipeline if a profile-required input is absent.
+The local-evaluation inputs are:
 
 ```text
 src/data/dictionary_koyasi/generated/mozcdic-ut-safe.txt
@@ -51,14 +68,23 @@ It never falls back to the network.  `sample` mode instead profiles and checks
 the committed 5,000-line merge-ut sample in a temporary directory.  It is a
 tooling smoke test, not a daily release artifact.
 
+The release profile does not require or inspect the Nico/Pixiv path.
+
 Production modes write
 `dist/dictionary/linux-daily-source-manifest.json`.  Its schema is
-`mozkey.daily_dictionary_sources.v1` and records `source_mode`, pipeline
-`status`, and the repository-relative path, presence, byte size, and SHA-256 of
-each raw input above.  Cached mode fingerprints all three inputs before and
-after the PowerShell pipeline and fails if any digest changes during the run.
-On pipeline failure, the manifest is rewritten with `status: failed` for CI
-diagnostics.
+`mozkey.daily_dictionary_sources.v2` and records the profile, source-lock
+digest, `source_mode`, pipeline `status`, and the repository-relative path,
+presence, byte size, and SHA-256 of each required input. Cached mode
+fingerprints its inputs before and after the PowerShell pipeline and fails if
+any digest changes during the run. On pipeline failure, the manifest is
+rewritten with `status: failed` for CI diagnostics.
+
+Release generation additionally writes
+`dist/dictionary/linux-release-approved-output-manifest.json`. CI transfers
+only its three allowlisted generated outputs and the manifest; downloaded raw
+sources and the local-only Nico/Pixiv delta are never uploaded. Linux Bazel
+builds select the release target with
+`--define=mozkey_dictionary_profile=release-approved-only`.
 
 Daily files under `src/data/dictionary_koyasi/generated/` and `dist/` are
 ignored and must not be committed.  Daily preparation intentionally selects a

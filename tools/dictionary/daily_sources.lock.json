@@ -1,0 +1,104 @@
+{
+  "schema_version": "mozkey.daily_dictionary_source_lock.v1",
+  "profiles": {
+    "local-evaluation": {
+      "description": "Pinned evaluation inputs, including data that is not approved for redistribution.",
+      "source_ids": [
+        "merge-ut-dictionaries",
+        "mozcdic-ut-place-names",
+        "mozcdic-ut-sudachidict",
+        "mozcdic-ut-personal-names",
+        "dic-nico-intersection-pixiv"
+      ]
+    },
+    "release-approved-only": {
+      "description": "Inputs whose redistribution terms are documented for public Mozkey artifacts.",
+      "source_ids": [
+        "merge-ut-dictionaries",
+        "mozcdic-ut-place-names",
+        "mozcdic-ut-sudachidict",
+        "mozcdic-ut-personal-names"
+      ]
+    }
+  },
+  "sources": {
+    "dic-nico-intersection-pixiv": {
+      "license_expression": "LicenseRef-Review-Required",
+      "local_evaluation_only": true,
+      "payloads": {
+        "dictionary": {
+          "path": "public/dic-nico-intersection-pixiv-google.txt",
+          "sha256": "f0814b6e2de5302d8c44831066b8511a1a341356d38d31e4508c9e31f711231f",
+          "url": "https://raw.githubusercontent.com/ncaq/dic-nico-intersection-pixiv/db8953c31d30528515d9d1ccf103cd337f4a108d/public/dic-nico-intersection-pixiv-google.txt"
+        }
+      },
+      "release_approved": false,
+      "repository": "https://github.com/ncaq/dic-nico-intersection-pixiv.git",
+      "revision": "db8953c31d30528515d9d1ccf103cd337f4a108d"
+    },
+    "merge-ut-dictionaries": {
+      "license_expression": "Apache-2.0",
+      "local_evaluation_only": false,
+      "payloads": {
+        "make_script": {
+          "path": "src/merge/make.sh",
+          "sha256": "8662e7a82f91bcf8646a7205381f5f8fecb9f139d1f1b7d0c2e4cc5aa2ab97e2"
+        },
+        "merge_script": {
+          "path": "src/merge/merge_dictionaries.py",
+          "sha256": "00b0f3d8ab504797b970ad108df82df93b1ea9228829cc6ccf5c2afadb2c3789"
+        }
+      },
+      "release_approved": true,
+      "repository": "https://github.com/utuhiro78/merge-ut-dictionaries.git",
+      "revision": "15c1c64502b43e31d328012860376c03c3eaf633",
+      "tree": "34d4db2cedd095fec527599822743fc56be23935"
+    },
+    "mozcdic-ut-personal-names": {
+      "license_expression": "Apache-2.0",
+      "local_evaluation_only": false,
+      "payloads": {
+        "dictionary_bz2": {
+          "path": "mozcdic-ut-personal-names.txt.bz2",
+          "sha256": "e7a017a3422fabdae9c881a422c1825416d1d96531b05eca7b2a878058a48751",
+          "url": "https://raw.githubusercontent.com/utuhiro78/mozcdic-ut-personal-names/159e01bf4af61a3fa9367ae2578fd42c464a0ea7/mozcdic-ut-personal-names.txt.bz2"
+        },
+        "dictionary_txt": {
+          "path": "mozcdic-ut-personal-names.txt",
+          "sha256": "2af97ef0aab2427a2b5595c3641194cbd9dc61a41e49c9c1b7f797fcdb5d17c6"
+        }
+      },
+      "release_approved": true,
+      "repository": "https://github.com/utuhiro78/mozcdic-ut-personal-names.git",
+      "revision": "159e01bf4af61a3fa9367ae2578fd42c464a0ea7"
+    },
+    "mozcdic-ut-place-names": {
+      "license_expression": "LicenseRef-Public-Domain-Japan-Post-Zip-Data",
+      "local_evaluation_only": false,
+      "payloads": {
+        "dictionary_bz2": {
+          "path": "mozcdic-ut-place-names.txt.bz2",
+          "sha256": "fc27d40f32e99f18849730cdc0b14ddcf1dd6c9ce49b4c3ac65a0b17e6499fce"
+        }
+      },
+      "release_approved": true,
+      "repository": "https://github.com/utuhiro78/mozcdic-ut-place-names.git",
+      "revision": "9951ef87972c1d2c3803e2106b86083d14a242f9",
+      "tree": "98e5c7e2c7ff0ce977e35a43ac5444975d3ac248"
+    },
+    "mozcdic-ut-sudachidict": {
+      "license_expression": "Apache-2.0",
+      "local_evaluation_only": false,
+      "payloads": {
+        "dictionary_bz2": {
+          "path": "mozcdic-ut-sudachidict.txt.bz2",
+          "sha256": "696e745b7f7e9e202497421cee048de058d85b79cc79edc31c4f89b7b33675d9"
+        }
+      },
+      "release_approved": true,
+      "repository": "https://github.com/utuhiro78/mozcdic-ut-sudachidict.git",
+      "revision": "7def3da408b1854801bd5b559273f9fb8001ef5b",
+      "tree": "272d5f60286b44aafddff292438b3812846094dc"
+    }
+  }
+}

@@ -17,13 +17,16 @@ This directory uses external dictionary sources during local generation.
 
 Generated dictionary files are not committed by default. Before redistributing a built package that includes generated dictionaries, check the upstream source licenses, attribution requirements, and any distribution notes.
 
-Current external sources used by the daily workflow:
+Current external sources used by the daily workflow are pinned in
+`tools/dictionary/daily_sources.lock.json`:
 
 | Source | Used for | Upstream / license note |
 | --- | --- | --- |
-| `merge-ut-dictionaries` | merge-ut daily profile | Upstream generated dictionary is described as `Combined`. Check the upstream LICENSE and source-specific license notes before redistribution. |
-| `dic-nico-intersection-pixiv` | nico/pixiv delta dictionary | Upstream states that the code is MIT licensed and that the generated dictionary data is published with no copyright claim by the upstream author. Treat redistribution as review-required because the data is derived from external web sources. |
+| `merge-ut-dictionaries` | merge-ut daily profile | Public release composition is restricted to the pinned place-name and SudachiDict inputs below; broader `Combined` profiles are local experiments. |
+| `dic-nico-intersection-pixiv` | nico/pixiv delta dictionary | Pinned local evaluation only. Excluded from public artifacts because its derived-data redistribution conditions are not sufficiently explicit. |
 | `mozcdic-ut-personal-names` | personal names dictionary | Upstream is Apache License, Version 2.0. Check upstream attribution and NOTICE requirements before redistribution. |
+| `mozcdic-ut-place-names` | release place names | Upstream identifies Japan Post ZIP-code data as public domain. |
+| `mozcdic-ut-sudachidict` | release Sudachi vocabulary | Apache License, Version 2.0. |
 
 Repository policy:
 
@@ -82,8 +85,9 @@ generation to this existing pipeline:
 
 ```bash
 python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode sample
-python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode download
-python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode cached
+python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode download --profile local-evaluation
+python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode cached --profile local-evaluation
+python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode download --profile release-approved-only
 ```
 
 The recommended way to prepare the enhanced daily dictionary is:
@@ -97,6 +101,16 @@ If external source dictionaries have already been downloaded, use:
 ```powershell
 .\tools\dictionary\prepare_daily_dictionary.ps1 -SkipDownload
 ```
+
+Those commands select the broad, pinned `local-evaluation` profile. Public
+artifacts must instead use:
+
+```powershell
+.\tools\dictionary\prepare_daily_dictionary.ps1 -ReleaseApprovedOnly
+```
+
+The release profile omits nico/pixiv at generation and Bazel target selection;
+it also ignores any stale locally generated nico/pixiv delta.
 
 This script performs the following steps:
 
