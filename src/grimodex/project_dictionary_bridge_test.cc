@@ -112,6 +112,12 @@ TEST(ProjectDictionaryBridgeTest, MapsEveryCategoryAndPriority) {
   EXPECT_EQ(result.snapshot->conditions.topic, "space opera");
   EXPECT_EQ(result.snapshot->conditions.style, "formal");
   EXPECT_EQ(result.snapshot->conditions.preference, "names first");
+  EXPECT_EQ(result.snapshot->dictionary->metadata().topic, "space opera");
+  EXPECT_EQ(result.snapshot->dictionary->metadata().style, "formal");
+  EXPECT_EQ(result.snapshot->dictionary->metadata().preference,
+            "names first");
+  EXPECT_EQ(result.snapshot->dictionary->metadata().payload_sha256,
+            std::string(64, 'b'));
   EXPECT_EQ(result.snapshot->project_id, "project-a");
   EXPECT_EQ(result.snapshot->project_name, "Project A");
   EXPECT_EQ(result.snapshot->state_updated_at,
