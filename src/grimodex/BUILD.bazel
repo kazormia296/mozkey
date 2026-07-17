@@ -92,3 +92,22 @@ mozc_cc_test(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+mozc_cc_test(
+    name = "project_dictionary_provider_test",
+    size = "small",
+    srcs = ["project_dictionary_provider_test.cc"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":project_dictionary_bridge",
+        ":project_dictionary_provider",
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
