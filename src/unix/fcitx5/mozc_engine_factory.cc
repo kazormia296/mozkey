@@ -53,7 +53,7 @@ class MozcEngineFactory : public AddonFactory {
     while (baseDirectory && numberOfSlash >= 0) {
       auto path = stringutils::joinPath(baseDirectory.get(), "share/locale");
       if (fs::isdir(path)) {
-        registerDomain("fcitx5-mozc", path.data());
+        registerDomain("fcitx5-mozkey", path.data());
       }
       baseDirectory = cdUp(baseDirectory.get());
       if (baseDirectory && std::string_view(baseDirectory.get()).empty()) {
@@ -73,7 +73,7 @@ class MozcEngineFactory : public AddonFactory {
 }  // namespace fcitx
 
 #ifdef FCITX_ADDON_FACTORY_V2
-FCITX_ADDON_FACTORY_V2(mozc, fcitx::MozcEngineFactory)
+FCITX_ADDON_FACTORY_V2(mozkey, fcitx::MozcEngineFactory)
 #else
 FCITX_ADDON_FACTORY(fcitx::MozcEngineFactory)
 #endif

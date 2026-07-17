@@ -390,7 +390,7 @@ bool MozcResponseParser::ParseResponse(const mozc::commands::Output& response,
   if (response.has_mode()) {
     mozc_state->SetCompositionMode(
         response.mode(), !engine_->deactivating() &&
-                             engine_->instance()->inputMethod(ic) == "mozc");
+                             engine_->instance()->inputMethod(ic) == "mozkey");
   }
 
   if (!response.consumed()) {

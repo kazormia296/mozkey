@@ -168,7 +168,7 @@ mozc_cc_library(
 )
 
 mozc_cc_binary(
-    name = "fcitx5-mozc.so",
+    name = "fcitx5-mozkey.so",
     srcs = [
         "mozc_engine_factory.cc",
     ],

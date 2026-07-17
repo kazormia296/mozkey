@@ -103,7 +103,7 @@ FCITX_CONFIGURATION(
                             toolCommand("--mode=dictionary_tool")};
     ExternalOption addTool{this, "Add Word", _("Add Word"),
                            toolCommand("--mode=word_register_dialog")};
-    ExternalOption aboutTool{this, "About Mozc", _("About Mozc"),
+    ExternalOption aboutTool{this, "About Mozkey", _("About Mozkey"),
                              toolCommand("--mode=about_dialog")};);
 
 class MozcModeSubAction : public SimpleAction {

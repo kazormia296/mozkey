@@ -1,22 +1,24 @@
 #!/bin/bash
 
 PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
+install_tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-fcitx5-data.XXXXXX")"
+trap 'rm -rf "${install_tmpdir}"' EXIT
 
 for pofile in unix/fcitx5/po/*.po
 do
     filename=`basename $pofile`
     lang=${filename/.po/}
-    mofile=${pofile/.po/.mo}
-    msgfmt $pofile -o $mofile
-    install -D -m 644 "$mofile" "${PREFIX}/share/locale/$lang/LC_MESSAGES/fcitx5-mozc.mo"
-    rm -f $mofile
+    mofile="${install_tmpdir}/${lang}.mo"
+    msgfmt "$pofile" -o "$mofile"
+    install -D -m 644 "$mofile" "${DESTDIR}${PREFIX}/share/locale/$lang/LC_MESSAGES/fcitx5-mozkey.mo"
 done
 
-install -D -m 644 unix/fcitx5/mozc-addon.conf "${PREFIX}/share/fcitx5/addon/mozc.conf"
-install -D -m 644 unix/fcitx5/mozc.conf "${PREFIX}/share/fcitx5/inputmethod/mozc.conf"
+install -D -m 644 unix/fcitx5/mozkey-addon.conf "${DESTDIR}${PREFIX}/share/fcitx5/addon/mozkey.conf"
+install -D -m 644 unix/fcitx5/mozkey.conf "${DESTDIR}${PREFIX}/share/fcitx5/inputmethod/mozkey.conf"
 
-PREFIX="${PREFIX}" ../scripts/install_fcitx5_icons
+DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" ../scripts/install_fcitx5_icons
 
-msgfmt --xml -d unix/fcitx5/po/ --template unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml.in -o unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
-install -Dm644 unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml "${PREFIX}/share/metainfo/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml"
-rm -f unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
+metainfo_output="${install_tmpdir}/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+msgfmt --xml -d unix/fcitx5/po/ --template unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in -o "${metainfo_output}"
+install -Dm644 "${metainfo_output}" "${DESTDIR}${PREFIX}/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"

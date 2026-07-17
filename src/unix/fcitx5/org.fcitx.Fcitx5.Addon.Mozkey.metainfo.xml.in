@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <component type="addon">
-  <id>org.fcitx.Fcitx5.Addon.Mozc</id>
+  <id>org.fcitx.Fcitx5.Addon.Mozkey</id>
   <extends>org.fcitx.Fcitx5</extends>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-2.0+</project_license>
-  <name>Mozc for Fcitx 5</name>
-  <summary>Japanese input method based on Mozc</summary>
-  <developer id="org.fcitx-im">
-    <name>The Fcitx Team</name>
+  <name>Mozkey for Fcitx 5</name>
+  <summary>Mozkey Japanese input method with Zenz support</summary>
+  <developer id="io.github.kazormia296">
+    <name>Mozkey contributors</name>
   </developer>
-  <url type="homepage">https://fcitx-im.org</url>
-  <url type="bugtracker">https://github.com/fcitx/mozc/issues</url>
-  <url type="vcs-browser">https://github.com/fcitx/mozc</url>
-  <project_group>Fcitx</project_group>
+  <url type="homepage">https://github.com/kazormia296/mozkey</url>
+  <url type="bugtracker">https://github.com/kazormia296/mozkey/issues</url>
+  <url type="vcs-browser">https://github.com/kazormia296/mozkey</url>
+  <project_group>Mozkey</project_group>
   <releases>
     <release version="3.34.6239.102" date="2026-06-25"></release>
     <release version="3.33.6239.102" date="2026-06-24"></release>

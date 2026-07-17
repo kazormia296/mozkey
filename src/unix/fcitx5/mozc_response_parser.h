@@ -50,9 +50,8 @@ class MozcResponseParser {
   ~MozcResponseParser();
 
   // Parses a response from Mozc server and sets persed information on
-  // fcitx_mozc
-  // object. Returns true if response.consumed() is true. fcitx_mozc must be non
-  // NULL. This function does not take ownership of fcitx_mozc.
+  // Mozkey Fcitx object. Returns true if response.consumed() is true. The
+  // engine must be non-null. This function does not take ownership of it.
   bool ParseResponse(const mozc::commands::Output& response,
                      InputContext* ic) const;
 

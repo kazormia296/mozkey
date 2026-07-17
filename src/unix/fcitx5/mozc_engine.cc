@@ -59,45 +59,45 @@ const struct CompositionModeInfo {
   mozc::commands::CompositionMode mode;
 } kPropCompositionModes[] = {
     {
-        "mozc-mode-direct",
-        "fcitx_mozc_direct",
+        "mozkey-mode-direct",
+        "fcitx_mozkey_direct",
         "A",
         N_("Direct"),
         mozc::commands::DIRECT,
     },
     {
-        "mozc-mode-hiragana",
-        "fcitx_mozc_hiragana",
+        "mozkey-mode-hiragana",
+        "fcitx_mozkey_hiragana",
         "\xe3\x81\x82",  // Hiragana letter A in UTF-8.
         N_("Hiragana"),
         mozc::commands::HIRAGANA,
     },
     {
-        "mozc-mode-katakana_full",
-        "fcitx_mozc_katakana_full",
+        "mozkey-mode-katakana_full",
+        "fcitx_mozkey_katakana_full",
         "\xe3\x82\xa2",  // Katakana letter A.
         N_("Full Katakana"),
         mozc::commands::FULL_KATAKANA,
     },
     {
 
-        "mozc-mode-alpha_half",
-        "fcitx_mozc_alpha_half",
+        "mozkey-mode-alpha_half",
+        "fcitx_mozkey_alpha_half",
         "A",
         N_("Half ASCII"),
         mozc::commands::HALF_ASCII,
     },
     {
 
-        "mozc-mode-alpha_full",
-        "fcitx_mozc_alpha_full",
+        "mozkey-mode-alpha_full",
+        "fcitx_mozkey_alpha_full",
         "\xef\xbc\xa1",  // Full width ASCII letter A.
         N_("Full ASCII"),
         mozc::commands::FULL_ASCII,
     },
     {
-        "mozc-mode-katakana_half",
-        "fcitx_mozc_katakana_half",
+        "mozkey-mode-katakana_half",
+        "fcitx_mozkey_katakana_half",
         "\xef\xbd\xb1",  // Half width Katakana letter A.
         N_("Half Katakana"),
         mozc::commands::HALF_KATAKANA,
@@ -131,7 +131,7 @@ static_assert(mozc::commands::NUM_OF_COMPOSITIONS == kNumCompositionModes,
 
 Instance* Init(Instance* instance) {
   int argc = 1;
-  char argv0[] = "fcitx_mozc";
+  char argv0[] = "fcitx_mozkey";
   char* _argv[] = {argv0};
   char** argv = _argv;
   mozc::InitMozc(argv[0], &argc, &argv);
@@ -151,11 +151,11 @@ MozcEngine::MozcEngine(Instance* instance)
     modeActions_.push_back(std::make_unique<MozcModeSubAction>(this, command));
   }
 
-  instance_->inputContextManager().registerProperty("mozcState", &factory_);
-  instance_->userInterfaceManager().registerAction("mozc-tool", &toolAction_);
-  toolAction_.setShortText(_("Mozc Settings"));
-  toolAction_.setLongText(_("Mozc Settings"));
-  toolAction_.setIcon("fcitx_mozc_tool");
+  instance_->inputContextManager().registerProperty("mozkeyState", &factory_);
+  instance_->userInterfaceManager().registerAction("mozkey-tool", &toolAction_);
+  toolAction_.setShortText(_("Mozkey Settings"));
+  toolAction_.setLongText(_("Mozkey Settings"));
+  toolAction_.setIcon("fcitx_mozkey_tool");
 
   int i = 0;
   for (auto& modeAction : modeActions_) {
@@ -166,7 +166,7 @@ MozcEngine::MozcEngine(Instance* instance)
   }
 
   separatorAction_.setSeparator(true);
-  instance_->userInterfaceManager().registerAction("mozc-separator",
+  instance_->userInterfaceManager().registerAction("mozkey-separator",
                                                    &separatorAction_);
 
   SemanticVersion version;
@@ -179,32 +179,32 @@ MozcEngine::MozcEngine(Instance* instance)
     toolMenu_.addAction(&separatorAction_);
   }
 
-  instance_->userInterfaceManager().registerAction("mozc-tool-config",
+  instance_->userInterfaceManager().registerAction("mozkey-tool-config",
                                                    &configToolAction_);
   configToolAction_.setShortText(_("Configuration Tool"));
-  configToolAction_.setIcon("fcitx_mozc_tool");
+  configToolAction_.setIcon("fcitx_mozkey_tool");
   configToolAction_.connect<SimpleAction::Activated>([](InputContext*) {
     mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=config_dialog");
   });
 
-  instance_->userInterfaceManager().registerAction("mozc-tool-dict",
+  instance_->userInterfaceManager().registerAction("mozkey-tool-dict",
                                                    &dictionaryToolAction_);
   dictionaryToolAction_.setShortText(_("Dictionary Tool"));
-  dictionaryToolAction_.setIcon("fcitx_mozc_dictionary");
+  dictionaryToolAction_.setIcon("fcitx_mozkey_dictionary");
   dictionaryToolAction_.connect<SimpleAction::Activated>([](InputContext*) {
     mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=dictionary_tool");
   });
 
-  instance_->userInterfaceManager().registerAction("mozc-tool-add",
+  instance_->userInterfaceManager().registerAction("mozkey-tool-add",
                                                    &addWordAction_);
   addWordAction_.setShortText(_("Add Word"));
   addWordAction_.connect<SimpleAction::Activated>([](InputContext*) {
     mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=word_register_dialog");
   });
 
-  instance_->userInterfaceManager().registerAction("mozc-tool-about",
+  instance_->userInterfaceManager().registerAction("mozkey-tool-about",
                                                    &aboutAction_);
-  aboutAction_.setShortText(_("About Mozc"));
+  aboutAction_.setShortText(_("About Mozkey"));
   aboutAction_.connect<SimpleAction::Activated>([](InputContext*) {
     mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=about_dialog");
   });
@@ -230,12 +230,12 @@ MozcEngine::~MozcEngine() {}
 
 void MozcEngine::setConfig(const RawConfig& config) {
   config_.load(config, true);
-  safeSaveAsIni(config_, "conf/mozc.conf");
+  safeSaveAsIni(config_, "conf/mozkey.conf");
   ResetClientPool();
 }
 
 void MozcEngine::reloadConfig() {
-  readAsIni(config_, "conf/mozc.conf");
+  readAsIni(config_, "conf/mozkey.conf");
   ResetClientPool();
 }
 void MozcEngine::activate(const fcitx::InputMethodEntry& /*entry*/,

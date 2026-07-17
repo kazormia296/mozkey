@@ -1,0 +1,51 @@
+#!/bin/sh
+
+# Stages the Bazel-built Linux product and proves that no system Mozc-owned
+# path is populated. Run this script from the src/ Bazel workspace.
+set -eu
+
+stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-install-smoke.XXXXXX")"
+trap 'rm -rf "${stage_dir}"' EXIT HUP INT TERM
+
+require_file() {
+  if [ ! -f "${stage_dir}$1" ]; then
+    echo "missing staged file: $1" >&2
+    exit 1
+  fi
+}
+
+reject_path() {
+  if [ -e "${stage_dir}$1" ] || [ -L "${stage_dir}$1" ]; then
+    echo "system Mozc path was populated: $1" >&2
+    exit 1
+  fi
+}
+
+DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_fcitx5_bazel
+DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_server_bazel
+
+require_file /usr/lib/fcitx5/fcitx5-mozkey.so
+require_file /usr/lib/mozkey/mozc_server
+require_file /usr/lib/mozkey/mozc_tool
+require_file /usr/lib/mozkey/mozc_zenz_scorer
+require_file /usr/share/fcitx5/addon/mozkey.conf
+require_file /usr/share/fcitx5/inputmethod/mozkey.conf
+require_file /usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml
+require_file /usr/share/icons/hicolor/32x32/apps/org.fcitx.Fcitx5.fcitx_mozkey.png
+
+grep -qx 'Library=fcitx5-mozkey' "${stage_dir}/usr/share/fcitx5/addon/mozkey.conf"
+grep -qx 'Addon=mozkey' "${stage_dir}/usr/share/fcitx5/inputmethod/mozkey.conf"
+
+reject_path /usr/lib/fcitx5/fcitx5-mozc.so
+reject_path /usr/lib/mozc
+reject_path /usr/share/fcitx5/addon/mozc.conf
+reject_path /usr/share/fcitx5/inputmethod/mozc.conf
+reject_path /usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
+reject_path /usr/share/icons/hicolor/32x32/apps/fcitx_mozc.png
+
+if command -v appstreamcli >/dev/null 2>&1; then
+  appstreamcli validate --no-net \
+    "${stage_dir}/usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+fi
+
+echo "Mozkey staged-install isolation smoke test passed"

@@ -2,8 +2,8 @@
 
 _bldtype="${_bldtype:-Debug}"
 PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
 
-install -D -m 755 "out_linux/${_bldtype}/fcitx5-mozc.so" "${PREFIX}/lib/fcitx5/fcitx5-mozc.so"
+install -D -m 755 "out_linux/${_bldtype}/fcitx5-mozkey.so" "${DESTDIR}${PREFIX}/lib/fcitx5/fcitx5-mozkey.so"
 
-PREFIX="${PREFIX}" ../scripts/install_fcitx5_data
-PREFIX="${PREFIX}" ../scripts/install_fcitx5_icons
+DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" ../scripts/install_fcitx5_data
