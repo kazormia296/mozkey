@@ -1,4 +1,4 @@
-OK:	たしました	足しました	Conversion Expected	足しました	fixture-v1
-OK:	たいじんすきる	対人スキル	Conversion Expected	対人スキル	fixture-v1
-OK:	もずきー	Mozkey	Conversion Expected	Mozkey	fixture-v1
-FAILED:	みせいこう	未成工	Conversion Expected	未成功	fixture-v1
+OK:	たしました	足しました	Conversion Expected	足しました	mozkey-fixture-v1
+OK:	たいじんすきる	対人スキル	Conversion Expected	対人スキル	mozkey-fixture-v1
+OK:	もずきー	Mozkey	Conversion Expected	Mozkey	mozkey-fixture-v1
+FAILED:	みせいこう	未成工	Conversion Expected	未成功	mozkey-fixture-v1
