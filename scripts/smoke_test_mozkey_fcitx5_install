@@ -21,8 +21,19 @@ reject_path() {
   fi
 }
 
-DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_fcitx5_bazel
-DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_server_bazel
+require_absent() {
+  if [ -e "${stage_dir}$1" ] || [ -L "${stage_dir}$1" ]; then
+    echo "staged file should have been removed: $1" >&2
+    exit 1
+  fi
+}
+
+install_product() {
+  DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_fcitx5_bazel
+  DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_server_bazel
+}
+
+install_product
 
 require_file /usr/lib/fcitx5/fcitx5-mozkey.so
 require_file /usr/lib/mozkey/mozc_server
@@ -43,9 +54,32 @@ reject_path /usr/share/fcitx5/inputmethod/mozc.conf
 reject_path /usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
 reject_path /usr/share/icons/hicolor/32x32/apps/fcitx_mozc.png
 
+# A second install models an in-place package upgrade and must be idempotent.
+install_product
+
+# Uninstall must preserve other IMEs and all user-owned state.
+install -D -m 644 /dev/null "${stage_dir}/usr/lib/fcitx5/fcitx5-hazkey.so"
+install -D -m 644 /dev/null "${stage_dir}/usr/share/fcitx5/addon/hazkey.conf"
+install -D -m 644 /dev/null "${stage_dir}/usr/lib/fcitx5/fcitx5-mozc.so"
+install -D -m 600 /dev/null "${stage_dir}/user-data-sentinel"
+DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/uninstall_mozkey_fcitx5
+
+require_absent /usr/lib/fcitx5/fcitx5-mozkey.so
+require_absent /usr/lib/mozkey/mozc_server
+require_absent /usr/share/fcitx5/addon/mozkey.conf
+require_file /usr/lib/fcitx5/fcitx5-hazkey.so
+require_file /usr/share/fcitx5/addon/hazkey.conf
+require_file /usr/lib/fcitx5/fcitx5-mozc.so
+require_file /user-data-sentinel
+
+# Reinstall is the rollback-forward path after an uninstall exercise.
+install_product
+require_file /usr/lib/fcitx5/fcitx5-mozkey.so
+require_file /usr/lib/mozkey/mozc_server
+
 if command -v appstreamcli >/dev/null 2>&1; then
   appstreamcli validate --no-net \
     "${stage_dir}/usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
 fi
 
-echo "Mozkey staged-install isolation smoke test passed"
+echo "Mozkey staged install/upgrade/uninstall/reinstall isolation smoke passed"

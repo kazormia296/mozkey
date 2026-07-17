@@ -26,5 +26,14 @@ After building the release targets from `src/`, run:
 ```
 
 The smoke test installs into a temporary `DESTDIR`, validates the Fcitx and
-AppStream metadata, and fails if any system Mozc-owned path is created. Windows
-and macOS product paths are unchanged.
+AppStream metadata, repeats the install as an upgrade, removes only the audited
+Mozkey manifest, proves Hazkey/Mozc/user-data sentinels survive, and reinstalls
+the product.  The real uninstall entry point is:
+
+```sh
+sudo env PREFIX=/usr ./scripts/uninstall_mozkey_fcitx5
+```
+
+It deliberately preserves `$XDG_CONFIG_HOME/mozkey`, `~/.config/mozkey`, the
+legacy profile, Zenz models, and Grimodex Protocol v1 snapshots. Windows and
+macOS product paths are unchanged.

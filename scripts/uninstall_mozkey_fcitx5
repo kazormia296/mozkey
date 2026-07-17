@@ -1,0 +1,59 @@
+#!/bin/sh
+
+# Removes only the immutable product files listed in the audited manifest.
+# User profiles and Grimodex project snapshots are deliberately preserved.
+set -eu
+
+PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
+
+case "${PREFIX}" in
+  /*) ;;
+  *)
+    echo "PREFIX must be absolute: ${PREFIX}" >&2
+    exit 2
+    ;;
+esac
+if [ "${PREFIX}" = / ]; then
+  echo "refusing to uninstall with PREFIX=/" >&2
+  exit 2
+fi
+case "${DESTDIR}" in
+  ""|/*) ;;
+  *)
+    echo "DESTDIR must be empty or absolute: ${DESTDIR}" >&2
+    exit 2
+    ;;
+esac
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+manifest="${script_dir}/mozkey_fcitx5_install_manifest.txt"
+install_root="${DESTDIR}${PREFIX}"
+if [ ! -f "${manifest}" ] || [ -z "${install_root}" ] ||
+   [ "${install_root}" = / ]; then
+  echo "invalid Mozkey uninstall manifest or root" >&2
+  exit 2
+fi
+
+while IFS= read -r relative_path; do
+  case "${relative_path}" in
+    /*) ;;
+    *)
+      echo "invalid manifest path: ${relative_path}" >&2
+      exit 2
+      ;;
+  esac
+  case "${relative_path}" in
+    *..*)
+      echo "refusing traversal-like manifest path: ${relative_path}" >&2
+      exit 2
+      ;;
+  esac
+  rm -f -- "${install_root}${relative_path}"
+done < "${manifest}"
+
+# Remove only product-private directories, and only when already empty.
+rmdir "${install_root}/lib/mozkey" 2>/dev/null || true
+rmdir "${install_root}/share/doc/mozkey" 2>/dev/null || true
+
+echo "Mozkey Fcitx5 product files removed; user data preserved"
