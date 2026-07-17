@@ -21,9 +21,10 @@ Grimodex
   <- Fcitx5 Mozkey adapter (one Mozc session per InputContext)
 ```
 
-Hazkey の Mozc sidecar は移行中の比較 oracle と rollback 用としてのみ保持し、
-新しい product path にはしない。rollback window は Mozkey Linux の最初の安定
-release までとする。
+Hazkey の Mozc sidecar は移行判断の比較 oracle として研究 branch/tag および評価
+artifact にのみ保持し、新しい product path や installable fallback にはしない。
+Hazkey は未リリースのため、Mozkey release gate に Hazkey runtime への rollback や
+installed round trip を含めない。
 
 ## Why Mozkey
 
@@ -148,11 +149,11 @@ digest がなければ旧操作を replay せず、Fcitx が保持した raw rea
 7. server kill、stale candidate、oversize、partial I/O、snapshot race から回復する。
 8. fixed corpus の品質が現行 Mozc/Hazkey oracle に対して非劣化である。
 9. key dispatch、preedit、candidate click、focus 切替を GTK、Qt、Electron で実機確認する。
-10. package の install、upgrade、uninstall、rollback、consumer heartbeat と runtime identity を確認する。
+10. Mozkey package の install、upgrade、uninstall、reinstall、consumer heartbeat と runtime identity を確認する。
 
-Hazkey は gate 完了後も一 release だけ installable rollback artifact を保持し、その後に
-既定 package、service、設定 UI、runtime path から削除する。研究 branch/tag と評価
-artifact は削除しない。
+Hazkey の installable rollback artifact は作らない。研究 branch/tag と評価 artifact は
+比較根拠の再現用に保持するが、既定 package、service、設定 UI、runtime path には
+含めない。
 
 ## Upstream maintenance
 

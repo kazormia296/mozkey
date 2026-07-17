@@ -47,6 +47,65 @@ project-dictionary fallback, GTK/Qt and packaged/development Electron focus,
 secure fields, Zenz runtime, and package isolation. A failure in those product
 gates blocks rollout; it does not by itself reopen the engine-selection spike.
 
+## Linux release candidate
+
+The Linux release candidate was built from
+`ff25b955eacc2c3c6674af9c81248720a8127d61`. The later
+`f08b372e26f9c7b849f90aa188d2d490b19136f0` commit changes CI evaluation
+baseline selection and macOS test diagnostics only; it does not change the
+packaged runtime payload. Hazkey is unreleased, so no installed Hazkey
+fallback, rollback artifact, or runtime round-trip validation was required or
+performed.
+
+Two package builds produced byte-identical copies of all four release
+artifacts. The archive has 61 non-directory entries; the SPDX document analyzes
+60 and excludes its own embedded copy. The embedded attestation and SPDX hashes
+match their external files exactly.
+
+| Artifact | Size | SHA-256 |
+| --- | ---: | --- |
+| `mozkey-v0.8.0-archlinux-x86_64.tar.xz` | 98,800,336 bytes | `636aa6712759441a395a6d36b0ec0bfd78f2de13e24a11dfb3b48a34a3589228` |
+| checksum sidecar | 104 bytes | `2086fefedd2a79d8943247ab9dd7ea6217f531b4b58f0b22e10f399efc63fc4d` |
+| build attestation | 3,534 bytes | `d6fc8e0981ceefbba01312035fc16840d06489dd880ac5f9cfb96b6509d68cfa` |
+| SPDX 2.3 SBOM | 47,941 bytes | `4a24c41827a3bd52fddb81051b000407b68e7a84432c68b38d8608d6a8e56861` |
+| release-approved dictionary manifest | 986 bytes | `bbf03da7e2756badbec7c697342f48152b0e5a97ed66038392b3ccd31598dc5f` |
+
+The attestation uses schema `mozkey.linux_build_attestation.v2` and records
+`--define=mozkey_dictionary_profile=release-approved-only`. The SPDX package
+verification code is
+`8190730ee401c8cde6b1c33177d47181f4dcdc47`. The normalized Zenz model is
+73,871,936 bytes with SHA-256
+`601572033a0c231857864ab0a2ccf40fbd1abe6ee4ccecd5399bf82e3e559772`;
+its tensor payload SHA-256 is
+`e943d954852ad629c01a278ee61ec4b80b26401d18695e01ef5da5610429b67e`.
+
+| Packaged payload | SHA-256 |
+| --- | --- |
+| `fcitx5-mozkey.so` | `7f58d32e3a9dcd282f3958a5afbdd7c6c8a4364d52443237af110d5c451d3cd4` |
+| `mozc_server` | `96496614232a4bb32abf87f0903290ef8161be37724dcbed00dba101015c7747` |
+| `mozc_tool` | `bff62de1ff26e2b4b300f75f6f4750baa2576bc6bf18dd2ef672bbb714913a32` |
+| `mozc_zenz_scorer` | `fe08b617b0d6655191214c809729231fd6c19a130bb58c0f76cf5b813f638a70` |
+| consumer unregister tool | `6addb1b0c3f71c4c502ca329da4dab8bc3b3a7a5144b5ebb9f00342085bf2b9b` |
+
+The packaged `archlinux-build-packages.txt` is a carried-forward build
+environment snapshot from `d327911a`; the attestation above is the source of
+record for the `ff25b955e` release-candidate identity.
+
+The non-privileged protected-surface policy suite passes 15/15 cases on the
+final branch. The current tooling also passes syntax checks for all 16 dogfood
+Python files, 14 shell entrypoints, and the Electron probe. Staged Mozkey
+install, upgrade, uninstall, reinstall, and foreign-IME preservation remain
+package-lifecycle checks; they do not install or invoke Hazkey.
+
+No `ff25b955e` installed-product matrix is claimed here. Earlier matrix attempts
+stopped in harness setup before completing a scope, GUI/Electron row, protected
+product gate, or restart iteration, and are not counted as release-candidate
+passes. The implementation can merge independently, but publishing this
+package or switching the desktop default remains gated on a later installed
+GTK/Qt/Electron, secure-field, protected-surface, and restart/replay run. That
+run must be scheduled as one explicit privileged operation rather than repeated
+authentication during development.
+
 ## Sealed inputs
 
 | Artifact | SHA-256 / identity |
