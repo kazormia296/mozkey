@@ -87,6 +87,7 @@ for required_script in \
   "${script_dir}/smoke_test_mozkey_fcitx5_install" \
   "${script_dir}/uninstall_mozkey_fcitx5" \
   "${script_dir}/verify_mozkey_linux_build_attestation" \
+  "${script_dir}/verify_zenz_gguf_normalization" \
   "${script_dir}/verify_llama_server_compatibility"
 do
   require_executable_file "${required_script}"
@@ -115,6 +116,7 @@ for required_metadata in \
   ../tools/dictionary/daily_sources.lock.json \
   ../tools/dictionary/verify_release_dictionary_artifact.py \
   win32/installer/zenz_runtime/models/zenz-v3.2-small-Q5_K_M.gguf \
+  ../dist/zenz/linux/zenz-v3.2-small-Q5_K_M.gguf \
   win32/installer/zenz_runtime/licenses/zenz-v3.2-small-gguf.txt \
   win32/installer/zenz_runtime/licenses/llama.cpp-MIT.txt \
   win32/installer/zenz_runtime/licenses/Apache-2.0.txt \
@@ -170,6 +172,10 @@ assert all(p["sources"][source]["release_approved"] for source in release)' \
 }
 python3 ../tools/dictionary/verify_release_dictionary_artifact.py --root .. || {
   echo "release dictionary build outputs are not verified" >&2
+  exit 1
+}
+"${script_dir}/verify_zenz_gguf_normalization" || {
+  echo "Linux Zenz GGUF normalization is not verified" >&2
   exit 1
 }
 "${script_dir}/verify_mozkey_linux_build_attestation" "${BUILD_LAYOUT}" || {

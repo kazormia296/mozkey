@@ -49,6 +49,9 @@ compatible distribution `llama-server` reached through the product-private
 `/usr/lib/mozkey/llama-server` link. The Linux artifact does not claim to bundle
 the distribution runtime. Installation checks its CLI contract, while release
 dogfood must also load the model and complete an authenticated inference probe.
+The Linux GGUF is a deterministic metadata-only derivative of the pinned
+source model: build attestation verifies both complete-file digests and the
+unchanged tensor-data digest, so no patched llama.cpp fork is required.
 Consumer heartbeat capability reports install completeness, not endpoint or
 model readiness.
 

@@ -20,8 +20,13 @@ import sys
 import tempfile
 from typing import Any, Mapping
 
+try:
+    from tools.release import normalize_zenz_gguf as zenz_normalizer
+except ModuleNotFoundError:  # Direct execution sets sys.path to tools/release.
+    import normalize_zenz_gguf as zenz_normalizer
 
-SCHEMA = "mozkey.linux_build_attestation.v1"
+
+SCHEMA = "mozkey.linux_build_attestation.v2"
 RELEASE_DICTIONARY_MANIFEST_SCHEMA = "mozkey.release_dictionary_outputs.v1"
 SOURCE_LOCK_SCHEMA = "mozkey.daily_dictionary_source_lock.v1"
 RELEASE_PROFILE = "release-approved-only"
@@ -84,6 +89,15 @@ BINARY_PATHS = (
     PurePosixPath("src/bazel-bin/gui/tool/mozc_tool"),
     PurePosixPath("src/bazel-bin/zenz_scorer/mozc_zenz_scorer"),
 )
+ZENZ_SOURCE_MODEL_PATH = PurePosixPath(
+    "src/win32/installer/zenz_runtime/models/zenz-v3.2-small-Q5_K_M.gguf"
+)
+ZENZ_NORMALIZED_MODEL_PATH = PurePosixPath(
+    "dist/zenz/linux/zenz-v3.2-small-Q5_K_M.gguf"
+)
+ZENZ_NORMALIZATION_LOCK_PATH = PurePosixPath(
+    "tools/release/zenz_gguf_normalization.lock.json"
+)
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -94,6 +108,7 @@ _TOP_LEVEL_KEYS = {
     "git_head",
     "layout",
     "schema_version",
+    "zenz_runtime",
 }
 _FILE_RECORD_KEYS = {"path", "sha256", "size_bytes"}
 
@@ -254,6 +269,52 @@ def _verify_release_dictionary(root: Path) -> dict[str, Any]:
     }
 
 
+def _verify_zenz_runtime(root: Path) -> dict[str, Any]:
+    try:
+        zenz_normalizer.verify(root)
+    except zenz_normalizer.NormalizationError as error:
+        raise AttestationError(f"Zenz normalization is invalid: {error}") from error
+
+    lock = _load_json(
+        _root_path(root, ZENZ_NORMALIZATION_LOCK_PATH),
+        "Zenz normalization lock",
+    )
+    source = lock.get("source")
+    normalized = lock.get("normalized")
+    if (
+        lock.get("schema_version") != zenz_normalizer.SCHEMA
+        or not isinstance(source, Mapping)
+        or not isinstance(normalized, Mapping)
+        or source.get("path") != ZENZ_SOURCE_MODEL_PATH.as_posix()
+        or normalized.get("path") != ZENZ_NORMALIZED_MODEL_PATH.as_posix()
+    ):
+        raise AttestationError("Zenz normalization lock paths or schema changed")
+
+    source_record = file_record(root, ZENZ_SOURCE_MODEL_PATH)
+    normalized_record = file_record(root, ZENZ_NORMALIZED_MODEL_PATH)
+    for actual, locked, label in (
+        (source_record, source, "source"),
+        (normalized_record, normalized, "normalized"),
+    ):
+        if (
+            locked.get("sha256") != actual["sha256"]
+            or locked.get("size_bytes") != actual["size_bytes"]
+        ):
+            raise AttestationError(f"Zenz {label} model does not match its lock")
+
+    tensor_payload_sha256 = normalized.get("tensor_payload_sha256")
+    if not isinstance(tensor_payload_sha256, str) or not _HEX64.fullmatch(
+        tensor_payload_sha256
+    ):
+        raise AttestationError("Zenz tensor payload digest is invalid")
+    return {
+        "normalization_lock": file_record(root, ZENZ_NORMALIZATION_LOCK_PATH),
+        "normalized_model": normalized_record,
+        "source_model": source_record,
+        "tensor_payload_sha256": tensor_payload_sha256,
+    }
+
+
 def _layout_spec(layout: str) -> dict[str, list[str]]:
     try:
         spec = LAYOUTS[layout]
@@ -272,6 +333,7 @@ def build_document(root: Path, layout: str, bazel_driver: str) -> dict[str, Any]
         raise AttestationError("unsupported Bazel driver")
     spec = _layout_spec(layout)
     dictionary = _verify_release_dictionary(root)
+    zenz_runtime = _verify_zenz_runtime(root)
     binaries = [binary_record(root, path) for path in BINARY_PATHS]
     return {
         "bazel": {
@@ -284,6 +346,7 @@ def build_document(root: Path, layout: str, bazel_driver: str) -> dict[str, Any]
         "git_head": git_head(root),
         "layout": layout,
         "schema_version": SCHEMA,
+        "zenz_runtime": zenz_runtime,
     }
 
 
@@ -373,6 +436,9 @@ def verify(root: Path, layout: str, attestation: Path) -> Mapping[str, Any]:
         raise AttestationError("attested dictionary does not match current inputs")
     expected_binaries = [binary_record(root, path) for path in BINARY_PATHS]
     _validate_file_records(document.get("binaries"), expected_binaries, "binary")
+    expected_zenz_runtime = _verify_zenz_runtime(root)
+    if document.get("zenz_runtime") != expected_zenz_runtime:
+        raise AttestationError("attested Zenz runtime does not match current inputs")
     return document
 
 

@@ -231,6 +231,8 @@ jobs:
 
       - name: Test Linux release, installer, provenance, and Zenz gates
         run: |
+          python tools/release/normalize_zenz_gguf.py create --root .
+          python tools/release/normalize_zenz_gguf.py verify --root .
           python -m unittest \
             scripts.install_mozkey_linux_bazel_test \
             scripts.install_zenz_runtime_test \
@@ -242,6 +244,7 @@ jobs:
             tools.dictionary.verify_release_dictionary_artifact_test \
             tools.release.generate_linux_spdx_sbom_test \
             tools.release.linux_build_attestation_test \
+            tools.release.normalize_zenz_gguf_test \
             tools.release.probe_zenz_runtime_test \
             tools.release.stop_mozkey_linux_runtime_test
           sh -n \
@@ -256,6 +259,7 @@ jobs:
             scripts/stop_mozkey_linux_runtime \
             scripts/uninstall_mozkey_fcitx5 \
             scripts/verify_mozkey_linux_build_attestation \
+            scripts/verify_zenz_gguf_normalization \
             scripts/verify_llama_server_compatibility
 
       - name: Setup

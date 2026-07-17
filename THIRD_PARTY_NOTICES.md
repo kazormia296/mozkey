@@ -11,8 +11,9 @@ Additional notices for bundled Zenz runtime and model files are maintained at:
 src/win32/installer/zenz_runtime/licenses/THIRD_PARTY_NOTICES.md
 ```
 
-That file covers the bundled Zenz GGUF model, llama.cpp / ggml runtime
-components, and the local inference privacy note.
+That file covers the source Zenz GGUF, Mozkey's Linux-only metadata-normalized
+derivative and modification notice, llama.cpp / ggml runtime components, and
+the local inference privacy note.
 
 ## Fcitx5 addon integration
 

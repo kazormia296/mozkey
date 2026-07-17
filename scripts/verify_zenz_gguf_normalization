@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# Fail closed unless the generated Linux Zenz GGUF exactly matches its pinned
+# source, deterministic metadata transformation, tensor payload, and output
+# digest.
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+normalizer="${repository_root}/tools/release/normalize_zenz_gguf.py"
+
+if [ ! -f "${normalizer}" ] || [ -L "${normalizer}" ]; then
+  echo "Zenz GGUF normalization verifier is missing or unsafe" >&2
+  exit 1
+fi
+
+exec python3 "${normalizer}" verify --root "${repository_root}"

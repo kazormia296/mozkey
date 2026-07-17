@@ -59,7 +59,7 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
         attestation = repository / "dist/linux/archlinux-x86_64/build-attestation.json"
         attestation.parent.mkdir(parents=True)
         attestation.write_text(
-            '{"schema_version":"mozkey.linux_build_attestation.v1"}\n',
+            '{"schema_version":"mozkey.linux_build_attestation.v2"}\n',
             encoding="utf-8",
         )
         packages = repository / "dist/archlinux-build-packages.txt"

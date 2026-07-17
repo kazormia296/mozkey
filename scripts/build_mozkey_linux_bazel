@@ -10,6 +10,7 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
 source_root="${repository_root}/src"
 attestation_tool="${repository_root}/tools/release/linux_build_attestation.py"
+zenz_normalizer="${repository_root}/tools/release/normalize_zenz_gguf.py"
 
 if [ "$#" -ne 1 ]; then
   echo "usage: $0 ubuntu-layout|archlinux-x86_64" >&2
@@ -57,10 +58,13 @@ do
     exit 1
   fi
 done
-if [ ! -f "${attestation_tool}" ] || [ -L "${attestation_tool}" ]; then
-  echo "Linux build attestation tool is missing or unsafe" >&2
-  exit 1
-fi
+for release_tool in "${attestation_tool}" "${zenz_normalizer}"
+do
+  if [ ! -f "${release_tool}" ] || [ -L "${release_tool}" ]; then
+    echo "Linux release tool is missing or unsafe: ${release_tool}" >&2
+    exit 1
+  fi
+done
 
 attestation_dir="${repository_root}/dist/linux/${layout}"
 attestation="${attestation_dir}/build-attestation.json"
@@ -87,6 +91,13 @@ if [ -n "${git_status}" ]; then
   echo "refusing to build from tracked changes or non-ignored untracked files" >&2
   exit 1
 fi
+
+# The upstream Zenz GGUF carries private tokenizer metadata which an
+# unmodified llama.cpp correctly rejects.  Materialize and verify the pinned,
+# metadata-only Linux normalization before Bazel so every later provenance and
+# package step observes exactly one model artifact.
+python3 "${zenz_normalizer}" create --root "${repository_root}"
+python3 "${zenz_normalizer}" verify --root "${repository_root}"
 
 if command -v bazelisk >/dev/null 2>&1; then
   bazel_driver=bazelisk

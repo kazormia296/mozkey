@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Installs the model already distributed with Mozkey and a product-private
+# Installs the verified, metadata-normalized Linux model and a product-private
 # link to the distro-provided llama-server.  The scorer release build accepts
 # no environment path overrides and resolves both beside its own executable.
 set -eu
@@ -30,6 +30,7 @@ esac
 if [ -z "${DESTDIR}" ]; then
   "${script_dir}/verify_llama_server_compatibility" "${LLAMA_SERVER_TARGET}"
 fi
+"${script_dir}/verify_zenz_gguf_normalization"
 
 runtime_link="${DESTDIR}${PREFIX}/lib/mozkey/llama-server"
 if { [ -e "${runtime_link}" ] || [ -L "${runtime_link}" ]; } &&
@@ -40,7 +41,7 @@ fi
 
 runtime_source="win32/installer/zenz_runtime"
 model_name="zenz-v3.2-small-Q5_K_M.gguf"
-model_source="${runtime_source}/models/${model_name}"
+model_source="../dist/zenz/linux/${model_name}"
 if [ ! -f "${model_source}" ] || [ ! -s "${model_source}" ]; then
   echo "missing bundled Zenz model: ${model_source}" >&2
   exit 1

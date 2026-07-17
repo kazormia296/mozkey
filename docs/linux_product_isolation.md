@@ -57,7 +57,8 @@ unsafe installed path record before the data phase.
 
 Release binaries must be produced by `scripts/build_mozkey_linux_bazel`. Its
 attestation binds the current Git HEAD, exact Bazel targets and flags,
-`release-approved-only` manifest/lock/outputs, and every installed ELF digest.
+`release-approved-only` manifest/lock/outputs, every installed ELF digest, and
+the Zenz source/normalization-lock/derived-model/tensor-payload digests.
 Preflight and packaging reject stale or differently configured `bazel-bin`
 outputs. The Arch payload and SPDX inventory also contain that attestation and
 the exact `pacman -Q` build package list, so the rolling build environment is
@@ -85,8 +86,15 @@ dictionary notice, Apache-2.0 text, and immutable source lock live under
 Linux packaging must depend on a compatible `llama-server` provider.  The
 default private link targets `/usr/bin/llama-server`; a distro package with a
 different absolute path can set `MOZKEY_ZENZ_LLAMA_SERVER_TARGET` while
-staging.  The GGUF and its notices are installed from Mozkey's already tracked
-Zenz runtime assets, so release mode never depends on an environment override.
+staging. The tracked source GGUF uses a private tokenizer metadata name and
+incorrect special-token IDs, so `scripts/build_mozkey_linux_bazel` generates a
+pinned Linux derivative before Bazel. The transformation changes only four
+GGUF metadata values; tensor descriptors and tensor data are byte-identical.
+Preflight, attestation, and installation independently verify the fixed source
+SHA-256, normalized SHA-256, tensor-payload SHA-256, and deterministic output.
+The resulting GGUF and its notices are installed from that verified build
+state, so release mode never depends on an environment override or a patched
+llama.cpp fork.
 The supported runtime contract is the `-m`/`--model`, `-c`/`--ctx-size`,
 `-t`/`--threads`, `--host`, `--port`, and `--api-key` CLI plus authenticated
 `POST /completion` returning a JSON `content` field. A real install runs the
@@ -94,6 +102,10 @@ bounded CLI compatibility check; release CI and dogfood additionally load the
 bundled model and exercise `/completion` while checking that the child listener
 is loopback-only. The 2026-07-17 host dogfood gate uses llama.cpp build 9859
 (`4fc4ec5541`); the Arch CI payload records its exact rolling package version.
+Prompt construction follows the model's reference tokenizer preparation:
+ASCII spaces become U+3000 and line feeds are removed before inference. This
+keeps the Windows source model and Linux normalized model on one prompt
+contract even though their llama.cpp integration differs.
 
 `zenzai_v3_conditions` in the consumer heartbeat means the installed product
 has an executable scorer, immutable non-empty GGUF, and executable llama

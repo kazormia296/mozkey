@@ -62,6 +62,7 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             "smoke_test_mozkey_fcitx5_install",
             "uninstall_mozkey_fcitx5",
             "verify_mozkey_linux_build_attestation",
+            "verify_zenz_gguf_normalization",
             "verify_llama_server_compatibility",
         ]
         for name in required_scripts:
@@ -116,6 +117,10 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
         ]
         for relative in metadata:
             self.write(source, relative)
+        self.write(
+            root,
+            "dist/zenz/linux/zenz-v3.2-small-Q5_K_M.gguf",
+        )
         self.write(source, "unix/fcitx5/mozkey-addon.conf", b"Library=fcitx5-mozkey\n")
         self.write(source, "unix/fcitx5/mozkey.conf", b"Addon=mozkey\n")
         self.write(
@@ -209,6 +214,18 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
                 / "win32/installer/zenz_runtime/models/zenz-v3.2-small-Q5_K_M.gguf"
             )
             model.unlink()
+            result = self.run_preflight(
+                preflight, source, verifier_log, root / "destination"
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing or empty", result.stderr)
+            self.assertFalse(verifier_log.exists())
+
+            self.write(source, model.relative_to(source))
+            normalized = (
+                root / "dist/zenz/linux/zenz-v3.2-small-Q5_K_M.gguf"
+            )
+            normalized.unlink()
             result = self.run_preflight(
                 preflight, source, verifier_log, root / "destination"
             )

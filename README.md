@@ -59,6 +59,9 @@ Linux の release targets、multiarch Fcitx path、Zenz runtime 契約、staging
 uninstall 手順は [Linux product isolation](docs/linux_product_isolation.md) を参照して
 ください。Arch payload は addon/server/scorer/model/licenses、SHA-256、SPDX 2.3
 inventory を一体で生成し、`fcitx5`、`llama-cpp`、`qt6-base` を外部依存とします。
+Linux 用 GGUF は固定した source から metadata のみを決定的に正規化し、source・派生
+model・不変 tensor payload の SHA-256 を build attestation に含めます。独自
+llama.cpp fork は使用しません。
 Zenz には `--api-key` と authenticated `POST /completion` に対応した
 `llama-server` が必要です。Ubuntu CI はbuild/multiarch stagingの確認だけを行い、
 Ubuntu向けproduct artifactは公開しません。
@@ -630,6 +633,10 @@ Windows MSI packages are available from [Releases](https://github.com/koyasi777/
   multiarch path, Arch payload targets, compatible `llama-server`
   contract, build attestation, staged smoke, artifact checksum/SPDX inventory,
   and the Fcitx-stop/runtime-stop/uninstall procedure.
+- The Linux Zenz GGUF is deterministically derived from the pinned source by
+  changing tokenizer metadata only. The build attestation binds the source,
+  derived model, unchanged tensor payload, and transformation lock; no private
+  llama.cpp fork is required.
 
 > [!WARNING]
 > This build is not an official google/mozc distribution.
