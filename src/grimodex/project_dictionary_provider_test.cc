@@ -80,6 +80,54 @@ constexpr ProjectDictionaryPosIds kPosIds = {
 };
 
 TEST(ProjectDictionaryProviderTest,
+     ApplicationScopeDefaultsToExactNormalizedGrimodexIdentifiers) {
+  EXPECT_EQ(ParseApplicationScopeMode(""),
+            ApplicationScopeMode::kGrimodexOnly);
+  EXPECT_EQ(ParseApplicationScopeMode(" GRIMODEX-ONLY "),
+            ApplicationScopeMode::kGrimodexOnly);
+  EXPECT_TRUE(
+      AllowsApplication(ApplicationScopeMode::kGrimodexOnly, "grimodex"));
+  EXPECT_TRUE(AllowsApplication(ApplicationScopeMode::kGrimodexOnly,
+                                " COM.MIYAKEY.GRIMODEX\n"));
+
+  for (const absl::string_view program :
+       {"", "electron", "firefox", "/usr/bin/grimodex",
+        "grimodex-helper"}) {
+    EXPECT_FALSE(
+        AllowsApplication(ApplicationScopeMode::kGrimodexOnly, program))
+        << program;
+  }
+}
+
+TEST(ProjectDictionaryProviderTest,
+     ApplicationScopeWidensOnlyForExplicitAllAndUnknownModeFailsClosed) {
+  EXPECT_EQ(ParseApplicationScopeMode("all"),
+            ApplicationScopeMode::kAllApplications);
+  EXPECT_TRUE(
+      AllowsApplication(ApplicationScopeMode::kAllApplications, ""));
+  EXPECT_TRUE(
+      AllowsApplication(ApplicationScopeMode::kAllApplications, "firefox"));
+
+  EXPECT_EQ(ParseApplicationScopeMode("off"), ApplicationScopeMode::kOff);
+  EXPECT_EQ(ParseApplicationScopeMode("typo"), ApplicationScopeMode::kOff);
+  EXPECT_FALSE(AllowsApplication(ApplicationScopeMode::kOff, "grimodex"));
+}
+
+TEST(ProjectDictionaryProviderTest, ProviderAdvertisesItsEffectiveScope) {
+  ProtocolV1ProjectDictionaryProvider default_provider(nullptr, kPosIds);
+  EXPECT_TRUE(default_provider.AllowsApplication("grimodex"));
+  EXPECT_FALSE(default_provider.AllowsApplication("electron"));
+
+  ProtocolV1ProjectDictionaryProvider all_provider(
+      nullptr, kPosIds, ApplicationScopeMode::kAllApplications);
+  EXPECT_TRUE(all_provider.AllowsApplication("electron"));
+
+  ProtocolV1ProjectDictionaryProvider off_provider(
+      nullptr, kPosIds, ApplicationScopeMode::kOff);
+  EXPECT_FALSE(off_provider.AllowsApplication("grimodex"));
+}
+
+TEST(ProjectDictionaryProviderTest,
      RevalidatesEachCompositionCachesSemanticGenerationAndFailsClosed) {
   auto reader = std::make_shared<MutableReader>(
       Project("2026-07-17T00:00:00.000Z", "刹那"));

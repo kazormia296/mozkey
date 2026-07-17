@@ -108,6 +108,9 @@ absl::Status Engine::Init(std::unique_ptr<engine::Modules> modules) {
   const std::string project_root = grimodex::ResolveProtocolV1Root(
       Environ::GetEnv("GRIMODEX_IME_ROOT"),
       Environ::GetEnv("XDG_DATA_HOME"), Environ::GetEnv("HOME"));
+  const grimodex::ApplicationScopeMode project_scope =
+      grimodex::ParseApplicationScopeMode(
+          Environ::GetEnv("MOZKEY_GRIMODEX_SCOPE"));
 #endif
 
   auto immutable_converter_factory = [](const engine::Modules& modules) {
@@ -142,7 +145,8 @@ absl::Status Engine::Init(std::unique_ptr<engine::Modules> modules) {
 #if defined(MOZC_BUILD) && defined(__linux__)
   project_dictionary_provider_ =
       grimodex::CreateProtocolV1ProjectDictionaryProvider(project_root,
-                                                          project_pos_ids);
+                                                          project_pos_ids,
+                                                          project_scope);
 #else
   project_dictionary_provider_.reset();
 #endif

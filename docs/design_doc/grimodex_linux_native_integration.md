@@ -110,6 +110,13 @@ secure は常に stale generation より優先する。Fcitx の `PasswordOrSens
 context に明示し、secure 中は surrounding text を送らない。server は session の pin、
 候補、context、undo、Zenz state、learning pending、replay history を同期的に破棄する。
 
+application scope の既定は fail-closed の `grimodex-only` とする。Fcitx が渡す
+`program` を ASCII trim/lowercase した値が exact `grimodex` または
+`com.miyakey.grimodex` の時だけ project dictionary と Zenz project context を pinする。
+空値、`electron`、path、substring、helper名は許可しない。明示的なローカル設定
+`MOZKEY_GRIMODEX_SCOPE=all` だけが全アプリへ広げ、`off` および未知の非空設定値は
+無効化する。通常の Mozkey 変換・学習は scope 外アプリでも継続する。
+
 secure purge は対象 session の参照を切る操作であり、別の非 secure session が pin
 している global immutable snapshot を消してはならない。secure 解除後に古い snapshot
 を暗黙復活させず、新しく検証した publish を次の composition で pin する。

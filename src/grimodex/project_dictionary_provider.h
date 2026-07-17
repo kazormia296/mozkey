@@ -7,11 +7,27 @@
 #include <mutex>
 #include <string>
 
+#include "absl/strings/string_view.h"
 #include "dictionary/project_dictionary.h"
 #include "grimodex/project_dictionary_bridge.h"
 #include "grimodex/protocol_v1.h"
 
 namespace mozc::grimodex {
+
+// Project snapshots contain unpublished story data, so the default scope is
+// intentionally narrower than the normal Mozc conversion scope.  Widening to
+// every application must be an explicit local configuration choice.
+enum class ApplicationScopeMode {
+  kOff,
+  kGrimodexOnly,
+  kAllApplications,
+};
+
+// Empty means the secure default (Grimodex only).  Unknown non-empty values
+// fail closed to off instead of silently widening or accepting a typo.
+ApplicationScopeMode ParseApplicationScopeMode(absl::string_view value);
+bool AllowsApplication(ApplicationScopeMode mode,
+                       absl::string_view program);
 
 // Linux Protocol v1 implementation of the platform-neutral provider contract.
 // Reload revalidates the state boundary for every composition while caching
@@ -21,20 +37,25 @@ class ProtocolV1ProjectDictionaryProvider final
  public:
   ProtocolV1ProjectDictionaryProvider(
       std::shared_ptr<ProtocolV1SnapshotPublisher> publisher,
-      ProjectDictionaryPosIds pos_ids);
+      ProjectDictionaryPosIds pos_ids,
+      ApplicationScopeMode scope_mode =
+          ApplicationScopeMode::kGrimodexOnly);
 
+  bool AllowsApplication(absl::string_view program) const override;
   dictionary::ProjectDictionaryPublication Reload() override;
 
  private:
   std::mutex reload_mutex_;
   std::shared_ptr<ProtocolV1SnapshotPublisher> publisher_;
   const ProjectDictionaryPosIds pos_ids_;
+  const ApplicationScopeMode scope_mode_;
   std::shared_ptr<const dictionary::ProjectDictionarySnapshot> cached_;
 };
 
 std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
 CreateProtocolV1ProjectDictionaryProvider(std::string root_path,
-                                          ProjectDictionaryPosIds pos_ids);
+                                          ProjectDictionaryPosIds pos_ids,
+                                          ApplicationScopeMode scope_mode);
 
 }  // namespace mozc::grimodex
 

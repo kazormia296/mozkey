@@ -16,6 +16,14 @@ server endpoint, or installed executable directory.
 | Zenz runtime | `/usr/lib/mozkey/llama-server` -> distro `/usr/bin/llama-server` |
 | Zenz model | `/usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf` |
 
+Grimodex project data is application-scoped independently of these product
+paths. The default `MOZKEY_GRIMODEX_SCOPE` is `grimodex-only`: only exact,
+case-insensitive `grimodex` and `com.miyakey.grimodex` program identities may
+pin the project dictionary or its Zenz context. Empty/unknown identities fail
+closed. `MOZKEY_GRIMODEX_SCOPE=all` is the explicit all-applications opt-in;
+`off` and unknown non-empty values disable project integration without
+disabling ordinary Mozkey conversion or learning.
+
 `/usr/lib/mozkey` is used as the product-private libexec directory because the
 server, GUI tool, and Zenz scorer are implementation helpers launched by the
 frontend and are not general-purpose commands for `$PATH`. The directory also

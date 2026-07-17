@@ -120,8 +120,14 @@ class QueueProjectDictionaryProvider final
     : public dictionary::ProjectDictionaryProviderInterface {
  public:
   explicit QueueProjectDictionaryProvider(
-      std::vector<dictionary::ProjectDictionaryPublication> publications)
-      : publications_(std::move(publications)) {}
+      std::vector<dictionary::ProjectDictionaryPublication> publications,
+      bool require_grimodex_program = false)
+      : publications_(std::move(publications)),
+        require_grimodex_program_(require_grimodex_program) {}
+
+  bool AllowsApplication(absl::string_view program) const override {
+    return !require_grimodex_program_ || program == "grimodex";
+  }
 
   dictionary::ProjectDictionaryPublication Reload() override {
     ++reload_count_;
@@ -137,6 +143,7 @@ class QueueProjectDictionaryProvider final
 
  private:
   std::vector<dictionary::ProjectDictionaryPublication> publications_;
+  const bool require_grimodex_program_;
   size_t next_ = 0;
   size_t reload_count_ = 0;
 };
@@ -3405,6 +3412,37 @@ TEST_F(EngineConverterTest, ProjectDictionaryProviderReloadsAtCompositionStart) 
   converter.OnStartComposition(Context::default_instance());
   EXPECT_EQ(provider->reload_count(), 2);
   EXPECT_EQ(converter.GetPinnedProjectDictionary(), generation2);
+}
+
+TEST_F(EngineConverterTest,
+       ProjectDictionaryApplicationScopePurgesUnknownFocusAndReloadsKnownFocus) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  const auto generation = CreateProjectDictionarySnapshot(1, "A");
+  auto provider = std::make_shared<QueueProjectDictionaryProvider>(
+      std::vector<dictionary::ProjectDictionaryPublication>{
+          {.snapshot = generation}},
+      /*require_grimodex_program=*/true);
+  EngineConverter converter(mock_converter, request_, config_, provider);
+
+  Context grimodex_context;
+  grimodex_context.mutable_grimodex()->set_program("grimodex");
+  converter.OnStartComposition(grimodex_context);
+  EXPECT_EQ(provider->reload_count(), 1);
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), generation);
+
+  converter.OnEndComposition();
+  Context unknown_context;
+  unknown_context.mutable_grimodex()->set_program("electron");
+  converter.OnStartComposition(unknown_context);
+  EXPECT_EQ(provider->reload_count(), 1);
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), nullptr);
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().latest_generation,
+            std::nullopt);
+
+  converter.OnEndComposition();
+  converter.OnStartComposition(grimodex_context);
+  EXPECT_EQ(provider->reload_count(), 2);
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), generation);
 }
 
 TEST_F(EngineConverterTest, ProjectDictionaryProviderIsSkippedWhileSecure) {

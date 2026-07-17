@@ -2025,8 +2025,20 @@ void EngineConverter::OnStartComposition(const commands::Context& context) {
                                     commands::Context::PASSWORD);
   }
 
-  if (!project_dictionary_registry_.secure_input() &&
-      project_dictionary_provider_ != nullptr) {
+  absl::string_view focused_program;
+  if (context.has_grimodex()) {
+    focused_program = context.grimodex().program();
+  }
+  const bool application_allowed =
+      project_dictionary_provider_ == nullptr ||
+      project_dictionary_provider_->AllowsApplication(focused_program);
+  if (!application_allowed) {
+    // Application identity is a privacy boundary for unpublished project
+    // terms and Zenz context.  A focus transition already purges session
+    // state, but rechecking here keeps direct/non-Fcitx callers fail closed.
+    project_dictionary_registry_.Purge();
+  } else if (!project_dictionary_registry_.secure_input() &&
+             project_dictionary_provider_ != nullptr) {
     dictionary::ProjectDictionaryPublication publication =
         project_dictionary_provider_->Reload();
     if (publication.snapshot != nullptr) {

@@ -56,6 +56,7 @@ mozc_cc_library(
         ":project_dictionary_bridge",
         ":protocol_v1",
         "//dictionary:project_dictionary",
+        "@com_google_absl//absl/strings",
     ],
 )
 

@@ -116,6 +116,15 @@ struct ProjectDictionaryPublication {
 class ProjectDictionaryProviderInterface {
  public:
   virtual ~ProjectDictionaryProviderInterface() = default;
+
+  // Returns whether this provider may publish project data for the focused
+  // application.  Platform-neutral/test providers remain unscoped by
+  // default.  Providers that advertise application scoping must override
+  // this and fail closed for an absent or unknown program identifier.
+  virtual bool AllowsApplication(absl::string_view program) const {
+    return true;
+  }
+
   virtual ProjectDictionaryPublication Reload() = 0;
 };
 
