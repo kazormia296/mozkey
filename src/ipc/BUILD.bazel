@@ -133,8 +133,8 @@ mozc_cc_library(
 # mid-frame, so expose it only through this test-only alias.
 alias(
     name = "ipc_path_manager_for_unix_runtime_test",
-    actual = ":ipc_path_manager",
     testonly = True,
+    actual = ":ipc_path_manager",
     visibility = ["//unix:__pkg__"],
 )
 
