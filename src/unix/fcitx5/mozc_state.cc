@@ -68,19 +68,6 @@ MozcState::MozcState(InputContext* ic, MozcEngine* engine)
     : ic_(ic), engine_(engine), handler_(std::make_unique<KeyEventHandler>()) {
   // mozc::Logging::SetVerboseLevel(1);
   MOZC_VLOG(1) << "MozcState created.";
-
-  if (GetClient()->EnsureConnection()) {
-    UpdatePreeditMethod();
-  }
-
-  std::string error;
-  mozc::commands::Output raw_response;
-  if (TrySendCompositionMode(*engine_->config().initialMode, &raw_response,
-                             &error)) {
-    if (raw_response.has_mode()) {
-      SetCompositionMode(raw_response.mode(), /*updateUI=*/false);
-    }
-  }
 }
 
 MozcState::~MozcState() { MOZC_VLOG(1) << "MozcState destroyed."; }
@@ -163,7 +150,8 @@ bool MozcState::TrySendClick(int32_t unique_id, mozc::commands::Output* out,
 
 bool MozcState::TrySendCompositionMode(mozc::commands::CompositionMode mode,
                                        mozc::commands::Output* out,
-                                       std::string* out_error) const {
+                                       std::string* out_error,
+                                       bool* out_command_dispatched) const {
   DCHECK(out);
   DCHECK(out_error);
 
@@ -175,7 +163,7 @@ bool MozcState::TrySendCompositionMode(mozc::commands::CompositionMode mode,
     command.set_type(mozc::commands::SessionCommand::SWITCH_COMPOSITION_MODE);
     command.set_composition_mode(mode);
   }
-  return TrySendRawCommand(command, out, out_error);
+  return TrySendRawCommand(command, out, out_error, out_command_dispatched);
 }
 
 bool MozcState::TrySendCommand(mozc::commands::SessionCommand::CommandType type,
@@ -191,7 +179,11 @@ bool MozcState::TrySendCommand(mozc::commands::SessionCommand::CommandType type,
 
 bool MozcState::TrySendRawCommand(const mozc::commands::SessionCommand& command,
                                   mozc::commands::Output* out,
-                                  std::string* out_error) const {
+                                  std::string* out_error,
+                                  bool* out_command_dispatched) const {
+  if (out_command_dispatched != nullptr) {
+    *out_command_dispatched = false;
+  }
   MOZC_VLOG(1) << "TrySendRawCommand: " << command.DebugString();
   const mozc::commands::Context context =
       BuildContext(/*include_surrounding_text=*/false);
@@ -233,6 +225,9 @@ bool MozcState::TrySendRawCommand(const mozc::commands::SessionCommand& command,
     MOZC_VLOG(1) << "ERROR";
     return false;
   }
+  if (out_command_dispatched != nullptr) {
+    *out_command_dispatched = true;
+  }
   MOZC_VLOG(1) << "OK: " << out->DebugString();
   return true;
 }
@@ -260,6 +255,10 @@ bool MozcState::ProcessKeyEvent(KeySym sym, uint32_t keycode, KeyStates state,
       DisplayUsage();
       return true;
     }
+  }
+
+  if (!ApplyInitialModeForCurrentClient()) {
+    return false;
   }
 
   mozc::commands::KeyEvent event;
@@ -366,7 +365,50 @@ void MozcState::FocusIn() {
   AdvanceFocusEpoch();
   handler_->Clear();
   UpdatePreeditMethod();
+  ApplyInitialModeForCurrentClient();
   DrawAll();
+}
+
+bool MozcState::ApplyInitialModeForCurrentClient() {
+  MozcClientInterface* client = GetClient();
+  // TrySendRawCommand deliberately drops a SessionCommand when its Prepare
+  // step discovers a replacement Mozc session.  The recovered composition is
+  // safe, but its output is not proof that the initial-mode command reached
+  // the new session.  Retry once and latch only an explicitly dispatched
+  // command whose client generation remained stable across the send.
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    if (!client->EnsureSession()) {
+      continue;
+    }
+    const uint64_t generation_before = client->session_generation();
+    if (generation_before == 0) {
+      continue;
+    }
+    if (initial_mode_client_generation_ == generation_before) {
+      return true;
+    }
+
+    std::string error;
+    mozc::commands::Output raw_response;
+    bool command_dispatched = false;
+    if (TrySendCompositionMode(*engine_->config().initialMode, &raw_response,
+                               &error, &command_dispatched) &&
+        command_dispatched && raw_response.has_mode() &&
+        client->session_generation() == generation_before) {
+      initial_mode_client_generation_ = generation_before;
+      SetCompositionMode(raw_response.mode(), /*updateUI=*/true);
+      return true;
+    }
+    MOZC_VLOG(1) << "Applying the initial composition mode attempt failed: "
+                 << error;
+  }
+
+  // Construction happens while InputContext's derived frontend can still be
+  // incomplete.  FocusIn is the first lifecycle point where BuildContext may
+  // call its virtual frontend() method safely.  Leave this pending after an
+  // IPC failure so FocusIn, a capability transition, or the next key retries
+  // the setting without processing that key in the wrong mode.
+  return false;
 }
 
 // This function is called when the ic loses focus.
@@ -417,6 +459,7 @@ void MozcState::CapabilityChanged() {
   // replacement only after Fcitx has installed the new security-domain flags,
   // so its first command already carries the new typed context.
   UpdatePreeditMethod();
+  ApplyInitialModeForCurrentClient();
   DrawAll();
 }
 
@@ -556,6 +599,7 @@ MozcClientInterface* MozcState::GetClient() const {
 void MozcState::ReleaseClient() {
   raw_reading_recovery_.ResetSessionBoundary();
   client_.reset();
+  initial_mode_client_generation_ = 0;
 }
 
 mozc::commands::Context MozcState::BuildContext(
