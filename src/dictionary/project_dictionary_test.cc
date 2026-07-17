@@ -243,5 +243,32 @@ TEST(ProjectDictionaryRegistryTest, SecurePurgeIsIsolatedPerSessionRegistry) {
   EXPECT_EQ(session_b.pinned(), generation);
 }
 
+TEST(ProjectDictionaryRegistryTest, CopyHasIndependentLifecycleState) {
+  ProjectDictionaryRegistry original;
+  const auto generation =
+      Snapshot(3, "sha256:3", {Entry("a", "A", 1, "1")});
+  ASSERT_EQ(original.Publish(generation),
+            ProjectDictionaryRegistry::PublishResult::kApplied);
+  ASSERT_EQ(original.PinForComposition(), generation);
+
+  ProjectDictionaryRegistry copied(original);
+  EXPECT_EQ(copied.status().latest_generation, 3);
+  EXPECT_EQ(copied.status().pinned_generation, 3);
+
+  copied.SetSecureInput(true);
+  EXPECT_TRUE(copied.status().secure_input);
+  EXPECT_EQ(copied.status().latest_generation, std::nullopt);
+  EXPECT_EQ(copied.status().pinned_generation, std::nullopt);
+  EXPECT_FALSE(original.status().secure_input);
+  EXPECT_EQ(original.status().latest_generation, 3);
+  EXPECT_EQ(original.status().pinned_generation, 3);
+
+  ProjectDictionaryRegistry assigned;
+  assigned = original;
+  assigned.EndComposition();
+  EXPECT_EQ(assigned.status().pinned_generation, std::nullopt);
+  EXPECT_EQ(original.status().pinned_generation, 3);
+}
+
 }  // namespace
 }  // namespace mozc::dictionary

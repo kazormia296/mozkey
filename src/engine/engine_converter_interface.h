@@ -42,6 +42,7 @@
 #include "absl/types/span.h"
 #include "composer/composer.h"
 #include "converter/converter_interface.h"
+#include "dictionary/project_dictionary.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "transliteration/transliteration.h"
@@ -295,6 +296,21 @@ class EngineConverterInterface {
 
   // Update the internal state by the context.
   virtual void OnStartComposition(const commands::Context& context) = 0;
+  virtual void OnEndComposition() {}
+
+  // Session-scoped native project dictionary management.  Implementations
+  // that do not support the overlay retain these safe no-op defaults.
+  virtual dictionary::ProjectDictionaryRegistry::PublishResult
+  PublishProjectDictionary(
+      std::shared_ptr<const dictionary::ProjectDictionarySnapshot> snapshot) {
+    (void)snapshot;
+    return dictionary::ProjectDictionaryRegistry::PublishResult::kRejectedNull;
+  }
+  virtual void SetProjectDictionarySecureInput(bool secure) { (void)secure; }
+  virtual dictionary::ProjectDictionaryRegistry::Status
+  GetProjectDictionaryStatus() const {
+    return {};
+  }
 
   // Clone instance.
   // Callee object doesn't have the ownership of the cloned instance.

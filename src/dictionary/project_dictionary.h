@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -99,10 +100,19 @@ class ProjectDictionaryRegistry final {
     kRejectedConflict,
   };
 
+  struct Status {
+    bool secure_input = false;
+    std::optional<uint64_t> latest_generation;
+    std::optional<uint64_t> pinned_generation;
+  };
+
   ProjectDictionaryRegistry() = default;
-  ProjectDictionaryRegistry(const ProjectDictionaryRegistry&) = delete;
-  ProjectDictionaryRegistry& operator=(const ProjectDictionaryRegistry&) =
-      delete;
+  // Copying creates an independent session registry while safely sharing its
+  // immutable snapshots.  This is used only when EngineConverter is cloned;
+  // subsequent publish, pin, and secure purge operations remain isolated.
+  ProjectDictionaryRegistry(const ProjectDictionaryRegistry& other);
+  ProjectDictionaryRegistry& operator=(
+      const ProjectDictionaryRegistry& other);
 
   PublishResult Publish(
       std::shared_ptr<const ProjectDictionarySnapshot> snapshot);
@@ -119,6 +129,7 @@ class ProjectDictionaryRegistry final {
   void Purge();
 
   bool secure_input() const;
+  Status status() const;
   std::shared_ptr<const ProjectDictionarySnapshot> latest() const;
   std::shared_ptr<const ProjectDictionarySnapshot> pinned() const;
 

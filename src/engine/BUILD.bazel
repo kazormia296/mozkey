@@ -397,6 +397,7 @@ mozc_cc_library(
     deps = [
         "//composer",
         "//converter:converter_interface",
+        "//dictionary:project_dictionary",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
         "//transliteration",
@@ -433,6 +434,7 @@ mozc_cc_library(
         "//converter:attribute",
         "//converter:converter_interface",
         "//converter:segments",
+        "//dictionary:project_dictionary",
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
@@ -477,6 +479,7 @@ mozc_cc_test(
         "//converter:segments",
         "//converter:segments_matchers",
         "//data_manager/testing:mock_data_manager",
+        "//dictionary:project_dictionary",
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",

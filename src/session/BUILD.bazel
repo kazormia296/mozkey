@@ -183,6 +183,7 @@ mozc_cc_test(
         "//converter:segments",
         "//data_manager/testing:mock_data_manager",
         "//dictionary:pos_matcher",
+        "//dictionary:project_dictionary",
         "//engine",
         "//engine:engine_converter",
         "//engine:engine_mock",

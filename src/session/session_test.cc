@@ -58,6 +58,7 @@
 #include "converter/segments.h"
 #include "data_manager/testing/mock_data_manager.h"
 #include "dictionary/pos_matcher.h"
+#include "dictionary/project_dictionary.h"
 #include "engine/engine.h"
 #include "engine/engine_converter.h"
 #include "engine/engine_mock.h"
@@ -13836,6 +13837,25 @@ TEST_F(SessionTest, SwitchInputFieldType) {
 
   Session session(engine);
   InitSessionToPrecomposition(&session);
+  SessionTestPeer session_peer(session);
+  auto snapshot = dictionary::ProjectDictionarySnapshot::Create(
+      1, "project-a", "sha256:1",
+      {dictionary::ProjectDictionaryEntry{
+          .key = "ぷろじぇくと",
+          .value = "Project",
+          .cost = 100,
+          .lid = 10,
+          .rid = 10,
+          .priority = 3,
+          .entry_id = "entry-1",
+      }});
+  ASSERT_TRUE(snapshot.ok()) << snapshot.status();
+  engine::EngineConverterInterface* engine_converter =
+      session_peer.context_()->mutable_converter();
+  ASSERT_EQ(engine_converter->PublishProjectDictionary(*snapshot),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  EXPECT_EQ(engine_converter->GetProjectDictionaryStatus().latest_generation,
+            1);
 
   // initial state is NORMAL
   EXPECT_EQ(session.context().composer().GetInputFieldType(),
@@ -13844,10 +13864,18 @@ TEST_F(SessionTest, SwitchInputFieldType) {
   {
     SCOPED_TRACE("Switch input field type to PASSWORD");
     SwitchInputFieldType(commands::Context::PASSWORD, &session);
+    const auto status = engine_converter->GetProjectDictionaryStatus();
+    EXPECT_TRUE(status.secure_input);
+    EXPECT_EQ(status.latest_generation, std::nullopt);
+    EXPECT_EQ(status.pinned_generation, std::nullopt);
   }
   {
     SCOPED_TRACE("Switch input field type to NORMAL");
     SwitchInputFieldType(commands::Context::NORMAL, &session);
+    const auto status = engine_converter->GetProjectDictionaryStatus();
+    EXPECT_FALSE(status.secure_input);
+    EXPECT_EQ(status.latest_generation, std::nullopt);
+    EXPECT_EQ(status.pinned_generation, std::nullopt);
   }
 }
 

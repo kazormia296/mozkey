@@ -46,6 +46,7 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "base/util.h"
@@ -58,6 +59,7 @@
 #include "converter/segments.h"
 #include "converter/segments_matchers.h"
 #include "data_manager/testing/mock_data_manager.h"
+#include "dictionary/project_dictionary.h"
 #include "engine/candidate_list.h"
 #include "engine/engine_converter_interface.h"
 #include "protocol/candidate_window.pb.h"
@@ -81,6 +83,7 @@ using ::mozc::config::Config;
 using ::testing::_;
 using ::testing::DoAll;
 using ::testing::Eq;
+using ::testing::Invoke;
 using ::testing::Mock;
 using ::testing::Pointee;
 using ::testing::Property;
@@ -93,6 +96,24 @@ constexpr char kChars_Mo[] = "も";
 constexpr char kChars_Mozuku[] = "もずく";
 constexpr char kChars_Mozukusu[] = "もずくす";
 constexpr char kChars_Momonga[] = "ももんが";
+
+std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+CreateProjectDictionarySnapshot(uint64_t generation,
+                                absl::string_view value) {
+  auto snapshot = dictionary::ProjectDictionarySnapshot::Create(
+      generation, "project-a", absl::StrCat("sha256:", generation),
+      {dictionary::ProjectDictionaryEntry{
+          .key = "ぷろじぇくと",
+          .value = std::string(value),
+          .cost = 100,
+          .lid = 10,
+          .rid = 10,
+          .priority = 3,
+          .entry_id = absl::StrCat("entry-", generation),
+      }});
+  CHECK(snapshot.ok()) << snapshot.status();
+  return *std::move(snapshot);
+}
 }  // namespace
 
 void AddSegmentWithSingleCandidate(Segments* segments, absl::string_view key,
@@ -3229,6 +3250,116 @@ TEST(EngineConverterRevertTest, Revert) {
   EngineConverter converter(mock_converter);
   EXPECT_CALL(*mock_converter, RevertConversion(_));
   converter.Revert();
+}
+
+TEST_F(EngineConverterTest, ProjectDictionaryIsPinnedPerComposition) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  const auto generation1 = CreateProjectDictionarySnapshot(1, "A");
+  const auto generation2 = CreateProjectDictionarySnapshot(2, "B");
+
+  EXPECT_EQ(converter.PublishProjectDictionary(generation1),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  converter.OnStartComposition(Context::default_instance());
+  ASSERT_EQ(converter.GetProjectDictionaryStatus().pinned_generation, 1);
+
+  EXPECT_EQ(converter.PublishProjectDictionary(generation2),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().latest_generation, 2);
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().pinned_generation, 1);
+
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(Invoke([&](const ConversionRequest& request, Segments*) {
+        EXPECT_EQ(request.project_dictionary(), generation1);
+        return false;
+      }));
+  EXPECT_FALSE(converter.Convert(*composer_));
+
+  EXPECT_CALL(*mock_converter, ResetConversion(_));
+  converter.Reset();
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().pinned_generation,
+            std::nullopt);
+
+  converter.OnStartComposition(Context::default_instance());
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().pinned_generation, 2);
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(Invoke([&](const ConversionRequest& request, Segments*) {
+        EXPECT_EQ(request.project_dictionary(), generation2);
+        return false;
+      }));
+  EXPECT_FALSE(converter.Convert(*composer_));
+
+  converter.OnEndComposition();
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().pinned_generation,
+            std::nullopt);
+  converter.OnStartComposition(Context::default_instance());
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().pinned_generation, 2);
+
+  EXPECT_CALL(*mock_converter, RevertConversion(_));
+  converter.Revert();
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().pinned_generation,
+            std::nullopt);
+}
+
+TEST_F(EngineConverterTest, ProjectDictionarySecurePurgeRequiresRepublish) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  const auto generation1 = CreateProjectDictionarySnapshot(1, "A");
+  const auto generation2 = CreateProjectDictionarySnapshot(2, "B");
+
+  ASSERT_EQ(converter.PublishProjectDictionary(generation1),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  converter.OnStartComposition(Context::default_instance());
+
+  converter.SetProjectDictionarySecureInput(true);
+  auto status = converter.GetProjectDictionaryStatus();
+  EXPECT_TRUE(status.secure_input);
+  EXPECT_EQ(status.latest_generation, std::nullopt);
+  EXPECT_EQ(status.pinned_generation, std::nullopt);
+  EXPECT_EQ(
+      converter.PublishProjectDictionary(generation2),
+      dictionary::ProjectDictionaryRegistry::PublishResult::kRejectedSecure);
+
+  converter.SetProjectDictionarySecureInput(false);
+  status = converter.GetProjectDictionaryStatus();
+  EXPECT_FALSE(status.secure_input);
+  EXPECT_EQ(status.latest_generation, std::nullopt);
+  EXPECT_EQ(status.pinned_generation, std::nullopt);
+
+  ASSERT_EQ(converter.PublishProjectDictionary(generation2),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  converter.OnStartComposition(Context::default_instance());
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().pinned_generation, 2);
+
+  Context password_context;
+  password_context.set_input_field_type(Context::PASSWORD);
+  converter.OnStartComposition(password_context);
+  status = converter.GetProjectDictionaryStatus();
+  EXPECT_TRUE(status.secure_input);
+  EXPECT_EQ(status.latest_generation, std::nullopt);
+  EXPECT_EQ(status.pinned_generation, std::nullopt);
+}
+
+TEST_F(EngineConverterTest, ProjectDictionaryPurgeIsSessionLocal) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter session_a(mock_converter, request_, config_);
+  EngineConverter session_b(mock_converter, request_, config_);
+  const auto generation = CreateProjectDictionarySnapshot(1, "A");
+
+  ASSERT_EQ(session_a.PublishProjectDictionary(generation),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  ASSERT_EQ(session_b.PublishProjectDictionary(generation),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  session_a.OnStartComposition(Context::default_instance());
+  session_b.OnStartComposition(Context::default_instance());
+
+  session_a.SetProjectDictionarySecureInput(true);
+  EXPECT_TRUE(session_a.GetProjectDictionaryStatus().secure_input);
+  EXPECT_EQ(session_a.GetProjectDictionaryStatus().latest_generation,
+            std::nullopt);
+  EXPECT_FALSE(session_b.GetProjectDictionaryStatus().secure_input);
+  EXPECT_EQ(session_b.GetProjectDictionaryStatus().latest_generation, 1);
+  EXPECT_EQ(session_b.GetProjectDictionaryStatus().pinned_generation, 1);
 }
 
 TEST_F(EngineConverterTest, DeleteCandidateFromHistory) {

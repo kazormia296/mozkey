@@ -166,6 +166,38 @@ ProjectDictionarySnapshot::ProjectDictionarySnapshot(
       fingerprint_(std::move(fingerprint)),
       entries_(std::move(entries)) {}
 
+ProjectDictionaryRegistry::ProjectDictionaryRegistry(
+    const ProjectDictionaryRegistry& other) {
+  absl::MutexLock lock(other.mutex_);
+  secure_input_ = other.secure_input_;
+  latest_ = other.latest_;
+  pinned_ = other.pinned_;
+}
+
+ProjectDictionaryRegistry& ProjectDictionaryRegistry::operator=(
+    const ProjectDictionaryRegistry& other) {
+  if (this == &other) {
+    return *this;
+  }
+
+  bool secure_input = false;
+  std::shared_ptr<const ProjectDictionarySnapshot> latest;
+  std::shared_ptr<const ProjectDictionarySnapshot> pinned;
+  {
+    absl::MutexLock lock(other.mutex_);
+    secure_input = other.secure_input_;
+    latest = other.latest_;
+    pinned = other.pinned_;
+  }
+  {
+    absl::MutexLock lock(mutex_);
+    secure_input_ = secure_input;
+    latest_ = std::move(latest);
+    pinned_ = std::move(pinned);
+  }
+  return *this;
+}
+
 std::pair<ProjectDictionarySnapshot::EntryIterator,
           ProjectDictionarySnapshot::EntryIterator>
 ProjectDictionarySnapshot::EqualRange(absl::string_view key) const {
@@ -341,6 +373,19 @@ void ProjectDictionaryRegistry::Purge() {
 bool ProjectDictionaryRegistry::secure_input() const {
   absl::MutexLock lock(mutex_);
   return secure_input_;
+}
+
+ProjectDictionaryRegistry::Status ProjectDictionaryRegistry::status() const {
+  absl::MutexLock lock(mutex_);
+  Status result;
+  result.secure_input = secure_input_;
+  if (latest_ != nullptr) {
+    result.latest_generation = latest_->generation();
+  }
+  if (pinned_ != nullptr) {
+    result.pinned_generation = pinned_->generation();
+  }
+  return result;
 }
 
 std::shared_ptr<const ProjectDictionarySnapshot>

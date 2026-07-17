@@ -2902,6 +2902,10 @@ void SetSessionState(const ImeContext::State state, ImeContext* context) {
   switch (state) {
     case ImeContext::DIRECT:
     case ImeContext::PRECOMPOSITION:
+      if (prev_state == ImeContext::COMPOSITION ||
+          prev_state == ImeContext::CONVERSION) {
+        context->mutable_converter()->OnEndComposition();
+      }
       context->mutable_composer()->Reset();
       break;
     case ImeContext::CONVERSION:
@@ -9307,8 +9311,11 @@ void Session::TransformInput(commands::Input* input) {
 
 bool Session::SwitchInputFieldType(commands::Command* command) {
   command->mutable_output()->set_consumed(true);
-  context_->mutable_composer()->SetInputFieldType(
-      command->input().context().input_field_type());
+  const commands::Context::InputFieldType input_field_type =
+      command->input().context().input_field_type();
+  context_->mutable_composer()->SetInputFieldType(input_field_type);
+  context_->mutable_converter()->SetProjectDictionarySecureInput(
+      input_field_type == commands::Context::PASSWORD);
   Output(command);
   return true;
 }
