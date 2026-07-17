@@ -647,12 +647,26 @@ TEST(ZenzPromptBuilderTest, SanitizesConditionFields) {
   const std::string reading = "\xE3\x81\xA6\xE3\x81\x99\xE3\x81\xA8";
   const std::string katakana = "\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88";
 
-  EXPECT_EQ(std::string("\xEE\xB8\x82") + "left " +
-                std::string("\xEE\xB8\x83") + "profile " +
+  EXPECT_EQ(std::string("\xEE\xB8\x82") + "left" +
+                std::string("\xEE\xB8\x83") +
+                "profile\xE3\x80\x80" +
                 std::string("\xEE\xB8\x84") + std::string(64, 'a') +
                 std::string("\xEE\xB8\x80") + katakana +
                 std::string("\xEE\xB8\x81"),
             builder.Build(reading, options));
+}
+
+TEST(ZenzPromptBuilderTest, MatchesReferenceTokenizerWhitespacePreparation) {
+  ZenzPromptOptions options;
+  options.left_context = "A B\nC\rD\tE";
+
+  const ZenzPromptBuilder builder;
+  EXPECT_EQ(std::string("\xEE\xB8\x82") +
+                "A\xE3\x80\x80" "BC\xE3\x80\x80" "D\xE3\x80\x80" "E" +
+                std::string("\xEE\xB8\x80") +
+                "\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88" +
+                std::string("\xEE\xB8\x81"),
+            builder.Build("\xE3\x81\xA6\xE3\x81\x99\xE3\x81\xA8", options));
 }
 
 TEST(ZenzOutputValidatorTest,

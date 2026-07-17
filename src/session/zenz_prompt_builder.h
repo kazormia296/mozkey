@@ -37,6 +37,7 @@ class ZenzPromptBuilder {
   static bool IsUnsafeControlCodepoint(char32_t codepoint);
   static std::string SanitizeConditionText(absl::string_view input,
                                            size_t max_chars);
+  static std::string NormalizeTokenizerWhitespace(absl::string_view input);
 };
 
 }  // namespace session
