@@ -55,8 +55,9 @@ struct BridgedProjectSnapshot final {
 
 // A complete replacement decision, not a delta.  Every non-ready result has a
 // null snapshot and must clear any previously installed bridged snapshot.  In
-// particular, an old DTO retained by ProtocolV1SnapshotPublisher during its
-// one retryable grace reload is never silently resurrected by this bridge.
+// ProtocolV1SnapshotPublisher's one retryable grace result is an explicit
+// ready replacement while it still carries a snapshot.  Its second failure
+// carries null and therefore becomes an explicit clear here.
 struct ProjectDictionaryBridgeResult final {
   ProjectDictionaryBridgeDiagnostic diagnostic =
       ProjectDictionaryBridgeDiagnostic::kNullPublication;

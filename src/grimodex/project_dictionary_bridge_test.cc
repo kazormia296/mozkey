@@ -216,19 +216,33 @@ TEST(ProjectDictionaryBridgeTest, NullAndInactiveAreExplicitClearResults) {
   EXPECT_EQ(inactive.snapshot, nullptr);
 }
 
-TEST(ProjectDictionaryBridgeTest, InvalidPublicationNeverResurrectsOldDto) {
+TEST(ProjectDictionaryBridgeTest,
+     BridgesOneRetryableGraceThenFailsClosedWithoutSnapshot) {
   const auto old_snapshot = Snapshot(
       {Entry("ふるい", "古い", DictionaryCategory::kNoun, 1, "old")});
-  const auto retained_during_error = Publication(
-      9, old_snapshot, LoadDiagnostic::kStateChangedDuringRead);
 
-  const auto result =
-      BuildProjectDictionarySnapshot(retained_during_error, kPosIds);
+  for (const LoadDiagnostic diagnostic : {
+           LoadDiagnostic::kMissingSnapshot,
+           LoadDiagnostic::kStateChangedDuringRead,
+       }) {
+    const auto retained_during_grace =
+        BuildProjectDictionarySnapshot(Publication(9, old_snapshot, diagnostic),
+                                       kPosIds);
+    ASSERT_TRUE(retained_during_grace.ready())
+        << static_cast<int>(diagnostic) << ": "
+        << retained_during_grace.status;
+    ASSERT_NE(retained_during_grace.snapshot, nullptr);
+    EXPECT_EQ(retained_during_grace.snapshot->generation, 9);
+    EXPECT_TRUE(
+        retained_during_grace.snapshot->dictionary->HasKey("ふるい"));
 
-  EXPECT_EQ(result.diagnostic,
-            ProjectDictionaryBridgeDiagnostic::kInvalidPublication);
-  EXPECT_TRUE(result.should_clear());
-  EXPECT_EQ(result.snapshot, nullptr);
+    const auto second_failure = BuildProjectDictionarySnapshot(
+        Publication(10, nullptr, diagnostic), kPosIds);
+    EXPECT_EQ(second_failure.diagnostic,
+              ProjectDictionaryBridgeDiagnostic::kInvalidPublication);
+    EXPECT_TRUE(second_failure.should_clear());
+    EXPECT_EQ(second_failure.snapshot, nullptr);
+  }
 
   const auto loaded_without_snapshot = BuildProjectDictionarySnapshot(
       Publication(9, nullptr, LoadDiagnostic::kLoaded), kPosIds);

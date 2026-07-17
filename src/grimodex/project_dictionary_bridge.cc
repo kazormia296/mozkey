@@ -103,14 +103,18 @@ ProjectDictionaryBridgeResult BuildProjectDictionarySnapshot(
                    absl::OkStatus());
   }
 
-  // Only a coherent, freshly loaded DTO may become a native dictionary.  Do
-  // not consume a prior snapshot retained during a retryable publisher error.
-  if (published->diagnostic != LoadDiagnostic::kLoaded ||
+  // A fresh load and the publisher's deliberate one-reload retryable grace
+  // are usable.  On a second consecutive retryable failure the publisher
+  // supplies null, which takes the fail-closed path below.
+  const bool retryable_grace =
+      published->diagnostic == LoadDiagnostic::kMissingSnapshot ||
+      published->diagnostic == LoadDiagnostic::kStateChangedDuringRead;
+  if ((published->diagnostic != LoadDiagnostic::kLoaded &&
+       !retryable_grace) ||
       published->snapshot == nullptr) {
     return Failure(ProjectDictionaryBridgeDiagnostic::kInvalidPublication,
                    absl::FailedPreconditionError(
-                       "Grimodex publication is not a coherent loaded "
-                       "snapshot"));
+                       "Grimodex publication has no usable snapshot"));
   }
   if (!IsValidPosIds(pos_ids)) {
     return Failure(ProjectDictionaryBridgeDiagnostic::kInvalidPosIds,
