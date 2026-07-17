@@ -56,7 +56,11 @@ constexpr wchar_t kSingleInstanceMutexName[] =
     L"Local\MozcZenzScorerSingleInstance";
 #else
 pid_t g_llama_process = -1;
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+constexpr char kDefaultPipeNameSuffix[] = "/.mozkey_zenz_scorer_pipe";
+#else
 constexpr char kDefaultPipeNameSuffix[] = "/.mozc_zenz_scorer_pipe";
+#endif
 #endif
 
 constexpr wchar_t kDefaultHost[] = L"127.0.0.1";
@@ -2095,7 +2099,13 @@ int main() {
   ::sigaction(SIGTERM, &sa, nullptr);
   ::sigaction(SIGHUP, &sa, nullptr);
 
-  std::string lock_path = std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + "/.mozc_zenz_scorer.lock";
+  std::string lock_path =
+      std::string(getenv("HOME") ? getenv("HOME") : "/tmp") +
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+      "/.mozkey_zenz_scorer.lock";
+#else
+      "/.mozc_zenz_scorer.lock";
+#endif
   int lock_fd = ::open(lock_path.c_str(), O_RDWR | O_CREAT, 0600);
   if (lock_fd >= 0) {
     struct flock fl = {};

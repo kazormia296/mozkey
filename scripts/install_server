@@ -2,8 +2,12 @@
 
 _bldtype=${_bldtype:-Debug}
 PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
 
-install -D -m 755 "out_linux/${_bldtype}/mozc_server" "${PREFIX}/lib/mozc/mozc_server"
-install -D -m 755 "out_linux/${_bldtype}/mozc_tool"   "${PREFIX}/lib/mozc/mozc_tool"
-install -d "${PREFIX}/share/doc/mozc/"
-install -m 644 data/installer/*.html "${PREFIX}/share/doc/mozc/"
+install -D -m 755 "out_linux/${_bldtype}/mozc_server" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_server"
+install -D -m 755 "out_linux/${_bldtype}/mozc_tool" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_tool"
+if [ -x "out_linux/${_bldtype}/mozc_zenz_scorer" ]; then
+  install -D -m 755 "out_linux/${_bldtype}/mozc_zenz_scorer" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_zenz_scorer"
+fi
+install -d "${DESTDIR}${PREFIX}/share/doc/mozkey/"
+install -m 644 data/installer/*.html "${DESTDIR}${PREFIX}/share/doc/mozkey/"

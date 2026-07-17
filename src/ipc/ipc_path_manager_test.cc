@@ -91,6 +91,10 @@ TEST_F(IPCPathManagerTest, IPCPathManagerTest) {
     // On Linux, |path| should be abstract (see man unix(7) for details.)
     ASSERT_FALSE(path.empty());
     EXPECT_EQ(path[0], '\0');
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+    EXPECT_EQ(path.substr(1, 12), "tmp/.mozkey.");
+    EXPECT_EQ(path.find(".mozc.", 1), std::string::npos);
+#endif
   }
 }
 

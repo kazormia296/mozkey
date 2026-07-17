@@ -26,7 +26,12 @@ TEST(ZenzNamedPipeClientTest, LinuxFallback) {
 
   setenv("HOME", temp_dir, 1);
 
-  std::string socket_path = std::string(temp_dir) + "/.mozc_zenz_scorer_pipe";
+  std::string socket_path = std::string(temp_dir) +
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+                            "/.mozkey_zenz_scorer_pipe";
+#else
+                            "/.mozc_zenz_scorer_pipe";
+#endif
 
   // Create a dummy Unix domain socket
   int fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -53,7 +58,7 @@ TEST(ZenzNamedPipeClientTest, LinuxFallback) {
   request.pipe_name = "\\\\.\\pipe\\mozc_zenz_scorer";
   request.timeout_msec = 100;
 
-  // The client should fallback to ~/.mozc_zenz_scorer_pipe in Linux
+  // The OSS Linux client uses Mozkey's product-specific fallback socket.
   ZenzLiveResponse response = client.Convert(request);
 
   server_thread.join();

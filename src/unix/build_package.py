@@ -104,9 +104,9 @@ def ParseArguments() -> argparse.Namespace:
   parser = argparse.ArgumentParser()
   parser.add_argument('--inputs', nargs='+')
   # For mozc_server, mozc_tool, mozc_renderer
-  parser.add_argument('--mozc_dir', default='/usr/lib/mozc')
+  parser.add_argument('--mozc_dir', default='/usr/lib/mozkey')
   # For icons
-  parser.add_argument('--mozc_icons_dir', default='/usr/share/icons/mozc')
+  parser.add_argument('--mozc_icons_dir', default='/usr/share/icons/mozkey')
   # For mozc.xml
   parser.add_argument(
       '--ibus_component_dir', default='/usr/share/ibus/component'
