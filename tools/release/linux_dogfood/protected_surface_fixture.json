@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "literal": "RUST_LOG=debug",
+  "romanized_suffix": "dekuwashiiloguwodasu",
+  "kana_suffix": "でくわしいろぐをだす",
+  "raw_preedit": "RUST_LOG=debugでくわしいろぐをだす",
+  "converted_value": "RUST_LOG=debugで詳しいログを出す"
+}
