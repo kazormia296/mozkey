@@ -27,6 +27,9 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
         shutil.copy2(SCRIPT, package_script)
         package_script.chmod(0o755)
         shutil.copy2(SBOM_GENERATOR, release_tools / SBOM_GENERATOR.name)
+        verifier = scripts / "verify_mozkey_linux_build_attestation"
+        verifier.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        verifier.chmod(0o755)
 
         (source / "version.bzl").write_text(
             textwrap.dedent(
@@ -53,6 +56,14 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             encoding="utf-8",
         )
         installer.chmod(0o755)
+        attestation = repository / "dist/linux/archlinux-x86_64/build-attestation.json"
+        attestation.parent.mkdir(parents=True)
+        attestation.write_text(
+            '{"schema_version":"mozkey.linux_build_attestation.v1"}\n',
+            encoding="utf-8",
+        )
+        packages = repository / "dist/archlinux-build-packages.txt"
+        packages.write_text("fcitx5 5.1.21-1\nllama-cpp b9859-1\n", encoding="utf-8")
 
         subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
         subprocess.run(["git", "add", "."], cwd=repository, check=True)
@@ -112,7 +123,9 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             archive = output / f"{base}.tar.xz"
             checksum = output / f"{base}.tar.xz.sha256"
             sbom = output / f"{base}.spdx.json"
+            attestation = output / f"{base}.build-attestation.json"
             self.assertTrue(archive.is_file())
+            self.assertTrue(attestation.is_file())
             checksum_parts = checksum.read_text(encoding="utf-8").split()
             self.assertEqual(checksum_parts[1], archive.name)
             self.assertEqual(
@@ -131,6 +144,7 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             )
             first_archive_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             first_sbom = sbom.read_bytes()
+            first_attestation = attestation.read_bytes()
 
             second = self.run_package(repository, package_script, output)
             self.assertEqual(second.returncode, 0, second.stderr)
@@ -138,6 +152,21 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
                 hashlib.sha256(archive.read_bytes()).hexdigest(), first_archive_digest
             )
             self.assertEqual(sbom.read_bytes(), first_sbom)
+            self.assertEqual(attestation.read_bytes(), first_attestation)
+            archive_listing = subprocess.run(
+                ["tar", "-tJf", str(archive)],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.splitlines()
+            self.assertIn(
+                "usr/share/doc/mozkey/linux-build-attestation.json",
+                archive_listing,
+            )
+            self.assertIn(
+                "usr/share/doc/mozkey/archlinux-build-packages.txt",
+                archive_listing,
+            )
 
     def test_rejects_unsupported_target_and_dirty_tree_without_explicit_override(self):
         with tempfile.TemporaryDirectory() as temporary:

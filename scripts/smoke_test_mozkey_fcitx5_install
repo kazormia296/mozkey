@@ -205,10 +205,14 @@ require_file "${addon_dir}/fcitx5-mozkey.so"
 require_file /usr/share/mozkey/fcitx5-addon-dir
 
 # Every installed file or symlink must be owned by the audited manifest. The
-# embedded SPDX document is package-generated after this source-install smoke,
-# so it is the sole manifest entry intentionally absent at this point.
+# Arch provenance and the embedded SPDX document are package-generated after
+# this source-install smoke, so those manifest entries are intentionally absent.
 {
-  sed '/^\/share\/doc\/mozkey\/mozkey-linux\.spdx\.json$/d; s#^#/usr#' \
+  sed \
+    -e '/^\/share\/doc\/mozkey\/archlinux-build-packages\.txt$/d' \
+    -e '/^\/share\/doc\/mozkey\/linux-build-attestation\.json$/d' \
+    -e '/^\/share\/doc\/mozkey\/mozkey-linux\.spdx\.json$/d' \
+    -e 's#^#/usr#' \
     "${script_dir}/mozkey_fcitx5_install_manifest.txt"
   printf '%s\n' "${addon_dir}/fcitx5-mozkey.so"
 } | LC_ALL=C sort -u > "${expected_paths}"

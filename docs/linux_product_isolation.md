@@ -55,6 +55,14 @@ the Fcitx entry point last.  Individual Bazel install scripts are internal
 primitives. The smoke also covers a changed multiarch addon path and rejects an
 unsafe installed path record before the data phase.
 
+Release binaries must be produced by `scripts/build_mozkey_linux_bazel`. Its
+attestation binds the current Git HEAD, exact Bazel targets and flags,
+`release-approved-only` manifest/lock/outputs, and every installed ELF digest.
+Preflight and packaging reject stale or differently configured `bazel-bin`
+outputs. The Arch payload and SPDX inventory also contain that attestation and
+the exact `pacman -Q` build package list, so the rolling build environment is
+not merely an unauthenticated CI sidecar.
+
 The package script is intentionally restricted to a clean Arch Linux x86_64
 checkout. It emits an Arch packaging payload `.tar.xz`, a basename-scoped
 SHA-256 sidecar, and an SPDX 2.3 file inventory; it is not a portable Linux
@@ -96,7 +104,23 @@ runtime probe.
 The smoke test installs into a temporary `DESTDIR`, validates the Fcitx and
 AppStream metadata, repeats the install as an upgrade, removes only the audited
 Mozkey manifest, proves Hazkey/Mozc/user-data sentinels survive, and reinstalls
-the product.  The real uninstall entry point is:
+the product. For a live uninstall, first stop Fcitx so it cannot respawn the
+per-user server, then run the bounded runtime gate as that desktop user while
+the installed executable paths still exist:
+
+```sh
+fcitx5-remote -e
+./scripts/stop_mozkey_linux_runtime
+```
+
+The stop gate uses Linux pidfds and repeated `/proc` identity checks. It can
+signal only the exact `/usr/lib/mozkey/mozc_server` and
+`/usr/lib/mozkey/mozc_zenz_scorer` processes belonging to the target UID, plus
+an exact `/usr/bin/llama-server` proven to descend from that scorer. It never
+falls back to a basename or command-line match. Root automation must name the
+non-root desktop UID explicitly with `--uid`; `DESTDIR` and non-`/usr` layouts
+are rejected. Only after that gate succeeds should the product files be
+removed:
 
 ```sh
 sudo env PREFIX=/usr ./scripts/uninstall_mozkey_fcitx5

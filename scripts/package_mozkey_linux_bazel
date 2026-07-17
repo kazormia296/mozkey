@@ -50,6 +50,18 @@ if [ "${architecture}" != x86_64 ]; then
   exit 1
 fi
 
+"${script_dir}/verify_mozkey_linux_build_attestation" archlinux-x86_64
+build_attestation="${repository_root}/dist/linux/archlinux-x86_64/build-attestation.json"
+build_packages="${repository_root}/dist/archlinux-build-packages.txt"
+for provenance_file in "${build_attestation}" "${build_packages}"
+do
+  if [ ! -f "${provenance_file}" ] || [ -L "${provenance_file}" ] ||
+     [ ! -s "${provenance_file}" ]; then
+    echo "missing or unsafe Arch build provenance: ${provenance_file}" >&2
+    exit 1
+  fi
+done
+
 case "${output_dir}" in
   /*) ;;
   *)
@@ -94,6 +106,11 @@ trap cleanup_package EXIT HUP INT TERM
     "${script_dir}/install_mozkey_linux_bazel"
 )
 
+install -D -m 644 "${build_attestation}" \
+  "${stage_dir}/usr/share/doc/mozkey/linux-build-attestation.json"
+install -D -m 644 "${build_packages}" \
+  "${stage_dir}/usr/share/doc/mozkey/archlinux-build-packages.txt"
+
 sbom="${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json"
 python3 "${repository_root}/tools/release/generate_linux_spdx_sbom.py" \
   --root "${stage_dir}" \
@@ -103,6 +120,8 @@ python3 "${repository_root}/tools/release/generate_linux_spdx_sbom.py" \
   --distro "${distro}" \
   --architecture "${architecture}"
 install -m 644 "${sbom}" "${publish_dir}/${artifact_base}.spdx.json"
+install -m 644 "${build_attestation}" \
+  "${publish_dir}/${artifact_base}.build-attestation.json"
 
 archive_name="${artifact_base}.tar.xz"
 tar --format=gnu --sort=name --owner=0 --group=0 --numeric-owner \
@@ -114,6 +133,7 @@ tar --format=gnu --sort=name --owner=0 --group=0 --numeric-owner \
 )
 
 for published_file in \
+  "${artifact_base}.build-attestation.json" \
   "${artifact_base}.spdx.json" \
   "${archive_name}" \
   "${archive_name}.sha256"
@@ -123,3 +143,5 @@ done
 
 printf 'Mozkey Linux product: %s\n' "${output_dir}/${archive_name}"
 printf 'SPDX inventory: %s\n' "${output_dir}/${artifact_base}.spdx.json"
+printf 'Build attestation: %s\n' \
+  "${output_dir}/${artifact_base}.build-attestation.json"

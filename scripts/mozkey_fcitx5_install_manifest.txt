@@ -5,6 +5,8 @@
 /lib/mozkey/llama-server
 /lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 /share/doc/mozkey/credits_en.html
+/share/doc/mozkey/archlinux-build-packages.txt
+/share/doc/mozkey/linux-build-attestation.json
 /share/doc/mozkey/mozkey-linux.spdx.json
 /share/fcitx5/addon/mozkey.conf
 /share/fcitx5/inputmethod/mozkey.conf

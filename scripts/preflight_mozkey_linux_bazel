@@ -10,8 +10,17 @@ source_root="${repository_root}/src"
 PREFIX="${PREFIX:-/usr}"
 DESTDIR="${DESTDIR:-}"
 LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}"
+BUILD_LAYOUT="${MOZKEY_LINUX_BUILD_LAYOUT:-archlinux-x86_64}"
 . "${script_dir}/fcitx5_install_paths"
 validate_mozkey_install_environment
+
+case "${BUILD_LAYOUT}" in
+  ubuntu-layout|archlinux-x86_64) ;;
+  *)
+    echo "unsupported Mozkey Linux build layout: ${BUILD_LAYOUT}" >&2
+    exit 2
+    ;;
+esac
 
 if [ "$(pwd -P)" != "${source_root}" ]; then
   echo "Mozkey Linux Bazel preflight must run from ${source_root}" >&2
@@ -77,6 +86,7 @@ for required_script in \
   "${script_dir}/install_zenz_runtime" \
   "${script_dir}/smoke_test_mozkey_fcitx5_install" \
   "${script_dir}/uninstall_mozkey_fcitx5" \
+  "${script_dir}/verify_mozkey_linux_build_attestation" \
   "${script_dir}/verify_llama_server_compatibility"
 do
   require_executable_file "${required_script}"
@@ -160,6 +170,10 @@ assert all(p["sources"][source]["release_approved"] for source in release)' \
 }
 python3 ../tools/dictionary/verify_release_dictionary_artifact.py --root .. || {
   echo "release dictionary build outputs are not verified" >&2
+  exit 1
+}
+"${script_dir}/verify_mozkey_linux_build_attestation" "${BUILD_LAYOUT}" || {
+  echo "Mozkey Linux Bazel outputs lack a matching build attestation" >&2
   exit 1
 }
 

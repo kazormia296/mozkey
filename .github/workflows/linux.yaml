@@ -103,20 +103,9 @@ jobs:
           # Unset the Android NDK setting to skip the unnecessary configuration.
           echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
 
-      - name: Build legacy package and Mozkey Linux targets on Ubuntu
-        working-directory: ./src
+      - name: Build and attest legacy package and Mozkey Linux targets on Ubuntu
         run: |
-          bazelisk build \
-            package \
-            //unix/fcitx5:fcitx5-mozkey.so \
-            //unix/fcitx5:grimodex_consumer_tool \
-            //server:mozc_server \
-            //gui/tool:mozc_tool \
-            //zenz_scorer:mozc_zenz_scorer \
-            --config oss_linux \
-            --config release_build \
-            --define=mozkey_dictionary_profile=release-approved-only \
-            --//unix/fcitx5:use_server=true
+          scripts/build_mozkey_linux_bazel ubuntu-layout
 
       - name: Validate Ubuntu multiarch staging layout
         working-directory: ./src
@@ -188,19 +177,8 @@ jobs:
             > dist/archlinux-build-packages.txt
 
       - name: Build the Arch Linux product
-        working-directory: ./src
         run: |
-          bazelisk build \
-            //unix/fcitx5:fcitx5-mozkey.so \
-            //unix/fcitx5:grimodex_consumer_tool \
-            //server:mozc_server \
-            //gui/tool:mozc_tool \
-            //zenz_scorer:mozc_zenz_scorer \
-            --config oss_linux \
-            --config release_build \
-            --config no_sframe \
-            --define=mozkey_dictionary_profile=release-approved-only \
-            --//unix/fcitx5:use_server=true
+          scripts/build_mozkey_linux_bazel archlinux-x86_64
 
       - name: Validate llama CLI, real GGUF inference, and staged product
         working-directory: ./src
@@ -224,6 +202,7 @@ jobs:
           path: |
             dist/mozkey-v*-archlinux-x86_64.tar.xz
             dist/mozkey-v*-archlinux-x86_64.tar.xz.sha256
+            dist/mozkey-v*-archlinux-x86_64.build-attestation.json
             dist/mozkey-v*-archlinux-x86_64.spdx.json
             dist/archlinux-build-packages.txt
           if-no-files-found: error
@@ -262,8 +241,11 @@ jobs:
             tools.dictionary.prepare_daily_dictionary_linux_test \
             tools.dictionary.verify_release_dictionary_artifact_test \
             tools.release.generate_linux_spdx_sbom_test \
-            tools.release.probe_zenz_runtime_test
+            tools.release.linux_build_attestation_test \
+            tools.release.probe_zenz_runtime_test \
+            tools.release.stop_mozkey_linux_runtime_test
           sh -n \
+            scripts/build_mozkey_linux_bazel \
             scripts/fcitx5_install_paths \
             scripts/install_mozkey_linux_bazel \
             scripts/install_zenz_runtime \
@@ -271,7 +253,9 @@ jobs:
             scripts/preflight_mozkey_linux_bazel \
             scripts/probe_zenz_runtime_bazel \
             scripts/smoke_test_mozkey_fcitx5_install \
+            scripts/stop_mozkey_linux_runtime \
             scripts/uninstall_mozkey_fcitx5 \
+            scripts/verify_mozkey_linux_build_attestation \
             scripts/verify_llama_server_compatibility
 
       - name: Setup

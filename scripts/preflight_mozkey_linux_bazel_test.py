@@ -61,6 +61,7 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             "install_zenz_runtime",
             "smoke_test_mozkey_fcitx5_install",
             "uninstall_mozkey_fcitx5",
+            "verify_mozkey_linux_build_attestation",
             "verify_llama_server_compatibility",
         ]
         for name in required_scripts:

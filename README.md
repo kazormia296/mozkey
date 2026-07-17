@@ -628,8 +628,8 @@ Windows MSI packages are available from [Releases](https://github.com/koyasi777/
 - See [Third-party notices](THIRD_PARTY_NOTICES.md) for source and license notes for bundled runtimes, model files, and generated dictionary data.
 - See [Linux product isolation](docs/linux_product_isolation.md) for the Fcitx
   multiarch path, Arch payload targets, compatible `llama-server`
-  contract, staged smoke, artifact checksum/SPDX inventory, and uninstall
-  procedure.
+  contract, build attestation, staged smoke, artifact checksum/SPDX inventory,
+  and the Fcitx-stop/runtime-stop/uninstall procedure.
 
 > [!WARNING]
 > This build is not an official google/mozc distribution.
