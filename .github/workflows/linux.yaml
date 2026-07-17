@@ -247,6 +247,8 @@ jobs:
             tools.release.normalize_zenz_gguf_test \
             tools.release.probe_zenz_runtime_test \
             tools.release.stop_mozkey_linux_runtime_test
+          python -m py_compile tools/release/linux_dogfood/*.py
+          node --check tools/release/linux_dogfood/electron_scope_probe.mjs
           sh -n \
             scripts/build_mozkey_linux_bazel \
             scripts/fcitx5_install_paths \
@@ -260,7 +262,8 @@ jobs:
             scripts/uninstall_mozkey_fcitx5 \
             scripts/verify_mozkey_linux_build_attestation \
             scripts/verify_zenz_gguf_normalization \
-            scripts/verify_llama_server_compatibility
+            scripts/verify_llama_server_compatibility \
+            tools/release/linux_dogfood/send_ime_sequence.sh
 
       - name: Setup
         run: |

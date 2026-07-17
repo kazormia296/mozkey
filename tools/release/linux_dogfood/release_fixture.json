@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "reading": "ryuuseikou",
+  "custom_value": "龍星港",
+  "default_value": "龍成功",
+  "state": {
+    "format_version": 1,
+    "active_project_id": "mozkey-dogfood",
+    "updated_at": "2026-07-17T00:00:00.000Z"
+  },
+  "project": {
+    "format_version": 1,
+    "project_id": "mozkey-dogfood",
+    "project_name": "Mozkey release dogfood",
+    "generated_at": "2026-07-17T00:00:00.000Z",
+    "entries": [
+      {
+        "yomi": "りゅうせいこう",
+        "surface": "龍星港",
+        "category": "place",
+        "priority": 3,
+        "entry_id": "release-canary-ryuuseikou"
+      }
+    ],
+    "profile": "Non-secret fixed release canary for installed-product verification.",
+    "zenzai_context": {
+      "topic": "Non-secret fixed Mozkey release canary",
+      "style": null,
+      "preference": null
+    }
+  }
+}

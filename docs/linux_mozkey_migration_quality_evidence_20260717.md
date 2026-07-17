@@ -13,6 +13,37 @@ reproduce every case uniquely passed by Hazkey.  It is a diagnostic backlog,
 not the 15-case release gate.  The protected-surface result needs a separate
 product UX/integration gate before the migration is called complete.
 
+## Migration and platform disposition
+
+The Hazkey engine-selection spike stops here. Continuing to tune two engines
+would no longer answer the original adoption question: on the focused gate
+Mozkey is ahead, and on the non-protected broad corpus this evidence finds no
+significant Hazkey advantage. Hazkey remains a frozen comparison oracle and an
+installable one-release rollback artifact; it is not a second production
+runtime, a dual-write target, or a prerequisite for Mozkey conversion.
+
+The production direction is a fresh Mozkey/Mozc fork with native Protocol v1
+project-dictionary consumption in `mozc_server`, existing Mozkey behavior and
+Zenz retained, and Linux Fcitx5 as the first shipping frontend. The
+multi-platform requirement is preserved at the contract boundary rather than
+by keeping Hazkey as the shared engine:
+
+- Grimodex owns atomic Protocol v1 snapshots; IME processes consume them
+  read-only and fail closed on invalid scope, identity, permissions, or data.
+- project entries, context, scope, generation, and secure-field behavior keep
+  platform-neutral semantics;
+- Linux binds those semantics to Fcitx program/focus context now;
+- Windows and macOS should add thin native frontend/context adapters over the
+  same Mozc server contract, without importing Fcitx-specific code or
+  reintroducing a second conversion engine.
+
+The migration release gate therefore combines the focused quality gate with
+attested installed-product checks: server restart/replay, exact default and
+project-dictionary fallback, GTK/Qt and packaged/development Electron focus,
+secure fields, Zenz runtime, package isolation, and a Hazkey rollback/reinstall
+round trip. A failure in those product gates blocks rollout; it does not by
+itself reopen the engine-selection spike.
+
 ## Sealed inputs
 
 | Artifact | SHA-256 / identity |
