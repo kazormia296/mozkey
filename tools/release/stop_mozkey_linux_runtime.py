@@ -29,6 +29,13 @@ MOZKEY_SERVER = "/usr/lib/mozkey/mozc_server"
 MOZKEY_SCORER = "/usr/lib/mozkey/mozc_zenz_scorer"
 LLAMA_SERVER = "/usr/bin/llama-server"
 RUNTIME_ROOTS = frozenset({MOZKEY_SERVER, MOZKEY_SCORER})
+# Linux TASK_COMM_LEN includes the trailing NUL, so an executable basename is
+# truncated to at most 15 bytes.  These names are never sufficient authority
+# to signal a process; they only prevent an unreadable runtime candidate from
+# being mistaken for proof that no Mozkey runtime exists.
+RUNTIME_ROOT_COMMS = frozenset(
+    Path(executable).name.encode("ascii")[:15] for executable in RUNTIME_ROOTS
+)
 
 DEFAULT_TERM_TIMEOUT_MSEC = 5000
 DEFAULT_KILL_TIMEOUT_MSEC = 2000
@@ -170,6 +177,19 @@ class Procfs:
             raise StopFailure("proc_identity_invalid")
         return tail[19]
 
+    @staticmethod
+    def _parse_comm(data: bytes) -> bytes:
+        comm = data.removesuffix(b"\n")
+        if (
+            not comm
+            or len(comm) > 15
+            or b"\n" in comm
+            or b"\x00" in comm
+            or any(byte < 0x20 or byte > 0x7E for byte in comm)
+        ):
+            raise StopFailure("proc_identity_invalid")
+        return comm
+
     def observe(
         self, pid: int, target_uid: int, *, strict: bool
     ) -> ProcessObservation | None:
@@ -191,12 +211,25 @@ class Procfs:
                 # A normal desktop session contains same-UID non-dumpable
                 # processes such as systemd --user, ssh-agent, and privileged
                 # GVfs helpers.  They are not eligible for signalling because
-                # their executable identity cannot be proven.  Ignore them
-                # only during the broad discovery scan; strict revalidation
-                # of an already identified Mozkey runtime must still fail
-                # closed if its executable becomes unreadable.
+                # their executable identity cannot be proven.  During broad
+                # discovery, an unrelated protected process may be ignored,
+                # but a process whose kernel comm matches a Mozkey runtime is
+                # an unreadable candidate and must prevent a false
+                # ``no_runtime`` result.  comm is deliberately never returned
+                # as a ProcessIdentity and therefore can never authorize a
+                # signal.
                 if not strict:
-                    return None
+                    try:
+                        comm_data = self._read_bounded(process_dir / "comm")
+                    except _ProcessGone:
+                        # A vanished process is harmless.  If status remains
+                        # readable, however, the identity is only partially
+                        # hidden and discovery must fail closed.
+                        self._read_bounded(process_dir / "status")
+                        raise StopFailure("proc_identity_unreadable") from error
+                    comm = self._parse_comm(comm_data)
+                    if comm not in RUNTIME_ROOT_COMMS:
+                        return None
                 raise StopFailure("proc_identity_unreadable") from error
             except OSError as error:
                 raise StopFailure("proc_identity_unreadable") from error

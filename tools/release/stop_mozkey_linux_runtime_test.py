@@ -37,6 +37,9 @@ class FakeProcTree:
         (process / "stat").write_text(
             _stat_line(pid, ppid, start_time), encoding="ascii"
         )
+        (process / "comm").write_bytes(
+            Path(executable).name.encode("ascii")[:15] + b"\n"
+        )
         (process / "exe").symlink_to(executable)
 
     def remove(self, pid: int) -> None:
@@ -123,6 +126,39 @@ class StopMozkeyLinuxRuntimeTest(unittest.TestCase):
                     stopper.StopFailure, "proc_identity_unreadable"
                 ):
                     procfs.observe(20, 1000, strict=True)
+
+    def test_scan_fails_closed_for_unreadable_runtime_candidate(self):
+        for executable in [stopper.MOZKEY_SERVER, stopper.MOZKEY_SCORER]:
+            with self.subTest(executable=executable):
+                with tempfile.TemporaryDirectory() as temporary:
+                    tree = FakeProcTree(Path(temporary))
+                    tree.add(20, executable, start_time=102)
+
+                    with mock.patch.object(
+                        stopper.os,
+                        "readlink",
+                        side_effect=PermissionError("protected runtime"),
+                    ):
+                        with self.assertRaisesRegex(
+                            stopper.StopFailure, "proc_identity_unreadable"
+                        ):
+                            stopper.Procfs(tree.root).scan(1000)
+
+    def test_unreadable_comm_fails_closed_when_executable_is_unreadable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            tree = FakeProcTree(Path(temporary))
+            tree.add(20, "/usr/lib/systemd/systemd", start_time=102)
+            (tree.root / "20" / "comm").unlink()
+
+            with mock.patch.object(
+                stopper.os,
+                "readlink",
+                side_effect=PermissionError("protected process"),
+            ):
+                with self.assertRaisesRegex(
+                    stopper.StopFailure, "proc_identity_unreadable"
+                ):
+                    stopper.Procfs(tree.root).scan(1000)
 
     def test_graceful_stop_signals_roots_but_not_unrelated_llama(self):
         with tempfile.TemporaryDirectory() as temporary:
