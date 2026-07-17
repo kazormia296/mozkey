@@ -28,7 +28,8 @@ Before installation and again before dogfood, verify the candidate itself:
 
 ```sh
 scripts/verify_mozkey_linux_build_attestation archlinux-x86_64
-sha256sum -c dist/mozkey-v0.8.0-archlinux-x86_64.tar.xz.sha256
+(cd dist && \
+  sha256sum -c mozkey-v0.8.0-archlinux-x86_64.tar.xz.sha256)
 cmp dist/linux/archlinux-x86_64/build-attestation.json \
   dist/mozkey-v0.8.0-archlinux-x86_64.build-attestation.json
 ```
