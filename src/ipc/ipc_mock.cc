@@ -93,8 +93,18 @@ absl::string_view IPCClientFactoryMock::GetGeneratedRequest() const {
   return request_;
 }
 
+size_t IPCClientFactoryMock::GetGeneratedRequestCount() const {
+  return requests_.size();
+}
+
+absl::string_view IPCClientFactoryMock::GetGeneratedRequest(
+    size_t index) const {
+  return index < requests_.size() ? requests_[index] : absl::string_view();
+}
+
 void IPCClientFactoryMock::SetGeneratedRequest(absl::string_view request) {
   request_ = request;
+  requests_.emplace_back(request);
 }
 
 void IPCClientFactoryMock::SetMockResponse(absl::string_view response) {

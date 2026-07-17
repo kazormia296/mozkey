@@ -1112,8 +1112,42 @@ TEST_F(SessionPlaybackTest, GrimodexCommandIsNotRetriedIntoNewSession) {
   select.set_type(commands::SessionCommand::SELECT_CANDIDATE);
   select.set_id(0);
 
+  const size_t request_count_before =
+      ipc_client_factory_->GetGeneratedRequestCount();
   EXPECT_FALSE(client_->SendCommandWithContext(select, context, &output));
   EXPECT_EQ(client_->session_generation(), 2);
+
+  // The transport sees the candidate selection once on the old session and
+  // then only replacement-session setup (CREATE_SESSION and, when present,
+  // SET_REQUEST).  No SEND_COMMAND may follow CREATE_SESSION.
+  const size_t request_count_after =
+      ipc_client_factory_->GetGeneratedRequestCount();
+  ASSERT_GE(request_count_after, request_count_before + 2);
+  commands::Input attempted_select;
+  ASSERT_TRUE(attempted_select.ParseFromString(
+      ipc_client_factory_->GetGeneratedRequest(request_count_before)));
+  ASSERT_EQ(attempted_select.type(), commands::Input::SEND_COMMAND);
+  EXPECT_EQ(attempted_select.id(), kOldSessionId);
+  EXPECT_EQ(attempted_select.command().type(),
+            commands::SessionCommand::SELECT_CANDIDATE);
+  int create_session_count = 0;
+  int replayed_command_count = 0;
+  for (size_t index = request_count_before + 1; index < request_count_after;
+       ++index) {
+    commands::Input replacement_request;
+    ASSERT_TRUE(replacement_request.ParseFromString(
+        ipc_client_factory_->GetGeneratedRequest(index)));
+    if (replacement_request.type() == commands::Input::CREATE_SESSION) {
+      ++create_session_count;
+    }
+    if (replacement_request.type() == commands::Input::SEND_COMMAND) {
+      ++replayed_command_count;
+    }
+    EXPECT_TRUE(replacement_request.type() == commands::Input::CREATE_SESSION ||
+                replacement_request.type() == commands::Input::SET_REQUEST);
+  }
+  EXPECT_EQ(create_session_count, 1);
+  EXPECT_EQ(replayed_command_count, 0);
 
   std::vector<commands::Input> history;
   client_peer().GetHistoryInputs(&history);
