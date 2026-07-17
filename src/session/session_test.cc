@@ -93,6 +93,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_METHOD(IsFullWidthInsertSpace);
   PEER_METHOD(PushUndoContext);
   PEER_METHOD(MaybeApplyZenzFeedbackLiveCorrection);
+  PEER_METHOD(MaybeScheduleZenzLiveCorrection);
   PEER_METHOD(SetPendingZenzFeedbackAccepted);
   PEER_METHOD(SetPendingZenzFeedbackRejected);
   PEER_METHOD(ObservePendingZenzFeedbackCommittedResult);
@@ -113,6 +114,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_METHOD(AttachCachedLiveConversionSuggestionCandidateWindow);
 
   PEER_VARIABLE(context_);
+  PEER_VARIABLE(grimodex_domain_);
   PEER_VARIABLE(undo_contexts_);
   PEER_VARIABLE(live_conversion_active_);
   PEER_VARIABLE(live_conversion_pending_);
@@ -131,6 +133,7 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_VARIABLE(zenz_feedback_store_);
   PEER_VARIABLE(pending_zenz_feedback_);
   PEER_VARIABLE(pending_direct_commit_learning_);
+  PEER_VARIABLE(pending_zenz_live_);
 };
 
 namespace {
@@ -529,6 +532,25 @@ void SwitchInputFieldType(commands::Context::InputFieldType type,
   command.mutable_input()->mutable_context()->set_input_field_type(type);
   EXPECT_TRUE(session->SendCommand(&command));
   EXPECT_EQ(session->context().composer().GetInputFieldType(), type);
+}
+
+commands::Context MakeGrimodexContext(absl::string_view program,
+                                      absl::string_view frontend,
+                                      uint64_t focus_epoch,
+                                      bool secure_input) {
+  commands::Context context;
+  commands::GrimodexClientContext* grimodex = context.mutable_grimodex();
+  grimodex->set_program(program);
+  grimodex->set_frontend(frontend);
+  grimodex->set_focus_epoch(focus_epoch);
+  grimodex->set_secure_input(secure_input);
+  const uint32_t revision =
+      static_cast<uint32_t>(focus_epoch & 0x7FFFFFFFU);
+  context.set_revision(static_cast<int32_t>(revision == 0 ? 1 : revision));
+  if (secure_input) {
+    context.set_input_field_type(commands::Context::PASSWORD);
+  }
+  return context;
 }
 
 bool SwitchCompositionModeCommand(commands::CompositionMode mode,
@@ -1206,7 +1228,7 @@ TEST_F(SessionTest, PendingZenzFeedbackIsConfirmedByNextTextInput) {
   Session session(engine);
   SessionTestPeer session_peer(session);
   InitSessionToPrecomposition(&session);
-  EnableZenzFeedbackLearning(&session);
+  EnableZenzLiveCorrectionWithFeedbackLearning(&session);
 
   session_peer.SetPendingZenzFeedbackAccepted(
       "かれはてんてきです", "", "彼は天敵です");
@@ -13877,6 +13899,328 @@ TEST_F(SessionTest, SwitchInputFieldType) {
     EXPECT_EQ(status.latest_generation, std::nullopt);
     EXPECT_EQ(status.pinned_generation, std::nullopt);
   }
+}
+
+TEST_F(SessionTest,
+       GrimodexSecureTransitionPurgesStateAndRejectsStaleUnlockCallbacks) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+  EnableZenzFeedbackLearning(&session);
+
+  constexpr uint64_t kGeneration = 23;
+  const std::string payload_sha256(64, '0');
+  auto snapshot = dictionary::ProjectDictionarySnapshot::Create(
+      kGeneration, "project-a", "sha256:project-a",
+      {dictionary::ProjectDictionaryEntry{
+          .key = "ぷろじぇくと",
+          .value = "Project",
+          .cost = 100,
+          .lid = 10,
+          .rid = 10,
+          .priority = 3,
+          .entry_id = "entry-1",
+      }},
+      dictionary::ProjectDictionaryMetadata{
+          .topic = "project-topic",
+          .style = "project-style",
+          .preference = "project-preference",
+          .payload_sha256 = payload_sha256,
+      });
+  ASSERT_TRUE(snapshot.ok()) << snapshot.status();
+  engine::EngineConverterInterface* engine_converter =
+      session_peer.context_()->mutable_converter();
+  ASSERT_EQ(engine_converter->PublishProjectDictionary(*snapshot),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+
+  commands::Context normal =
+      MakeGrimodexContext("editor", "wayland", 1, false);
+  normal.set_preceding_text("public-left");
+  normal.set_following_text("public-right");
+
+  commands::Command command;
+  InsertCharacterCharsWithContext("a", normal, &session, &command);
+  ASSERT_EQ(session.context().state(), ImeContext::COMPOSITION);
+  EXPECT_PREEDIT("あ", command);
+  ASSERT_TRUE(command.output().has_grimodex_session_status());
+  const commands::GrimodexSessionStatus& project_status =
+      command.output().grimodex_session_status();
+  EXPECT_EQ(project_status.scope(),
+            commands::GrimodexSessionStatus::PROJECT);
+  EXPECT_EQ(project_status.registry_sequence(), kGeneration);
+  EXPECT_EQ(project_status.pinned_payload_sha256(),
+            std::string(32, '\0'));
+
+  // Populate every delayed/session-owned surface that must be discarded at
+  // the secure boundary.  None of this state may be confirmed as learning.
+  commands::Command committed;
+  committed.mutable_output()->mutable_result()->set_key("あめ");
+  committed.mutable_output()->mutable_result()->set_value("雨");
+  ASSERT_TRUE(session_peer.SetPendingDirectCommitLearningFromCommittedResult(
+      committed, "test_before_secure"));
+  session_peer.SetPendingZenzFeedbackAccepted(
+      "かれはてんてきです", "empty", "彼は天敵です");
+  session_peer.pending_zenz_live_().pending = true;
+  session_peer.pending_zenz_live_().prompt = "must-not-survive";
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_pending_() = true;
+  session_peer.live_conversion_key_() = "かれはてんてきです";
+  session_peer.live_conversion_value_() = "彼は点滴です";
+  session_peer.PushUndoContext();
+
+  commands::Context secure =
+      MakeGrimodexContext("editor", "wayland", 2, true);
+  // A hostile adapter must not be able to smuggle context into secure input.
+  secure.set_preceding_text("secret-left");
+  secure.set_following_text("secret-right");
+  SetSendCommandCommand(commands::SessionCommand::GET_STATUS, &command);
+  *command.mutable_input()->mutable_context() = secure;
+  ASSERT_TRUE(session.SendCommand(&command));
+
+  EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  EXPECT_EQ(session.context().composer().GetInputFieldType(),
+            commands::Context::PASSWORD);
+  EXPECT_FALSE(command.input().context().has_preceding_text());
+  EXPECT_FALSE(command.input().context().has_following_text());
+  EXPECT_FALSE(session.context().client_context().has_preceding_text());
+  EXPECT_FALSE(session.context().client_context().has_following_text());
+  EXPECT_FALSE(command.output().has_preedit());
+  EXPECT_FALSE(command.output().has_candidate_window());
+  EXPECT_FALSE(session_peer.pending_direct_commit_learning_().pending);
+  EXPECT_FALSE(session_peer.pending_zenz_feedback_().pending);
+  EXPECT_FALSE(session_peer.pending_zenz_live_().pending);
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  EXPECT_FALSE(session_peer.live_conversion_pending_());
+  EXPECT_TRUE(session_peer.undo_contexts_().empty());
+
+  auto registry_status = engine_converter->GetProjectDictionaryStatus();
+  EXPECT_TRUE(registry_status.secure_input);
+  EXPECT_EQ(registry_status.latest_generation, std::nullopt);
+  EXPECT_EQ(registry_status.pinned_generation, std::nullopt);
+  ASSERT_TRUE(command.output().has_grimodex_session_status());
+  EXPECT_EQ(command.output().grimodex_session_status().scope(),
+            commands::GrimodexSessionStatus::SECURE_REVOKED);
+  EXPECT_EQ(command.output().grimodex_session_status().registry_sequence(), 0);
+  EXPECT_FALSE(command.output()
+                   .grimodex_session_status()
+                   .has_pinned_payload_sha256());
+
+  // Secure input cannot schedule a new Zenz request even if all live state is
+  // presented, and committing secure text never reaches converter learning.
+  session_peer.context_()->set_state(ImeContext::CONVERSION);
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "あい";
+  session_peer.live_conversion_value_() = "愛";
+  commands::Command zenz_command;
+  EXPECT_FALSE(session_peer.MaybeScheduleZenzLiveCorrection(&zenz_command));
+  session_peer.context_()->set_state(ImeContext::PRECOMPOSITION);
+  session_peer.live_conversion_active_() = false;
+  session_peer.live_conversion_key_().clear();
+  session_peer.live_conversion_value_().clear();
+
+  EXPECT_CALL(*converter, FinishConversion(_, _)).Times(0);
+  InsertCharacterCharsWithContext("x", secure, &session, &command);
+  EXPECT_FALSE(command.output().has_candidate_window());
+  ASSERT_TRUE(SendKey("enter", &session, &command));
+  EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+
+  InsertCharacterCharsWithContext("y", secure, &session, &command);
+  EXPECT_FALSE(command.output().has_candidate_window());
+  SetSendCommandCommand(commands::SessionCommand::SUBMIT, &command);
+  *command.mutable_input()->mutable_context() = secure;
+  ASSERT_TRUE(session.SendCommand(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  Mock::VerifyAndClearExpectations(converter.get());
+
+  // Same-epoch false and older-epoch callbacks are both stale.  They are
+  // canonicalized to the current secure tuple and cannot unlock it.
+  for (const uint64_t stale_epoch : {2ULL, 1ULL}) {
+    SetSendCommandCommand(
+        commands::SessionCommand::APPLY_ZENZ_LIVE_CORRECTION, &command);
+    commands::Context stale =
+        MakeGrimodexContext("stale-program", "stale-frontend",
+                            stale_epoch, false);
+    stale.set_revision(999);
+    stale.set_preceding_text("stale-secret");
+    *command.mutable_input()->mutable_context() = stale;
+    ASSERT_TRUE(session.SendCommand(&command));
+    EXPECT_EQ(command.input().context().grimodex().program(), "editor");
+    EXPECT_EQ(command.input().context().grimodex().frontend(), "wayland");
+    EXPECT_EQ(command.input().context().grimodex().focus_epoch(), 2);
+    EXPECT_TRUE(command.input().context().grimodex().secure_input());
+    EXPECT_EQ(command.input().context().revision(), 2);
+    EXPECT_FALSE(command.input().context().has_preceding_text());
+    EXPECT_EQ(command.output().grimodex_session_status().scope(),
+              commands::GrimodexSessionStatus::SECURE_REVOKED);
+  }
+
+  // Missing epoch is treated the same way as a stale callback.
+  SetSendCommandCommand(commands::SessionCommand::GET_STATUS, &command);
+  commands::Context* missing_epoch = command.mutable_input()->mutable_context();
+  missing_epoch->mutable_grimodex()->set_program("editor");
+  missing_epoch->mutable_grimodex()->set_frontend("wayland");
+  missing_epoch->mutable_grimodex()->set_secure_input(false);
+  missing_epoch->set_revision(777);
+  missing_epoch->set_preceding_text("missing-epoch-secret");
+  ASSERT_TRUE(session.SendCommand(&command));
+  EXPECT_TRUE(command.input().context().grimodex().secure_input());
+  EXPECT_EQ(command.input().context().grimodex().focus_epoch(), 2);
+  EXPECT_EQ(command.input().context().revision(), 2);
+  EXPECT_FALSE(command.input().context().has_preceding_text());
+
+  // Only a strictly newer epoch may leave secure input.  The purged snapshot
+  // remains absent until a new composition asks the provider to reload it.
+  SetSendCommandCommand(commands::SessionCommand::GET_STATUS, &command);
+  *command.mutable_input()->mutable_context() =
+      MakeGrimodexContext("editor", "wayland", 3, false);
+  ASSERT_TRUE(session.SendCommand(&command));
+  EXPECT_EQ(session.context().composer().GetInputFieldType(),
+            commands::Context::NORMAL);
+  registry_status = engine_converter->GetProjectDictionaryStatus();
+  EXPECT_FALSE(registry_status.secure_input);
+  EXPECT_EQ(registry_status.latest_generation, std::nullopt);
+  EXPECT_EQ(registry_status.pinned_generation, std::nullopt);
+  EXPECT_EQ(command.output().grimodex_session_status().scope(),
+            commands::GrimodexSessionStatus::OFF);
+  EXPECT_EQ(command.output().grimodex_session_status().registry_sequence(), 0);
+}
+
+TEST_F(SessionTest,
+       GrimodexDomainTransitionRequiresNewEpochAndTestSendKeyIsSecure) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  InitSessionToPrecomposition(&session);
+
+  commands::Context editor =
+      MakeGrimodexContext("editor", "wayland", 7, false);
+  editor.set_revision(999);  // The server canonicalizes this untrusted field.
+  commands::Command command;
+  InsertCharacterCharsWithContext("a", editor, &session, &command);
+  EXPECT_PREEDIT("あ", command);
+  EXPECT_EQ(command.input().context().revision(), 7);
+
+  // A tuple mismatch at the same epoch is stale, so the current domain and
+  // composition are retained.
+  commands::Context same_epoch_other =
+      MakeGrimodexContext("terminal", "wayland", 7, false);
+  InsertCharacterCharsWithContext(
+      "i", same_epoch_other, &session, &command);
+  EXPECT_PREEDIT("あい", command);
+  EXPECT_EQ(command.input().context().grimodex().program(), "editor");
+
+  // A strictly newer epoch selects the new domain and synchronously drops the
+  // old preedit before processing the current key.
+  commands::Context newer =
+      MakeGrimodexContext("terminal", "wayland", 8, false);
+  InsertCharacterCharsWithContext("u", newer, &session, &command);
+  EXPECT_PREEDIT("う", command);
+  EXPECT_EQ(command.input().context().grimodex().program(), "terminal");
+
+  // TEST_SEND_KEY cannot bypass the same boundary processing.  It discards the
+  // managed preedit and enters password mode before classifying the key.
+  ASSERT_TRUE(SetSendKeyCommand("a", &command));
+  *command.mutable_input()->mutable_context() =
+      MakeGrimodexContext("terminal", "wayland", 9, true);
+  EXPECT_TRUE(session.TestSendKey(&command));
+  EXPECT_EQ(session.context().state(), ImeContext::PRECOMPOSITION);
+  EXPECT_TRUE(session.context().composer().Empty());
+  EXPECT_EQ(session.context().composer().GetInputFieldType(),
+            commands::Context::PASSWORD);
+  EXPECT_TRUE(session.context()
+                  .converter()
+                  .GetProjectDictionaryStatus()
+                  .secure_input);
+
+  // Invalid UTF-8 cannot select a replacement domain even with a newer epoch.
+  // The command is canonicalized to the current secure tuple.
+  SetSendCommandCommand(commands::SessionCommand::GET_STATUS, &command);
+  commands::Context invalid_utf8 =
+      MakeGrimodexContext(std::string("\xFF", 1), "wayland", 10, false);
+  invalid_utf8.set_revision(1234);
+  invalid_utf8.set_preceding_text("must-be-cleared");
+  *command.mutable_input()->mutable_context() = invalid_utf8;
+  ASSERT_TRUE(session.SendCommand(&command));
+  EXPECT_EQ(command.input().context().grimodex().program(), "terminal");
+  EXPECT_EQ(command.input().context().grimodex().focus_epoch(), 9);
+  EXPECT_TRUE(command.input().context().grimodex().secure_input());
+  EXPECT_EQ(command.input().context().revision(), 9);
+  EXPECT_FALSE(command.input().context().has_preceding_text());
+
+  SetSendCommandCommand(commands::SessionCommand::GET_STATUS, &command);
+  commands::Context oversized =
+      MakeGrimodexContext(std::string(257, 'x'), "wayland", 11, false);
+  oversized.set_revision(4321);
+  oversized.set_following_text("must-also-be-cleared");
+  *command.mutable_input()->mutable_context() = oversized;
+  ASSERT_TRUE(session.SendCommand(&command));
+  EXPECT_EQ(command.input().context().grimodex().program(), "terminal");
+  EXPECT_EQ(command.input().context().grimodex().focus_epoch(), 9);
+  EXPECT_TRUE(command.input().context().grimodex().secure_input());
+  EXPECT_EQ(command.input().context().revision(), 9);
+  EXPECT_FALSE(command.input().context().has_following_text());
+}
+
+TEST_F(SessionTest, GrimodexPinnedProjectConditionsOverrideZenzPrompt) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_use_zenz_live_correction(true);
+  config.set_zenz_live_correction_delay_msec(1);
+  config.set_zenz_live_correction_min_key_length(2);
+  config.set_zenz_live_correction_profile("config-profile");
+  config.set_zenz_live_correction_topic("config-topic");
+  config.set_zenz_live_correction_style("config-style");
+  config.set_zenz_live_correction_settings("config-settings");
+  session.SetConfig(config);
+
+  auto snapshot = dictionary::ProjectDictionarySnapshot::Create(
+      41, "project-b", "sha256:project-b", {},
+      dictionary::ProjectDictionaryMetadata{
+          .topic = "project-topic",
+          .style = "project-style",
+          .preference = "project-settings",
+          .payload_sha256 = std::string(64, '1'),
+      });
+  ASSERT_TRUE(snapshot.ok()) << snapshot.status();
+  engine::EngineConverterInterface* engine_converter =
+      session_peer.context_()->mutable_converter();
+  ASSERT_EQ(engine_converter->PublishProjectDictionary(*snapshot),
+            dictionary::ProjectDictionaryRegistry::PublishResult::kApplied);
+  engine_converter->OnStartComposition(
+      MakeGrimodexContext("editor", "wayland", 1, false));
+  ASSERT_EQ(engine_converter->GetPinnedProjectDictionary(), *snapshot);
+
+  session_peer.context_()->set_state(ImeContext::CONVERSION);
+  session_peer.live_conversion_active_() = true;
+  session_peer.live_conversion_key_() = "あい";
+  session_peer.live_conversion_value_() = "愛";
+
+  commands::Command command;
+  ASSERT_TRUE(session_peer.MaybeScheduleZenzLiveCorrection(&command));
+  const std::string& prompt = session_peer.pending_zenz_live_().prompt;
+  EXPECT_NE(prompt.find(std::string("\xEE\xB8\x83") + "config-profile"),
+            std::string::npos);
+  EXPECT_NE(prompt.find(std::string("\xEE\xB8\x84") + "project-topic"),
+            std::string::npos);
+  EXPECT_NE(prompt.find(std::string("\xEE\xB8\x85") + "project-style"),
+            std::string::npos);
+  EXPECT_NE(prompt.find(std::string("\xEE\xB8\x86") + "project-settings"),
+            std::string::npos);
+  EXPECT_EQ(prompt.find("config-topic"), std::string::npos);
+  EXPECT_EQ(prompt.find("config-style"), std::string::npos);
+  EXPECT_EQ(prompt.find("config-settings"), std::string::npos);
 }
 
 TEST_F(SessionTest, CursorKeysInPasswordMode) {

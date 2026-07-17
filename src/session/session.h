@@ -296,6 +296,19 @@ class Session {
 
   std::unique_ptr<ImeContext> context_;
 
+  // Security-domain identity supplied by the Grimodex-aware client.  This is
+  // deliberately session-local.  Once initialized, a missing or older epoch
+  // can never replace it (in particular, it can never leave secure input).
+  struct GrimodexDomainState {
+    bool initialized = false;
+    std::string program;
+    std::string frontend;
+    uint64_t focus_epoch = 0;
+    bool secure_input = false;
+  };
+
+  GrimodexDomainState grimodex_domain_;
+
   // True while the current CONVERSION state was started by live conversion.
   // In this mode, ordinary character input should keep editing the underlying
   // composition instead of committing the conversion.
@@ -455,6 +468,17 @@ class Session {
   // behavior, which clears the undo context on the user's edit operation.
   void ClearUndoContext();
   bool HasUndoContext() const;
+
+  // Applies typed Grimodex context before any key/session-command side effect.
+  // Domain and security transitions synchronously discard all composition,
+  // learning, undo, live-conversion, and project-dictionary state.
+  void UpdateGrimodexContext(mozc::commands::Command* command);
+  void PurgeForGrimodexDomainTransition(bool secure_input);
+  void ApplyCurrentGrimodexDomainToContext(
+      mozc::commands::Context* context, bool clear_surrounding_text) const;
+  void AttachGrimodexSessionStatus(
+      mozc::commands::Command* command) const;
+  bool IsGrimodexSecureInput() const;
 
   // Returns true if |key| is assigned to Cancel in the current composition or
   // conversion keymap.
