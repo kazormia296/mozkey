@@ -1,0 +1,51 @@
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//:build_defs.bzl", "MOZC_TAGS", "mozc_cc_library", "mozc_cc_test")
+
+package(default_visibility = ["//:__subpackages__"])
+
+proto_library(
+    name = "protocol_v1_proto",
+    srcs = ["protocol_v1.proto"],
+    deps = ["@com_google_protobuf//:struct_proto"],
+)
+
+cc_proto_library(
+    name = "protocol_v1_cc_proto",
+    deps = [":protocol_v1_proto"],
+)
+
+mozc_cc_library(
+    name = "protocol_v1",
+    srcs = ["protocol_v1.cc"],
+    hdrs = ["protocol_v1.h"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":protocol_v1_cc_proto",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_protobuf//:json_util",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+mozc_cc_test(
+    name = "protocol_v1_test",
+    size = "small",
+    srcs = ["protocol_v1_test.cc"],
+    data = glob(["testdata/protocol_v1/**/*.json"]),
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":protocol_v1",
+        "//base:file_util",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)

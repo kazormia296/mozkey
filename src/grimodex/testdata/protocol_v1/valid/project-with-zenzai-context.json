@@ -1,0 +1,25 @@
+{
+  "format_version": 1,
+  "project_id": "project-a",
+  "project_name": "星海年代記",
+  "generated_at": "2026-07-11T00:00:00.000Z",
+  "entries": [
+    {
+      "yomi": "せつな",
+      "surface": "刹那",
+      "category": "person",
+      "priority": 2,
+      "entry_id": "entry-setsuna"
+    }
+  ],
+  "profile": "軍事SF。宇宙植民地を舞台にした物語。主要人物: 刹那",
+  "zenzai_context": {
+    "topic": "星海年代記・軍事SF・宇宙植民地を舞台にした物語",
+    "style": null,
+    "preference": null,
+    "future_optional_field": "ignored"
+  },
+  "future_optional_field": {
+    "enabled": true
+  }
+}
