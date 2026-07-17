@@ -35,6 +35,19 @@ if [ ! -f "${manifest}" ] || [ -z "${install_root}" ] ||
   exit 2
 fi
 
+if [ "${MOZKEY_REMOVE_GRIMODEX_CONSUMER:-0}" = 1 ]; then
+  if [ -z "${GRIMODEX_IME_ROOT:-}" ]; then
+    echo "GRIMODEX_IME_ROOT is required when removing the user consumer" >&2
+    exit 2
+  fi
+  # Remove the product marker first. A still-running Fcitx process may keep
+  # this addon mapped, but its heartbeat rechecks the marker after publishing
+  # and therefore cannot resurrect the consumer after the helper returns.
+  rm -f -- "${install_root}/lib/mozkey/mozc_server"
+  GRIMODEX_IME_ROOT="${GRIMODEX_IME_ROOT}" \
+    "${install_root}/lib/mozkey/unregister-grimodex-consumer"
+fi
+
 while IFS= read -r relative_path; do
   case "${relative_path}" in
     /*) ;;
@@ -59,4 +72,4 @@ rmdir "${install_root}/share/doc/mozkey" 2>/dev/null || true
 rmdir "${install_root}/share/licenses/mozkey/zenz-runtime" 2>/dev/null || true
 rmdir "${install_root}/share/licenses/mozkey" 2>/dev/null || true
 
-echo "Mozkey Fcitx5 product files removed; user data preserved"
+echo "Mozkey Fcitx5 product files removed; project snapshots and profiles preserved"

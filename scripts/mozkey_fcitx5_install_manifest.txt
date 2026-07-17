@@ -2,6 +2,7 @@
 /lib/mozkey/mozc_server
 /lib/mozkey/mozc_tool
 /lib/mozkey/mozc_zenz_scorer
+/lib/mozkey/unregister-grimodex-consumer
 /lib/mozkey/llama-server
 /lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 /share/doc/mozkey/credits_en.html

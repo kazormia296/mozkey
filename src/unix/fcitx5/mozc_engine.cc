@@ -21,8 +21,10 @@
 
 #include <fcitx-config/iniparser.h>
 #include <fcitx-config/rawconfig.h>
+#include <fcitx-utils/event.h>
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/macros.h>
+#include <fcitx-utils/misc.h>
 #include <fcitx-utils/semver.h>
 #include <fcitx-utils/stringutils.h>
 #include <fcitx/action.h>
@@ -37,12 +39,19 @@
 #include <fcitx/userinterfacemanager.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
+#include "absl/status/status.h"
+#include "absl/time/time.h"
+#include "base/environ.h"
 #include "base/init_mozc.h"
 #include "base/process.h"
+#include "base/version.h"
+#include "grimodex/protocol_v1.h"
 #include "protocol/commands.pb.h"
+#include "unix/fcitx5/grimodex_consumer_registrar.h"
 #include "unix/fcitx5/i18nwrapper.h"
 #include "unix/fcitx5/mozc_client_interface.h"
 #include "unix/fcitx5/mozc_client_pool.h"
@@ -50,6 +59,18 @@
 #include "unix/fcitx5/mozc_state.h"
 
 namespace fcitx {
+
+namespace {
+
+constexpr uint64_t kGrimodexConsumerHeartbeatUsec = 15ULL * 60 * 1000 * 1000;
+constexpr uint64_t kGrimodexConsumerTimerAccuracyUsec = 1000 * 1000;
+
+std::string GrimodexConsumerTimestamp() {
+  return absl::FormatTime("%Y-%m-%dT%H:%M:%E3SZ", absl::Now(),
+                          absl::UTCTimeZone());
+}
+
+}  // namespace
 
 const struct CompositionModeInfo {
   const char* name;
@@ -233,6 +254,35 @@ MozcEngine::MozcEngine(Instance* instance)
         if (instance_->inputMethod(ic) == "mozkey") {
           mozcState(ic)->CapabilityChanged();
         }
+      });
+
+  grimodex_consumer_registrar_ =
+      std::make_unique<mozc::fcitx5::GrimodexConsumerRegistrar>(
+          mozc::grimodex::ResolveProtocolV1Root(
+              mozc::Environ::GetEnv("GRIMODEX_IME_ROOT"),
+              mozc::Environ::GetEnv("XDG_DATA_HOME"),
+              mozc::Environ::GetEnv("HOME")));
+  const std::string runtime_marker = mozc::FileUtil::JoinPath(
+      mozc::SystemUtil::GetServerDirectory(), "mozc_server");
+  const auto refresh_consumer = [this, runtime_marker] {
+    const absl::Status status =
+        grimodex_consumer_registrar_->RefreshIfInstalled(
+            mozc::Version::GetMozkeyReleaseVersion(),
+            GrimodexConsumerTimestamp(), runtime_marker);
+    if (!status.ok()) {
+      FCITX_WARN() << "Failed to refresh Grimodex Mozkey consumer: "
+                   << status;
+    }
+  };
+  refresh_consumer();
+  grimodex_consumer_heartbeat_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_BOOTTIME,
+      fcitx::now(CLOCK_BOOTTIME) + kGrimodexConsumerHeartbeatUsec,
+      kGrimodexConsumerTimerAccuracyUsec,
+      [refresh_consumer](fcitx::EventSourceTime *timer, uint64_t) {
+        refresh_consumer();
+        timer->setNextInterval(kGrimodexConsumerHeartbeatUsec);
+        return true;
       });
 
   reloadConfig();

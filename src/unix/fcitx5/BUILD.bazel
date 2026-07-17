@@ -92,6 +92,59 @@ mozc_cc_test(
     ],
 )
 
+mozc_cc_library(
+    name = "grimodex_consumer_registrar",
+    srcs = [
+        "grimodex_consumer_registrar.cc",
+    ],
+    hdrs = [
+        "grimodex_consumer_registrar.h",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_binary(
+    name = "grimodex_consumer_tool",
+    srcs = [
+        "grimodex_consumer_tool.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":grimodex_consumer_registrar",
+        "//base:environ",
+        "//grimodex:protocol_v1",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+mozc_cc_test(
+    name = "grimodex_consumer_registrar_test",
+    size = "small",
+    srcs = [
+        "grimodex_consumer_registrar_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":grimodex_consumer_registrar",
+        "//base/file:temp_dir",
+        "//base:file_util",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_protobuf//:json_util",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
 mozc_cc_test(
     name = "grimodex_context_test",
     size = "small",
@@ -187,19 +240,25 @@ mozc_cc_library(
     ],
     deps = [
         ":fcitx_key_util",
+        ":grimodex_consumer_registrar",
         ":grimodex_context",
         ":i18nwrapper",
         ":mozc_client_pool",
         ":raw_reading_recovery",
         ":surrounding_text_util",
         "//base:init_mozc",
+        "//base:environ",
         "//base:port",
         "//base:process",
         "//base:run_level",
         "//base:util",
+        "//base:version",
         "//base:vlog",
+        "//grimodex:protocol_v1",
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/time",
         "@fcitx5",
     ] + select({
         ":without_server": [

@@ -95,6 +95,15 @@ inotify は更新通知の hint としてのみ使う。composition boundary で
 再確認し、parse/index 構築後に完成済み `shared_ptr<const Snapshot>` を atomic publish
 する。
 
+Fcitx addon は起動時と15分ごとに
+`consumers/fcitx5-mozkey.json` を private/atomic に更新する。これが Grimodex の
+`auto` 連携を有効にする唯一の runtime identity であり、Mozc/Hazkey の consumer
+fileを借用しない。通常のFcitx再起動では短い検出切れを避けるためfileを残し、
+uninstall時だけ明示helperでこの1 fileを削除する。state、project snapshot、他IMEの
+consumer fileは削除しない。heartbeatは毎回 `/usr/lib/mozkey/mozc_server` を前後2回
+確認し、package removal後も古いaddonがFcitxにmapされたままならconsumerを削除する。
+uninstallerはこのruntime markerを先に外し、続けてnative unregister helperを実行する。
+
 ## Secure input
 
 secure は常に stale generation より優先する。Fcitx の `PasswordOrSensitive` を Mozc
@@ -128,7 +137,7 @@ digest がなければ旧操作を replay せず、Fcitx が保持した raw rea
 7. server kill、stale candidate、oversize、partial I/O、snapshot race から回復する。
 8. fixed corpus の品質が現行 Mozc/Hazkey oracle に対して非劣化である。
 9. key dispatch、preedit、candidate click、focus 切替を GTK、Qt、Electron で実機確認する。
-10. package の install、upgrade、uninstall、rollback と runtime identity を確認する。
+10. package の install、upgrade、uninstall、rollback、consumer heartbeat と runtime identity を確認する。
 
 Hazkey は gate 完了後も一 release だけ installable rollback artifact を保持し、その後に
 既定 package、service、設定 UI、runtime path から削除する。研究 branch/tag と評価

@@ -6,6 +6,9 @@ DESTDIR="${DESTDIR:-}"
 
 install -D -m 755 "out_linux/${_bldtype}/mozc_server" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_server"
 install -D -m 755 "out_linux/${_bldtype}/mozc_tool" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_tool"
+if [ -x "out_linux/${_bldtype}/grimodex_consumer_tool" ]; then
+  install -D -m 755 "out_linux/${_bldtype}/grimodex_consumer_tool" "${DESTDIR}${PREFIX}/lib/mozkey/unregister-grimodex-consumer"
+fi
 if [ -x "out_linux/${_bldtype}/mozc_zenz_scorer" ]; then
   install -D -m 755 "out_linux/${_bldtype}/mozc_zenz_scorer" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_zenz_scorer"
   DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" \

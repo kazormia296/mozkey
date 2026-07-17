@@ -39,6 +39,7 @@ require_file /usr/lib/fcitx5/fcitx5-mozkey.so
 require_file /usr/lib/mozkey/mozc_server
 require_file /usr/lib/mozkey/mozc_tool
 require_file /usr/lib/mozkey/mozc_zenz_scorer
+require_file /usr/lib/mozkey/unregister-grimodex-consumer
 require_file /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 if [ ! -L "${stage_dir}/usr/lib/mozkey/llama-server" ] ||
    [ "$(readlink "${stage_dir}/usr/lib/mozkey/llama-server")" !=
@@ -69,10 +70,17 @@ install -D -m 644 /dev/null "${stage_dir}/usr/lib/fcitx5/fcitx5-hazkey.so"
 install -D -m 644 /dev/null "${stage_dir}/usr/share/fcitx5/addon/hazkey.conf"
 install -D -m 644 /dev/null "${stage_dir}/usr/lib/fcitx5/fcitx5-mozc.so"
 install -D -m 600 /dev/null "${stage_dir}/user-data-sentinel"
-DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/uninstall_mozkey_fcitx5
+install -D -m 600 /dev/null "${stage_dir}/user-ime/state.json"
+install -D -m 600 /dev/null "${stage_dir}/user-ime/consumers/other-ime.json"
+install -D -m 600 /dev/null "${stage_dir}/user-ime/consumers/fcitx5-mozkey.json"
+DESTDIR="${stage_dir}" PREFIX=/usr \
+  MOZKEY_REMOVE_GRIMODEX_CONSUMER=1 \
+  GRIMODEX_IME_ROOT="${stage_dir}/user-ime" \
+  ../scripts/uninstall_mozkey_fcitx5
 
 require_absent /usr/lib/fcitx5/fcitx5-mozkey.so
 require_absent /usr/lib/mozkey/mozc_server
+require_absent /usr/lib/mozkey/unregister-grimodex-consumer
 require_absent /usr/lib/mozkey/llama-server
 require_absent /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 require_absent /usr/share/fcitx5/addon/mozkey.conf
@@ -80,6 +88,9 @@ require_file /usr/lib/fcitx5/fcitx5-hazkey.so
 require_file /usr/share/fcitx5/addon/hazkey.conf
 require_file /usr/lib/fcitx5/fcitx5-mozc.so
 require_file /user-data-sentinel
+require_file /user-ime/state.json
+require_file /user-ime/consumers/other-ime.json
+require_absent /user-ime/consumers/fcitx5-mozkey.json
 
 # Reinstall is the rollback-forward path after an uninstall exercise.
 install_product

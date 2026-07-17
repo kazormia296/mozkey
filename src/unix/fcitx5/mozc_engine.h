@@ -44,6 +44,7 @@
 #include "base/file_util.h"
 #include "base/system_util.h"
 #include "protocol/commands.pb.h"
+#include "unix/fcitx5/grimodex_consumer_registrar.h"
 #include "unix/fcitx5/i18nwrapper.h"
 #include "unix/fcitx5/mozc_client_interface.h"
 #include "unix/fcitx5/mozc_client_pool.h"
@@ -153,6 +154,9 @@ class MozcEngine final : public InputMethodEngineV2 {
   std::unique_ptr<HandlerTableEntry<EventHandler>>
       capabilityAboutToChangeHandle_;
   std::unique_ptr<HandlerTableEntry<EventHandler>> capabilityChangedHandle_;
+  std::unique_ptr<mozc::fcitx5::GrimodexConsumerRegistrar>
+      grimodex_consumer_registrar_;
+  std::unique_ptr<fcitx::EventSourceTime> grimodex_consumer_heartbeat_;
 
   SimpleAction configToolAction_, dictionaryToolAction_, addWordAction_,
       aboutAction_;
