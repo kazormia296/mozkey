@@ -97,6 +97,53 @@ def read_limited(path: Path, *, binary: bool = True) -> bytes | str:
     return data
 
 
+def scan_visible_executable(proc: Path, uid: int) -> str | None:
+    try:
+        metadata = proc.stat()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except PermissionError as error:
+        raise RuntimeError(
+            "could not inspect process metadata during Fcitx discovery"
+        ) from error
+    if metadata.st_uid != uid:
+        return None
+    try:
+        return os.readlink(proc / "exe")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except PermissionError as executable_error:
+        try:
+            raw_comm = read_limited(proc / "comm")
+        except (FileNotFoundError, ProcessLookupError) as comm_error:
+            try:
+                proc.stat()
+            except (FileNotFoundError, ProcessLookupError):
+                return None
+            raise RuntimeError(
+                "protected process comm is unreadable during Fcitx discovery"
+            ) from comm_error
+        except OSError as comm_error:
+            raise RuntimeError(
+                "protected process comm is unreadable during Fcitx discovery"
+            ) from comm_error
+        if not isinstance(raw_comm, bytes):
+            fail("protected process comm was not read as bytes")
+        if (
+            not raw_comm.endswith(b"\n")
+            or not 1 <= len(raw_comm) - 1 <= 15
+            or b"\n" in raw_comm[:-1]
+            or b"\0" in raw_comm[:-1]
+            or any(byte < 0x20 or byte > 0x7E for byte in raw_comm[:-1])
+        ):
+            fail("protected process comm is invalid during Fcitx discovery")
+        if raw_comm[:-1] == EXPECTED_FCITX.name.encode("ascii"):
+            raise RuntimeError(
+                "an Fcitx candidate executable is unreadable"
+            ) from executable_error
+        return None
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -388,17 +435,7 @@ def installed_fcitx() -> FcitxIdentity:
     for entry in sorted(Path("/proc").iterdir(), key=lambda path: path.name):
         if not entry.name.isdecimal() or entry.name.startswith("0"):
             continue
-        try:
-            if entry.stat().st_uid != uid:
-                continue
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        try:
-            executable = os.readlink(entry / "exe")
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        except PermissionError:
-            fail("could not inspect a current-UID process executable")
+        executable = scan_visible_executable(entry, uid)
         if executable != str(EXPECTED_FCITX):
             continue
         # Once an exact executable candidate is found, every identity read is

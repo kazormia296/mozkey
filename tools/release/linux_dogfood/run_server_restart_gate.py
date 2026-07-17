@@ -470,6 +470,55 @@ def proc_value(path: Path) -> bytes:
     return value
 
 
+def scan_visible_executable(proc: Path, uid: int) -> str | None:
+    try:
+        metadata = proc.stat()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except PermissionError as error:
+        raise RuntimeError(
+            "could not inspect process metadata during Fcitx discovery"
+        ) from error
+    if metadata.st_uid != uid:
+        return None
+    try:
+        return os.readlink(proc / "exe")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except PermissionError as executable_error:
+        # Kernel comm is a refusal-only hint: it never authorizes a candidate,
+        # but an unreadable process named fcitx5 must not disappear from the
+        # exactly-one check.  Normal protected services (for example systemd
+        # --user) remain harmless scan misses.
+        try:
+            raw_comm = proc_value(proc / "comm")
+        except (FileNotFoundError, ProcessLookupError) as comm_error:
+            try:
+                proc.stat()
+            except (FileNotFoundError, ProcessLookupError):
+                return None
+            raise RuntimeError(
+                "protected process comm is unreadable during Fcitx discovery"
+            ) from comm_error
+        except OSError as comm_error:
+            raise RuntimeError(
+                "protected process comm is unreadable during Fcitx discovery"
+            ) from comm_error
+        if (
+            not raw_comm.endswith(b"\n")
+            or not 1 <= len(raw_comm) - 1 <= 15
+            or b"\n" in raw_comm[:-1]
+            or b"\0" in raw_comm[:-1]
+            or any(byte < 0x20 or byte > 0x7E for byte in raw_comm[:-1])
+        ):
+            fail("protected process comm is invalid during Fcitx discovery")
+        if raw_comm[:-1] == b"fcitx5":
+            raise RuntimeError(
+                "an Fcitx candidate executable is unreadable"
+            ) from executable_error
+        return None
+
+
 def proc_start_time(proc: Path) -> str:
     raw = proc_value(proc / "stat")
     close = raw.rfind(b")")
@@ -568,10 +617,7 @@ def installed_fcitx() -> FcitxIdentity:
     for entry in Path("/proc").iterdir():
         if not entry.name.isdecimal() or entry.name.startswith("0"):
             continue
-        try:
-            if entry.stat().st_uid != uid or os.readlink(entry / "exe") != EXPECTED_FCITX:
-                continue
-        except (FileNotFoundError, ProcessLookupError):
+        if scan_visible_executable(entry, uid) != EXPECTED_FCITX:
             continue
         environment = proc_value(entry / "environ")
         if environment and not environment.endswith(b"\0"):

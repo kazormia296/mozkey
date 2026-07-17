@@ -116,6 +116,51 @@ def read_bounded(path: Path, limit: int) -> bytes:
         os.close(descriptor)
 
 
+def scan_visible_executable(proc: Path, uid: int) -> str | None:
+    try:
+        metadata = proc.stat()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except PermissionError as error:
+        raise RuntimeError(
+            "could not inspect process metadata during server discovery"
+        ) from error
+    if metadata.st_uid != uid:
+        return None
+    try:
+        return os.readlink(proc / "exe")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except PermissionError as executable_error:
+        try:
+            raw_comm = read_bounded(proc / "comm", 16)
+        except (FileNotFoundError, ProcessLookupError) as comm_error:
+            try:
+                proc.stat()
+            except (FileNotFoundError, ProcessLookupError):
+                return None
+            raise RuntimeError(
+                "protected process comm is unreadable during server discovery"
+            ) from comm_error
+        except OSError as comm_error:
+            raise RuntimeError(
+                "protected process comm is unreadable during server discovery"
+            ) from comm_error
+        if (
+            not raw_comm.endswith(b"\n")
+            or not 1 <= len(raw_comm) - 1 <= 15
+            or b"\n" in raw_comm[:-1]
+            or b"\0" in raw_comm[:-1]
+            or any(byte < 0x20 or byte > 0x7E for byte in raw_comm[:-1])
+        ):
+            fail("protected process comm is invalid during server discovery")
+        if raw_comm[:-1] == EXPECTED_SERVER.name.encode("ascii"):
+            raise RuntimeError(
+                "a Mozkey server candidate executable is unreadable"
+            ) from executable_error
+        return None
+
+
 def sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -555,12 +600,7 @@ def find_servers() -> list[ProcessRecord]:
     for proc in sorted(Path("/proc").iterdir(), key=lambda path: path.name):
         if not proc.name.isdecimal() or proc.name.startswith("0"):
             continue
-        try:
-            if proc.stat().st_uid != uid or os.readlink(proc / "exe") != str(
-                EXPECTED_SERVER
-            ):
-                continue
-        except (FileNotFoundError, ProcessLookupError):
+        if scan_visible_executable(proc, uid) != str(EXPECTED_SERVER):
             continue
         records.append(process_record(int(proc.name), EXPECTED_SERVER))
     return records

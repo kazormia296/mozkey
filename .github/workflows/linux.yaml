@@ -244,6 +244,7 @@ jobs:
             tools.dictionary.verify_release_dictionary_artifact_test \
             tools.release.generate_linux_spdx_sbom_test \
             tools.release.linux_build_attestation_test \
+            tools.release.linux_dogfood.proc_visibility_policy_test \
             tools.release.normalize_zenz_gguf_test \
             tools.release.probe_zenz_runtime_test \
             tools.release.stop_mozkey_linux_runtime_test

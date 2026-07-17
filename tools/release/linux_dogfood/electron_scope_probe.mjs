@@ -706,7 +706,7 @@ function installedFcitxIdentity() {
     try {
       metadata = statSync(directory);
     } catch (error) {
-      if (error?.code === "ENOENT") continue;
+      if (error?.code === "ENOENT" || error?.code === "ESRCH") continue;
       throw error;
     }
     if (metadata.uid !== uid) continue;
@@ -714,7 +714,49 @@ function installedFcitxIdentity() {
     try {
       executable = readlinkSync(`${directory}/exe`);
     } catch (error) {
-      if (error?.code === "ENOENT") continue;
+      if (error?.code === "ENOENT" || error?.code === "ESRCH") continue;
+      if (error?.code === "EACCES" || error?.code === "EPERM") {
+        let rawComm;
+        try {
+          rawComm = readFileSync(`${directory}/comm`);
+        } catch (commError) {
+          if (commError?.code === "ENOENT" || commError?.code === "ESRCH") {
+            try {
+              statSync(directory);
+            } catch (refreshError) {
+              if (
+                refreshError?.code === "ENOENT" ||
+                refreshError?.code === "ESRCH"
+              ) {
+                continue;
+              }
+              throw refreshError;
+            }
+          }
+          throw new Error(
+            "protected process comm is unreadable during Fcitx discovery",
+            { cause: commError },
+          );
+        }
+        if (
+          rawComm.length < 2 ||
+          rawComm.length > 16 ||
+          rawComm.at(-1) !== 0x0a ||
+          rawComm.subarray(0, -1).some((byte) => byte < 0x20 || byte > 0x7e)
+        ) {
+          throw new Error(
+            "protected process comm is invalid during Fcitx discovery",
+          );
+        }
+        if (rawComm.subarray(0, -1).toString("ascii") === "fcitx5") {
+          throw new Error("an Fcitx candidate executable is unreadable", {
+            cause: error,
+          });
+        }
+        // comm is refusal-only evidence.  An unrelated protected process may
+        // be skipped, but comm never establishes an executable identity.
+        continue;
+      }
       throw error;
     }
     if (executable !== "/usr/bin/fcitx5") continue;
