@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Stage and exercise the release-layout Linux Zenz runtime.  The Python probe
+# performs no in-place install and emits only redacted pass/fail diagnostics.
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+
+cd "${repository_root}"
+exec python3 tools/release/probe_zenz_runtime.py "$@"
