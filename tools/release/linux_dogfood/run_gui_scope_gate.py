@@ -557,6 +557,29 @@ def load_release_fixture(path: Path) -> tuple[str, str, str]:
     return reading, custom, baseline
 
 
+def stable_consumer_entries(consumers: Path) -> list[str]:
+    temporary_pattern = re.compile(
+        r"^\.fcitx5-mozkey\.[1-9][0-9]*\.[0-9]+\.tmp$"
+    )
+    for _ in range(50):
+        entries = sorted(path.name for path in consumers.iterdir())
+        if entries == ["fcitx5-mozkey.json"]:
+            return entries
+        temporary = [name for name in entries if temporary_pattern.fullmatch(name)]
+        if (
+            len(temporary) == 1
+            and len(entries) in (1, 2)
+            and all(
+                name == "fcitx5-mozkey.json" or name in temporary
+                for name in entries
+            )
+        ):
+            time.sleep(0.01)
+            continue
+        fail("Protocol fixture consumers directory entries are invalid")
+    fail("Protocol consumer heartbeat refresh did not settle")
+
+
 def verify_protocol_root(
     root: Path, fixture_path: Path
 ) -> tuple[Path, tuple[int, int, int], str, str]:
@@ -572,6 +595,34 @@ def verify_protocol_root(
         or stat.S_IMODE(metadata.st_mode) != 0o700
     ):
         fail("Protocol fixture root identity is invalid")
+    if sorted(path.name for path in canonical.iterdir()) != [
+        "consumers",
+        "projects",
+        "state.json",
+    ]:
+        fail("Protocol fixture root entries are invalid")
+    consumers = canonical / "consumers"
+    consumers_metadata = consumers.lstat()
+    if (
+        consumers.is_symlink()
+        or consumers.resolve(strict=True) != consumers
+        or not stat.S_ISDIR(consumers_metadata.st_mode)
+        or consumers_metadata.st_uid != os.getuid()
+        or stat.S_IMODE(consumers_metadata.st_mode) != 0o700
+    ):
+        fail("Protocol fixture consumers directory is invalid")
+    consumer_entries = stable_consumer_entries(consumers)
+    consumer = consumers / consumer_entries[0]
+    consumer_metadata = consumer.lstat()
+    if (
+        consumer.is_symlink()
+        or consumer.resolve(strict=True) != consumer
+        or not stat.S_ISREG(consumer_metadata.st_mode)
+        or consumer_metadata.st_uid != os.getuid()
+        or stat.S_IMODE(consumer_metadata.st_mode) != 0o600
+        or consumer_metadata.st_nlink != 1
+    ):
+        fail("Protocol fixture consumer marker identity is invalid")
     with fixture_path.open(encoding="utf-8") as stream:
         fixture = json.load(stream)
     project_id = fixture.get("project", {}).get("project_id")
@@ -985,10 +1036,12 @@ def verify_installed_candidate(
     expected_keys = {
         "addonSha256",
         "attestationSha256",
+        "consumerSha256",
         "fcitxPid",
         "fcitxStartTime",
         "gitHead",
         "layout",
+        "fcitxProfileSha256",
         "profileMarkerSha256",
         "profileRootSha256",
         "protocolRootSha256",
@@ -1009,8 +1062,14 @@ def verify_installed_candidate(
         or result.get("fcitxPid") != fcitx.process.pid
         or result.get("fcitxStartTime") != fcitx.process.start_time
         or result.get("scope") != scope
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(result.get("consumerSha256", ""))
+        )
         or result.get("profileRootSha256")
         != hashlib.sha256(str(profile_root).encode("utf-8")).hexdigest()
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(result.get("fcitxProfileSha256", ""))
+        )
         or not re.fullmatch(
             r"[0-9a-f]{64}", str(result.get("profileMarkerSha256", ""))
         )
@@ -1033,6 +1092,14 @@ def verify_installed_candidate(
     ):
         fail("installed candidate verifier result identity mismatch")
     return result
+
+
+def stable_candidate_evidence(evidence: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in evidence.items()
+        if key != "consumerSha256"
+    }
 
 
 def run_gate(args: argparse.Namespace) -> dict[str, object]:
@@ -1232,7 +1299,9 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
                 remaining(deadline, "immediate fresh profile preflight"),
                 profile_only=True,
             )
-            if immediate_profile_evidence != profile_evidence:
+            if stable_candidate_evidence(
+                immediate_profile_evidence
+            ) != stable_candidate_evidence(profile_evidence):
                 fail("fresh profile evidence changed before GUI input")
 
             helper_status, helper_output, helper_error = run_sequence_helper(
@@ -1300,6 +1369,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
                 "fcitxStartTime",
                 "gitHead",
                 "layout",
+                "fcitxProfileSha256",
                 "profileMarkerSha256",
                 "profileRootSha256",
                 "protocolRootSha256",
@@ -1414,6 +1484,8 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         "protocolStateSha256": state_digest,
         "protocolProjectSha256": project_digest,
         "candidateAttestationSha256": candidate_evidence["attestationSha256"],
+        "consumerSha256": candidate_evidence["consumerSha256"],
+        "fcitxProfileSha256": candidate_evidence["fcitxProfileSha256"],
         "installedAddonSha256": candidate_evidence["addonSha256"],
         "installedServerSha256": candidate_evidence["serverSha256"],
         "serverPid": candidate_evidence["serverPid"],

@@ -124,6 +124,9 @@ def main() -> int:
     fixture_path = Path(__file__).resolve().with_name("release_fixture.json")
     fixture = load_fixture(fixture_path)
     root = verify_empty_root(args.root)
+    consumers = root / "consumers"
+    consumers.mkdir(mode=0o700)
+    fsync_directory(consumers)
     projects = root / "projects"
     projects.mkdir(mode=0o700)
     project_id = fixture["project"]["project_id"]

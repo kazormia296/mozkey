@@ -11,6 +11,7 @@ scope environment.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -19,6 +20,7 @@ import re
 import stat
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, NoReturn
@@ -30,8 +32,27 @@ EXPECTED_ADDON = Path("/usr/lib/fcitx5/fcitx5-mozkey.so")
 EXPECTED_SERVER = Path("/usr/lib/mozkey/mozc_server")
 PROFILE_MARKER_NAME = ".mozkey-dogfood-fresh-profile.json"
 PROFILE_MARKER_SCHEMA = 2
+FCITX_PROFILE_PAYLOAD = b"""[Groups/0]
+Name=Mozkey Dogfood
+Default Layout=jp
+DefaultIM=mozkey
+
+[Groups/0/Items/0]
+Name=keyboard-jp
+Layout=
+
+[Groups/0/Items/1]
+Name=mozkey
+Layout=
+
+[GroupOrder]
+0=Mozkey Dogfood
+"""
 PROFILE_RUNNER_PATH = "tools/release/linux_dogfood/run_server_restart_gate.py"
 MAX_PROFILE_LAUNCH_DELAY_SECONDS = 300
+MAX_CONSUMER_AGE_SECONDS = 20 * 60
+MAX_CONSUMER_BYTES = 8 * 1024
+CONSUMER_START_TOLERANCE_SECONDS = 2
 INSTALLED_ATTESTATION = Path(
     "/usr/share/doc/mozkey/linux-build-attestation.json"
 )
@@ -64,6 +85,10 @@ MAX_DOCUMENT_BYTES = 4 << 20
 MAX_PROC_BYTES = 4 << 20
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+CONSUMER_TIMESTAMP = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:"
+    r"[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$"
+)
 
 
 @dataclass(frozen=True)
@@ -198,6 +223,75 @@ def require_regular_file(
     if stat.S_IMODE(metadata.st_mode) != mode:
         fail(f"file mode is not {mode:04o}: {path}")
     return metadata
+
+
+def read_private_regular_identity(
+    path: Path,
+    limit: int,
+    mode: int,
+    *,
+    allow_replacement: bool = False,
+) -> tuple[os.stat_result, bytes] | None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or before.st_gid != os.getgid()
+            or stat.S_IMODE(before.st_mode) != mode
+            or before.st_nlink != 1
+        ):
+            fail("private file descriptor identity is invalid")
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = os.read(descriptor, min(1 << 16, limit + 1 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > limit:
+                fail("private file payload exceeded its cap")
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    signature = lambda metadata: (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+    if signature(before) != signature(after):
+        if allow_replacement:
+            return None
+        fail("private file changed while it was read")
+    linked = path.lstat()
+    if (
+        not stat.S_ISREG(linked.st_mode)
+        or linked.st_uid != os.getuid()
+        or linked.st_gid != os.getgid()
+        or stat.S_IMODE(linked.st_mode) != mode
+        or linked.st_nlink != 1
+    ):
+        fail("private file path identity is invalid")
+    if (linked.st_dev, linked.st_ino) != (after.st_dev, after.st_ino):
+        if allow_replacement:
+            return None
+        fail("private file path was replaced while it was read")
+    payload = b"".join(chunks)
+    if (
+        path.is_symlink()
+        or path.resolve(strict=True) != path
+        or linked.st_size != len(payload)
+    ):
+        fail("private file path or size is invalid")
+    return after, payload
 
 
 def trusted_system_owner() -> tuple[int, int]:
@@ -680,12 +774,246 @@ def validate_profile_root(path: Path) -> Path:
     return path
 
 
+def validate_fcitx_profile(root: Path) -> str:
+    directory = root / "fcitx5"
+    profile = directory / "profile"
+    directory_metadata = directory.lstat()
+    observed = read_private_regular_identity(profile, 4096, 0o600)
+    if observed is None:
+        fail("fresh Fcitx profile changed during verification")
+    _, payload = observed
+    final_directory_metadata = directory.lstat()
+    if (
+        directory.is_symlink()
+        or directory.resolve(strict=True) != directory
+        or not stat.S_ISDIR(directory_metadata.st_mode)
+        or directory_metadata.st_uid != os.getuid()
+        or directory_metadata.st_gid != os.getgid()
+        or stat.S_IMODE(directory_metadata.st_mode) != 0o700
+        or (directory_metadata.st_dev, directory_metadata.st_ino)
+        != (final_directory_metadata.st_dev, final_directory_metadata.st_ino)
+        or payload != FCITX_PROFILE_PAYLOAD
+    ):
+        fail("fresh Fcitx profile identity or content is invalid")
+    return sha256_bytes(payload)
+
+
+def validate_no_mozkey_config_override(root: Path) -> None:
+    override = root / "fcitx5" / "conf" / "mozkey.conf"
+    try:
+        override.lstat()
+    except FileNotFoundError:
+        return
+    fail("fresh Fcitx profile contains a Mozkey configuration override")
+
+
+def expected_mozkey_release_version(repository_root: Path) -> str:
+    source = git(repository_root, "show", "HEAD:src/version.bzl")
+    values: list[int] = []
+    for name in ("MAJOR", "MINOR", "PATCH"):
+        matches = re.findall(
+            rf"^MOZKEY_RELEASE_VERSION_{name} = ([0-9]+)$",
+            source,
+            flags=re.MULTILINE,
+        )
+        if len(matches) != 1:
+            fail("Mozkey release version source is invalid")
+        values.append(int(matches[0]))
+    return f"v{values[0]}.{values[1]}.{values[2]}"
+
+
+def validate_consumer_payload(
+    payload: bytes,
+    expected_version: str,
+    *,
+    now: datetime.datetime | None = None,
+    not_before: datetime.datetime | None = None,
+) -> str:
+    if not payload or len(payload) > MAX_CONSUMER_BYTES:
+        fail("Mozkey consumer handshake size is invalid")
+    try:
+        document = json.loads(payload.decode("ascii", "strict"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("Mozkey consumer handshake is invalid JSON") from error
+    expected_keys = {
+        "capabilities",
+        "consumer_id",
+        "format_version",
+        "last_seen",
+        "name",
+        "platform",
+        "version",
+    }
+    expected_capabilities = {
+        "application_scoping": True,
+        "dynamic_dictionary": True,
+        "profile": True,
+        "zenzai_v3_conditions": True,
+    }
+    timestamp = document.get("last_seen") if isinstance(document, dict) else None
+    capabilities = (
+        document.get("capabilities") if isinstance(document, dict) else None
+    )
+    if (
+        not isinstance(document, dict)
+        or set(document) != expected_keys
+        or not isinstance(capabilities, dict)
+        or set(capabilities) != set(expected_capabilities)
+        or any(capabilities[name] is not True for name in expected_capabilities)
+        or document.get("consumer_id") != "fcitx5-mozkey"
+        or type(document.get("format_version")) is not int
+        or document.get("format_version") != 1
+        or document.get("name") != "Mozkey for Grimodex on Linux"
+        or document.get("platform") != "linux"
+        or document.get("version") != expected_version
+        or not isinstance(timestamp, str)
+        or CONSUMER_TIMESTAMP.fullmatch(timestamp) is None
+    ):
+        fail("Mozkey consumer handshake semantics are invalid")
+    canonical = (
+        json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("ascii")
+    if payload != canonical:
+        fail("Mozkey consumer handshake encoding is not canonical")
+    try:
+        observed = datetime.datetime.strptime(
+            timestamp, "%Y-%m-%dT%H:%M:%S.%fZ"
+        ).replace(tzinfo=datetime.timezone.utc)
+    except ValueError as error:
+        raise RuntimeError("Mozkey consumer heartbeat timestamp is invalid") from error
+    current = now or datetime.datetime.now(datetime.timezone.utc)
+    if current.tzinfo is None or current.utcoffset() is None:
+        fail("consumer verification clock must be timezone-aware")
+    if not_before is not None and (
+        not_before.tzinfo is None or not_before.utcoffset() is None
+    ):
+        fail("consumer lifetime boundary must be timezone-aware")
+    age_seconds = (current.astimezone(datetime.timezone.utc) - observed).total_seconds()
+    if age_seconds < -60 or age_seconds > MAX_CONSUMER_AGE_SECONDS:
+        fail("Mozkey consumer heartbeat is not fresh")
+    if (
+        not_before is not None
+        and observed
+        < not_before.astimezone(datetime.timezone.utc)
+        - datetime.timedelta(seconds=CONSUMER_START_TOLERANCE_SECONDS)
+    ):
+        fail("Mozkey consumer heartbeat predates this Fcitx lifetime")
+    return sha256_bytes(payload)
+
+
+def fcitx_wall_clock_window(start_time: str) -> tuple[datetime.datetime, datetime.datetime]:
+    if not start_time.isdigit() or start_time.startswith("0"):
+        fail("Fcitx start time is invalid for consumer verification")
+    try:
+        ticks_per_second = os.sysconf("SC_CLK_TCK")
+        boot_clock = getattr(time, "CLOCK_BOOTTIME")
+        boottime_seconds = time.clock_gettime(boot_clock)
+    except (AttributeError, OSError, ValueError) as error:
+        raise RuntimeError("kernel boot clock is unavailable") from error
+    if (
+        not isinstance(ticks_per_second, int)
+        or ticks_per_second < 1
+        or ticks_per_second > 1_000_000
+    ):
+        fail("kernel clock tick frequency is invalid")
+    age_seconds = boottime_seconds - int(start_time) / ticks_per_second
+    if age_seconds < -1:
+        fail("Fcitx start time is in the future")
+    current = datetime.datetime.now(datetime.timezone.utc)
+    return current, current - datetime.timedelta(seconds=max(age_seconds, 0))
+
+
+def validate_consumer_handshake(
+    protocol_root: Path,
+    repository_root: Path,
+    fcitx_pid: int,
+    fcitx_start_time: str,
+) -> str:
+    root_metadata = protocol_root.lstat()
+    consumers = protocol_root / "consumers"
+    consumers_metadata = consumers.lstat()
+    if (
+        protocol_root.is_symlink()
+        or protocol_root.resolve(strict=True) != protocol_root
+        or not stat.S_ISDIR(root_metadata.st_mode)
+        or root_metadata.st_uid != os.getuid()
+        or root_metadata.st_gid != os.getgid()
+        or stat.S_IMODE(root_metadata.st_mode) != 0o700
+        or consumers.is_symlink()
+        or consumers.resolve(strict=True) != consumers
+        or not stat.S_ISDIR(consumers_metadata.st_mode)
+        or consumers_metadata.st_uid != os.getuid()
+        or consumers_metadata.st_gid != os.getgid()
+        or stat.S_IMODE(consumers_metadata.st_mode) != 0o700
+        or consumers_metadata.st_dev != root_metadata.st_dev
+    ):
+        fail("Mozkey consumer directory identity is invalid")
+    if fcitx_pid <= 1:
+        fail("Fcitx pid is invalid for consumer verification")
+    expected_entries = ["fcitx5-mozkey.json"]
+    temporary_pattern = re.compile(
+        rf"^\.fcitx5-mozkey\.{fcitx_pid}\.[0-9]+\.tmp$"
+    )
+
+    def refresh_in_progress(entries: list[str]) -> bool:
+        if not entries:
+            return True
+        temporary = [name for name in entries if temporary_pattern.fullmatch(name)]
+        return (
+            len(temporary) == 1
+            and len(entries) in (1, 2)
+            and all(
+                name == "fcitx5-mozkey.json" or name in temporary
+                for name in entries
+            )
+        )
+
+    consumer = consumers / "fcitx5-mozkey.json"
+    payload: bytes | None = None
+    for _ in range(50):
+        entries = sorted(path.name for path in consumers.iterdir())
+        if entries != expected_entries:
+            if refresh_in_progress(entries):
+                time.sleep(0.01)
+                continue
+            fail("Mozkey consumer directory entries are invalid")
+        observed = read_private_regular_identity(
+            consumer,
+            MAX_CONSUMER_BYTES,
+            0o600,
+            allow_replacement=True,
+        )
+        if observed is None:
+            continue
+        metadata, candidate = observed
+        if metadata.st_dev != consumers_metadata.st_dev:
+            fail("Mozkey consumer marker filesystem identity is invalid")
+        final_entries = sorted(path.name for path in consumers.iterdir())
+        if final_entries != expected_entries:
+            if refresh_in_progress(final_entries):
+                time.sleep(0.01)
+                continue
+            fail("Mozkey consumer directory changed unexpectedly")
+        payload = candidate
+        break
+    if payload is None:
+        fail("Mozkey consumer marker changed continuously during verification")
+    current, not_before = fcitx_wall_clock_window(fcitx_start_time)
+    return validate_consumer_payload(
+        payload,
+        expected_mozkey_release_version(repository_root),
+        now=current,
+        not_before=not_before,
+    )
+
+
 def validate_fresh_profile_evidence(
     root: Path,
     repository_root: Path,
     git_head: str,
     fcitx_start_time: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     root = validate_profile_root(root)
     root_metadata = root.lstat()
     marker = root / PROFILE_MARKER_NAME
@@ -751,6 +1079,8 @@ def validate_fresh_profile_evidence(
         or marker_metadata.st_dev != root_metadata.st_dev
     ):
         fail("fresh profile marker does not bind this installed candidate")
+    fcitx_profile_sha256 = validate_fcitx_profile(root)
+    validate_no_mozkey_config_override(root)
     legacy_profile = root / ".mozkey"
     try:
         legacy_profile.lstat()
@@ -771,6 +1101,7 @@ def validate_fresh_profile_evidence(
     return (
         sha256_bytes(payload),
         hashlib.sha256(str(root).encode("utf-8")).hexdigest(),
+        fcitx_profile_sha256,
     )
 
 
@@ -797,7 +1128,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         root, args.layout, args.attestation, args.official_verifier
     )
     fcitx = process_record(args.fcitx_pid, EXPECTED_FCITX)
-    profile_marker_sha256, profile_root_sha256 = validate_fresh_profile_evidence(
+    (
+        profile_marker_sha256,
+        profile_root_sha256,
+        fcitx_profile_sha256,
+    ) = validate_fresh_profile_evidence(
         profile_root, root, document["git_head"], fcitx.start_time
     )
     fcitx_environment = environment(Path("/proc") / str(fcitx.pid))
@@ -814,6 +1149,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     ):
         fail("live Fcitx dogfood environment mismatch")
     verify_loaded_addon(fcitx)
+    consumer_sha256 = validate_consumer_handshake(
+        protocol_root, root, fcitx.pid, fcitx.start_time
+    )
     if args.profile_only:
         existing_servers = find_servers()
         if len(existing_servers) > 1:
@@ -839,6 +1177,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         verify_same_process(fcitx, EXPECTED_FCITX)
         verify_loaded_addon(fcitx)
+        consumer_sha256 = validate_consumer_handshake(
+            protocol_root, root, fcitx.pid, fcitx.start_time
+        )
         final_existing_servers = find_servers()
         if final_existing_servers != existing_servers:
             fail("Mozkey server set changed during profile preflight")
@@ -853,7 +1194,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             verify_same_process(final_existing_servers[0], EXPECTED_SERVER)
         if validate_fresh_profile_evidence(
             profile_root, root, document["git_head"], fcitx.start_time
-        ) != (profile_marker_sha256, profile_root_sha256):
+        ) != (
+            profile_marker_sha256,
+            profile_root_sha256,
+            fcitx_profile_sha256,
+        ):
             fail("fresh profile evidence changed during profile preflight")
         final_fcitx_environment = environment(Path("/proc") / str(fcitx.pid))
         if final_fcitx_environment != fcitx_environment:
@@ -877,8 +1222,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "protocolRootSha256": hashlib.sha256(
                 str(protocol_root).encode("utf-8")
             ).hexdigest(),
+            "consumerSha256": consumer_sha256,
             "profileMarkerSha256": profile_marker_sha256,
             "profileRootSha256": profile_root_sha256,
+            "fcitxProfileSha256": fcitx_profile_sha256,
             "result": "profile-pass",
         }
     server = find_server()
@@ -929,10 +1276,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         fail("live Mozkey server uniqueness changed during verification")
     if validate_fresh_profile_evidence(
         profile_root, root, document["git_head"], fcitx.start_time
-    ) != (profile_marker_sha256, profile_root_sha256):
+    ) != (
+        profile_marker_sha256,
+        profile_root_sha256,
+        fcitx_profile_sha256,
+    ):
         fail("fresh profile evidence changed during candidate verification")
     verify_same_process(fcitx, EXPECTED_FCITX)
     verify_loaded_addon(fcitx)
+    consumer_sha256 = validate_consumer_handshake(
+        protocol_root, root, fcitx.pid, fcitx.start_time
+    )
     return {
         "schemaVersion": SCHEMA,
         "layout": args.layout,
@@ -950,8 +1304,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "protocolRootSha256": hashlib.sha256(
             str(protocol_root).encode("utf-8")
         ).hexdigest(),
+        "consumerSha256": consumer_sha256,
         "profileMarkerSha256": profile_marker_sha256,
         "profileRootSha256": profile_root_sha256,
+        "fcitxProfileSha256": fcitx_profile_sha256,
         "result": "pass",
     }
 

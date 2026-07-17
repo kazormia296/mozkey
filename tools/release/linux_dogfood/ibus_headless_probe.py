@@ -34,6 +34,7 @@ TEXT_METADATA = frozenset({"IBusText", "IBusAttribute", "IBusAttrList"})
 FCITX_REMOTE_TIMEOUT_SECONDS = 5.0
 FCITX_REMOTE_PATH = "/usr/bin/fcitx5-remote"
 FCITX_PATH = "/usr/bin/fcitx5"
+IBUS_ENGINE = "mozkey"
 MAX_READING_CHARACTERS = 128
 CONTROL_TIMEOUT_SECONDS = 15.0
 FIXTURE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "release_fixture.json")
@@ -272,7 +273,6 @@ def main() -> int:
         raise RuntimeError("MOZKEY_DOGFOOD_EXPECTATION must be custom or default")
     expected = custom if expectation == "custom" else baseline
     client_name = "grimodex" if expectation == "custom" else "mozkey-dogfood-ordinary"
-    ibus_engine = "grimodex"
     pause_after_text = os.environ.get("MOZKEY_DOGFOOD_PAUSE_AFTER", "")
     pause_after = int(pause_after_text) if pause_after_text else 0
     expected_commit_count = 1
@@ -309,7 +309,7 @@ def main() -> int:
     )
     try:
         context.SetCapabilities(dbus.UInt32(IBUS_CAPABILITIES))
-        context.SetEngine(ibus_engine)
+        context.SetEngine(IBUS_ENGINE)
         context.Enable()
         context.FocusIn()
         pump_until(time.monotonic() + 0.25, lambda: False)

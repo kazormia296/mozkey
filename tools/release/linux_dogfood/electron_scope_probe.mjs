@@ -390,6 +390,31 @@ function loadReleaseFixture(filename) {
   return fixture;
 }
 
+const consumerRefreshWait = new Int32Array(new SharedArrayBuffer(4));
+
+function stableConsumerEntries(consumers) {
+  const temporaryPattern = /^\.fcitx5-mozkey\.[1-9][0-9]*\.[0-9]+\.tmp$/;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const entries = readdirSync(consumers).sort();
+    if (JSON.stringify(entries) === JSON.stringify(["fcitx5-mozkey.json"])) {
+      return entries;
+    }
+    const temporary = entries.filter((name) => temporaryPattern.test(name));
+    if (
+      temporary.length === 1 &&
+      (entries.length === 1 || entries.length === 2) &&
+      entries.every(
+        (name) => name === "fcitx5-mozkey.json" || temporary.includes(name),
+      )
+    ) {
+      Atomics.wait(consumerRefreshWait, 0, 0, 10);
+      continue;
+    }
+    throw new Error("Protocol fixture consumers directory entries are invalid");
+  }
+  throw new Error("Protocol consumer heartbeat refresh did not settle");
+}
+
 function verifyProtocolRoot(root, fixture) {
   const metadata = statSync(root);
   if (
@@ -398,6 +423,34 @@ function verifyProtocolRoot(root, fixture) {
     !metadata.isDirectory()
   ) {
     throw new Error("Protocol fixture root identity is invalid");
+  }
+  if (
+    JSON.stringify(readdirSync(root).sort()) !==
+    JSON.stringify(["consumers", "projects", "state.json"])
+  ) {
+    throw new Error("Protocol fixture root entries are invalid");
+  }
+  const consumers = path.join(root, "consumers");
+  const consumersMetadata = statSync(consumers);
+  if (
+    lstatSync(consumers).isSymbolicLink() ||
+    consumersMetadata.uid !== process.getuid() ||
+    (consumersMetadata.mode & 0o777) !== 0o700 ||
+    !consumersMetadata.isDirectory()
+  ) {
+    throw new Error("Protocol fixture consumers directory is invalid");
+  }
+  const consumerEntries = stableConsumerEntries(consumers);
+  const consumer = path.join(consumers, consumerEntries[0]);
+  const consumerMetadata = statSync(consumer);
+  if (
+    lstatSync(consumer).isSymbolicLink() ||
+    !consumerMetadata.isFile() ||
+    consumerMetadata.uid !== process.getuid() ||
+    (consumerMetadata.mode & 0o777) !== 0o600 ||
+    consumerMetadata.nlink !== 1
+  ) {
+    throw new Error("Protocol fixture consumer marker identity is invalid");
   }
   const projects = path.join(root, "projects");
   const projectsMetadata = statSync(projects);
@@ -1734,7 +1787,9 @@ async function runInstalledCandidateVerifier(profileOnly = false) {
   const expectedCandidateKeys = [
     "addonSha256",
     "attestationSha256",
+    "consumerSha256",
     "fcitxPid",
+    "fcitxProfileSha256",
     "fcitxStartTime",
     "gitHead",
     "layout",
@@ -1759,8 +1814,12 @@ async function runInstalledCandidateVerifier(profileOnly = false) {
     evidence.fcitxPid !== fcitxIdentity.pid ||
     evidence.fcitxStartTime !== fcitxIdentity.startTime ||
     evidence.scope !== expectedScope ||
+    typeof evidence.consumerSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(evidence.consumerSha256) ||
     evidence.profileRootSha256 !==
       createHash("sha256").update(profileRoot).digest("hex") ||
+    typeof evidence.fcitxProfileSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(evidence.fcitxProfileSha256) ||
     typeof evidence.profileMarkerSha256 !== "string" ||
     !/^[0-9a-f]{64}$/.test(evidence.profileMarkerSha256) ||
     evidence.protocolRootSha256 !==
@@ -1780,6 +1839,12 @@ async function runInstalledCandidateVerifier(profileOnly = false) {
   return evidence;
 }
 
+function stableCandidateEvidence(evidence) {
+  return Object.fromEntries(
+    Object.entries(evidence).filter(([key]) => key !== "consumerSha256"),
+  );
+}
+
 function assertCandidateMatchesProfilePreflight(profile, candidate) {
   for (const key of [
     "addonSha256",
@@ -1788,6 +1853,7 @@ function assertCandidateMatchesProfilePreflight(profile, candidate) {
     "fcitxStartTime",
     "gitHead",
     "layout",
+    "fcitxProfileSha256",
     "profileMarkerSha256",
     "profileRootSha256",
     "protocolRootSha256",
@@ -2353,7 +2419,8 @@ try {
   verifyIbusOwner(fcitxIdentity, ibusIdentity);
   const immediateProfileEvidence = await runInstalledCandidateVerifier(true);
   if (
-    JSON.stringify(immediateProfileEvidence) !== JSON.stringify(profileEvidence)
+    JSON.stringify(stableCandidateEvidence(immediateProfileEvidence)) !==
+    JSON.stringify(stableCandidateEvidence(profileEvidence))
   ) {
     throw new Error("fresh profile evidence changed before Electron input");
   }
@@ -2563,6 +2630,8 @@ try {
     protocolStateSha256: protocolEvidence.stateSha256,
     protocolProjectSha256: protocolEvidence.projectSha256,
     candidateAttestationSha256: candidateEvidence.attestationSha256,
+    consumerSha256: candidateEvidence.consumerSha256,
+    fcitxProfileSha256: candidateEvidence.fcitxProfileSha256,
     profileMarkerSha256: candidateEvidence.profileMarkerSha256,
     profileRootSha256: candidateEvidence.profileRootSha256,
     installedAddonSha256: candidateEvidence.addonSha256,
@@ -2622,12 +2691,14 @@ try {
   const finalCandidateEvidence = await runInstalledCandidateVerifier();
   verifyIbusOwner(fcitxIdentity, ibusIdentity);
   if (
-    JSON.stringify(finalCandidateEvidence) !== JSON.stringify(candidateEvidence)
+    JSON.stringify(stableCandidateEvidence(finalCandidateEvidence)) !==
+    JSON.stringify(stableCandidateEvidence(candidateEvidence))
   ) {
     throw new Error(
       "installed candidate lifetime changed during Electron cleanup",
     );
   }
+  resultPayload.consumerSha256 = finalCandidateEvidence.consumerSha256;
   const postCleanupProtocolEvidence = verifyProtocolRoot(protocolRoot, fixture);
   if (
     !sameIdentity(

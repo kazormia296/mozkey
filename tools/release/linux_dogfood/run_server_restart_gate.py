@@ -36,6 +36,22 @@ DBUS_PATH = "/org/freedesktop/DBus"
 DBUS_INTERFACE = "org.freedesktop.DBus"
 PROFILE_MARKER_NAME = ".mozkey-dogfood-fresh-profile.json"
 PROFILE_MARKER_SCHEMA = 2
+FCITX_PROFILE_PAYLOAD = b"""[Groups/0]
+Name=Mozkey Dogfood
+Default Layout=jp
+DefaultIM=mozkey
+
+[Groups/0/Items/0]
+Name=keyboard-jp
+Layout=
+
+[Groups/0/Items/1]
+Name=mozkey
+Layout=
+
+[GroupOrder]
+0=Mozkey Dogfood
+"""
 MAX_PROFILE_LAUNCH_DELAY_SECONDS = 300
 MAX_PROC_BYTES = 1 << 20
 MAX_STREAM_BYTES = 1 << 16
@@ -76,6 +92,11 @@ class FreshProfileEvidence:
     nonce: str
     created_boottime_ticks: int
     clock_ticks_per_second: int
+    fcitx_directory_device: int
+    fcitx_directory_inode: int
+    fcitx_profile_device: int
+    fcitx_profile_inode: int
+    fcitx_profile_sha256: str
 
 
 @dataclass(frozen=True)
@@ -94,6 +115,7 @@ def fail(message: str) -> NoReturn:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--prepare-fresh-profile", action="store_true")
+    parser.add_argument("--launch-fresh-fcitx", action="store_true")
     parser.add_argument("--iterations", type=int, default=3)
     parser.add_argument("--pause-after", type=int, default=3)
     parser.add_argument("--protocol-root", type=Path)
@@ -298,6 +320,189 @@ def write_all(descriptor: int, payload: bytes) -> None:
         view = view[written:]
 
 
+def read_private_regular_identity(
+    path: Path,
+    limit: int,
+    mode: int,
+    *,
+    allow_replacement: bool = False,
+) -> tuple[os.stat_result, bytes] | None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or before.st_gid != os.getgid()
+            or stat.S_IMODE(before.st_mode) != mode
+            or before.st_nlink != 1
+        ):
+            fail("private file descriptor identity is invalid")
+        payload = bytearray()
+        while True:
+            chunk = os.read(descriptor, min(1 << 16, limit + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+            if len(payload) > limit:
+                fail("private file payload exceeded its cap")
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    signature = lambda metadata: (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+    if signature(before) != signature(after):
+        if allow_replacement:
+            return None
+        fail("private file changed while it was read")
+    linked = path.lstat()
+    if (
+        not stat.S_ISREG(linked.st_mode)
+        or linked.st_uid != os.getuid()
+        or linked.st_gid != os.getgid()
+        or stat.S_IMODE(linked.st_mode) != mode
+        or linked.st_nlink != 1
+    ):
+        fail("private file path identity is invalid")
+    if (linked.st_dev, linked.st_ino) != (after.st_dev, after.st_ino):
+        if allow_replacement:
+            return None
+        fail("private file path was replaced while it was read")
+    if (
+        path.is_symlink()
+        or path.resolve(strict=True) != path
+        or linked.st_size != len(payload)
+    ):
+        fail("private file path or size is invalid")
+    return after, bytes(payload)
+
+
+def validate_fcitx_profile(root: Path) -> tuple[int, int, int, int, str]:
+    directory = root / "fcitx5"
+    profile = directory / "profile"
+    directory_metadata = directory.lstat()
+    observed = read_private_regular_identity(profile, 4096, 0o600)
+    if observed is None:
+        fail("fresh Fcitx profile changed during verification")
+    profile_metadata, payload = observed
+    final_directory_metadata = directory.lstat()
+    if (
+        directory.is_symlink()
+        or directory.resolve(strict=True) != directory
+        or not stat.S_ISDIR(directory_metadata.st_mode)
+        or directory_metadata.st_uid != os.getuid()
+        or directory_metadata.st_gid != os.getgid()
+        or stat.S_IMODE(directory_metadata.st_mode) != 0o700
+        or (directory_metadata.st_dev, directory_metadata.st_ino)
+        != (final_directory_metadata.st_dev, final_directory_metadata.st_ino)
+        or payload != FCITX_PROFILE_PAYLOAD
+    ):
+        fail("fresh Fcitx profile identity or content is invalid")
+    return (
+        directory_metadata.st_dev,
+        directory_metadata.st_ino,
+        profile_metadata.st_dev,
+        profile_metadata.st_ino,
+        hashlib.sha256(payload).hexdigest(),
+    )
+
+
+def validate_no_mozkey_config_override(root: Path) -> None:
+    override = root / "fcitx5" / "conf" / "mozkey.conf"
+    try:
+        override.lstat()
+    except FileNotFoundError:
+        return
+    fail("fresh Fcitx profile contains a Mozkey configuration override")
+
+
+def validate_prelaunch_profile_manifest(root: Path) -> None:
+    validate_fcitx_profile(root)
+    validate_no_mozkey_config_override(root)
+    if sorted(path.name for path in root.iterdir()) != [
+        PROFILE_MARKER_NAME,
+        "fcitx5",
+    ]:
+        fail("fresh profile root changed before Fcitx launch")
+    if sorted(path.name for path in (root / "fcitx5").iterdir()) != ["profile"]:
+        fail("fresh Fcitx configuration changed before launch")
+
+
+def validate_prelaunch_protocol_manifest(
+    root: Path, runtime: Path, fixture: dict[str, object]
+) -> None:
+    metadata = root.lstat()
+    if (
+        not root.is_absolute()
+        or root.is_symlink()
+        or root.resolve(strict=True) != root
+        or root.parent != runtime
+        or not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or metadata.st_gid != os.getgid()
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+        or sorted(path.name for path in root.iterdir())
+        != ["consumers", "projects", "state.json"]
+    ):
+        fail("Protocol root is not the exact fresh release fixture")
+    consumers = root / "consumers"
+    consumers_metadata = consumers.lstat()
+    if (
+        consumers.is_symlink()
+        or consumers.resolve(strict=True) != consumers
+        or not stat.S_ISDIR(consumers_metadata.st_mode)
+        or consumers_metadata.st_uid != os.getuid()
+        or consumers_metadata.st_gid != os.getgid()
+        or stat.S_IMODE(consumers_metadata.st_mode) != 0o700
+        or consumers_metadata.st_dev != metadata.st_dev
+        or any(consumers.iterdir())
+    ):
+        fail("Protocol consumers directory is not private and empty before launch")
+    verify_protocol_root(root, fixture)
+    if any(consumers.iterdir()):
+        fail("Protocol consumers directory changed before Fcitx exec")
+
+
+def write_fcitx_profile(root: Path) -> tuple[int, int, int, int, str]:
+    directory = root / "fcitx5"
+    profile = directory / "profile"
+    directory.mkdir(mode=0o700)
+    directory.chmod(0o700)
+    descriptor = os.open(
+        profile,
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | os.O_CLOEXEC
+        | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        write_all(descriptor, FCITX_PROFILE_PAYLOAD)
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    for path in (directory, root):
+        directory_descriptor = os.open(
+            path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    return validate_fcitx_profile(root)
+
+
 def prepare_fresh_profile(
     root: Path, runtime: Path, head: str, runner_blob: str
 ) -> FreshProfileEvidence:
@@ -342,6 +547,7 @@ def prepare_fresh_profile(
         os.fsync(directory_descriptor)
     finally:
         os.close(directory_descriptor)
+    write_fcitx_profile(root)
     return load_fresh_profile_evidence(
         root,
         runtime,
@@ -349,6 +555,65 @@ def prepare_fresh_profile(
         runner_blob,
         require_unused=True,
     )
+
+
+def launch_fresh_fcitx(
+    profile_root: Path,
+    protocol_root: Path,
+    runtime: Path,
+    head: str,
+    runner_blob: str,
+    fixture: dict[str, object],
+) -> NoReturn:
+    load_fresh_profile_evidence(
+        profile_root,
+        runtime,
+        head,
+        runner_blob,
+        require_unused=True,
+    )
+    validate_prelaunch_profile_manifest(profile_root)
+    validate_prelaunch_protocol_manifest(protocol_root, runtime, fixture)
+    expected_bus = f"unix:path={runtime}/bus"
+    if (
+        os.environ.get("XDG_RUNTIME_DIR") != str(runtime)
+        or os.environ.get("DBUS_SESSION_BUS_ADDRESS") != expected_bus
+        or os.environ.get("HOME") != str(profile_root)
+        or os.environ.get("XDG_CONFIG_HOME") != str(profile_root)
+        or os.environ.get("GRIMODEX_IME_ROOT") != str(protocol_root)
+    ):
+        fail("fresh Fcitx launch environment is not canonical")
+    scope = os.environ.get("MOZKEY_GRIMODEX_SCOPE")
+    if scope is not None and (
+        not 1 <= len(scope) <= 64
+        or re.fullmatch(r"[a-z0-9-]+", scope) is None
+    ):
+        fail("fresh Fcitx scope is invalid")
+    account = pwd.getpwuid(os.getuid())
+    environment = {
+        "DBUS_SESSION_BUS_ADDRESS": expected_bus,
+        "GRIMODEX_IME_ROOT": str(protocol_root),
+        "HOME": str(profile_root),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "LOGNAME": account.pw_name,
+        "PATH": "/usr/bin:/bin",
+        "USER": account.pw_name,
+        "XDG_CONFIG_HOME": str(profile_root),
+        "XDG_RUNTIME_DIR": str(runtime),
+    }
+    for name in (
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XAUTHORITY",
+        "XDG_SESSION_TYPE",
+    ):
+        value = os.environ.get(name)
+        if value:
+            environment[name] = value
+    if scope is not None:
+        environment["MOZKEY_GRIMODEX_SCOPE"] = scope
+    os.execve(EXPECTED_FCITX, [EXPECTED_FCITX, "-d"], environment)
 
 
 def load_fresh_profile_evidence(
@@ -419,6 +684,8 @@ def load_fresh_profile_evidence(
         pass
     else:
         fail("fresh dogfood HOME contains a legacy Mozkey profile")
+    fcitx_profile = validate_fcitx_profile(root)
+    validate_no_mozkey_config_override(root)
     return FreshProfileEvidence(
         root_device=root_metadata.st_dev,
         root_inode=root_metadata.st_ino,
@@ -428,6 +695,11 @@ def load_fresh_profile_evidence(
         nonce=document["nonce"],
         created_boottime_ticks=document["created_boottime_ticks"],
         clock_ticks_per_second=document["clock_ticks_per_second"],
+        fcitx_directory_device=fcitx_profile[0],
+        fcitx_directory_inode=fcitx_profile[1],
+        fcitx_profile_device=fcitx_profile[2],
+        fcitx_profile_inode=fcitx_profile[3],
+        fcitx_profile_sha256=fcitx_profile[4],
     )
 
 
@@ -666,9 +938,45 @@ def verify_protocol_root(
 ) -> tuple[int, int, str, str]:
     if not root.is_absolute() or root.is_symlink() or root.resolve(strict=True) != root:
         fail("Protocol fixture root must be canonical and non-symlink")
-    metadata = root.stat()
-    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
+    metadata = root.lstat()
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or metadata.st_gid != os.getgid()
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+    ):
         fail("Protocol fixture root identity is invalid")
+    if sorted(path.name for path in root.iterdir()) != [
+        "consumers",
+        "projects",
+        "state.json",
+    ]:
+        fail("Protocol fixture root entries are invalid")
+    consumers = root / "consumers"
+    consumers_metadata = consumers.lstat()
+    if (
+        consumers.is_symlink()
+        or consumers.resolve(strict=True) != consumers
+        or not stat.S_ISDIR(consumers_metadata.st_mode)
+        or consumers_metadata.st_uid != os.getuid()
+        or consumers_metadata.st_gid != os.getgid()
+        or stat.S_IMODE(consumers_metadata.st_mode) != 0o700
+        or consumers_metadata.st_dev != metadata.st_dev
+    ):
+        fail("Protocol fixture consumers directory is invalid")
+    consumer_entries = stable_consumer_entries(consumers, allow_empty=True)
+    if consumer_entries:
+        consumer = consumers / consumer_entries[0]
+        consumer_metadata = consumer.lstat()
+        if (
+            consumer.is_symlink()
+            or consumer.resolve(strict=True) != consumer
+            or not stat.S_ISREG(consumer_metadata.st_mode)
+            or consumer_metadata.st_uid != os.getuid()
+            or stat.S_IMODE(consumer_metadata.st_mode) != 0o600
+            or consumer_metadata.st_nlink != 1
+        ):
+            fail("Protocol fixture consumer marker identity is invalid")
     state = root / "state.json"
     project_value = fixture.get("project")
     state_value = fixture.get("state")
@@ -679,28 +987,41 @@ def verify_protocol_root(
         fail("tracked Protocol fixture project ID is invalid")
     projects = root / "projects"
     project = projects / f"{project_id}.json"
-    projects_metadata = projects.stat()
+    projects_metadata = projects.lstat()
     if (
         projects.is_symlink()
+        or projects.resolve(strict=True) != projects
         or not stat.S_ISDIR(projects_metadata.st_mode)
         or projects_metadata.st_uid != os.getuid()
+        or projects_metadata.st_gid != os.getgid()
         or stat.S_IMODE(projects_metadata.st_mode) != 0o700
+        or projects_metadata.st_dev != metadata.st_dev
         or sorted(path.name for path in projects.iterdir()) != [project.name]
     ):
         fail("Protocol fixture projects directory is invalid")
-    for path in (state, project):
-        path_metadata = path.stat()
-        if (
-            path.is_symlink()
-            or not stat.S_ISREG(path_metadata.st_mode)
-            or path_metadata.st_uid != os.getuid()
-            or stat.S_IMODE(path_metadata.st_mode) != 0o600
-        ):
-            fail("Protocol fixture document identity is invalid")
-    state_payload = state.read_bytes()
-    project_payload = project.read_bytes()
+    state_observed = read_private_regular_identity(state, MAX_TRACKED_BYTES, 0o600)
+    project_observed = read_private_regular_identity(
+        project, MAX_TRACKED_BYTES, 0o600
+    )
+    if state_observed is None or project_observed is None:
+        fail("Protocol fixture documents changed during verification")
+    state_metadata, state_payload = state_observed
+    project_metadata, project_payload = project_observed
+    if (
+        state_metadata.st_dev != metadata.st_dev
+        or project_metadata.st_dev != metadata.st_dev
+    ):
+        fail("Protocol fixture documents cross filesystem boundaries")
     if json.loads(state_payload) != state_value or json.loads(project_payload) != project_value:
         fail("Protocol root differs from the tracked fixture")
+    final_root = root.lstat()
+    final_projects = projects.lstat()
+    if (
+        (final_root.st_dev, final_root.st_ino) != (metadata.st_dev, metadata.st_ino)
+        or (final_projects.st_dev, final_projects.st_ino)
+        != (projects_metadata.st_dev, projects_metadata.st_ino)
+    ):
+        fail("Protocol fixture directory identity changed during verification")
     return (
         metadata.st_dev,
         metadata.st_ino,
@@ -1027,10 +1348,12 @@ def verify_installed_candidate(
     expected_keys = {
         "addonSha256",
         "attestationSha256",
+        "consumerSha256",
         "fcitxPid",
         "fcitxStartTime",
         "gitHead",
         "layout",
+        "fcitxProfileSha256",
         "profileMarkerSha256",
         "profileRootSha256",
         "protocolRootSha256",
@@ -1050,8 +1373,14 @@ def verify_installed_candidate(
         or result.get("fcitxPid") != fcitx.pid
         or result.get("fcitxStartTime") != fcitx.start_time
         or result.get("scope") is not None
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(result.get("consumerSha256", ""))
+        )
         or result.get("profileRootSha256")
         != hashlib.sha256(str(profile_root).encode("utf-8")).hexdigest()
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(result.get("fcitxProfileSha256", ""))
+        )
         or not re.fullmatch(
             r"[0-9a-f]{64}", str(result.get("profileMarkerSha256", ""))
         )
@@ -1200,7 +1529,14 @@ def run_default_expectation(
         "ordinary fallback probe",
     )
     if status != 0 or error or output != expected_result + "\n":
-        fail("ordinary Mozkey fallback exact result failed")
+        fail(
+            "ordinary Mozkey fallback exact result failed "
+            f"status={status} "
+            f"stdout_chars={len(output)} "
+            f"stdout_sha256={hashlib.sha256(output.encode()).hexdigest()} "
+            f"stderr_chars={len(error)} "
+            f"stderr_sha256={hashlib.sha256(error.encode()).hexdigest()}"
+        )
     if ibus_owner_identity(fcitx, runtime) != ibus_identity:
         fail("IBus owner changed during ordinary fallback")
 
@@ -1240,6 +1576,34 @@ def load_fixture(path: Path) -> tuple[dict[str, object], str, str, str]:
     return fixture, reading, custom, default
 
 
+def stable_consumer_entries(
+    consumers: Path, *, allow_empty: bool
+) -> list[str]:
+    temporary_pattern = re.compile(
+        r"^\.fcitx5-mozkey\.[1-9][0-9]*\.[0-9]+\.tmp$"
+    )
+    accepted = ([], ["fcitx5-mozkey.json"]) if allow_empty else (
+        ["fcitx5-mozkey.json"],
+    )
+    for _ in range(50):
+        entries = sorted(path.name for path in consumers.iterdir())
+        if entries in accepted:
+            return entries
+        temporary = [name for name in entries if temporary_pattern.fullmatch(name)]
+        if (
+            len(temporary) == 1
+            and len(entries) in (1, 2)
+            and all(
+                name == "fcitx5-mozkey.json" or name in temporary
+                for name in entries
+            )
+        ):
+            time.sleep(0.01)
+            continue
+        fail("Protocol fixture consumers directory entries are invalid")
+    fail("Protocol consumer heartbeat refresh did not settle")
+
+
 def main() -> int:
     args = parse_args()
     if (
@@ -1266,6 +1630,8 @@ def main() -> int:
         fail("Mozkey dogfood checkout provenance is invalid")
     runner_blob = verify_tracked_file(release_root, runner_path, "100755")
     runtime_path = desktop_runtime_directory()
+    if args.prepare_fresh_profile and args.launch_fresh_fcitx:
+        fail("profile preparation and Fcitx launch modes are mutually exclusive")
     if args.prepare_fresh_profile:
         if args.protocol_root is not None:
             fail("profile preparation does not accept a Protocol root")
@@ -1278,9 +1644,24 @@ def main() -> int:
         print(
             "RESULT:fresh_profile_ready initial_mozkey_profile=absent "
             f"marker_sha256={evidence.marker_sha256} "
+            f"fcitx_profile_sha256={evidence.fcitx_profile_sha256} "
             f"profile_root_sha256={hashlib.sha256(str(args.profile_root).encode('utf-8')).hexdigest()}"
         )
         return 0
+    if args.launch_fresh_fcitx:
+        if args.protocol_root is None:
+            fail("--protocol-root is required to launch fresh Fcitx")
+        fixture_path = runner_path.with_name("release_fixture.json")
+        verify_tracked_file(release_root, fixture_path, "100644")
+        fixture, _reading, _custom, _default = load_fixture(fixture_path)
+        launch_fresh_fcitx(
+            args.profile_root,
+            args.protocol_root,
+            runtime_path,
+            args.expected_head,
+            runner_blob,
+            fixture,
+        )
     if os.environ.get("MOZKEY_DOGFOOD_PROFILE_ROOT") != str(args.profile_root):
         fail("MOZKEY_DOGFOOD_PROFILE_ROOT does not match --profile-root")
     if args.protocol_root is None:
@@ -1471,11 +1852,14 @@ def main() -> int:
                 args.expected_head,
                 baseline_server,
             )
+            latest_consumer_sha256 = candidate_evidence["consumerSha256"]
             if (
                 candidate_evidence.get("profileMarkerSha256")
                 != profile_evidence.marker_sha256
                 or candidate_evidence.get("profileRootSha256")
                 != hashlib.sha256(str(args.profile_root).encode("utf-8")).hexdigest()
+                or candidate_evidence.get("fcitxProfileSha256")
+                != profile_evidence.fcitx_profile_sha256
             ):
                 fail("candidate verifier did not bind the fresh profile evidence")
             if installed_fcitx() != fcitx:
@@ -1542,6 +1926,7 @@ def main() -> int:
                     "fcitxStartTime",
                     "gitHead",
                     "layout",
+                    "fcitxProfileSha256",
                     "profileMarkerSha256",
                     "profileRootSha256",
                     "protocolRootSha256",
@@ -1551,6 +1936,7 @@ def main() -> int:
                 ):
                     if current_candidate.get(key) != candidate_evidence.get(key):
                         fail("candidate provenance changed between restart iterations")
+                latest_consumer_sha256 = current_candidate["consumerSha256"]
                 if installed_fcitx() != fcitx:
                     fail("installed Fcitx identity changed during restart gate")
                 if ibus_owner_identity(fcitx, runtime_path) != ibus_identity:
@@ -1607,6 +1993,7 @@ def main() -> int:
     if final_blobs != tracked_blobs:
         fail("tracked restart gate inputs changed during execution")
     assert candidate_evidence is not None
+    assert latest_consumer_sha256 is not None
     if installed_fcitx() != fcitx:
         fail("installed Fcitx identity changed before final restart evidence")
     if ibus_owner_identity(fcitx, runtime_path) != ibus_identity:
@@ -1624,6 +2011,8 @@ def main() -> int:
         f"mozkey_head={args.expected_head} fcitx_pid={fcitx.pid} "
         f"ibus_owner={ibus_identity.owner} initial_mozkey_profile=absent "
         f"profile_marker_sha256={profile_evidence.marker_sha256} "
+        f"fcitx_profile_sha256={profile_evidence.fcitx_profile_sha256} "
+        f"consumer_sha256={latest_consumer_sha256} "
         f"profile_root_sha256={hashlib.sha256(str(args.profile_root).encode('utf-8')).hexdigest()} "
         f"attestation_sha256={candidate_evidence['attestationSha256']}"
     )
