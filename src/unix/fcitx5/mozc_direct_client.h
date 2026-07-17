@@ -20,6 +20,10 @@ class MozcDirectClient : public MozcClientInterface {
   ~MozcDirectClient();
 
   bool EnsureConnection() override { return true; }
+  bool EnsureSession() override;
+  uint64_t session_generation() const override {
+    return session_generation_;
+  }
   bool SendKeyWithContext(const mozc::commands::KeyEvent& key,
                           const mozc::commands::Context& context,
                           mozc::commands::Output* output) override;
@@ -44,8 +48,6 @@ class MozcDirectClient : public MozcClientInterface {
   static bool TranslateProtoBufToMozcToolArg(
       const mozc::commands::Output& output, std::string* mode);
 
-  bool EnsureSession();
-
   enum ServerStatus {
     SERVER_INVALID_SESSION,  // current session is not available
     SERVER_OK,               // both server and session are health
@@ -66,6 +68,7 @@ class MozcDirectClient : public MozcClientInterface {
   bool Call(const mozc::commands::Input& input, mozc::commands::Output* output);
 
   uint64_t id_;
+  uint64_t session_generation_ = 0;
   std::unique_ptr<mozc::commands::Request> request_;
   ServerStatus server_status_ = SERVER_INVALID_SESSION;
   // List of key combinations used in the direct input mode.

@@ -114,6 +114,10 @@ class Client : public ClientInterface {
 
   bool EnsureSession() override;
 
+  uint64_t session_generation() const override {
+    return session_generation_;
+  }
+
   bool CheckVersionOrRestartServer() override;
 
   bool SendKeyWithContext(const commands::KeyEvent& key,
@@ -241,6 +245,7 @@ class Client : public ClientInterface {
   void GetHistoryInputs(std::vector<commands::Input>* result) const;
 
   uint64_t id_;
+  uint64_t session_generation_ = 0;
   IPCClientFactoryInterface* client_factory_;
   std::unique_ptr<ServerLauncherInterface> server_launcher_;
   std::unique_ptr<config::Config> preferences_;

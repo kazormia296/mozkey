@@ -140,7 +140,8 @@ bool MozcState::TrySendKeyEvent(InputContext* ic,
       BuildContext(/*include_surrounding_text=*/true);
 
   MOZC_VLOG(1) << "TrySendKeyEvent: " << event.DebugString();
-  if (!SendKeyWithGrimodexContext(client, event, context, out)) {
+  if (!raw_reading_recovery_.DispatchKey(client, event, context,
+                                         IsSecureInput(), out)) {
     *out_error = "SendKey failed";
     MOZC_VLOG(1) << "ERROR";
     return false;
@@ -194,7 +195,40 @@ bool MozcState::TrySendRawCommand(const mozc::commands::SessionCommand& command,
   MOZC_VLOG(1) << "TrySendRawCommand: " << command.DebugString();
   const mozc::commands::Context context =
       BuildContext(/*include_surrounding_text=*/false);
-  if (!SendCommandWithGrimodexContext(GetClient(), command, context, out)) {
+  auto* client = GetClient();
+  mozc::commands::Output recovered_output;
+  const RawReadingRecovery::PrepareResult prepare_result =
+      raw_reading_recovery_.Prepare(client, context, IsSecureInput(),
+                                    &recovered_output);
+  if (prepare_result == RawReadingRecovery::PrepareResult::kFailed) {
+    *out_error = "EnsureSession/recovery failed";
+    return false;
+  }
+  if (prepare_result ==
+      RawReadingRecovery::PrepareResult::kSessionChanged) {
+    // This command belongs to the destroyed session.  A newly reconstructed
+    // preedit can be rendered, but the candidate/callback/effect command itself
+    // must never cross the generation boundary.
+    if (recovered_output.has_consumed()) {
+      *out = std::move(recovered_output);
+      return true;
+    }
+    *out_error = "Stale session command dropped";
+    return false;
+  }
+  if (!SendCommandWithGrimodexContext(client, command, context, out)) {
+    // A failure can discover and recreate a dead server inside Client.  Recover
+    // the reading for UI continuity, but never retry the SessionCommand.
+    recovered_output.Clear();
+    const RawReadingRecovery::PrepareResult recovery_result =
+        raw_reading_recovery_.Prepare(client, context, IsSecureInput(),
+                                      &recovered_output);
+    if (recovery_result ==
+            RawReadingRecovery::PrepareResult::kSessionChanged &&
+        recovered_output.has_consumed()) {
+      *out = std::move(recovered_output);
+      return true;
+    }
     *out_error = "SendCommand failed";
     MOZC_VLOG(1) << "ERROR";
     return false;
@@ -267,6 +301,9 @@ bool MozcState::ProcessKeyEvent(KeySym sym, uint32_t keycode, KeyStates state,
     return false;  // not consumed.
   }
 
+  raw_reading_recovery_.RecordSuccessfulKey(event, raw_response,
+                                             IsSecureInput());
+
   return ParseResponse(raw_response);
 }
 
@@ -293,6 +330,7 @@ void MozcState::SelectCandidate(int32_t id) {
 // This function is called from SCIM framework.
 void MozcState::Reset() {
   MOZC_VLOG(1) << "resetim";
+  raw_reading_recovery_.ClearReading();
   live_conversion_timer_.reset();
   std::string error;
   mozc::commands::Output raw_response;
@@ -324,6 +362,7 @@ bool MozcState::Paging(bool prev) {
 void MozcState::FocusIn() {
   MOZC_VLOG(1) << "MozcState::FocusIn()";
 
+  raw_reading_recovery_.ResetSessionBoundary();
   AdvanceFocusEpoch();
   handler_->Clear();
   UpdatePreeditMethod();
@@ -333,6 +372,7 @@ void MozcState::FocusIn() {
 // This function is called when the ic loses focus.
 void MozcState::FocusOut(const InputContextEvent& event) {
   MOZC_VLOG(1) << "MozcState::FocusOut()";
+  raw_reading_recovery_.ClearReading();
   live_conversion_timer_.reset();
   std::string error;
   mozc::commands::Output raw_response;
@@ -355,6 +395,7 @@ void MozcState::FocusOut(const InputContextEvent& event) {
 
 void MozcState::CapabilityAboutToChange() {
   MOZC_VLOG(1) << "MozcState::CapabilityAboutToChange()";
+  raw_reading_recovery_.ResetSessionBoundary();
   AdvanceFocusEpoch();
 
   // This event is delivered before Fcitx installs the new capability flags.
@@ -400,6 +441,7 @@ bool MozcState::ParseResponse(const mozc::commands::Output& raw_response) {
 }
 
 void MozcState::SetResultString(const std::string& result_string) {
+  raw_reading_recovery_.ClearReading();
   ic_->commitString(result_string);
 }
 
@@ -511,7 +553,10 @@ MozcClientInterface* MozcState::GetClient() const {
   return client_.get();
 }
 
-void MozcState::ReleaseClient() { client_.reset(); }
+void MozcState::ReleaseClient() {
+  raw_reading_recovery_.ResetSessionBoundary();
+  client_.reset();
+}
 
 mozc::commands::Context MozcState::BuildContext(
     bool include_surrounding_text) const {

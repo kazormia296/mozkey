@@ -22,6 +22,8 @@ class PoolTestClient final : public MozcClientInterface {
   explicit PoolTestClient(int identity) : identity(identity) {}
 
   bool EnsureConnection() override { return true; }
+  bool EnsureSession() override { return true; }
+  uint64_t session_generation() const override { return 1; }
   bool SendKeyWithContext(const mozc::commands::KeyEvent&,
                           const mozc::commands::Context&,
                           mozc::commands::Output*) override {

@@ -44,6 +44,7 @@
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "unix/fcitx5/mozc_client_interface.h"
+#include "unix/fcitx5/raw_reading_recovery.h"
 
 namespace fcitx {
 inline const int32_t kBadCandidateId = -12345;
@@ -159,6 +160,7 @@ class MozcState : public InputContextProperty {
   InputContext* ic_;
   MozcEngine* engine_;
   mutable std::shared_ptr<MozcClientInterface> client_;
+  mutable RawReadingRecovery raw_reading_recovery_;
   uint64_t focus_epoch_ = 1;
 
   mozc::commands::CompositionMode composition_mode_ = mozc::commands::HIRAGANA;

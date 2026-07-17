@@ -72,6 +72,9 @@ bool MozcDirectClient::EnsureSession() {
     LOG(ERROR) << "CreateSession failed";
     return false;
   }
+  if (++session_generation_ == 0) {
+    session_generation_ = 1;
+  }
 
   // Call SET_REQUEST if request_ is not nullptr.
   if (request_) {

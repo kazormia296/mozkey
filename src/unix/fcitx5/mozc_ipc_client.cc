@@ -18,6 +18,12 @@ MozcIPCClient::~MozcIPCClient() {}
 
 bool MozcIPCClient::EnsureConnection() { return client_->EnsureConnection(); }
 
+bool MozcIPCClient::EnsureSession() { return client_->EnsureSession(); }
+
+uint64_t MozcIPCClient::session_generation() const {
+  return client_->session_generation();
+}
+
 bool MozcIPCClient::SendKeyWithContext(const mozc::commands::KeyEvent& key,
                                        const mozc::commands::Context& context,
                                        mozc::commands::Output* output) {

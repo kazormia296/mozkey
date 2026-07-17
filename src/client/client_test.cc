@@ -1101,6 +1101,7 @@ TEST_F(SessionPlaybackTest, GrimodexCommandIsNotRetriedIntoNewSession) {
   key.set_key_code('a');
   commands::Output output;
   ASSERT_TRUE(client_->SendKeyWithContext(key, context, &output));
+  EXPECT_EQ(client_->session_generation(), 1);
 
   commands::Output stale_output;
   stale_output.set_id(kReplacementSessionId);
@@ -1112,6 +1113,7 @@ TEST_F(SessionPlaybackTest, GrimodexCommandIsNotRetriedIntoNewSession) {
   select.set_id(0);
 
   EXPECT_FALSE(client_->SendCommandWithContext(select, context, &output));
+  EXPECT_EQ(client_->session_generation(), 2);
 
   std::vector<commands::Input> history;
   client_peer().GetHistoryInputs(&history);

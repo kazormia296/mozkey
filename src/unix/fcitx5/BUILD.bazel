@@ -61,6 +61,37 @@ mozc_cc_library(
     ],
 )
 
+mozc_cc_library(
+    name = "raw_reading_recovery",
+    srcs = [
+        "raw_reading_recovery.cc",
+    ],
+    hdrs = [
+        "raw_reading_recovery.h",
+    ],
+    deps = [
+        ":grimodex_context",
+        ":mozc_client_interface",
+        "//protocol:commands_cc_proto",
+    ],
+)
+
+mozc_cc_test(
+    name = "raw_reading_recovery_test",
+    size = "small",
+    srcs = [
+        "raw_reading_recovery_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":mozc_client_interface",
+        ":raw_reading_recovery",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
 mozc_cc_test(
     name = "grimodex_context_test",
     size = "small",
@@ -159,6 +190,7 @@ mozc_cc_library(
         ":grimodex_context",
         ":i18nwrapper",
         ":mozc_client_pool",
+        ":raw_reading_recovery",
         ":surrounding_text_util",
         "//base:init_mozc",
         "//base:port",

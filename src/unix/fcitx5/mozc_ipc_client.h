@@ -21,6 +21,8 @@ class MozcIPCClient : public MozcClientInterface {
   ~MozcIPCClient();
 
   bool EnsureConnection() override;
+  bool EnsureSession() override;
+  uint64_t session_generation() const override;
   bool SendKeyWithContext(const mozc::commands::KeyEvent& key,
                           const mozc::commands::Context& context,
                           mozc::commands::Output* output) override;

@@ -20,6 +20,8 @@ namespace {
 class RecordingClient final : public MozcClientInterface {
  public:
   bool EnsureConnection() override { return true; }
+  bool EnsureSession() override { return true; }
+  uint64_t session_generation() const override { return 1; }
 
   bool SendKeyWithContext(const mozc::commands::KeyEvent&,
                           const mozc::commands::Context& context,
