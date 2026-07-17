@@ -88,7 +88,9 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
         )
 
     def test_wire_request_requires_status_zero_and_nonempty_value(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="mz-z-test-", dir="/tmp"
+        ) as temporary:
             socket_path = Path(temporary) / "wire.sock"
             ready = threading.Event()
             captured: list[bytes] = []
@@ -199,6 +201,28 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
             (root / "llama-server").symlink_to(probe.DEFAULT_LLAMA_SERVER)
             with self.assertRaisesRegex(probe.ProbeFailure, "staged_runtime_invalid"):
                 probe._validate_staged_runtime(stage)
+
+    def test_probe_directories_split_large_stage_from_short_runtime_home(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            long_tmp = Path(temporary) / ("long-stage-parent-" * 5)
+            long_tmp.mkdir()
+            with mock.patch.dict(
+                os.environ, {"TMPDIR": str(long_tmp)}
+            ), mock.patch.object(tempfile, "tempdir", None):
+                with probe._probe_directories() as (stage, home):
+                    self.assertEqual(stage.parent.parent, long_tmp)
+                    self.assertEqual(home.parent, probe.SHORT_RUNTIME_PARENT)
+                    self.assertLessEqual(
+                        len(os.fsencode(home / ".mozkey_zenz_scorer_pipe")),
+                        probe.MAX_UNIX_SOCKET_PATH_BYTES,
+                    )
+                    self.assertEqual(stage.stat().st_mode & 0o777, 0o700)
+                    self.assertEqual(home.stat().st_mode & 0o777, 0o700)
+
+    def test_rejects_overlong_runtime_socket_path(self):
+        path = Path("/tmp") / ("x" * probe.MAX_UNIX_SOCKET_PATH_BYTES)
+        with self.assertRaisesRegex(probe.ProbeFailure, "private_home_invalid"):
+            probe._require_short_socket_path(path)
 
     def test_main_never_emits_a_sensitive_exception_cause(self):
         failure = probe.ProbeFailure("wire_io_failed")

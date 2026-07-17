@@ -14,6 +14,7 @@ API keys, response values, or captured child output.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import http.client
 import ipaddress
@@ -29,7 +30,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import BinaryIO, Iterable
+from typing import BinaryIO, Iterable, Iterator
 
 
 WIRE_MAGIC = 0x315A4E5A
@@ -47,6 +48,8 @@ MAX_WIRE_PAYLOAD_BYTES = 1 << 16
 MAX_HTTP_RESPONSE_BYTES = 1 << 16
 DEFAULT_LLAMA_SERVER = Path("/usr/bin/llama-server")
 MODEL_NAME = "zenz-v3.2-small-Q5_K_M.gguf"
+SHORT_RUNTIME_PARENT = Path("/tmp")
+MAX_UNIX_SOCKET_PATH_BYTES = 107
 
 # This is the same short readiness prompt used by the scorer itself.  Neither
 # this prompt nor either model response is included in diagnostics.
@@ -178,6 +181,49 @@ def _require_private_directory(path: Path) -> None:
         or stat.S_IMODE(info.st_mode) != 0o700
     ):
         raise ProbeFailure("private_home_invalid")
+
+
+def _require_short_socket_path(path: Path) -> None:
+    try:
+        encoded = os.fsencode(path)
+    except (TypeError, UnicodeEncodeError) as error:
+        raise ProbeFailure("private_home_invalid") from error
+    if len(encoded) > MAX_UNIX_SOCKET_PATH_BYTES:
+        raise ProbeFailure("private_home_invalid")
+
+
+@contextlib.contextmanager
+def _probe_directories() -> Iterator[tuple[Path, Path]]:
+    """Yield a large staging root and a short, private runtime HOME.
+
+    The staged model follows TMPDIR so release jobs can place its 74 MB payload
+    on a filesystem with sufficient quota.  The scorer HOME is intentionally
+    allocated directly below /tmp because its Unix-domain socket must remain
+    below Linux's sockaddr_un path limit.  Keeping these roots separate also
+    preserves canonical staged paths for the exact child-argv attestation.
+    """
+
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="mozkey-zenz-stage-"
+        ) as stage_temporary, tempfile.TemporaryDirectory(
+            prefix="mz-z-", dir=SHORT_RUNTIME_PARENT
+        ) as runtime_temporary:
+            probe_root = Path(stage_temporary)
+            home = Path(runtime_temporary)
+            os.chmod(probe_root, 0o700)
+            os.chmod(home, 0o700)
+            stage = probe_root / "stage"
+            stage.mkdir(mode=0o700)
+            _require_private_directory(probe_root)
+            _require_private_directory(stage)
+            _require_private_directory(home)
+            _require_short_socket_path(home / ".mozkey_zenz_scorer_pipe")
+            yield stage, home
+    except ProbeFailure:
+        raise
+    except OSError as error:
+        raise ProbeFailure("private_home_invalid") from error
 
 
 def _require_staged_regular(
@@ -704,17 +750,7 @@ def run_probe(timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
         raise ProbeFailure("timeout_invalid")
 
     repo_root = Path(__file__).resolve().parents[2]
-    with tempfile.TemporaryDirectory(prefix="mozkey-zenz-probe-") as temporary:
-        probe_root = Path(temporary)
-        os.chmod(probe_root, 0o700)
-        stage = probe_root / "stage"
-        home = probe_root / "home"
-        stage.mkdir(mode=0o700)
-        home.mkdir(mode=0o700)
-        _require_private_directory(probe_root)
-        _require_private_directory(stage)
-        _require_private_directory(home)
-
+    with _probe_directories() as (stage, home):
         _stage_release_runtime(repo_root, stage)
         scorer_path, model_path, llama_link = _validate_staged_runtime(stage)
 
