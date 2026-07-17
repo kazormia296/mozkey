@@ -41,9 +41,9 @@ require_file /usr/lib/mozkey/mozc_tool
 require_file /usr/lib/mozkey/mozc_zenz_scorer
 require_file /usr/lib/mozkey/unregister-grimodex-consumer
 require_file /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
-if [ ! -L "${stage_dir}/usr/lib/mozkey/llama-server" ] ||
-   [ "$(readlink "${stage_dir}/usr/lib/mozkey/llama-server")" !=
-     /usr/bin/llama-server ]; then
+llama_server_link="${stage_dir}/usr/lib/mozkey/llama-server"
+if [ ! -L "${llama_server_link}" ] ||
+   [ "$(readlink "${llama_server_link}")" != "/usr/bin/llama-server" ]; then
   echo "invalid staged llama-server runtime link" >&2
   exit 1
 fi
