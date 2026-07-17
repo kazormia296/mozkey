@@ -2013,7 +2013,7 @@ int RunServer(const Options& options) {
 
   std::string socket_path = options.pipe_name.empty() ?
       (std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + kDefaultPipeNameSuffix) : options.pipe_name;
-  
+
   int server_sock = ::socket(AF_UNIX, SOCK_STREAM, 0);
   if (server_sock < 0) {
     Debug("Failed to create UNIX domain socket");
@@ -2047,7 +2047,7 @@ int RunServer(const Options& options) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       continue;
     }
-    
+
     HandleClient(client_sock, options);
     ::close(client_sock);
   }
