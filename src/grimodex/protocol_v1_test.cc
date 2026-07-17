@@ -401,6 +401,39 @@ TEST(ProtocolV1Test, SecureReaderDefendsProjectPathIndependently) {
   EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
 }
 
+TEST(ProtocolV1Test, SharedCrossPlatformFixturesRemainDigestLocked) {
+  struct FixtureDigest {
+    absl::string_view path;
+    absl::string_view sha256;
+  };
+  constexpr FixtureDigest kFixtures[] = {
+      {"valid/state-active.json",
+       "c1e2fe0c8dfa1cd73ee0005a4c5f099d0c0a6f00f4a76fed811d711833d6205c"},
+      {"valid/state-inactive.json",
+       "7ee8e51de1d3efdc1b7ba88092cb67a62269033b73565ee16ac971959133704c"},
+      {"valid/project-with-zenzai-context.json",
+       "62f8936909439d0cd258ccdd65084ae111f5c798f5a014a3cc1e07578e63379f"},
+      {"invalid/project-unknown-category.json",
+       "9621c8847498daadd7165551efbfd7c93bd3bdf279f2c7a0a77812b22cba16ef"},
+      {"invalid/project-unsupported-version.json",
+       "96c44501fd207b0e197297e1e90309d5fd941dcbba3916b65fdf877bdeeb3ac0"},
+      {"invalid/state-unsupported-version.json",
+       "8e6ba85df2b3fa23e242a58ea15efe73c84dcf4ee44a71983bba78ccd5ab8160"},
+      {"malicious/project-control-character.json",
+       "15367d8dc09700535c87b95379d0eee24e0e84f9b9f634ccc549e6762ed5ad89"},
+      {"malicious/project-path-traversal.json",
+       "b49c90afa15e02db95d44ca91baa1ef1c49b844582247cc4b60e83f98fd5e6bf"},
+      {"malicious/state-path-traversal.json",
+       "ea7069391951b762eee6465cd1dcea61964857f31d3a1685ee6becb524c88fcf"},
+  };
+
+  for (const FixtureDigest& fixture : kFixtures) {
+    EXPECT_EQ(VerifiedFileBytes::FromBytes(Fixture(fixture.path)).sha256,
+              fixture.sha256)
+        << fixture.path;
+  }
+}
+
 TEST(ProtocolV1Test, PublisherUsesImmutableSnapshotsAndSemanticSequence) {
   Sandbox sandbox;
   sandbox.InstallState(kStateA);
