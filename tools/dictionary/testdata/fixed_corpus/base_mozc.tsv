@@ -1,0 +1,4 @@
+OK:	たしました	足しました	Conversion Expected	足しました	fixture-v1
+FAILED:	たいじんすきる	対人技能	Conversion Expected	対人スキル	fixture-v1
+FAILED:	もずきー	モズキー	Conversion Expected	Mozkey	fixture-v1
+FAILED:	みせいこう	未成工	Conversion Expected	未成功	fixture-v1

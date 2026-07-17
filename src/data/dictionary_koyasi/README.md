@@ -75,6 +75,17 @@ Get-Content -Encoding UTF8 src/data/dictionary_koyasi/generated/profiled/koyasi-
 
 ## Daily dictionary preparation workflow
 
+On Linux, use the source-mode wrapper documented in
+`docs/linux_daily_dictionary_quality_gate.md`.  It makes `pwsh`, network,
+cached-input, and tracked-sample behavior explicit while delegating all daily
+generation to this existing pipeline:
+
+```bash
+python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode sample
+python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode download
+python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode cached
+```
+
 The recommended way to prepare the enhanced daily dictionary is:
 
 ```powershell

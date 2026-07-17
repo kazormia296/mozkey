@@ -1,0 +1,5 @@
+# label	key	value	command
+fixture_kept_base	たしました	足しました	Conversion Expected
+fixture_kept_hazkey	たいじんすきる	対人スキル	Conversion Expected
+fixture_mozkey_improvement	もずきー	Mozkey	Conversion Expected
+fixture_all_failed	みせいこう	未成功	Conversion Expected
