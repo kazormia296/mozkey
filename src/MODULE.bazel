@@ -205,6 +205,15 @@ pkg_config_repository(
     ],
 )
 
+# Fcitx 5
+pkg_config_repository(
+    name = "fcitx5",
+    packages = [
+        "Fcitx5Core",
+        "Fcitx5Module",
+    ],
+)
+
 # Qt for Linux
 pkg_config_repository(
     name = "qt_linux",
