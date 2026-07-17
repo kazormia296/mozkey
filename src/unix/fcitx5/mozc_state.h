@@ -39,7 +39,7 @@
 #include <memory>
 #include <string>
 
-#include <fcitx-utils/eventloopinterface.h>
+#include <fcitx-utils/event.h>
 
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
