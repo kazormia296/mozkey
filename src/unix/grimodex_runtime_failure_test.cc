@@ -478,6 +478,25 @@ bool Activate(RuntimeFcitxClient* client,
                                                 &output);
 }
 
+fcitx::RawReadingRecovery MakeRuntimeRecovery() {
+  return fcitx::RawReadingRecovery(
+      [](fcitx::MozcClientInterface* client, uint64_t generation,
+         const commands::Context& context) {
+        if (client == nullptr || generation == 0 ||
+            client->session_generation() != generation) {
+          return false;
+        }
+        commands::SessionCommand command;
+        command.set_type(commands::SessionCommand::SWITCH_COMPOSITION_MODE);
+        command.set_composition_mode(commands::HIRAGANA);
+        commands::Output output;
+        return fcitx::SendCommandWithGrimodexContext(
+                   client, command, context, &output) &&
+               client->session_generation() == generation &&
+               output.has_mode();
+      });
+}
+
 bool SendMalformedPartialRequest() {
   IPCPathManager* const manager =
       IPCPathManager::GetIPCPathManager("session");
@@ -609,8 +628,8 @@ TEST_F(GrimodexRuntimeFailureTest,
   ASSERT_TRUE(Activate(&first_client, first_context));
   ASSERT_TRUE(Activate(&second_client, second_context));
 
-  fcitx::RawReadingRecovery first_recovery;
-  fcitx::RawReadingRecovery second_recovery;
+  fcitx::RawReadingRecovery first_recovery = MakeRuntimeRecovery();
+  fcitx::RawReadingRecovery second_recovery = MakeRuntimeRecovery();
   commands::Output first_output;
   commands::Output second_output;
   ASSERT_TRUE(first_recovery.DispatchKey(&first_client, Character('a'),
@@ -675,7 +694,7 @@ TEST_F(GrimodexRuntimeFailureTest,
   // side first owns a project snapshot and a raw journal.  Moving that same
   // session into secure input must purge both before processing the new key.
   RuntimeFcitxClient secure_client(state_);
-  fcitx::RawReadingRecovery secure_recovery;
+  fcitx::RawReadingRecovery secure_recovery = MakeRuntimeRecovery();
   const commands::Context before_secure_context =
       fcitx::BuildGrimodexContext(" GrImOdEx ", "wayland", false, 1);
   ASSERT_TRUE(Activate(&secure_client, before_secure_context));
@@ -818,7 +837,8 @@ TEST_F(GrimodexRuntimeFailureTest,
   ExpectSecureSuppression(secure_output);
 
   RuntimeFcitxClient secure_reference_client(state_);
-  fcitx::RawReadingRecovery secure_reference_recovery;
+  fcitx::RawReadingRecovery secure_reference_recovery =
+      MakeRuntimeRecovery();
   ASSERT_TRUE(Activate(&secure_reference_client, secure_context));
   commands::Output secure_reference_output;
   ASSERT_TRUE(secure_reference_recovery.DispatchKey(
@@ -954,7 +974,7 @@ TEST_F(GrimodexRuntimeFailureTest,
   for (int client_index = 0; client_index < 4; ++client_index) {
     clients.emplace_back([&, client_index] {
       RuntimeFcitxClient client(state_);
-      fcitx::RawReadingRecovery recovery;
+      fcitx::RawReadingRecovery recovery = MakeRuntimeRecovery();
       const commands::Context context = fcitx::BuildGrimodexContext(
           "grimodex", absl::StrCat("wayland-race-", client_index), false,
           static_cast<uint64_t>(10 + client_index));

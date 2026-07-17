@@ -132,8 +132,7 @@ class MozcState : public InputContextProperty {
   // Sends composition mode to the server.
   bool TrySendCompositionMode(mozc::commands::CompositionMode mode,
                               mozc::commands::Output* out,
-                              std::string* out_error,
-                              bool* out_command_dispatched = nullptr) const;
+                              std::string* out_error) const;
 
   // Sends a command to the server.
   bool TrySendCommand(mozc::commands::SessionCommand::CommandType type,
@@ -142,11 +141,13 @@ class MozcState : public InputContextProperty {
 
   bool TrySendRawCommand(const mozc::commands::SessionCommand& command,
                          mozc::commands::Output* out,
-                         std::string* out_error,
-                         bool* out_command_dispatched = nullptr) const;
+                         std::string* out_error) const;
 
   mozc::commands::Context BuildContext(bool include_surrounding_text) const;
   void AdvanceFocusEpoch();
+  bool InitializeSessionGeneration(
+      MozcClientInterface* client, uint64_t generation,
+      const mozc::commands::Context& context);
   bool ApplyInitialModeForCurrentClient();
 
   // Parses the response from mozc_server. Returns whether the server consumes

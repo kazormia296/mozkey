@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,13 @@ class RawReadingRecovery final {
     kSame,
     kChanged,
   };
+
+  using SessionInitializer = std::function<bool(
+      MozcClientInterface*, uint64_t, const mozc::commands::Context&)>;
+
+  // `session_initializer` must initialize exactly the supplied generation.
+  // Prepare invokes it before adopting a new generation or replaying keys.
+  explicit RawReadingRecovery(SessionInitializer session_initializer);
 
   // Ensures that a session exists and, when its generation changed, rebuilds
   // the non-secure reading from raw keys.  A kSessionChanged result tells the
@@ -88,8 +96,10 @@ class RawReadingRecovery final {
   uint64_t observed_session_generation_ = 0;
   bool journal_suppressed_ = false;
   bool recovery_in_progress_ = false;
+  bool journal_invalidation_pending_ = false;
   std::string pinned_snapshot_digest_;
   SnapshotRelation last_snapshot_relation_ = SnapshotRelation::kUnknown;
+  SessionInitializer session_initializer_;
 };
 
 }  // namespace fcitx

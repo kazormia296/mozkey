@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 
 #include "protocol/commands.pb.h"
 #include "unix/fcitx5/grimodex_context.h"
@@ -13,20 +14,55 @@
 
 namespace fcitx {
 
+RawReadingRecovery::RawReadingRecovery(
+    SessionInitializer session_initializer)
+    : session_initializer_(std::move(session_initializer)) {}
+
 RawReadingRecovery::PrepareResult RawReadingRecovery::Prepare(
     MozcClientInterface* client, const mozc::commands::Context& context,
     bool secure_input, mozc::commands::Output* recovered_output) {
   if (client == nullptr || recovered_output == nullptr ||
-      recovery_in_progress_) {
+      !session_initializer_) {
     return PrepareResult::kFailed;
+  }
+  if (recovery_in_progress_) {
+    return PrepareResult::kFailed;
+  }
+  if (secure_input) {
+    // A fallible session/initializer call must never leave a prior non-secure
+    // journal available to a later request.
+    ClearReading();
   }
   recovered_output->Clear();
 
-  if (!client->EnsureSession()) {
-    return PrepareResult::kFailed;
+  uint64_t generation = 0;
+  bool stable_session = false;
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    if (!client->EnsureSession()) {
+      return PrepareResult::kFailed;
+    }
+    generation = client->session_generation();
+    if (generation == 0) {
+      return PrepareResult::kFailed;
+    }
+    if (observed_session_generation_ == generation) {
+      stable_session = true;
+      break;
+    }
+
+    if (!session_initializer_(client, generation, context)) {
+      if (client->session_generation() != generation) {
+        continue;
+      }
+      return PrepareResult::kFailed;
+    }
+    if (client->session_generation() != generation) {
+      continue;
+    }
+    stable_session = true;
+    break;
   }
-  const uint64_t generation = client->session_generation();
-  if (generation == 0) {
+  if (!stable_session) {
     return PrepareResult::kFailed;
   }
 
@@ -44,6 +80,7 @@ RawReadingRecovery::PrepareResult RawReadingRecovery::Prepare(
     return PrepareResult::kReady;
   }
 
+  const uint64_t previous_generation = observed_session_generation_;
   observed_session_generation_ = generation;
   last_snapshot_relation_ = SnapshotRelation::kUnknown;
   if (secure_input) {
@@ -60,15 +97,20 @@ RawReadingRecovery::PrepareResult RawReadingRecovery::Prepare(
   for (const mozc::commands::KeyEvent& key : journal_) {
     latest_output.Clear();
     if (!SendKeyWithGrimodexContext(client, key, context, &latest_output) ||
+        journal_invalidation_pending_ ||
         client->session_generation() != generation ||
         HasHostVisibleSideEffect(latest_output) ||
         !latest_output.has_consumed() || !latest_output.consumed() ||
         !HasActiveComposition(latest_output)) {
-      recovery_in_progress_ = false;
-      BestEffortAbortPartialRecovery(client, context);
-      if (client->session_generation() != 0) {
-        observed_session_generation_ = client->session_generation();
+      if (client->session_generation() == generation) {
+        BestEffortAbortPartialRecovery(client, context);
       }
+      recovery_in_progress_ = false;
+      // Restore the old baseline so the replacement boundary remains pending.
+      // The next Prepare must report kSessionChanged even if replay failed in
+      // the same generation, otherwise a stale SessionCommand could cross it.
+      observed_session_generation_ = previous_generation;
+      journal_invalidation_pending_ = false;
       SuppressReading();
       return PrepareResult::kFailed;
     }
@@ -95,16 +137,37 @@ bool RawReadingRecovery::DispatchKey(
   if (client == nullptr || output == nullptr) {
     return false;
   }
+  const auto fail_unconsumed_key = [this, client, &context, secure_input]() {
+    if (recovery_in_progress_) {
+      // Avoid invalidating an outer replay's journal iterators.  The outer
+      // loop observes this flag after its current SendKey returns and performs
+      // the abort and suppression itself.
+      journal_invalidation_pending_ = true;
+      return false;
+    }
+    if (observed_session_generation_ != 0 &&
+        client->session_generation() == observed_session_generation_) {
+      BestEffortAbortPartialRecovery(client, context);
+    }
+    if (secure_input) {
+      ClearReading();
+    } else {
+      // The current key will be forwarded to the application.  Replaying an
+      // older journal on a later key would reorder application-visible input.
+      SuppressReading();
+    }
+    return false;
+  };
   mozc::commands::Output recovered_output;
   if (Prepare(client, context, secure_input, &recovered_output) ==
       PrepareResult::kFailed) {
-    return false;
+    return fail_unconsumed_key();
   }
   if (SendKeyWithGrimodexContext(client, key, context, output)) {
     return true;
   }
   if (secure_input) {
-    return false;
+    return fail_unconsumed_key();
   }
 
   // Client deliberately does not retry managed protobuf requests.  Only a
@@ -112,9 +175,12 @@ bool RawReadingRecovery::DispatchKey(
   recovered_output.Clear();
   if (Prepare(client, context, /*secure_input=*/false, &recovered_output) !=
       PrepareResult::kSessionChanged) {
-    return false;
+    return fail_unconsumed_key();
   }
-  return SendKeyWithGrimodexContext(client, key, context, output);
+  if (!SendKeyWithGrimodexContext(client, key, context, output)) {
+    return fail_unconsumed_key();
+  }
+  return true;
 }
 
 void RawReadingRecovery::RecordSuccessfulKey(
@@ -169,6 +235,7 @@ void RawReadingRecovery::ResetSessionBoundary() {
   ClearReading();
   observed_session_generation_ = 0;
   recovery_in_progress_ = false;
+  journal_invalidation_pending_ = false;
 }
 
 bool RawReadingRecovery::HasActiveComposition(
@@ -263,6 +330,7 @@ void RawReadingRecovery::SuppressReading() {
   journal_.clear();
   journal_bytes_ = 0;
   journal_suppressed_ = true;
+  journal_invalidation_pending_ = false;
   pinned_snapshot_digest_.clear();
   last_snapshot_relation_ = SnapshotRelation::kUnknown;
 }

@@ -6,8 +6,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "protocol/commands.pb.h"
@@ -52,6 +54,44 @@ mozc::commands::Context ValidContext(bool secure_input = false) {
   return context;
 }
 
+RawReadingRecovery MakeRecovery() {
+  return RawReadingRecovery([](MozcClientInterface*, uint64_t,
+                               const mozc::commands::Context&) {
+    return true;
+  });
+}
+
+RawReadingRecovery MakeModeInitializingRecovery() {
+  return RawReadingRecovery(
+      [](MozcClientInterface* client, uint64_t generation,
+         const mozc::commands::Context& context) {
+        if (client == nullptr || generation == 0 ||
+            client->session_generation() != generation) {
+          return false;
+        }
+        mozc::commands::SessionCommand command;
+        command.set_type(
+            mozc::commands::SessionCommand::SWITCH_COMPOSITION_MODE);
+        command.set_composition_mode(mozc::commands::HIRAGANA);
+        mozc::commands::Output output;
+        return client->SendCommandWithContext(command, context, &output) &&
+               client->session_generation() == generation &&
+               output.has_mode();
+      });
+}
+
+struct ClientEvent {
+  enum class Kind {
+    kKey,
+    kCommand,
+  };
+
+  Kind kind;
+  uint64_t generation;
+  int value;
+  bool succeeded;
+};
+
 class RecoveryTestClient final : public MozcClientInterface {
  public:
   bool EnsureConnection() override { return ensure_succeeds; }
@@ -62,6 +102,16 @@ class RecoveryTestClient final : public MozcClientInterface {
                           const mozc::commands::Context&,
                           mozc::commands::Output* output) override {
     sent_keys.push_back(key);
+    events.push_back(ClientEvent{
+        .kind = ClientEvent::Kind::kKey,
+        .generation = generation,
+        .value = key.has_key_code() ? static_cast<int>(key.key_code()) : -1,
+        .succeeded = false,
+    });
+    if (on_next_key) {
+      std::function<void()> callback = std::move(on_next_key);
+      callback();
+    }
     if (recreate_on_next_key) {
       recreate_on_next_key = false;
       ++generation;
@@ -69,6 +119,11 @@ class RecoveryTestClient final : public MozcClientInterface {
     }
     if (fail_next_key) {
       fail_next_key = false;
+      return false;
+    }
+    if (recreate_on_key_call != 0 &&
+        sent_keys.size() == recreate_on_key_call) {
+      ++generation;
       return false;
     }
     if (fail_on_key_call != 0 && sent_keys.size() == fail_on_key_call) {
@@ -80,14 +135,39 @@ class RecoveryTestClient final : public MozcClientInterface {
     } else {
       *output = ActiveOutput(default_digest);
     }
+    events.back().succeeded = true;
     return true;
   }
 
   bool SendCommandWithContext(const mozc::commands::SessionCommand& command,
                               const mozc::commands::Context&,
-                              mozc::commands::Output*) override {
+                              mozc::commands::Output* output) override {
     ++sent_commands;
     sent_command_types.push_back(command.type());
+    events.push_back(ClientEvent{
+        .kind = ClientEvent::Kind::kCommand,
+        .generation = generation,
+        .value = static_cast<int>(command.type()),
+        .succeeded = false,
+    });
+    if (recreate_on_next_command) {
+      recreate_on_next_command = false;
+      ++generation;
+      return false;
+    }
+    if (recreate_commands_remaining > 0) {
+      --recreate_commands_remaining;
+      ++generation;
+      return false;
+    }
+    if (fail_next_command) {
+      fail_next_command = false;
+      return false;
+    }
+    if (output != nullptr) {
+      output->set_mode(mozc::commands::HIRAGANA);
+    }
+    events.back().succeeded = true;
     return true;
   }
   bool IsDirectModeCommand(const mozc::commands::KeyEvent&) const override {
@@ -103,20 +183,26 @@ class RecoveryTestClient final : public MozcClientInterface {
 
   bool ensure_succeeds = true;
   bool fail_next_key = false;
+  bool fail_next_command = false;
   size_t fail_on_key_call = 0;
+  size_t recreate_on_key_call = 0;
   bool recreate_on_next_key = false;
+  bool recreate_on_next_command = false;
+  int recreate_commands_remaining = 0;
   uint64_t generation = 1;
   int sent_commands = 0;
   std::vector<mozc::commands::SessionCommand::CommandType> sent_command_types;
   std::string default_digest;
   std::deque<mozc::commands::Output> queued_outputs;
   std::vector<mozc::commands::KeyEvent> sent_keys;
+  std::vector<ClientEvent> events;
+  std::function<void()> on_next_key;
 };
 
 TEST(RawReadingRecoveryTest, RecreatesCompositionFromRawKeysAfterSessionKill) {
   RecoveryTestClient client;
   client.default_digest = std::string(32, 'a');
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
 
@@ -141,12 +227,14 @@ TEST(RawReadingRecoveryTest, RecreatesCompositionFromRawKeysAfterSessionKill) {
 TEST(RawReadingRecoveryTest,
      CurrentRawKeyIsRetriedExactlyOnceAfterGenerationAdvances) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
   mozc::commands::Output output;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
             RawReadingRecovery::PrepareResult::kReady);
   recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
 
   client.recreate_on_next_key = true;
   EXPECT_TRUE(recovery.DispatchKey(&client, Key('b'), context, false, &output));
@@ -155,11 +243,280 @@ TEST(RawReadingRecoveryTest,
   EXPECT_EQ(client.sent_keys[1].key_code(), 'a');  // Reading reconstruction.
   EXPECT_EQ(client.sent_keys[2].key_code(), 'b');  // The only retry.
   EXPECT_EQ(client.generation, 2);
+
+  ASSERT_EQ(client.events.size(), 4);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[0].generation, 1);
+  EXPECT_EQ(client.events[0].value, 'b');
+  EXPECT_FALSE(client.events[0].succeeded);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[1].generation, 2);
+  EXPECT_EQ(client.events[1].value,
+            mozc::commands::SessionCommand::SWITCH_COMPOSITION_MODE);
+  EXPECT_TRUE(client.events[1].succeeded);
+  EXPECT_EQ(client.events[2].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[2].generation, 2);
+  EXPECT_EQ(client.events[2].value, 'a');
+  EXPECT_TRUE(client.events[2].succeeded);
+  EXPECT_EQ(client.events[3].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[3].generation, 2);
+  EXPECT_EQ(client.events[3].value, 'b');
+  EXPECT_TRUE(client.events[3].succeeded);
+}
+
+TEST(RawReadingRecoveryTest,
+     InitializerFailureNeverReplaysOrRetriesCurrentKey) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
+
+  client.recreate_on_next_key = true;
+  client.fail_next_command = true;
+  EXPECT_FALSE(
+      recovery.DispatchKey(&client, Key('b'), context, false, &output));
+
+  ASSERT_EQ(client.events.size(), 2);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[0].generation, 1);
+  EXPECT_EQ(client.events[0].value, 'b');
+  EXPECT_FALSE(client.events[0].succeeded);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[1].generation, 2);
+  EXPECT_FALSE(client.events[1].succeeded);
+  ASSERT_EQ(client.sent_keys.size(), 1);
+  EXPECT_EQ(client.sent_keys[0].key_code(), 'b');
+  EXPECT_EQ(recovery.journal_size_for_test(), 0);
+  EXPECT_TRUE(recovery.journal_suppressed_for_test());
+}
+
+TEST(RawReadingRecoveryTest,
+     SameGenerationKeyFailureRevertsServerComposition) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
+
+  client.fail_next_key = true;
+  EXPECT_FALSE(
+      recovery.DispatchKey(&client, Key('b'), context, false, &output));
+
+  ASSERT_EQ(client.events.size(), 2);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[0].generation, 1);
+  EXPECT_EQ(client.events[0].value, 'b');
+  EXPECT_FALSE(client.events[0].succeeded);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[1].generation, 1);
+  EXPECT_EQ(client.events[1].value,
+            mozc::commands::SessionCommand::REVERT);
+  EXPECT_TRUE(client.events[1].succeeded);
+  EXPECT_TRUE(recovery.journal_suppressed_for_test());
+}
+
+TEST(RawReadingRecoveryTest,
+     FailedCurrentKeyAfterReplayRevertsReplacementComposition) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
+
+  client.recreate_on_next_key = true;
+  client.fail_on_key_call = 3;
+  EXPECT_FALSE(
+      recovery.DispatchKey(&client, Key('b'), context, false, &output));
+
+  ASSERT_EQ(client.events.size(), 5);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kKey);
+  EXPECT_FALSE(client.events[0].succeeded);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[1].value,
+            mozc::commands::SessionCommand::SWITCH_COMPOSITION_MODE);
+  EXPECT_EQ(client.events[1].generation, 2);
+  EXPECT_EQ(client.events[2].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[2].value, 'a');
+  EXPECT_TRUE(client.events[2].succeeded);
+  EXPECT_EQ(client.events[3].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[3].value, 'b');
+  EXPECT_FALSE(client.events[3].succeeded);
+  EXPECT_EQ(client.events[4].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[4].value, mozc::commands::SessionCommand::REVERT);
+  EXPECT_EQ(client.events[4].generation, 2);
+  EXPECT_TRUE(client.events[4].succeeded);
+  EXPECT_TRUE(recovery.journal_suppressed_for_test());
+}
+
+TEST(RawReadingRecoveryTest,
+     GenerationChangeDuringInitializationRetriesBeforeReplay) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
+
+  client.generation = 2;
+  client.recreate_on_next_command = true;
+  EXPECT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kSessionChanged);
+
+  ASSERT_EQ(client.events.size(), 3);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[0].generation, 2);
+  EXPECT_FALSE(client.events[0].succeeded);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[1].generation, 3);
+  EXPECT_TRUE(client.events[1].succeeded);
+  EXPECT_EQ(client.events[2].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[2].generation, 3);
+  EXPECT_EQ(client.events[2].value, 'a');
+  EXPECT_TRUE(client.events[2].succeeded);
+}
+
+TEST(RawReadingRecoveryTest,
+     RepeatedGenerationChangeDuringInitializationFailsBeforeReplay) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
+
+  client.generation = 2;
+  client.recreate_commands_remaining = 2;
+  EXPECT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kFailed);
+
+  ASSERT_EQ(client.events.size(), 2);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[0].generation, 2);
+  EXPECT_FALSE(client.events[0].succeeded);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[1].generation, 3);
+  EXPECT_FALSE(client.events[1].succeeded);
+  EXPECT_TRUE(client.sent_keys.empty());
+  EXPECT_EQ(recovery.journal_size_for_test(), 1);
+}
+
+TEST(RawReadingRecoveryTest,
+     ReplayGenerationChangeRequiresInitializationBeforeNextCommand) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
+
+  client.generation = 2;
+  client.recreate_on_key_call = 1;
+  EXPECT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kFailed);
+  ASSERT_EQ(client.events.size(), 2);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[0].generation, 2);
+  EXPECT_TRUE(client.events[0].succeeded);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[1].generation, 2);
+  EXPECT_FALSE(client.events[1].succeeded);
+  EXPECT_TRUE(recovery.journal_suppressed_for_test());
+
+  client.events.clear();
+  client.sent_keys.clear();
+  EXPECT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kSessionChanged);
+  ASSERT_EQ(client.events.size(), 1);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[0].generation, 3);
+  EXPECT_TRUE(client.events[0].succeeded);
+  EXPECT_TRUE(client.sent_keys.empty());
+}
+
+TEST(RawReadingRecoveryTest,
+     ReentrantDispatchDuringReplayDefersJournalInvalidation) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  client.events.clear();
+  client.sent_keys.clear();
+
+  client.generation = 2;
+  client.on_next_key = [&]() {
+    mozc::commands::Output nested_output;
+    EXPECT_FALSE(recovery.DispatchKey(&client, Key('x'), context, false,
+                                      &nested_output));
+  };
+  EXPECT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kFailed);
+
+  ASSERT_EQ(client.events.size(), 3);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[0].generation, 2);
+  EXPECT_EQ(client.events[1].kind, ClientEvent::Kind::kKey);
+  EXPECT_EQ(client.events[1].generation, 2);
+  EXPECT_EQ(client.events[1].value, 'a');
+  EXPECT_EQ(client.events[2].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[2].value, mozc::commands::SessionCommand::REVERT);
+  EXPECT_EQ(client.events[2].generation, 2);
+  EXPECT_TRUE(recovery.journal_suppressed_for_test());
+
+  client.events.clear();
+  EXPECT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kSessionChanged);
+  ASSERT_EQ(client.events.size(), 1);
+  EXPECT_EQ(client.events[0].kind, ClientEvent::Kind::kCommand);
+  EXPECT_EQ(client.events[0].generation, 2);
+}
+
+TEST(RawReadingRecoveryTest,
+     SecurePrepareClearsJournalBeforeInitializerFailure) {
+  RecoveryTestClient client;
+  RawReadingRecovery recovery = MakeModeInitializingRecovery();
+  mozc::commands::Output output;
+  const mozc::commands::Context context = ValidContext();
+  ASSERT_EQ(recovery.Prepare(&client, context, false, &output),
+            RawReadingRecovery::PrepareResult::kReady);
+  recovery.RecordSuccessfulKey(Key('a'), ActiveOutput(), false);
+  ASSERT_EQ(recovery.journal_size_for_test(), 1);
+
+  client.generation = 2;
+  client.fail_next_command = true;
+  EXPECT_EQ(recovery.Prepare(&client, ValidContext(true), true, &output),
+            RawReadingRecovery::PrepareResult::kFailed);
+  EXPECT_EQ(recovery.journal_size_for_test(), 0);
+  EXPECT_FALSE(recovery.journal_suppressed_for_test());
 }
 
 TEST(RawReadingRecoveryTest, SecureCurrentKeyIsNotRetriedAfterRecreation) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output output;
   const mozc::commands::Context context = ValidContext(true);
   ASSERT_EQ(recovery.Prepare(&client, context, true, &output),
@@ -174,7 +531,7 @@ TEST(RawReadingRecoveryTest, SecureCurrentKeyIsNotRetriedAfterRecreation) {
 TEST(RawReadingRecoveryTest,
      SessionChangedSignalDropsStaleCandidateAndSendsOnlyRawKeys) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
 
@@ -195,7 +552,7 @@ TEST(RawReadingRecoveryTest,
 
 TEST(RawReadingRecoveryTest, SecureInputNeverJournalsOrRecoversRawKeys) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context nonsecure_context = ValidContext();
   const mozc::commands::Context secure_context = ValidContext(true);
@@ -217,7 +574,7 @@ TEST(RawReadingRecoveryTest, SecureInputNeverJournalsOrRecoversRawKeys) {
 
 TEST(RawReadingRecoveryTest, EventCapFailsClosedInsteadOfKeepingTail) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -248,7 +605,7 @@ TEST(RawReadingRecoveryTest,
            mozc::commands::KeyEvent::HENKAN,
        }) {
     RecoveryTestClient client;
-    RawReadingRecovery recovery;
+    RawReadingRecovery recovery = MakeRecovery();
     mozc::commands::Output recovered;
     const mozc::commands::Context context = ValidContext();
     ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -269,7 +626,7 @@ TEST(RawReadingRecoveryTest,
 
 TEST(RawReadingRecoveryTest, ModifiedShortcutSuppressesWholeJournal) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -285,7 +642,7 @@ TEST(RawReadingRecoveryTest, ModifiedShortcutSuppressesWholeJournal) {
 
 TEST(RawReadingRecoveryTest, BackspaceMayRemainInRawReadingJournal) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -301,7 +658,7 @@ TEST(RawReadingRecoveryTest, BackspaceMayRemainInRawReadingJournal) {
 
 TEST(RawReadingRecoveryTest, ByteCapFailsClosed) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -317,7 +674,7 @@ TEST(RawReadingRecoveryTest, ByteCapFailsClosed) {
 
 TEST(RawReadingRecoveryTest, FocusBoundaryClearsJournalAndAdoptsFreshClient) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -334,7 +691,7 @@ TEST(RawReadingRecoveryTest, FocusBoundaryClearsJournalAndAdoptsFreshClient) {
 
 TEST(RawReadingRecoveryTest, DomainBoundaryDropsReadingWithoutReplay) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -351,7 +708,7 @@ TEST(RawReadingRecoveryTest, DomainBoundaryDropsReadingWithoutReplay) {
 
 TEST(RawReadingRecoveryTest, FailedRecoveryIsBoundedAndDropsJournal) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -366,13 +723,16 @@ TEST(RawReadingRecoveryTest, FailedRecoveryIsBoundedAndDropsJournal) {
   EXPECT_TRUE(recovery.journal_suppressed_for_test());
 
   EXPECT_EQ(recovery.Prepare(&client, context, false, &recovered),
+            RawReadingRecovery::PrepareResult::kSessionChanged);
+  EXPECT_EQ(client.sent_keys.size(), 1);
+  EXPECT_EQ(recovery.Prepare(&client, context, false, &recovered),
             RawReadingRecovery::PrepareResult::kReady);
   EXPECT_EQ(client.sent_keys.size(), 1);
 }
 
 TEST(RawReadingRecoveryTest, PartialReplayIsRevertedBeforeFailingClosed) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
@@ -394,7 +754,7 @@ TEST(RawReadingRecoveryTest, PartialReplayIsRevertedBeforeFailingClosed) {
 
 TEST(RawReadingRecoveryTest, ChangedSnapshotStillReplaysRawReading) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   const std::string old_digest(32, 'o');
@@ -414,7 +774,7 @@ TEST(RawReadingRecoveryTest, ChangedSnapshotStillReplaysRawReading) {
 
 TEST(RawReadingRecoveryTest, CommitClearsJournal) {
   RecoveryTestClient client;
-  RawReadingRecovery recovery;
+  RawReadingRecovery recovery = MakeRecovery();
   mozc::commands::Output recovered;
   const mozc::commands::Context context = ValidContext();
   ASSERT_EQ(recovery.Prepare(&client, context, false, &recovered),
