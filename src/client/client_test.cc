@@ -1086,6 +1086,38 @@ TEST_F(SessionPlaybackTest, GrimodexSecureBoundaryClearsExistingJournal) {
   EXPECT_TRUE(history.empty());
 }
 
+TEST_F(SessionPlaybackTest, GrimodexCommandIsNotRetriedIntoNewSession) {
+  constexpr int kOldSessionId = 123;
+  constexpr int kReplacementSessionId = 456;
+  ASSERT_TRUE(SetupConnection(kOldSessionId));
+
+  commands::Context context;
+  context.mutable_grimodex()->set_focus_epoch(9);
+  commands::Output valid_output;
+  valid_output.set_id(kOldSessionId);
+  valid_output.set_consumed(true);
+  SetMockOutput(valid_output);
+  commands::KeyEvent key;
+  key.set_key_code('a');
+  commands::Output output;
+  ASSERT_TRUE(client_->SendKeyWithContext(key, context, &output));
+
+  commands::Output stale_output;
+  stale_output.set_id(kReplacementSessionId);
+  stale_output.set_consumed(true);
+  SetMockOutput(stale_output);
+
+  commands::SessionCommand select;
+  select.set_type(commands::SessionCommand::SELECT_CANDIDATE);
+  select.set_id(0);
+
+  EXPECT_FALSE(client_->SendCommandWithContext(select, context, &output));
+
+  std::vector<commands::Input> history;
+  client_peer().GetHistoryInputs(&history);
+  EXPECT_TRUE(history.empty());
+}
+
 // b/2797557
 TEST_F(SessionPlaybackTest, PushAndResetHistoryWithModeTest) {
   const int mock_id = 123;

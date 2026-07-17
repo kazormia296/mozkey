@@ -414,6 +414,14 @@ bool Client::EnsureCallCommand(commands::Input *input,
   if (server_status_ == SERVER_SHUTDOWN ||
       server_status_ == SERVER_INVALID_SESSION) {
     if (EnsureSession()) {
+      if (grimodex_managed_session_) {
+        // Candidate IDs, callback generations, effects, and commits belong to
+        // the destroyed session.  Do not retry even the current protobuf
+        // command automatically.  The Fcitx adapter may reconstruct a bounded
+        // non-secure raw reading, but secure input is never recovered.
+        history_inputs_.clear();
+        return false;
+      }
       // playback the history to restore the previous state.
       PlaybackHistory();
       InitInput(input);
