@@ -128,6 +128,16 @@ mozc_cc_library(
     ),
 )
 
+# Keep the production path manager private.  The Linux runtime fault-injection
+# test needs the resolved Unix socket address in order to terminate a request
+# mid-frame, so expose it only through this test-only alias.
+alias(
+    name = "ipc_path_manager_for_unix_runtime_test",
+    actual = ":ipc_path_manager",
+    testonly = True,
+    visibility = ["//unix:__pkg__"],
+)
+
 mozc_cc_test(
     name = "ipc_path_manager_test",
     size = "small",
