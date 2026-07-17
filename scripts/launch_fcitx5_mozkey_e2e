@@ -1,0 +1,110 @@
+#!/bin/sh
+
+# Launch the installed Mozkey Fcitx5 addon in the private environment supplied
+# by Grimodex's ignored Linux process E2E.  This script must not fall back to a
+# user's normal Fcitx profile or to a standalone mozc_server process.
+set -eu
+
+umask 077
+
+die() {
+  echo "launch_fcitx5_mozkey_e2e: $*" >&2
+  exit 1
+}
+
+require_private_directory() {
+  directory_name="$1"
+  directory_path="$2"
+
+  case "${directory_path}" in
+    /*) ;;
+    *) die "${directory_name} must be an absolute path" ;;
+  esac
+  [ -d "${directory_path}" ] ||
+    die "${directory_name} is not a directory: ${directory_path}"
+  [ ! -L "${directory_path}" ] ||
+    die "${directory_name} must not be a symlink: ${directory_path}"
+
+  directory_owner="$(stat -c '%u' -- "${directory_path}")"
+  [ "${directory_owner}" = "$(id -u)" ] ||
+    die "${directory_name} must be owned by the current user: ${directory_path}"
+
+  directory_mode="$(stat -c '%a' -- "${directory_path}")"
+  case "${directory_mode}" in
+    *[!0-7]*|'') die "could not read ${directory_name} permissions" ;;
+  esac
+  if [ $((0${directory_mode} & 077)) -ne 0 ]; then
+    die "${directory_name} must not grant group/other access: ${directory_path}"
+  fi
+}
+
+require_regular_file() {
+  installed_path="$1"
+  [ -f "${installed_path}" ] && [ ! -L "${installed_path}" ] ||
+    die "installed Mozkey product file is missing or unsafe: ${installed_path}"
+}
+
+: "${GRIMODEX_IME_ROOT:?must be supplied by the Grimodex process E2E}"
+: "${HOME:?must be supplied by the Grimodex process E2E}"
+: "${XDG_RUNTIME_DIR:?must be supplied by the Grimodex process E2E}"
+: "${XDG_DATA_HOME:?must be supplied by the Grimodex process E2E}"
+: "${XDG_CONFIG_HOME:?must be supplied by the Grimodex process E2E}"
+: "${XDG_STATE_HOME:?must be supplied by the Grimodex process E2E}"
+: "${XDG_CACHE_HOME:?must be supplied by the Grimodex process E2E}"
+
+require_private_directory GRIMODEX_IME_ROOT "${GRIMODEX_IME_ROOT}"
+require_private_directory HOME "${HOME}"
+require_private_directory XDG_RUNTIME_DIR "${XDG_RUNTIME_DIR}"
+require_private_directory XDG_DATA_HOME "${XDG_DATA_HOME}"
+require_private_directory XDG_CONFIG_HOME "${XDG_CONFIG_HOME}"
+require_private_directory XDG_STATE_HOME "${XDG_STATE_HOME}"
+require_private_directory XDG_CACHE_HOME "${XDG_CACHE_HOME}"
+
+fcitx5_binary="$(command -v fcitx5)" || die "fcitx5 is not installed"
+dbus_run_session="$(command -v dbus-run-session)" ||
+  die "dbus-run-session is not installed"
+
+require_regular_file /usr/lib/fcitx5/fcitx5-mozkey.so
+require_regular_file /usr/lib/mozkey/mozc_server
+require_regular_file /usr/share/fcitx5/addon/mozkey.conf
+require_regular_file /usr/share/fcitx5/inputmethod/mozkey.conf
+[ -x /usr/lib/mozkey/mozc_server ] ||
+  die "installed Mozkey server is not executable: /usr/lib/mozkey/mozc_server"
+grep -qx 'Library=fcitx5-mozkey' /usr/share/fcitx5/addon/mozkey.conf ||
+  die "installed addon metadata does not select fcitx5-mozkey"
+grep -qx 'Addon=mozkey' /usr/share/fcitx5/inputmethod/mozkey.conf ||
+  die "installed input method metadata does not select the mozkey addon"
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+profile_fixture="${script_directory}/fixtures/fcitx5-mozkey-e2e/profile"
+require_regular_file "${profile_fixture}"
+
+fcitx_config_directory="${XDG_CONFIG_HOME}/fcitx5"
+[ ! -L "${fcitx_config_directory}" ] ||
+  die "private Fcitx config directory must not be a symlink"
+mkdir -p -- "${fcitx_config_directory}"
+chmod 0700 -- "${fcitx_config_directory}"
+
+profile_destination="${fcitx_config_directory}/profile"
+[ ! -L "${profile_destination}" ] ||
+  die "private Fcitx profile must not be a symlink"
+install -m 0600 -- "${profile_fixture}" "${profile_destination}"
+
+# Preserve every private *_HOME directory from the E2E.  Only provide the
+# standard system lookup defaults when the caller has not supplied them; this
+# is where the installed addon and input-method metadata live.
+XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+XDG_CONFIG_DIRS="${XDG_CONFIG_DIRS:-/etc/xdg}"
+export XDG_DATA_DIRS XDG_CONFIG_DIRS
+
+# Never attach the isolated process to the user's graphical or D-Bus session.
+# `-k` keeps the foreground instance alive without a display.  Keep Fcitx's
+# normal infrastructure (including its D-Bus module), but disable the legacy
+# competing IME addons and force-enable `mozkey`.  The private profile also
+# selects Mozkey as DefaultIM, making MozcEngine construction and its startup
+# heartbeat deterministic.
+unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID DBUS_SESSION_BUS_WINDOWID
+unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET XAUTHORITY
+
+exec "${dbus_run_session}" -- "${fcitx5_binary}" -D -k \
+  --disable mozc,grimodex --enable mozkey --verbose default=4

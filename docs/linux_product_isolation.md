@@ -45,3 +45,14 @@ sudo env PREFIX=/usr ./scripts/uninstall_mozkey_fcitx5
 It deliberately preserves `$XDG_CONFIG_HOME/mozkey`, `~/.config/mozkey`, the
 legacy profile, Zenz models, and Grimodex Protocol v1 snapshots. Windows and
 macOS product paths are unchanged.
+
+## Real Fcitx5 consumer E2E
+
+Grimodex's ignored Linux process test must use the installed addon rather than
+launch `mozc_server` directly. After installing the Mozkey Fcitx5 and server
+products, point `GRIMODEX_LINUX_MOZKEY_LAUNCHER` at
+`scripts/launch_fcitx5_mozkey_e2e` in this checkout. The launcher preserves the
+test-provided `GRIMODEX_IME_ROOT`, `HOME`, and XDG homes, installs a private
+Mozkey-only Fcitx profile, and starts foreground Fcitx5 on a new D-Bus session.
+Detection of `consumers/fcitx5-mozkey.json` therefore proves the actual addon
+was loaded and executed its startup heartbeat.
