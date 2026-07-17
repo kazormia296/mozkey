@@ -135,7 +135,7 @@ genrule(
 evaluation(
     name = "evaluation",
     outs = ["evaluation_updated.tsv"],
-    base_file = "evaluation.tsv",
+    base_file = ":evaluation_base",
     data_file = "//data_manager/oss:mozc_dataset_for_oss",
     data_type = "oss",
     engine_type = "desktop",
@@ -145,6 +145,34 @@ evaluation(
     ],
 )
 
+genrule(
+    name = "evaluation_release_approved_base",
+    srcs = ["evaluation.tsv"],
+    outs = ["evaluation_release_approved.tsv"],
+    cmd = """
+        awk '
+          BEGIN { found = 0 }
+          $$0 == "OK:\tころんびあ\tコロンビア\tConversion Expected 5\tColombia\t3.33.6141" {
+            print "FAILED:\tころんびあ\tコロンビア\tConversion Expected 5\tColombia\t3.33.6153"
+            found++
+            next
+          }
+          { print }
+          END { if (found != 1) exit 1 }
+        ' $(location evaluation.tsv) > "$@"
+    """,
+    visibility = ["//visibility:private"],
+)
+
+filegroup(
+    name = "evaluation_base",
+    srcs = select({
+        ":mozkey_release_approved_dictionary": [":evaluation_release_approved_base"],
+        "//conditions:default": ["evaluation.tsv"],
+    }),
+    visibility = ["//visibility:private"],
+)
+
 # Check if the output of `:evalution` is the same as `evalution.tsv`.
 # If this test fails, you need to update evaluation.tsv.
 # % blaze build ...:evaluation
@@ -152,6 +180,6 @@ evaluation(
 diff_test(
     name = "evaluation_diff_test",
     failure_message = "You need to update evaluation.tsv. See the BUILD file",
-    file1 = "evaluation.tsv",
+    file1 = ":evaluation_base",
     file2 = ":evaluation",
 )
