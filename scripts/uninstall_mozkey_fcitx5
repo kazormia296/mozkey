@@ -40,12 +40,49 @@ if [ "${MOZKEY_REMOVE_GRIMODEX_CONSUMER:-0}" = 1 ]; then
     echo "GRIMODEX_IME_ROOT is required when removing the user consumer" >&2
     exit 2
   fi
+  case "${GRIMODEX_IME_ROOT}" in
+    /*) ;;
+    *)
+      echo "GRIMODEX_IME_ROOT must be absolute" >&2
+      exit 2
+      ;;
+  esac
+  consumer_helper="${install_root}/lib/mozkey/unregister-grimodex-consumer"
+  if [ ! -x "${consumer_helper}" ] || [ ! -d "${GRIMODEX_IME_ROOT}" ] ||
+     [ -L "${GRIMODEX_IME_ROOT}" ]; then
+    echo "consumer helper or GRIMODEX_IME_ROOT is unavailable" >&2
+    exit 2
+  fi
+  ime_root_owner=$(stat -c '%u:%g' -- "${GRIMODEX_IME_ROOT}")
+  ime_root_uid=${ime_root_owner%%:*}
+  ime_root_gid=${ime_root_owner#*:}
+  case "${ime_root_uid}:${ime_root_gid}" in
+    *[!0-9:]*|:|*:)
+      echo "invalid GRIMODEX_IME_ROOT owner: ${ime_root_owner}" >&2
+      exit 2
+      ;;
+  esac
+  setpriv_path=
+  env_path=
+  if [ "$(id -u)" = 0 ] && [ "${ime_root_uid}" != 0 ]; then
+    setpriv_path=$(command -v setpriv || true)
+    env_path=$(command -v env || true)
+    if [ -z "${setpriv_path}" ] || [ -z "${env_path}" ]; then
+      echo "setpriv and env are required for root-owned package removal" >&2
+      exit 2
+    fi
+  fi
   # Remove the product marker first. A still-running Fcitx process may keep
   # this addon mapped, but its heartbeat rechecks the marker after publishing
   # and therefore cannot resurrect the consumer after the helper returns.
   rm -f -- "${install_root}/lib/mozkey/mozc_server"
-  GRIMODEX_IME_ROOT="${GRIMODEX_IME_ROOT}" \
-    "${install_root}/lib/mozkey/unregister-grimodex-consumer"
+  if [ "$(id -u)" = 0 ] && [ "${ime_root_uid}" != 0 ]; then
+    "${setpriv_path}" --reuid "${ime_root_uid}" --regid "${ime_root_gid}" \
+      --clear-groups -- "${env_path}" \
+      GRIMODEX_IME_ROOT="${GRIMODEX_IME_ROOT}" "${consumer_helper}"
+  else
+    GRIMODEX_IME_ROOT="${GRIMODEX_IME_ROOT}" "${consumer_helper}"
+  fi
 fi
 
 while IFS= read -r relative_path; do
