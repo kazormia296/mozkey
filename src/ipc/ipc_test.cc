@@ -29,15 +29,29 @@
 
 #include "ipc/ipc.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
+
+#ifdef __linux__
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+
+#include <cerrno>
+#endif  // __linux__
 
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "base/thread.h"
+#ifdef __linux__
+#include "ipc/ipc_path_manager.h"
+#endif  // __linux__
 #include "testing/gunit.h"
 #include "testing/mozctest.h"
 
@@ -75,9 +89,33 @@ class EchoServer : public IPCServer {
   }
 };
 
+#ifdef __linux__
+class CountingEchoServer : public IPCServer {
+ public:
+  CountingEchoServer(absl::string_view path, int32_t num_connections,
+                     absl::Duration timeout)
+      : IPCServer(path, num_connections, timeout) {}
+
+  bool Process(absl::string_view input, std::string *output) override {
+    ++process_count_;
+    if (input == "kill") {
+      output->clear();
+      return false;
+    }
+    output->assign(input.data(), input.size());
+    return true;
+  }
+
+  int process_count() const { return process_count_.load(); }
+
+ private:
+  std::atomic<int> process_count_ = 0;
+};
+#endif  // __linux__
+
 constexpr size_t kBaseBufferSizes[] = {
     16,        256,        1024,       16 * 1024,   32 * 1024,
-    64 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024,
+    64 * 1024, 256 * 1024, 512 * 1024, IPC_MAX_MESSAGE_SIZE - 64,
 };
 
 constexpr int kBufferDiffs[] = {
@@ -91,6 +129,7 @@ std::string GenerateInputData(int i) {
   if (diff >= 0 || size >= -diff) {
     size += diff;
   }
+  size = std::min(size, IPC_MAX_MESSAGE_SIZE);
 
   // Fill the result with 'x' then add some entropy to it.
   std::string result(size, 'x');
@@ -162,6 +201,62 @@ TEST_F(IPCTest, IPCTest) {
 
   con.Wait();
 }
+
+#ifdef __linux__
+TEST_F(IPCTest, RejectsOversizeMessageBeforeProcessing) {
+  constexpr char kOversizeServerAddress[] = "oversize_echo_server";
+  CountingEchoServer server(kOversizeServerAddress, 2,
+                            absl::Milliseconds(3000));
+  ASSERT_TRUE(server.Connected());
+  server.LoopAndReturn();
+
+  IPCPathManager *manager =
+      IPCPathManager::GetIPCPathManager(kOversizeServerAddress);
+  ASSERT_NE(manager, nullptr);
+  std::string server_address;
+  ASSERT_TRUE(manager->GetPathName(&server_address));
+  ASSERT_LT(server_address.size(), sizeof(sockaddr_un::sun_path));
+
+  const int socket = ::socket(PF_UNIX, SOCK_STREAM, 0);
+  ASSERT_GE(socket, 0);
+  sockaddr_un address = {};
+  address.sun_family = AF_UNIX;
+  std::memcpy(address.sun_path, server_address.data(), server_address.size());
+  const size_t address_length =
+      sizeof(address.sun_family) + server_address.size();
+  ASSERT_EQ(::connect(socket, reinterpret_cast<sockaddr *>(&address),
+                      address_length),
+            0)
+      << std::strerror(errno);
+
+  const std::string oversized(IPC_MAX_MESSAGE_SIZE + 1, 'x');
+  size_t offset = 0;
+  while (offset < oversized.size()) {
+    const ssize_t sent =
+        ::send(socket, oversized.data() + offset, oversized.size() - offset,
+               MSG_NOSIGNAL);
+    if (sent < 0) {
+      EXPECT_EQ(errno, EPIPE);
+      break;
+    }
+    offset += static_cast<size_t>(sent);
+  }
+  ::shutdown(socket, SHUT_WR);
+  ::close(socket);
+
+  IPCClient valid(kOversizeServerAddress, "");
+  ASSERT_TRUE(valid.Connected());
+  std::string response;
+  ASSERT_TRUE(valid.Call("ok", &response, absl::Milliseconds(3000)));
+  EXPECT_EQ(response, "ok");
+  EXPECT_EQ(server.process_count(), 1);
+
+  IPCClient kill(kOversizeServerAddress, "");
+  ASSERT_TRUE(kill.Connected());
+  kill.Call("kill", &response, absl::Milliseconds(3000));
+  server.Wait();
+}
+#endif  // __linux__
 
 }  // namespace
 }  // namespace mozc

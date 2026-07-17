@@ -38,6 +38,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -141,7 +142,12 @@ bool IsPeerValid(int socket, pid_t *pid) {
 
 IPCErrorType SendMessage(int socket, absl::string_view msg,
                          absl::Duration timeout) {
-  int offset = 0;
+  if (msg.size() > IPC_MAX_MESSAGE_SIZE) {
+    LOG(WARNING) << "IPC message exceeds limit: " << msg.size();
+    return IPC_MORE_DATA;
+  }
+
+  size_t offset = 0;
   while (msg.size() != offset) {
     if (IsWriteTimeout(socket, timeout)) {
       LOG(WARNING) << "Write timeout " << timeout;
@@ -166,27 +172,44 @@ IPCErrorType RecvMessage(int socket, std::string *msg, absl::Duration timeout) {
     LOG(WARNING) << "msg is nullptr";
     return IPC_UNKNOWN_ERROR;
   }
+  static_assert(IPC_INITIAL_READ_BUFFER_SIZE <= IPC_MAX_MESSAGE_SIZE);
   msg->resize(IPC_INITIAL_READ_BUFFER_SIZE);
   ssize_t read_length = 0;
-  int offset = 0;
-  do {
+  size_t offset = 0;
+  while (true) {
     if (IsReadTimeout(socket, timeout)) {
       LOG(WARNING) << "Read timeout " << timeout;
       msg->clear();
       return IPC_TIMEOUT_ERROR;
     }
-    read_length = ::recv(socket, msg->data() + offset, msg->size() - offset,
-                         /* flags */ 0);
+    if (offset == IPC_MAX_MESSAGE_SIZE) {
+      // A full buffer can still be a valid exact-limit message.  Probe one
+      // byte without growing the allocation to distinguish EOF from overflow.
+      char overflow_byte;
+      read_length = ::recv(socket, &overflow_byte, 1, /* flags */ 0);
+      if (read_length > 0) {
+        LOG(WARNING) << "IPC message exceeds limit: "
+                     << IPC_MAX_MESSAGE_SIZE;
+        msg->clear();
+        return IPC_MORE_DATA;
+      }
+    } else {
+      read_length = ::recv(socket, msg->data() + offset, msg->size() - offset,
+                           /* flags */ 0);
+    }
     if (read_length < 0) {
       LOG(ERROR) << "an error occurred during recv(): " << strerror(errno);
       msg->clear();
       return IPC_READ_ERROR;
     }
-    offset += read_length;
-    if (msg->size() == offset) {
-      msg->resize(msg->size() * 2);
+    if (read_length == 0) {
+      break;
     }
-  } while (read_length != 0);
+    offset += static_cast<size_t>(read_length);
+    if (msg->size() == offset) {
+      msg->resize(std::min(msg->size() * 2, IPC_MAX_MESSAGE_SIZE));
+    }
+  }
   MOZC_VLOG(1) << offset << " bytes received";
   msg->resize(offset);
   return IPC_NO_ERROR;

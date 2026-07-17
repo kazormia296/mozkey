@@ -185,6 +185,7 @@ mozc_cc_test(
     copts = ["$(STACK_FRAME_UNLIMITED)"],  # ipc_test.cc
     deps = [
         ":ipc",
+        ":ipc_path_manager",
         ":ipc_test_util",
         "//base:thread",
         "//testing:gunit_main",

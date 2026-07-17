@@ -57,6 +57,12 @@ class IPCPathManager;
 
 inline constexpr size_t IPC_INITIAL_READ_BUFFER_SIZE = 16 * 16384;
 
+// Mozc commands are intentionally small.  Keep the transport bounded so that
+// a same-UID peer cannot make the server grow an input buffer without limit.
+// Project dictionary payloads are loaded from the verified snapshot store and
+// must never be sent over this IPC channel.
+inline constexpr size_t IPC_MAX_MESSAGE_SIZE = 1024 * 1024;
+
 // increment this value if protocol has changed.
 inline constexpr int IPC_PROTOCOL_VERSION = 3;
 
