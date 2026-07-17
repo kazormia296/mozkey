@@ -42,6 +42,7 @@
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/dictionary_token.h"
 #include "dictionary/pos_matcher.h"
+#include "dictionary/project_dictionary.h"
 #include "protocol/config.pb.h"
 #include "request/conversion_request.h"
 
@@ -146,6 +147,12 @@ void DictionaryImpl::LookupPredictive(
     Callback* callback) const {
   CallbackWithFilter callback_with_filter(conversion_request, pos_matcher_,
                                           user_dictionary_, callback);
+  if (!conversion_request.incognito_mode()) {
+    if (const auto project_dictionary =
+            conversion_request.project_dictionary()) {
+      project_dictionary->LookupPredictive(key, &callback_with_filter);
+    }
+  }
   for (const DictionaryInterface* dic :
        GetDictionaries(conversion_request.incognito_mode())) {
     dic->LookupPredictive(key, &callback_with_filter);
@@ -157,6 +164,12 @@ void DictionaryImpl::LookupPrefix(absl::string_view key,
                                   Callback* callback) const {
   CallbackWithFilter callback_with_filter(conversion_request, pos_matcher_,
                                           user_dictionary_, callback);
+  if (!conversion_request.incognito_mode()) {
+    if (const auto project_dictionary =
+            conversion_request.project_dictionary()) {
+      project_dictionary->LookupPrefix(key, &callback_with_filter);
+    }
+  }
   for (const DictionaryInterface* dic :
        GetDictionaries(conversion_request.incognito_mode())) {
     dic->LookupPrefix(key, &callback_with_filter);
@@ -168,6 +181,12 @@ void DictionaryImpl::LookupExact(absl::string_view key,
                                  Callback* callback) const {
   CallbackWithFilter callback_with_filter(conversion_request, pos_matcher_,
                                           user_dictionary_, callback);
+  if (!conversion_request.incognito_mode()) {
+    if (const auto project_dictionary =
+            conversion_request.project_dictionary()) {
+      project_dictionary->LookupExact(key, &callback_with_filter);
+    }
+  }
   for (const DictionaryInterface* dic :
        GetDictionaries(conversion_request.incognito_mode())) {
     dic->LookupExact(key, &callback_with_filter);

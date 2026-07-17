@@ -41,6 +41,18 @@
 #include "absl/strings/str_replace.h"
 
 namespace mozc::session {
+
+bool IsZenzProtectedDictionaryCandidate(
+    const commands::CandidateWord& candidate) {
+  for (const int attribute : candidate.attributes()) {
+    if (attribute == commands::USER_DICTIONARY ||
+        attribute == commands::PROJECT_DICTIONARY) {
+      return true;
+    }
+  }
+  return false;
+}
+
 namespace {
 
 bool DecodeUtf8Char(absl::string_view s, size_t* index, char32_t* out) {

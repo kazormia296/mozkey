@@ -75,6 +75,7 @@ mozc_cc_library(
     srcs = ["zenz_adoption_policy.cc"],
     hdrs = ["zenz_adoption_policy.h"],
     deps = [
+        "//protocol:candidate_window_cc_proto",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -130,6 +131,7 @@ mozc_cc_test(
     srcs = ["zenz_adoption_policy_test.cc"],
     deps = [
         ":zenz_adoption_policy",
+        "//protocol:candidate_window_cc_proto",
         "//testing:gunit_main",
     ],
 )

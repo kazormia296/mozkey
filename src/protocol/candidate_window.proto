@@ -145,6 +145,7 @@ enum CandidateAttribute {
   SPELLING_CORRECTION = 3;  // "ふいんき"→"雰囲気"
   TYPING_CORRECTION = 4;    // "やんしょん"(with 12-key)→"マンション"
   DELETABLE = 5;
+  PROJECT_DICTIONARY = 6;
 }
 
 message InformationList {

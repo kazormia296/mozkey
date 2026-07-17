@@ -292,8 +292,11 @@ void RemoveRedundantResults(std::vector<Result>* results) {
 
     // Traverse all remaining elements and check if each result is redundant.
     for (auto iter = min_iter; iter != max_iter;) {
-      // We do not filter user dictionary word.
-      if (iter->candidate_attributes & converter::Attribute::USER_DICTIONARY) {
+      // Keep user and project dictionary provenance for the final candidate
+      // ranking/dedup pass.
+      if (iter->candidate_attributes &
+          (converter::Attribute::USER_DICTIONARY |
+           converter::Attribute::PROJECT_DICTIONARY)) {
         ++iter;
         continue;
       }

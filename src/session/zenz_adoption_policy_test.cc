@@ -33,10 +33,24 @@
 #include <utility>
 #include <vector>
 
+#include "protocol/candidate_window.pb.h"
 #include "testing/gunit.h"
 
 namespace mozc::session {
 namespace {
+
+TEST(ZenzAdoptionPolicyTest, ProtectsUserAndProjectDictionaryCandidates) {
+  commands::CandidateWord standard;
+  EXPECT_FALSE(IsZenzProtectedDictionaryCandidate(standard));
+
+  commands::CandidateWord user;
+  user.add_attributes(commands::USER_DICTIONARY);
+  EXPECT_TRUE(IsZenzProtectedDictionaryCandidate(user));
+
+  commands::CandidateWord project;
+  project.add_attributes(commands::PROJECT_DICTIONARY);
+  EXPECT_TRUE(IsZenzProtectedDictionaryCandidate(project));
+}
 
 ProtectedConversionSpan BuildSpan(
     std::string key, std::string value, ProtectedConversionSpan::Tier tier,

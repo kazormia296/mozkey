@@ -1463,16 +1463,6 @@ bool ShouldKeepPendingLiveConversionForTransientSokuon(absl::string_view key) {
          has_transient_stem_suffix("まわ");    // 回っ...
 }
 
-bool CandidateWordHasAttribute(const commands::CandidateWord& candidate,
-                               commands::CandidateAttribute attribute) {
-  for (int i = 0; i < candidate.attributes_size(); ++i) {
-    if (candidate.attributes(i) == attribute) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool IsAsciiIdentityChar(const unsigned char c) {
   return (('0' <= c) && (c <= '9')) || (('A' <= c) && (c <= 'Z')) ||
          (('a' <= c) && (c <= 'z')) || c == '_' || c == '-' || c == '.' ||
@@ -1934,7 +1924,7 @@ std::vector<ProtectedConversionSpan> BuildZenzProtectedConversionSpans(
       const commands::CandidateWord& candidate = candidate_list.candidates(i);
       const bool focused_candidate = candidate.index() == focused_index;
 
-      if (!CandidateWordHasAttribute(candidate, commands::USER_DICTIONARY)) {
+      if (!IsZenzProtectedDictionaryCandidate(candidate)) {
         continue;
       }
 

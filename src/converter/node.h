@@ -51,6 +51,7 @@ struct Node {
     SYSTEM_DICTIONARY = 1 << 0,      // System dictionary (not used now)
     USER_DICTIONARY = 1 << 1,        // User dictionary
     NO_VARIANTS_EXPANSION = 1 << 2,  // No need to expand full/half
+    PROJECT_DICTIONARY = 1 << 3,     // Session-scoped project dictionary
     STARTS_WITH_PARTICLE = 1 << 4,   // User input starts with particle
     SPELLING_CORRECTION = 1 << 5,    // "Did you mean"
     // Equal to that of Candidate.
@@ -141,6 +142,10 @@ struct Node {
     }
     if (token.attributes & dictionary::Token::USER_DICTIONARY) {
       attributes |= USER_DICTIONARY;
+      attributes |= NO_VARIANTS_EXPANSION;
+    }
+    if (token.attributes & dictionary::Token::PROJECT_DICTIONARY) {
+      attributes |= PROJECT_DICTIONARY;
       attributes |= NO_VARIANTS_EXPANSION;
     }
     key = token.key;

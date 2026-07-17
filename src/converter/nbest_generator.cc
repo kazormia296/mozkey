@@ -196,6 +196,12 @@ void NBestGenerator::MakeCandidate(
     if (node->attributes & Node::USER_DICTIONARY) {
       candidate.attributes |= Attribute::USER_DICTIONARY;
     }
+    if (node->attributes & Node::PROJECT_DICTIONARY) {
+      candidate.attributes |=
+          (Attribute::PROJECT_DICTIONARY | Attribute::NO_LEARNING |
+           Attribute::NO_DELETABLE | Attribute::NO_VARIANTS_EXPANSION |
+           Attribute::NO_MODIFICATION);
+    }
     if (node->attributes & Node::SUFFIX_DICTIONARY) {
       candidate.attributes |= Attribute::SUFFIX_DICTIONARY;
     }

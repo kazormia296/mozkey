@@ -29,6 +29,7 @@
 
 #include "converter/nbest_generator.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -38,6 +39,7 @@
 #include "absl/log/check.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "converter/attribute.h"
 #include "converter/candidate.h"
 #include "converter/immutable_converter.h"
 #include "converter/lattice.h"
@@ -45,6 +47,7 @@
 #include "converter/segments.h"
 #include "converter/segments_matchers.h"
 #include "data_manager/testing/mock_data_manager.h"
+#include "dictionary/project_dictionary.h"
 #include "engine/modules.h"
 #include "request/conversion_request.h"
 #include "testing/gmock.h"
@@ -54,6 +57,7 @@
 namespace mozc {
 
 using ::mozc::converter::Candidate;
+using ::mozc::converter::Attribute;
 
 class ImmutableConverterTestPeer : testing::TestPeer<ImmutableConverter> {
  public:
@@ -80,6 +84,9 @@ class MockDataAndImmutableConverter {
   }
 
   ImmutableConverter* GetConverter() { return immutable_converter_.get(); }
+  const dictionary::PosMatcher& GetPosMatcher() const {
+    return modules_->GetPosMatcher();
+  }
   ImmutableConverterTestPeer GetConverterTestPeer() {
     return ImmutableConverterTestPeer(*immutable_converter_);
   }
@@ -230,6 +237,64 @@ TEST_F(NBestGeneratorTest, SingleSegmentConnectionTest) {
     ASSERT_LT(1, result_segment.candidates_size());
     EXPECT_EQ(result_segment.candidate(0).value, "私の名前は中ノです");
   }
+}
+
+TEST_F(NBestGeneratorTest, ProjectDictionaryAttributesSurviveNBest) {
+  auto data_and_converter = std::make_unique<MockDataAndImmutableConverter>();
+  ImmutableConverterTestPeer converter =
+      data_and_converter->GetConverterTestPeer();
+  const uint16_t noun_id =
+      data_and_converter->GetPosMatcher().GetGeneralNounId();
+  auto snapshot = dictionary::ProjectDictionarySnapshot::Create(
+      1, "project-a", "sha256:test",
+      {dictionary::ProjectDictionaryEntry{
+          .key = "こーでっくすじしょ",
+          .value = "Codex辞書",
+          .cost = 100,
+          .lid = noun_id,
+          .rid = noun_id,
+          .priority = 3,
+          .entry_id = "entry-1",
+      }});
+  ASSERT_TRUE(snapshot.ok()) << snapshot.status();
+
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_segment_type(Segment::FREE);
+  segment->set_key("こーでっくすじしょ");
+
+  Lattice lattice;
+  lattice.SetKey("こーでっくすじしょ");
+  const ConversionRequest request =
+      ConversionRequestBuilder()
+          .SetProjectDictionary(*snapshot)
+          .SetRequestType(ConversionRequest::CONVERSION)
+          .Build();
+  converter.MakeLattice(request, &segments, &lattice);
+  const std::vector<uint16_t> group = converter.MakeGroup(segments);
+  converter.Viterbi(segments, &lattice);
+
+  std::unique_ptr<NBestGenerator> nbest_generator =
+      data_and_converter->CreateNBestGenerator(lattice);
+  const Node* begin_node = lattice.bos_node();
+  const Node* end_node =
+      GetEndNode(request, converter, segments, *begin_node, group, true);
+  nbest_generator->Reset(
+      begin_node, end_node,
+      {NBestGenerator::ONLY_EDGE, NBestGenerator::CANDIDATE_MODE_NONE});
+  Segment result_segment;
+  nbest_generator->SetCandidates(request, "", 20, &result_segment);
+
+  const auto project_candidate = std::find_if(
+      result_segment.candidates().begin(), result_segment.candidates().end(),
+      [](const Candidate* candidate) { return candidate->value == "Codex辞書"; });
+  ASSERT_NE(project_candidate, result_segment.candidates().end());
+  const Candidate& candidate = **project_candidate;
+  EXPECT_NE(candidate.attributes & Attribute::PROJECT_DICTIONARY, 0);
+  EXPECT_NE(candidate.attributes & Attribute::NO_LEARNING, 0);
+  EXPECT_NE(candidate.attributes & Attribute::NO_DELETABLE, 0);
+  EXPECT_NE(candidate.attributes & Attribute::NO_VARIANTS_EXPANSION, 0);
+  EXPECT_NE(candidate.attributes & Attribute::NO_MODIFICATION, 0);
 }
 
 TEST_F(NBestGeneratorTest, InnerSegmentBoundary) {

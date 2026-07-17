@@ -364,8 +364,8 @@ TEST(EngineOutputTest, FillAllCandidateWords_Attributes) {
   const char* kKey = "key";
   segment.set_key(kKey);
 
-  const char* kValues[6] = {"value_0", "value_1", "value_2",
-                            "value_3", "value_4", "value_5"};
+  const char* kValues[7] = {"value_0", "value_1", "value_2", "value_3",
+                            "value_4", "value_5", "value_6"};
   constexpr size_t kValueSize = std::size(kValues);
   for (size_t i = 0; i < kValueSize; ++i) {
     converter::Candidate* candidate = segment.push_back_candidate();
@@ -389,6 +389,10 @@ TEST(EngineOutputTest, FillAllCandidateWords_Attributes) {
   segment.mutable_candidate(5)->attributes =
       converter::Attribute::USER_HISTORY_PREDICTION |
       converter::Attribute::NO_DELETABLE;
+  segment.mutable_candidate(6)->attributes =
+      converter::Attribute::PROJECT_DICTIONARY |
+      converter::Attribute::NO_LEARNING |
+      converter::Attribute::NO_MODIFICATION;
 
   candidate_list.set_focused(true);
   candidate_list.MoveToId(0);
@@ -429,6 +433,10 @@ TEST(EngineOutputTest, FillAllCandidateWords_Attributes) {
   EXPECT_EQ(1, candidates_proto.candidates(5).attributes_size());
   EXPECT_EQ(candidates_proto.candidates(5).attributes(0),
             commands::CandidateAttribute::USER_HISTORY);
+
+  EXPECT_EQ(1, candidates_proto.candidates(6).attributes_size());
+  EXPECT_EQ(candidates_proto.candidates(6).attributes(0),
+            commands::CandidateAttribute::PROJECT_DICTIONARY);
 }
 
 TEST(EngineOutputTest, ShouldShowUsages) {

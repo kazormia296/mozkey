@@ -183,6 +183,17 @@ mozc_cc_library(
     ],
 )
 
+mozc_cc_test(
+    name = "node_test",
+    size = "small",
+    srcs = ["node_test.cc"],
+    deps = [
+        ":node",
+        "//dictionary:dictionary_token",
+        "//testing:gunit_main",
+    ],
+)
+
 mozc_cc_library(
     name = "node_allocator",
     hdrs = ["node_allocator.h"],
@@ -289,6 +300,7 @@ mozc_cc_test(
         "nbest_generator_test.cc",
     ],
     deps = [
+        ":attribute",
         ":immutable_converter",
         ":lattice",
         ":nbest_generator",
@@ -296,6 +308,7 @@ mozc_cc_test(
         ":segments",
         ":segments_matchers",
         "//data_manager/testing:mock_data_manager",
+        "//dictionary:project_dictionary",
         "//engine:modules",
         "//request:conversion_request",
         "//testing:gunit_main",

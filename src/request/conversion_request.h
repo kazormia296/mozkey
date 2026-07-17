@@ -54,6 +54,10 @@
 
 namespace mozc {
 
+namespace dictionary {
+class ProjectDictionarySnapshot;
+}  // namespace dictionary
+
 namespace internal {
 
 // Helper class that holds either the view or copy of T.
@@ -181,6 +185,14 @@ class ConversionRequest {
     return *history_result_;
   }
 
+  // Immutable project dictionary generation pinned by the owning composition.
+  // Returning a shared pointer by value keeps the snapshot alive for the whole
+  // converter request even if the session publishes a newer generation.
+  std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+  project_dictionary() const {
+    return project_dictionary_;
+  }
+
   bool IsKanaModifierInsensitiveConversion() const {
     return request_->kana_modifier_insensitive_conversion() &&
            config_->use_kana_modifier_insensitive_conversion() &&
@@ -245,6 +257,11 @@ class ConversionRequest {
   // Key used for conversion.
   // This is typically a Hiragana text to be converted to Kanji words.
   std::string key_;
+
+  // Optional session/composition-scoped dictionary.  This is separate from
+  // Mozc's persistent UserDictionary by design.
+  std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+      project_dictionary_;
 };
 
 class ConversionRequestBuilder {
@@ -276,6 +293,7 @@ class ConversionRequestBuilder {
     request_.history_result_ = base_convreq.history_result_;
     request_.options_ = base_convreq.options_;
     request_.key_ = base_convreq.key_;
+    request_.project_dictionary_ = base_convreq.project_dictionary_;
     return *this;
   }
   ConversionRequestBuilder& SetConversionRequestView(
@@ -290,6 +308,7 @@ class ConversionRequestBuilder {
     request_.options_ = base_convreq.options_;
     request_.key_ = base_convreq.key_;
     request_.history_result_.set_view(*base_convreq.history_result_);
+    request_.project_dictionary_ = base_convreq.project_dictionary_;
     return *this;
   }
   ConversionRequestBuilder& SetComposerData(
@@ -360,6 +379,13 @@ class ConversionRequestBuilder {
   }
   ConversionRequestBuilder& SetEmptyHistoryResult() {
     return SetHistoryResultView(prediction::Result::DefaultResult());
+  }
+  ConversionRequestBuilder& SetProjectDictionary(
+      std::shared_ptr<const dictionary::ProjectDictionarySnapshot> snapshot) {
+    DCHECK_LE(stage_, 2);
+    stage_ = 2;
+    request_.project_dictionary_ = std::move(snapshot);
+    return *this;
   }
   ConversionRequestBuilder& SetOptions(ConversionRequest::Options options) {
     DCHECK_LE(stage_, 2);
