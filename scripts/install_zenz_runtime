@@ -1,0 +1,49 @@
+#!/bin/sh
+
+# Installs the model already distributed with Mozkey and a product-private
+# link to the distro-provided llama-server.  The scorer release build accepts
+# no environment path overrides and resolves both beside its own executable.
+set -eu
+
+PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
+LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}"
+
+case "${PREFIX}" in
+  /*) ;;
+  *) echo "PREFIX must be absolute: ${PREFIX}" >&2; exit 2 ;;
+esac
+case "${DESTDIR}" in
+  ""|/*) ;;
+  *) echo "DESTDIR must be empty or absolute: ${DESTDIR}" >&2; exit 2 ;;
+esac
+case "${LLAMA_SERVER_TARGET}" in
+  /*) ;;
+  *) echo "llama-server target must be absolute" >&2; exit 2 ;;
+esac
+case "${LLAMA_SERVER_TARGET}" in
+  *..*) echo "llama-server target must not contain traversal" >&2; exit 2 ;;
+esac
+
+runtime_source="win32/installer/zenz_runtime"
+model_name="zenz-v3.2-small-Q5_K_M.gguf"
+model_source="${runtime_source}/models/${model_name}"
+if [ ! -f "${model_source}" ]; then
+  echo "missing bundled Zenz model: ${model_source}" >&2
+  exit 1
+fi
+
+install -D -m 644 "${model_source}" \
+  "${DESTDIR}${PREFIX}/lib/mozkey/models/${model_name}"
+install -D -m 644 "${runtime_source}/licenses/zenz-v3.2-small-gguf.txt" \
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/zenz-v3.2-small-gguf.txt"
+install -D -m 644 "${runtime_source}/licenses/llama.cpp-MIT.txt" \
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt"
+install -D -m 644 "${runtime_source}/licenses/Apache-2.0.txt" \
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/Apache-2.0.txt"
+install -D -m 644 "${runtime_source}/licenses/THIRD_PARTY_NOTICES.md" \
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/THIRD_PARTY_NOTICES.md"
+
+install -d "${DESTDIR}${PREFIX}/lib/mozkey"
+ln -sfn "${LLAMA_SERVER_TARGET}" \
+  "${DESTDIR}${PREFIX}/lib/mozkey/llama-server"

@@ -8,6 +8,9 @@ install -D -m 755 "out_linux/${_bldtype}/mozc_server" "${DESTDIR}${PREFIX}/lib/m
 install -D -m 755 "out_linux/${_bldtype}/mozc_tool" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_tool"
 if [ -x "out_linux/${_bldtype}/mozc_zenz_scorer" ]; then
   install -D -m 755 "out_linux/${_bldtype}/mozc_zenz_scorer" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_zenz_scorer"
+  DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" \
+    MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}" \
+    ../scripts/install_zenz_runtime
 fi
 install -d "${DESTDIR}${PREFIX}/share/doc/mozkey/"
 install -m 644 data/installer/*.html "${DESTDIR}${PREFIX}/share/doc/mozkey/"

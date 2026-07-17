@@ -39,6 +39,13 @@ require_file /usr/lib/fcitx5/fcitx5-mozkey.so
 require_file /usr/lib/mozkey/mozc_server
 require_file /usr/lib/mozkey/mozc_tool
 require_file /usr/lib/mozkey/mozc_zenz_scorer
+require_file /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
+if [ ! -L "${stage_dir}/usr/lib/mozkey/llama-server" ] ||
+   [ "$(readlink "${stage_dir}/usr/lib/mozkey/llama-server")" !=
+     /usr/bin/llama-server ]; then
+  echo "invalid staged llama-server runtime link" >&2
+  exit 1
+fi
 require_file /usr/share/fcitx5/addon/mozkey.conf
 require_file /usr/share/fcitx5/inputmethod/mozkey.conf
 require_file /usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml
@@ -66,6 +73,8 @@ DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/uninstall_mozkey_fcitx5
 
 require_absent /usr/lib/fcitx5/fcitx5-mozkey.so
 require_absent /usr/lib/mozkey/mozc_server
+require_absent /usr/lib/mozkey/llama-server
+require_absent /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 require_absent /usr/share/fcitx5/addon/mozkey.conf
 require_file /usr/lib/fcitx5/fcitx5-hazkey.so
 require_file /usr/share/fcitx5/addon/hazkey.conf
@@ -76,6 +85,7 @@ require_file /user-data-sentinel
 install_product
 require_file /usr/lib/fcitx5/fcitx5-mozkey.so
 require_file /usr/lib/mozkey/mozc_server
+require_file /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 
 if command -v appstreamcli >/dev/null 2>&1; then
   appstreamcli validate --no-net \

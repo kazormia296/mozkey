@@ -53,7 +53,10 @@ while IFS= read -r relative_path; do
 done < "${manifest}"
 
 # Remove only product-private directories, and only when already empty.
+rmdir "${install_root}/lib/mozkey/models" 2>/dev/null || true
 rmdir "${install_root}/lib/mozkey" 2>/dev/null || true
 rmdir "${install_root}/share/doc/mozkey" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey/zenz-runtime" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey" 2>/dev/null || true
 
 echo "Mozkey Fcitx5 product files removed; user data preserved"
