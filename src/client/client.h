@@ -221,6 +221,7 @@ class Client : public ClientInterface {
   void PushHistory(const commands::Input& input,
                    const commands::Output& output);
   void ResetHistory();
+  void PrepareGrimodexManagedInput(const commands::Input& input);
 
   // The alias of
   // DumpHistorySnapshot("query_of_death.log", "QUERY OF DEATH");
@@ -251,6 +252,10 @@ class Client : public ClientInterface {
   uint32_t server_process_id_;
   std::string server_product_version_;
   std::vector<commands::Input> history_inputs_;
+  // Grimodex restores only bounded raw reading at the Fcitx adapter.  Mozc's
+  // protobuf command journal contains candidate IDs and effects that are not
+  // valid after a server/session restart, so it is disabled for these clients.
+  bool grimodex_managed_session_ = false;
   // List of key combinations used in the direct input mode.
   std::vector<KeyInformation> direct_mode_keys_;
   // Remember the composition mode of input session for playback.

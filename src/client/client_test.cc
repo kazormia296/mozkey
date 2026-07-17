@@ -1034,6 +1034,58 @@ TEST_F(SessionPlaybackTest, PushAndResetHistoryWithNoModeTest) {
   EXPECT_EQ(history.size(), 0);
 }
 
+TEST_F(SessionPlaybackTest, GrimodexManagedInputIsNeverJournaled) {
+  const int mock_id = 123;
+  ASSERT_TRUE(SetupConnection(mock_id));
+
+  commands::Output mock_output;
+  mock_output.set_id(mock_id);
+  mock_output.set_consumed(true);
+  SetMockOutput(mock_output);
+
+  commands::KeyEvent key_event;
+  key_event.set_key_code('a');
+  commands::Context context;
+  context.mutable_grimodex()->set_program("org.example.Editor");
+  context.mutable_grimodex()->set_frontend("wayland");
+  context.mutable_grimodex()->set_focus_epoch(7);
+
+  commands::Output output;
+  ASSERT_TRUE(client_->SendKeyWithContext(key_event, context, &output));
+
+  std::vector<commands::Input> history;
+  client_peer().GetHistoryInputs(&history);
+  EXPECT_TRUE(history.empty());
+}
+
+TEST_F(SessionPlaybackTest, GrimodexSecureBoundaryClearsExistingJournal) {
+  const int mock_id = 123;
+  ASSERT_TRUE(SetupConnection(mock_id));
+
+  commands::Output mock_output;
+  mock_output.set_id(mock_id);
+  mock_output.set_consumed(true);
+  SetMockOutput(mock_output);
+
+  commands::KeyEvent key_event;
+  key_event.set_key_code('a');
+  commands::Output output;
+  ASSERT_TRUE(client_->SendKey(key_event, &output));
+
+  std::vector<commands::Input> history;
+  client_peer().GetHistoryInputs(&history);
+  ASSERT_EQ(history.size(), 1);
+
+  commands::Context secure_context;
+  secure_context.mutable_grimodex()->set_secure_input(true);
+  secure_context.mutable_grimodex()->set_focus_epoch(8);
+  ASSERT_TRUE(
+      client_->SendKeyWithContext(key_event, secure_context, &output));
+
+  client_peer().GetHistoryInputs(&history);
+  EXPECT_TRUE(history.empty());
+}
+
 // b/2797557
 TEST_F(SessionPlaybackTest, PushAndResetHistoryWithModeTest) {
   const int mock_id = 123;

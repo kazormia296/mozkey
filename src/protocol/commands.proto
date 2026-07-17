@@ -512,6 +512,28 @@ message SessionCommand {
   optional string live_conversion_key = 13;
 }
 
+// Linux Grimodex metadata carried on every key and session command.  Project
+// dictionary payloads are deliberately not part of this wire message; the
+// server loads them from the verified Protocol v1 snapshot store.
+message GrimodexClientContext {
+  optional string program = 1;
+  optional string frontend = 2;
+  optional bool secure_input = 3 [default = false];
+  optional uint64 focus_epoch = 4;
+}
+
+message GrimodexSessionStatus {
+  enum Scope {
+    OFF = 0;
+    PROJECT = 1;
+    SECURE_REVOKED = 2;
+  }
+
+  optional uint64 registry_sequence = 1;
+  optional bytes pinned_payload_sha256 = 2;
+  optional Scope scope = 3 [default = OFF];
+}
+
 message Context {
   // Former part of surrounding text.
   optional string preceding_text = 1;
@@ -559,6 +581,11 @@ message Context {
 
   // Repeated fields to be used for experimental features.
   repeated string experimental_features = 100;
+
+  // Typed client metadata for the Grimodex integration.  This must not be
+  // encoded in experimental_features because secure transitions and focus
+  // epochs are security boundaries rather than experiments.
+  optional GrimodexClientContext grimodex = 101;
 }
 
 // Clients' capability.
@@ -1454,6 +1481,10 @@ message Output {
 
   // Debug-only reason string. Normal UI should not display this.
   optional string zenz_live_correction_debug = 31;
+
+  // Observable project-snapshot state.  This contains only sequence and
+  // digest provenance, never dictionary entries or surrounding text.
+  optional GrimodexSessionStatus grimodex_session_status = 32;
 
   reserved 19;  // Deprecated storage_entry
   reserved 20;  // Deprecated cloud_sync_status
