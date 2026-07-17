@@ -392,7 +392,7 @@ FAILED:	みるめ	見る目	Conversion Expected 9	敏馬	2.30.5520
 OK:	みるめじんじゃ	敏馬神社	Conversion Expected 9	敏馬神社	2.30.5520
 OK:	けつりょう	結了	Conversion Expected 9	結了	2.30.5520
 FAILED:	にかんじ	二感じ	Conversion Expected 99	二簡字	2.30.5520
-OK:	ころんびあ	コロンビア	Conversion Expected 5	Colombia	3.33.6141
+FAILED:	ころんびあ	コロンビア	Conversion Expected 5	Colombia	3.33.6153
 OK:	はくしかてい	博士課程	Conversion Expected	博士課程	2.30.5544
 OK:	いねこき	稲核	Conversion Expected 9	稲㧡	2.30.5544
 OK:	かぜをひく	風邪をひく	Conversion Match	風邪	2.30.5544
