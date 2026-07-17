@@ -6,6 +6,7 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.dictionary import daily_source_lock
 from tools.dictionary import prepare_daily_dictionary_linux as target
@@ -99,6 +100,82 @@ class PrepareDailyDictionaryLinuxTest(unittest.TestCase):
                 all("nico" not in str(record["path"]) for record in records)
             )
             self.assertNotIn(stale_relative.as_posix(), {r["path"] for r in records})
+
+    def test_release_outputs_are_captured_only_after_pipeline_completion(self) -> None:
+        pipeline_completed = False
+        source_records = [{"path": "cached.txt", "exists": True}]
+        release_records = [
+            {"path": "release.txt", "sha256": "a" * 64, "size_bytes": 1}
+        ]
+
+        def run_pipeline(*args: object, **kwargs: object) -> None:
+            nonlocal pipeline_completed
+            pipeline_completed = True
+
+        def capture_outputs() -> list[dict[str, object]]:
+            self.assertTrue(
+                pipeline_completed,
+                "release outputs were inspected before the preparation pipeline ran",
+            )
+            return release_records
+
+        with (
+            mock.patch.object(target, "resolve_pwsh", return_value="/bin/pwsh"),
+            mock.patch.object(target.daily_source_lock, "load_lock", return_value={}),
+            mock.patch.object(target, "source_records", return_value=source_records),
+            mock.patch.object(target.subprocess, "run", side_effect=run_pipeline),
+            mock.patch.object(
+                target, "release_output_records", side_effect=capture_outputs
+            ) as release_output_records,
+            mock.patch.object(target, "write_source_manifest"),
+            mock.patch.object(target, "write_release_output_manifest") as write_release,
+        ):
+            result = target.main(
+                [
+                    "--source-mode",
+                    "download",
+                    "--profile",
+                    daily_source_lock.RELEASE_PROFILE,
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        release_output_records.assert_called_once_with()
+        write_release.assert_called_once_with(release_records)
+
+    def test_missing_release_outputs_report_post_pipeline_records(self) -> None:
+        after_records = [{"path": "cached.txt", "exists": True}]
+        with (
+            mock.patch.object(target, "resolve_pwsh", return_value="/bin/pwsh"),
+            mock.patch.object(target.daily_source_lock, "load_lock", return_value={}),
+            mock.patch.object(target, "source_records", return_value=after_records),
+            mock.patch.object(target.subprocess, "run"),
+            mock.patch.object(
+                target,
+                "release_output_records",
+                side_effect=RuntimeError("missing release output"),
+            ),
+            mock.patch.object(target, "write_source_manifest") as write_source,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "missing release output"):
+                target.main(
+                    [
+                        "--source-mode",
+                        "download",
+                        "--profile",
+                        daily_source_lock.RELEASE_PROFILE,
+                    ]
+                )
+
+        self.assertIn(
+            mock.call(
+                source_mode="download",
+                status="release_output_incomplete",
+                records=after_records,
+                profile=daily_source_lock.RELEASE_PROFILE,
+            ),
+            write_source.call_args_list,
+        )
 
 
 if __name__ == "__main__":

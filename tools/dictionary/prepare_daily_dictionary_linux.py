@@ -369,19 +369,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         for record in before_records:
             print(f"cached sha256: {record['sha256']}  {record['path']}")
 
-    outputs: list[dict[str, object]] | None = None
-    if args.profile == daily_source_lock.RELEASE_PROFILE:
-        try:
-            outputs = release_output_records()
-        except RuntimeError:
-            write_source_manifest(
-                source_mode=args.source_mode,
-                status="release_output_incomplete",
-                records=after_records,
-                profile=args.profile,
-            )
-            raise
-
     write_source_manifest(
         source_mode=args.source_mode,
         status="running",
@@ -427,6 +414,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             profile=args.profile,
         )
         raise RuntimeError("cached dictionary inputs changed while the pipeline ran")
+
+    outputs: list[dict[str, object]] | None = None
+    if args.profile == daily_source_lock.RELEASE_PROFILE:
+        try:
+            # The PowerShell pipeline creates the profiled release outputs, so
+            # their immutable manifest must be captured only after that process
+            # has completed and the cached inputs have been revalidated.
+            outputs = release_output_records()
+        except RuntimeError:
+            write_source_manifest(
+                source_mode=args.source_mode,
+                status="release_output_incomplete",
+                records=after_records,
+                profile=args.profile,
+            )
+            raise
 
     write_source_manifest(
         source_mode=args.source_mode,
