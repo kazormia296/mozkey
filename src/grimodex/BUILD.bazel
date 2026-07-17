@@ -32,6 +32,20 @@ mozc_cc_library(
     ],
 )
 
+mozc_cc_library(
+    name = "project_dictionary_bridge",
+    srcs = ["project_dictionary_bridge.cc"],
+    hdrs = ["project_dictionary_bridge.h"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
 mozc_cc_test(
     name = "protocol_v1_test",
     size = "small",
@@ -47,5 +61,21 @@ mozc_cc_test(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_test(
+    name = "project_dictionary_bridge_test",
+    size = "small",
+    srcs = ["project_dictionary_bridge_test.cc"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":project_dictionary_bridge",
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
