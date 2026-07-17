@@ -1,5 +1,8 @@
 # Mozkey migration quality evidence (2026-07-17)
 
+Decision evidence sealed: 2026-07-17. Release-candidate evidence is refreshed
+separately and must not be inferred from the sealed ABProbe source identity.
+
 ## Disposition
 
 The focused 15-case migration gate passes.  The broader 1,360-case corpus does
@@ -18,9 +21,10 @@ product UX/integration gate before the migration is called complete.
 The Hazkey engine-selection spike stops here. Continuing to tune two engines
 would no longer answer the original adoption question: on the focused gate
 Mozkey is ahead, and on the non-protected broad corpus this evidence finds no
-significant Hazkey advantage. Hazkey remains a frozen comparison oracle and an
-installable one-release rollback artifact; it is not a second production
-runtime, a dual-write target, or a prerequisite for Mozkey conversion.
+significant Hazkey advantage. Hazkey remains a frozen comparison oracle only;
+it has not been released, so an installed Hazkey fallback, rollback artifact,
+or runtime round trip is not a Mozkey release prerequisite. It is not a second
+production runtime or a dual-write target.
 
 The production direction is a fresh Mozkey/Mozc fork with native Protocol v1
 project-dictionary consumption in `mozc_server`, existing Mozkey behavior and
@@ -40,9 +44,8 @@ by keeping Hazkey as the shared engine:
 The migration release gate therefore combines the focused quality gate with
 attested installed-product checks: server restart/replay, exact default and
 project-dictionary fallback, GTK/Qt and packaged/development Electron focus,
-secure fields, Zenz runtime, package isolation, and a Hazkey rollback/reinstall
-round trip. A failure in those product gates blocks rollout; it does not by
-itself reopen the engine-selection spike.
+secure fields, Zenz runtime, and package isolation. A failure in those product
+gates blocks rollout; it does not by itself reopen the engine-selection spike.
 
 ## Sealed inputs
 
@@ -52,12 +55,12 @@ itself reopen the engine-selection spike.
 | Frozen 1,360-case corpus | `cdb2a017b4548f6f77ec3d466f84ec09268a74adb5e876e224e01069f128c8ae` |
 | Frozen B0 ABProbe v3 JSONL | `08600f8f7367535469a3f383343dc521181faf8853b5a913336afd33104feea7` |
 | Frozen Hazkey H0 ABProbe v3 JSONL | `29a8b543b86b1e596774f0fac6d1c836a9a0b7a2d60d5e782c91b374fe34b4b6` |
-| Current Mozkey ABProbe v3 JSONL | `590e92b0702eb99f29c94bcf044a310a34472b7b67cf1ae941d474576c6fce05` |
-| Focused current Mozkey ABProbe v3 JSONL | `17c1aa7ee7202bf1517e301bff9ce17753bf2cee1c2baad2219bfd4ff9bcd6df` |
-| Current Mozkey source | `4467cc10c9db3e07635779b26bc4350f7e51159f` |
-| Current daily `mozc.data` | `045724831a736cb7d5e58b91db618c71776f37b3ad3b2e6db2d327128350f435`, 36,318,484 bytes |
-| Current fixed-boundary helper | `c1c93793243dd210918f3a749feaed855f2e01b63f28f6d857a06adbdf90de97`, 27,352,704 bytes |
-| Current evaluation runner | `9501daa3a62cd1093c41bfef818cab917b6fc2b44f58f7ab06543e4b5e7c3ff2`, 35,594,352 bytes |
+| Sealed evaluated Mozkey ABProbe v3 JSONL | `590e92b0702eb99f29c94bcf044a310a34472b7b67cf1ae941d474576c6fce05` |
+| Sealed focused Mozkey ABProbe v3 JSONL | `17c1aa7ee7202bf1517e301bff9ce17753bf2cee1c2baad2219bfd4ff9bcd6df` |
+| Mozkey source evaluated by the sealed ABProbe | `4467cc10c9db3e07635779b26bc4350f7e51159f` |
+| Sealed evaluated daily `mozc.data` | `045724831a736cb7d5e58b91db618c71776f37b3ad3b2e6db2d327128350f435`, 36,318,484 bytes |
+| Sealed evaluated fixed-boundary helper | `c1c93793243dd210918f3a749feaed855f2e01b63f28f6d857a06adbdf90de97`, 27,352,704 bytes |
+| Sealed evaluation runner | `9501daa3a62cd1093c41bfef818cab917b6fc2b44f58f7ab06543e4b5e7c3ff2`, 35,594,352 bytes |
 
 The current runner was built in a detached Hazkey worktree from `0db223f`.
 Only that evaluation worktree was changed: it trusted the current helper/data

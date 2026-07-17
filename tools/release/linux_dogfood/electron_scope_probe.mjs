@@ -1188,6 +1188,10 @@ const trackedYdotoolRunner = path.join(
   dogfoodDirectory,
   "run_verified_ydotool.py",
 );
+const trackedSurfaceLocator = path.join(
+  dogfoodDirectory,
+  "atspi_surface_locator.py",
+);
 const trackedCandidateVerifier = path.join(
   dogfoodDirectory,
   "verify_installed_candidate.py",
@@ -1235,6 +1239,11 @@ const harnessBlobs = {
   ydotoolRunner: verifyTrackedFile(
     mozkeyRepository,
     trackedYdotoolRunner,
+    "100755",
+  ),
+  surfaceLocator: verifyTrackedFile(
+    mozkeyRepository,
+    trackedSurfaceLocator,
     "100755",
   ),
   candidateVerifier: verifyTrackedFile(
@@ -1336,7 +1345,7 @@ if (playwrightSha256 !== expectedPlaywrightSha256) {
 }
 const { _electron: electron } = requireFromGrimodex("playwright");
 
-const launchArguments = [];
+const launchArguments = ["--force-renderer-accessibility"];
 let developmentMainTree = null;
 let developmentRendererTree = null;
 if (kind === "development") {
@@ -1419,11 +1428,15 @@ let harnessSnapshotDirectory;
 let harnessSnapshotDirectoryIdentity;
 const harnessSnapshots = new Map();
 let snapshotSequenceHelper;
+let snapshotYdotoolRunner;
+let snapshotSurfaceLocator;
 let snapshotCandidateVerifier;
 let snapshotOfficialAttestationVerifier;
 let protocolMutationGuard;
 let profileEvidence;
 let candidateEvidence;
+let surfaceEvidence;
+let helperEnvironment;
 let resultPayload;
 let watchdog;
 let applicationCleanupPromise;
@@ -1715,6 +1728,197 @@ async function runSequenceHelper(
     stderr: Buffer.concat(stderr).toString("utf8"),
     stdout: Buffer.concat(stdout).toString("utf8"),
   };
+}
+
+function parseElectronSurfaceTranscript(transcript) {
+  if (transcript.stderr || Buffer.byteLength(transcript.stdout) > 4096) {
+    throw new Error("AT-SPI surface locator output exceeded its exact contract");
+  }
+  const lines = transcript.stdout.split("\n");
+  if (lines.length !== 2 || lines[1] !== "" || !lines[0].startsWith("SURFACE:")) {
+    throw new Error("AT-SPI surface locator transcript was not exact");
+  }
+  let evidence;
+  try {
+    evidence = JSON.parse(lines[0].slice("SURFACE:".length));
+  } catch {
+    throw new Error("AT-SPI surface locator evidence is not valid JSON");
+  }
+  const expectedKeys = [
+    "accessiblePid",
+    "accessibleStartTime",
+    "clickX",
+    "clickY",
+    "height",
+    "ownerUid",
+    "role",
+    "schemaVersion",
+    "targetPid",
+    "targetStartTime",
+    "title",
+    "toolkit",
+    "toolkitName",
+    "width",
+    "x",
+    "y",
+  ];
+  if (
+    !evidence ||
+    Array.isArray(evidence) ||
+    JSON.stringify(Object.keys(evidence).sort()) !== JSON.stringify(expectedKeys)
+  ) {
+    throw new Error("AT-SPI surface evidence fields changed");
+  }
+  const integerKeys = [
+    "accessiblePid",
+    "clickX",
+    "clickY",
+    "height",
+    "ownerUid",
+    "schemaVersion",
+    "targetPid",
+    "width",
+    "x",
+    "y",
+  ];
+  if (integerKeys.some((key) => !Number.isSafeInteger(evidence[key]))) {
+    throw new Error("AT-SPI surface integer evidence is invalid");
+  }
+  const expectedTitle = secure
+    ? "Mozkey Electron Password Probe"
+    : "Mozkey Electron Probe";
+  if (
+    evidence.schemaVersion !== 1 ||
+    evidence.toolkit !== "electron" ||
+    !["chromium", "electron"].includes(evidence.toolkitName) ||
+    evidence.targetPid !== electronRootIdentity.pid ||
+    evidence.targetStartTime !== electronRootIdentity.startTime ||
+    evidence.ownerUid !== process.getuid() ||
+    (secure
+      ? evidence.role !== "password text"
+      : !["entry", "text"].includes(evidence.role)) ||
+    evidence.title !== expectedTitle ||
+    !/^[1-9][0-9]*$/.test(evidence.accessibleStartTime)
+  ) {
+    throw new Error("AT-SPI Electron surface owner, role, or title mismatch");
+  }
+  refreshElectronProcesses();
+  const surfaceProcess = [...electronTrackedProcesses.values()].find(
+    (record) =>
+      record.pid === evidence.accessiblePid &&
+      record.startTime === evidence.accessibleStartTime,
+  );
+  if (
+    !surfaceProcess ||
+    !sameProcessAlive(surfaceProcess) ||
+    surfaceProcess.startTime !== evidence.accessibleStartTime ||
+    surfaceProcess.executable !== executablePath ||
+    readlinkSync(`/proc/${surfaceProcess.pid}/exe`) !== executablePath ||
+    sha256File(`/proc/${surfaceProcess.pid}/exe`) !== binarySha256
+  ) {
+    throw new Error("AT-SPI Electron surface is not an attested live descendant");
+  }
+  if (
+    evidence.width < 1 ||
+    evidence.width > 32768 ||
+    evidence.height < 1 ||
+    evidence.height > 32768 ||
+    evidence.x < -131072 ||
+    evidence.x > 131072 ||
+    evidence.y < -131072 ||
+    evidence.y > 131072 ||
+    evidence.x + evidence.width > 131072 ||
+    evidence.y + evidence.height > 131072 ||
+    evidence.clickX < -131072 ||
+    evidence.clickX > 131072 ||
+    evidence.clickY < -131072 ||
+    evidence.clickY > 131072 ||
+    evidence.clickX !== evidence.x + Math.floor(evidence.width / 2) ||
+    evidence.clickY !== evidence.y + Math.floor(evidence.height / 2)
+  ) {
+    throw new Error("AT-SPI Electron surface screen extents are invalid");
+  }
+  return {
+    ...evidence,
+    procDevice: surfaceProcess.procDevice,
+    procInode: surfaceProcess.procInode,
+  };
+}
+
+async function locateElectronSurface(requireFocused = false) {
+  verifyHarnessSnapshots(["surfaceLocator"]);
+  const arguments_ = [
+    "-I",
+    realpathSync(snapshotSurfaceLocator.path),
+    "--pid",
+    String(electronRootIdentity.pid),
+    "--start-time",
+    electronRootIdentity.startTime,
+    "--executable",
+    executablePath,
+    "--toolkit",
+    "electron",
+    "--timeout-seconds",
+    "10",
+  ];
+  if (secure) arguments_.push("--secure");
+  if (requireFocused) arguments_.push("--require-focused");
+  const transcript = await runSequenceHelper(
+    "/usr/bin/python3",
+    arguments_,
+    helperEnvironment,
+    15_000,
+  );
+  verifyHarnessSnapshots(["surfaceLocator"]);
+  return parseElectronSurfaceTranscript(transcript);
+}
+
+async function runVerifiedPointerCommand(arguments_) {
+  verifyHarnessSnapshots(["socketVerifier", "ydotoolRunner"]);
+  const transcript = await runSequenceHelper(
+    "/usr/bin/python3",
+    [
+      "-I",
+      realpathSync(snapshotYdotoolRunner.path),
+      "--socket",
+      ydotoolSocket,
+      "--pid",
+      ydotooldPid,
+      "--timeout-seconds",
+      "10",
+      "--",
+      ...arguments_,
+    ],
+    helperEnvironment,
+    15_000,
+  );
+  verifyHarnessSnapshots(["socketVerifier", "ydotoolRunner"]);
+  if (
+    transcript.stderr ||
+    transcript.stdout !== "ydotool socket verified: exact_private_owner\n"
+  ) {
+    throw new Error("verified Electron pointer command transcript was not exact");
+  }
+}
+
+async function focusElectronSurface() {
+  const before = await locateElectronSurface();
+  await runVerifiedPointerCommand([
+    "mousemove",
+    "--absolute",
+    String(before.clickX),
+    String(before.clickY),
+  ]);
+  const atPointer = await locateElectronSurface();
+  if (JSON.stringify(atPointer) !== JSON.stringify(before)) {
+    throw new Error("AT-SPI Electron surface changed before the verified click");
+  }
+  await runVerifiedPointerCommand(["click", "0xC0"]);
+  const focused = await locateElectronSurface(true);
+  if (JSON.stringify(focused) !== JSON.stringify(before)) {
+    throw new Error("AT-SPI Electron surface changed while receiving focus");
+  }
+  return focused;
 }
 
 async function runInstalledCandidateVerifier(profileOnly = false) {
@@ -2183,12 +2387,21 @@ try {
       0o500,
     ),
   );
-  rememberHarnessSnapshot(
+  snapshotYdotoolRunner = rememberHarnessSnapshot(
     "ydotoolRunner",
     snapshotTrackedFile(
       trackedYdotoolRunner,
       path.join(harnessSnapshotDirectory, path.basename(trackedYdotoolRunner)),
       harnessBlobs.ydotoolRunner,
+      0o500,
+    ),
+  );
+  snapshotSurfaceLocator = rememberHarnessSnapshot(
+    "surfaceLocator",
+    snapshotTrackedFile(
+      trackedSurfaceLocator,
+      path.join(harnessSnapshotDirectory, path.basename(trackedSurfaceLocator)),
+      harnessBlobs.surfaceLocator,
       0o500,
     ),
   );
@@ -2253,7 +2466,7 @@ try {
       ? { GRIMODEX_MCP_PATH: runtimeEvidence.mcpSidecar }
       : {}),
   };
-  const helperEnvironment = {
+  helperEnvironment = {
     DBUS_SESSION_BUS_ADDRESS: environment.DBUS_SESSION_BUS_ADDRESS,
     HOME: environment.HOME,
     LANG: environment.LANG,
@@ -2379,9 +2592,13 @@ try {
   });
   await window.bringToFront();
   await window.evaluate((secureField) => {
+    document.title = secureField
+      ? "Mozkey Electron Password Probe"
+      : "Mozkey Electron Probe";
     const input = document.createElement("input");
     input.id = "mozkey-dogfood-input";
     input.type = secureField ? "password" : "text";
+    input.setAttribute("aria-label", "Mozkey dogfood input");
     input.autocomplete = "off";
     input.spellcheck = false;
     input.style.cssText =
@@ -2397,6 +2614,12 @@ try {
     { timeout: 10_000 },
   );
   await window.waitForTimeout(250);
+  surfaceEvidence = await focusElectronSurface();
+  await window.waitForTimeout(250);
+  const focusedSurface = await locateElectronSurface(true);
+  if (JSON.stringify(focusedSurface) !== JSON.stringify(surfaceEvidence)) {
+    throw new Error("AT-SPI Electron surface changed while establishing focus");
+  }
   const focusState = await application.evaluate(({ BrowserWindow }) => {
     const windows = BrowserWindow.getAllWindows().filter(
       (browserWindow) => !browserWindow.isDestroyed(),
@@ -2492,6 +2715,10 @@ try {
   ) {
     throw new Error("target focus changed during the IME sequence");
   }
+  const finalSurface = await locateElectronSurface(true);
+  if (JSON.stringify(finalSurface) !== JSON.stringify(surfaceEvidence)) {
+    throw new Error("AT-SPI Electron surface changed during the IME sequence");
+  }
   assertFcitxIdentity(
     fcitxIdentity,
     scopeMode,
@@ -2577,6 +2804,11 @@ try {
       trackedYdotoolRunner,
       "100755",
     ),
+    surfaceLocator: verifyTrackedFile(
+      mozkeyRepository,
+      trackedSurfaceLocator,
+      "100755",
+    ),
     candidateVerifier: verifyTrackedFile(
       mozkeyRepository,
       trackedCandidateVerifier,
@@ -2649,6 +2881,25 @@ try {
     windowCount: finalFocusState.windowCount,
     focused: finalFocusState.focusedWindowCount === 1,
     activeElementVerified: activeElement === "mozkey-dogfood-input",
+    focusMethod: "atspi-screen-extents+verified-ydotool",
+    surfacePid: surfaceEvidence.accessiblePid,
+    surfaceStartTime: surfaceEvidence.accessibleStartTime,
+    surfaceProcDevice: surfaceEvidence.procDevice,
+    surfaceProcInode: surfaceEvidence.procInode,
+    surfaceOwnerUid: surfaceEvidence.ownerUid,
+    surfaceToolkit: surfaceEvidence.toolkitName,
+    surfaceRole: surfaceEvidence.role,
+    surfaceTitle: surfaceEvidence.title,
+    surfaceExtents: {
+      x: surfaceEvidence.x,
+      y: surfaceEvidence.y,
+      width: surfaceEvidence.width,
+      height: surfaceEvidence.height,
+    },
+    surfaceClick: {
+      x: surfaceEvidence.clickX,
+      y: surfaceEvidence.clickY,
+    },
   };
 } finally {
   const cleanupFailures = [];

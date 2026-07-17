@@ -103,6 +103,63 @@ tools/release/linux_dogfood/run_server_restart_gate.py \
   --expected-head "${mozkey_head}"
 ```
 
+## Protected mixed-literal headless gate
+
+`run_protected_surface_gate.py` uses its own fresh default-scope Fcitx lifetime
+and creates exactly one disposable IBus input context. It enters the tracked
+case `RUST_LOG=debugでくわしいろぐをだす` without a compositor, verifies the
+literal bytes throughout preedit and cursor traversal, requires the exact
+adjacent-kana conversion `RUST_LOG=debugで詳しいログを出す`, exercises a
+segment shrink/expand round trip, performs one initial commit, and then
+reconverts the whole selected surface with one second commit. The reconversion
+proof applies the observed `DeleteSurroundingText` and second `CommitText` to an
+in-memory host buffer and requires the final bytes to be identical.
+
+Do not reuse a profile, Protocol root, Fcitx lifetime, or server that has run
+the restart gate. Stop that lifetime completely, prepare a separate pair, and
+launch a new default-scope Fcitx for this gate:
+
+```sh
+fcitx5-remote -e
+scripts/stop_mozkey_linux_runtime
+protected_protocol_root=$(mktemp -d \
+  "${XDG_RUNTIME_DIR}/mozkey-protocol.protected.XXXXXX")
+protected_profile_root=$(mktemp -d \
+  "${XDG_RUNTIME_DIR}/mozkey-profile.protected.XXXXXX")
+chmod 0700 "${protected_protocol_root}" "${protected_profile_root}"
+tools/release/linux_dogfood/prepare_protocol_fixture.py \
+  --root "${protected_protocol_root}"
+tools/release/linux_dogfood/run_server_restart_gate.py \
+  --prepare-fresh-profile \
+  --profile-root "${protected_profile_root}" \
+  --expected-head "${mozkey_head}"
+env HOME="${protected_profile_root}" \
+  XDG_CONFIG_HOME="${protected_profile_root}" \
+  GRIMODEX_IME_ROOT="${protected_protocol_root}" \
+  MOZKEY_DOGFOOD_PROFILE_ROOT="${protected_profile_root}" \
+  tools/release/linux_dogfood/run_server_restart_gate.py \
+    --launch-fresh-fcitx \
+    --protocol-root "${protected_protocol_root}" \
+    --profile-root "${protected_profile_root}" \
+    --expected-head "${mozkey_head}"
+
+export MOZKEY_DOGFOOD_PROFILE_ROOT="${protected_profile_root}"
+tools/release/linux_dogfood/run_protected_surface_gate.py \
+  --protocol-root "${protected_protocol_root}" \
+  --profile-root "${protected_profile_root}" \
+  --expected-head "${mozkey_head}"
+fcitx5-remote -e
+scripts/stop_mozkey_linux_runtime
+```
+
+The runner rejects a dirty or non-HEAD gate, an old/reused profile, more than
+one Fcitx or server lifetime, owner/socket drift, an untracked probe or fixture,
+stderr, output over 64 KiB, and any timeout. It does not use a GUI, compositor,
+or ydotool. This is an installed Mozc mixed-literal IBus gate; Zenz live
+correction remains at its default disabled setting here. Zenz scorer/model wire
+execution and protected-span adoption are proved by their dedicated runtime and
+session-policy gates, not inferred from this conversion result.
+
 ## Private input injector
 
 Use a dedicated ydotoold socket in a private runtime directory. The daemon
@@ -127,12 +184,15 @@ never printed by the input helper.
 
 ## GTK and Qt
 
-`run_gui_scope_gate.py` builds the committed adjacent source in a fresh
-private directory. It pins system compilers/pkg-config, a real Wayland
-session, the Fcitx input modules, probe process identity, checkout HEAD/blobs,
-the fixed fixture, and the input helper transcript. It covers exact committed
-text, default/all/off/unknown scope behavior, focus during the sequence, and a
-secure password-field variant.
+`run_gui_scope_gate.py` builds the committed adjacent source in a fresh private
+directory. It pins system compilers/pkg-config, a real Wayland session, the
+Fcitx input modules, probe process identity, checkout HEAD/blobs, the fixed
+fixture, and the input helper transcript. A tracked AT-SPI locator binds the
+unique editable surface to the exact probe PID, toolkit, role, title, states,
+and screen extents. The verified ydotool runner moves to and clicks those exact
+coordinates, after which AT-SPI must observe focus before input and retain the
+same surface identity afterward. The gate covers exact committed text,
+default/all/off/unknown scope behavior, and secure-field variants.
 
 ```sh
 tools/release/linux_dogfood/run_gui_scope_gate.py \
@@ -148,10 +208,6 @@ tools/release/linux_dogfood/run_gui_scope_gate.py \
 
 Run both toolkits for each matching live Fcitx scope. For `unknown`, also pass
 `--unknown-scope-value` with the exact unsupported value used to start Fcitx.
-The runner deliberately labels its toolkit program identity as requested, not
-observed: backend-specific Fcitx program/frontend binding, preedit rendering,
-candidate click, and cross-window focus switching remain separate interactive
-Gate 9 evidence.
 
 For a compile-only check, use disposable output names rather than fixed `/tmp`
 paths:
@@ -174,8 +230,11 @@ Electron `/proc` executable, fixed Protocol fixture, dedicated generated
 user-data directory, one focused BrowserWindow and active input, and stable
 Fcitx identity. It verifies that `app.getPath("userData")` is the exact private
 gate directory and binds the `org.freedesktop.IBus` owner PID/start/executable
-to that Fcitx lifetime before and after input and cleanup. The packaged gate
-manifests the complete bundle root, including
+to that Fcitx lifetime before and after input and cleanup. Both paths force
+renderer accessibility, bind the unique editable AT-SPI surface to an attested
+live Electron descendant, click its exact screen coordinates through the
+verified ydotool runner, and require the same focused surface after input. The
+packaged gate manifests the complete bundle root, including
 `app.asar.unpacked` and `extraResources`. The development gate manifests
 `dist-electron`, `dist`, the native `.node` addon, the release `grimodex-mcp`
 sidecar, and semantic resources as one runtime. Electron and the input helper

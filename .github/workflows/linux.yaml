@@ -229,6 +229,21 @@ jobs:
       - name: Verify release-approved dictionary allowlist
         run: python tools/dictionary/verify_release_dictionary_artifact.py --root .
 
+      - name: Setup
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            fcitx5-modules-dev \
+            gettext \
+            gir1.2-glib-2.0 \
+            libibus-1.0-dev \
+            python3-dbus \
+            python3-gi \
+            qt6-base-dev
+          #
+          # Unset the Android NDK setting to skip the unnecessary configuration.
+          echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
+
       - name: Test Linux release, installer, provenance, and Zenz gates
         run: |
           python tools/release/normalize_zenz_gguf.py create --root .
@@ -244,8 +259,10 @@ jobs:
             tools.dictionary.verify_release_dictionary_artifact_test \
             tools.release.generate_linux_spdx_sbom_test \
             tools.release.linux_build_attestation_test \
+            tools.release.linux_dogfood.atspi_surface_locator_policy_test \
             tools.release.linux_dogfood.consumer_fixture_policy_test \
             tools.release.linux_dogfood.fresh_profile_policy_test \
+            tools.release.linux_dogfood.protected_surface_policy_test \
             tools.release.linux_dogfood.proc_visibility_policy_test \
             tools.release.normalize_zenz_gguf_test \
             tools.release.probe_zenz_runtime_test \
@@ -267,18 +284,6 @@ jobs:
             scripts/verify_zenz_gguf_normalization \
             scripts/verify_llama_server_compatibility \
             tools/release/linux_dogfood/send_ime_sequence.sh
-
-      - name: Setup
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            fcitx5-modules-dev \
-            gettext \
-            libibus-1.0-dev \
-            qt6-base-dev
-          #
-          # Unset the Android NDK setting to skip the unnecessary configuration.
-          echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
 
       - name: bazel test
         working-directory: ./src

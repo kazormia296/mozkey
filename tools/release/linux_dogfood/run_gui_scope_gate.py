@@ -19,9 +19,11 @@ import re
 import selectors
 import signal
 import stat
+import struct
 import subprocess
 import tempfile
 import time
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, Sequence
@@ -39,6 +41,12 @@ EXPECTED_PROGRAM_IDENTITIES = {
     "gtk": "com.miyakey.mozkey.GtkDogfood",
     "qt": "mozkey-qt-scope-probe",
 }
+EXPECTED_SURFACE_TITLES = {
+    ("gtk", False): "Mozkey GTK Probe",
+    ("gtk", True): "Mozkey GTK Password Probe",
+    ("qt", False): "Mozkey Qt Probe",
+    ("qt", True): "Mozkey Qt Password Probe",
+}
 KNOWN_SCOPES = frozenset(("all", "off"))
 RECOGNIZED_SCOPE_ALIASES = frozenset(
     ("", "all", "all-applications", "grimodex", "grimodex-only", "off")
@@ -46,7 +54,10 @@ RECOGNIZED_SCOPE_ALIASES = frozenset(
 MAX_PROC_BYTES = 1 << 20
 MAX_STREAM_BYTES = 1 << 16
 MAX_TRACKED_BYTES = 1 << 20
+MAX_SCREEN_COORDINATE = 131072
+MAX_SCREEN_DIMENSION = 32768
 HELPER_SUCCESS_LINE = "ydotool socket verified: exact_private_owner"
+SURFACE_PREFIX = "SURFACE:"
 RELEASE_LAYOUT = "archlinux-x86_64"
 
 
@@ -65,6 +76,44 @@ class FcitxIdentity:
     protocol_root: str
     profile_root: str
     home_root: str
+
+
+@dataclass(frozen=True)
+class SurfaceEvidence:
+    schema_version: int
+    toolkit: str
+    toolkit_name: str
+    target_pid: int
+    target_start_time: str
+    accessible_pid: int
+    accessible_start_time: str
+    owner_uid: int
+    role: str
+    title: str
+    x: int
+    y: int
+    width: int
+    height: int
+    click_x: int
+    click_y: int
+
+
+@dataclass(frozen=True)
+class SnapshotFileIdentity:
+    path: Path
+    blob: str
+    mode: int
+    device: int
+    inode: int
+
+
+@dataclass(frozen=True)
+class SnapshotDirectoryIdentity:
+    path: Path
+    mode: int
+    device: int
+    inode: int
+    entries: tuple[str, ...]
 
 
 def parse_args() -> argparse.Namespace:
@@ -284,6 +333,275 @@ class ProtocolMutationGuard:
         os.close(self._descriptor)
 
 
+class SnapshotMutationGuard:
+    """Pin immutable harness snapshots and retain every mutation event."""
+
+    _IN_NONBLOCK = os.O_NONBLOCK
+    _IN_CLOEXEC = os.O_CLOEXEC
+    _IN_ATTRIB = 0x00000004
+    _IN_ISDIR = 0x40000000
+    _MUTATION_MASK = ProtocolMutationGuard._MUTATION_MASK
+    _EVENT_HEADER = struct.Struct("iIII")
+
+    def __init__(
+        self,
+        directory: Path,
+        snapshots: Sequence[tuple[Path, str, int]],
+    ) -> None:
+        self._descriptor = -1
+        self._directory_descriptor = -1
+        self._directory_watch = -1
+        self._directory = directory
+        self._directory_device = -1
+        self._directory_inode = -1
+        self.directory_identity: SnapshotDirectoryIdentity
+        self.snapshots: tuple[SnapshotFileIdentity, ...]
+        if not snapshots:
+            fail("immutable snapshot registry is empty")
+        if (
+            not directory.is_absolute()
+            or directory.is_symlink()
+            or directory.resolve(strict=True) != directory
+        ):
+            fail("immutable snapshot directory must be canonical")
+        expected_entries = tuple(sorted(path.name for path, _, _ in snapshots))
+        if len(set(expected_entries)) != len(snapshots):
+            fail("immutable snapshot registry has duplicate entries")
+        for path, blob, mode in snapshots:
+            if (
+                not path.is_absolute()
+                or path.parent != directory
+                or not re.fullmatch(r"[0-9a-f]{40}", blob)
+                or mode not in (0o400, 0o500)
+            ):
+                fail("immutable snapshot registry entry is invalid")
+
+        self._directory_descriptor = os.open(
+            directory,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        )
+        try:
+            initial_directory = os.fstat(self._directory_descriptor)
+            if (
+                not stat.S_ISDIR(initial_directory.st_mode)
+                or initial_directory.st_uid != os.getuid()
+                or initial_directory.st_gid != os.getgid()
+                or stat.S_IMODE(initial_directory.st_mode) != 0o700
+                or self._entry_names() != expected_entries
+            ):
+                fail("immutable snapshot directory setup identity is invalid")
+            self._directory_device = initial_directory.st_dev
+            self._directory_inode = initial_directory.st_ino
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            init = libc.inotify_init1
+            init.argtypes = [ctypes.c_int]
+            init.restype = ctypes.c_int
+            add = libc.inotify_add_watch
+            add.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
+            add.restype = ctypes.c_int
+            self._descriptor = init(self._IN_NONBLOCK | self._IN_CLOEXEC)
+            if self._descriptor < 0:
+                error = ctypes.get_errno()
+                raise OSError(error, os.strerror(error))
+            watches: list[int] = []
+            for path in (directory, *(entry[0] for entry in snapshots)):
+                watch = add(
+                    self._descriptor,
+                    os.fsencode(path),
+                    ctypes.c_uint32(self._MUTATION_MASK),
+                )
+                if watch < 0:
+                    error = ctypes.get_errno()
+                    raise OSError(error, os.strerror(error), path)
+                watches.append(watch)
+            if len(set(watches)) != len(watches):
+                fail("immutable snapshot watches are not one-to-one")
+            self._directory_watch = watches[0]
+
+            initial_snapshots = tuple(
+                self._capture_file(path, blob, mode)
+                for path, blob, mode in snapshots
+            )
+            os.fchmod(self._directory_descriptor, 0o500)
+            seal_events = self._read_events()
+            if not seal_events or any(
+                watch != self._directory_watch
+                or mask & ~self._IN_ISDIR != self._IN_ATTRIB
+                or name
+                for watch, mask, name in seal_events
+            ):
+                fail("immutable snapshot directory seal event was not exact")
+            self.directory_identity = self._capture_directory(expected_entries)
+            self.snapshots = tuple(
+                self._capture_file(record.path, record.blob, record.mode)
+                for record in initial_snapshots
+            )
+            if self.snapshots != initial_snapshots:
+                fail("immutable snapshot identity changed while sealing")
+            self.assert_clean()
+        except BaseException:
+            self.close()
+            raise
+
+    def _entry_names(self) -> tuple[str, ...]:
+        with os.scandir(self._directory_descriptor) as entries:
+            return tuple(sorted(entry.name for entry in entries))
+
+    def _capture_directory(
+        self, expected_entries: tuple[str, ...]
+    ) -> SnapshotDirectoryIdentity:
+        descriptor_metadata = os.fstat(self._directory_descriptor)
+        path_metadata = self._directory.lstat()
+        if (
+            not stat.S_ISDIR(descriptor_metadata.st_mode)
+            or not stat.S_ISDIR(path_metadata.st_mode)
+            or descriptor_metadata.st_uid != os.getuid()
+            or descriptor_metadata.st_gid != os.getgid()
+            or stat.S_IMODE(descriptor_metadata.st_mode) != 0o500
+            or descriptor_metadata.st_dev != path_metadata.st_dev
+            or descriptor_metadata.st_ino != path_metadata.st_ino
+            or self._directory.is_symlink()
+            or self._directory.resolve(strict=True) != self._directory
+            or self._entry_names() != expected_entries
+        ):
+            fail("immutable snapshot directory identity changed")
+        return SnapshotDirectoryIdentity(
+            path=self._directory,
+            mode=0o500,
+            device=descriptor_metadata.st_dev,
+            inode=descriptor_metadata.st_ino,
+            entries=expected_entries,
+        )
+
+    @staticmethod
+    def _capture_file(path: Path, blob: str, mode: int) -> SnapshotFileIdentity:
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        try:
+            metadata = os.fstat(descriptor)
+            payload = bytearray()
+            while True:
+                chunk = os.read(
+                    descriptor,
+                    min(1 << 16, MAX_TRACKED_BYTES + 1 - len(payload)),
+                )
+                if not chunk:
+                    break
+                payload.extend(chunk)
+                if len(payload) > MAX_TRACKED_BYTES:
+                    fail("immutable snapshot exceeded its verification cap")
+        finally:
+            os.close(descriptor)
+        path_metadata = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or metadata.st_gid != os.getgid()
+            or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != mode
+            or metadata.st_dev != path_metadata.st_dev
+            or metadata.st_ino != path_metadata.st_ino
+            or path.is_symlink()
+            or path.resolve(strict=True) != path
+            or git_blob_id(bytes(payload)) != blob
+        ):
+            fail("immutable snapshot file identity changed")
+        return SnapshotFileIdentity(
+            path=path,
+            blob=blob,
+            mode=mode,
+            device=metadata.st_dev,
+            inode=metadata.st_ino,
+        )
+
+    def _read_events(self) -> list[tuple[int, int, bytes]]:
+        events: list[tuple[int, int, bytes]] = []
+        while True:
+            try:
+                payload = os.read(self._descriptor, 1 << 16)
+            except BlockingIOError:
+                break
+            if not payload:
+                break
+            offset = 0
+            while offset < len(payload):
+                if len(payload) - offset < self._EVENT_HEADER.size:
+                    fail("immutable snapshot mutation event was truncated")
+                watch, mask, _cookie, name_length = self._EVENT_HEADER.unpack_from(
+                    payload, offset
+                )
+                offset += self._EVENT_HEADER.size
+                if name_length > len(payload) - offset:
+                    fail("immutable snapshot mutation name was truncated")
+                raw_name = payload[offset : offset + name_length]
+                offset += name_length
+                events.append((watch, mask, raw_name.rstrip(b"\0")))
+        return events
+
+    def assert_clean(self) -> None:
+        if self._descriptor < 0 or self._directory_descriptor < 0:
+            fail("immutable snapshot guard is closed")
+        if self._read_events():
+            fail("immutable snapshot was mutated during the GUI gate")
+        if self._capture_directory(self.directory_identity.entries) != (
+            self.directory_identity
+        ):
+            fail("immutable snapshot directory identity changed")
+        actual = tuple(
+            self._capture_file(record.path, record.blob, record.mode)
+            for record in self.snapshots
+        )
+        if actual != self.snapshots:
+            fail("immutable snapshot file identity changed")
+        if self._read_events():
+            fail("immutable snapshot was mutated during verification")
+
+    def close(self) -> None:
+        cleanup_error: BaseException | None = None
+        try:
+            if (
+                self._directory_descriptor >= 0
+                and self._directory_device >= 0
+                and self._directory_inode >= 0
+            ):
+                descriptor_metadata = os.fstat(self._directory_descriptor)
+                try:
+                    path_metadata = self._directory.lstat()
+                except OSError as error:
+                    raise RuntimeError(
+                        "immutable snapshot directory vanished during cleanup"
+                    ) from error
+                if (
+                    descriptor_metadata.st_dev != self._directory_device
+                    or descriptor_metadata.st_ino != self._directory_inode
+                    or path_metadata.st_dev != self._directory_device
+                    or path_metadata.st_ino != self._directory_inode
+                ):
+                    fail("refusing to unlock a replaced snapshot directory")
+                if stat.S_IMODE(descriptor_metadata.st_mode) == 0o500:
+                    os.fchmod(self._directory_descriptor, 0o700)
+                    if self._descriptor >= 0:
+                        cleanup_events = self._read_events()
+                        if not cleanup_events or any(
+                            watch != self._directory_watch
+                            or mask & ~self._IN_ISDIR != self._IN_ATTRIB
+                            or name
+                            for watch, mask, name in cleanup_events
+                        ):
+                            fail("snapshot directory cleanup event was not exact")
+        except BaseException as error:
+            cleanup_error = error
+        finally:
+            if self._descriptor >= 0:
+                os.close(self._descriptor)
+                self._descriptor = -1
+            if self._directory_descriptor >= 0:
+                os.close(self._directory_descriptor)
+                self._directory_descriptor = -1
+        if cleanup_error is not None:
+            raise cleanup_error
+
+
 def clean_command_environment() -> dict[str, str]:
     return {
         "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -302,20 +620,27 @@ def run_checked(
     timeout: float,
     cwd: Path | None = None,
     environment: dict[str, str] | None = None,
+    snapshot_guard: SnapshotMutationGuard | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        list(command),
-        cwd=cwd,
-        check=False,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        timeout=timeout,
-        env=environment or clean_command_environment(),
-    )
+    if snapshot_guard is not None:
+        snapshot_guard.assert_clean()
+    try:
+        result = subprocess.run(
+            list(command),
+            cwd=cwd,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            timeout=timeout,
+            env=environment or clean_command_environment(),
+        )
+    finally:
+        if snapshot_guard is not None:
+            snapshot_guard.assert_clean()
     if result.returncode != 0:
         fail(f"command failed: {Path(command[0]).name} status={result.returncode}")
     return result
@@ -334,7 +659,13 @@ def git_root(script: Path) -> Path:
     return root
 
 
-def verify_tracked_file(root: Path, path: Path, expected_mode: str) -> str:
+def verify_tracked_file(
+    root: Path,
+    path: Path,
+    expected_mode: str,
+    *,
+    snapshot_guard: SnapshotMutationGuard | None = None,
+) -> str:
     if path.is_symlink() or not path.is_file():
         fail(f"{path.name} must be a regular non-symlink")
     canonical = path.resolve(strict=True)
@@ -345,6 +676,7 @@ def verify_tracked_file(root: Path, path: Path, expected_mode: str) -> str:
     index = run_checked(
         ["/usr/bin/git", "-C", str(root), "ls-files", "--stage", "--", str(relative)],
         timeout=10,
+        snapshot_guard=snapshot_guard,
     ).stdout.strip()
     fields = index.split()
     if len(fields) != 4 or fields[0] != expected_mode or fields[3] != str(relative):
@@ -352,6 +684,7 @@ def verify_tracked_file(root: Path, path: Path, expected_mode: str) -> str:
     head = run_checked(
         ["/usr/bin/git", "-C", str(root), "ls-tree", "HEAD", "--", str(relative)],
         timeout=10,
+        snapshot_guard=snapshot_guard,
     ).stdout.strip()
     head_fields = head.split()
     if (
@@ -365,6 +698,7 @@ def verify_tracked_file(root: Path, path: Path, expected_mode: str) -> str:
     working_blob = run_checked(
         ["/usr/bin/git", "-C", str(root), "hash-object", "--", str(canonical)],
         timeout=10,
+        snapshot_guard=snapshot_guard,
     ).stdout.strip()
     if working_blob != fields[1]:
         fail(f"{path.name} differs from its tracked index blob")
@@ -674,7 +1008,9 @@ def validate_inputs(
     return scope, expected, custom_expected
 
 
-def pkg_config(package: str) -> list[str]:
+def pkg_config(
+    package: str, *, snapshot_guard: SnapshotMutationGuard | None = None
+) -> list[str]:
     binary = Path("/usr/bin/pkg-config")
     if not binary.is_file():
         fail("exact /usr/bin/pkg-config is unavailable")
@@ -682,6 +1018,7 @@ def pkg_config(package: str) -> list[str]:
         [str(binary), "--cflags", "--libs", package],
         timeout=30,
         environment=clean_command_environment(),
+        snapshot_guard=snapshot_guard,
     )
     # pkg-config emits compiler arguments, not shell syntax.  Whitespace in
     # these system paths is unsupported deliberately to avoid shell parsing.
@@ -691,7 +1028,13 @@ def pkg_config(package: str) -> list[str]:
     return flags
 
 
-def build_probe(toolkit: str, source: Path, build_dir: Path) -> Path:
+def build_probe(
+    toolkit: str,
+    source: Path,
+    build_dir: Path,
+    *,
+    snapshot_guard: SnapshotMutationGuard | None = None,
+) -> Path:
     compiler = EXPECTED_COMPILERS[toolkit]
     if not compiler.exists():
         fail(f"exact compiler is unavailable: {compiler}")
@@ -708,8 +1051,20 @@ def build_probe(toolkit: str, source: Path, build_dir: Path) -> Path:
     ]
     if toolkit == "qt":
         command.append("-fPIC")
-    command.extend((str(source), *pkg_config(package), "-o", str(output)))
-    run_checked(command, timeout=90, environment=clean_command_environment())
+    command.extend(
+        (
+            str(source),
+            *pkg_config(package, snapshot_guard=snapshot_guard),
+            "-o",
+            str(output),
+        )
+    )
+    run_checked(
+        command,
+        timeout=90,
+        environment=clean_command_environment(),
+        snapshot_guard=snapshot_guard,
+    )
     output.chmod(0o700)
     output_stat = output.lstat()
     if (
@@ -922,18 +1277,29 @@ def run_sequence_helper(
     mode: str,
     environment: dict[str, str],
     timeout: float,
+    *,
+    snapshot_guard: SnapshotMutationGuard | None = None,
 ) -> tuple[int, str, str]:
-    process = subprocess.Popen(
-        [str(helper), reading, mode],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=environment,
-        start_new_session=True,
-    )
+    if snapshot_guard is not None:
+        snapshot_guard.assert_clean()
+    try:
+        process = subprocess.Popen(
+            [str(helper), reading, mode],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            start_new_session=True,
+        )
+    except BaseException:
+        if snapshot_guard is not None:
+            snapshot_guard.assert_clean()
+        raise
     deadline = time.monotonic() + timeout
     capture: BoundedPipeCapture | None = None
     try:
+        if snapshot_guard is not None:
+            snapshot_guard.assert_clean()
         capture = BoundedPipeCapture(process)
         capture.drain_to_eof(deadline, "canonical IME sequence output")
         if process.poll() is None:
@@ -946,26 +1312,43 @@ def run_sequence_helper(
         try:
             stop_process(process)
         finally:
-            if capture is not None:
-                capture.close()
+            try:
+                if capture is not None:
+                    capture.close()
+            finally:
+                if snapshot_guard is not None:
+                    snapshot_guard.assert_clean()
     assert process.returncode is not None
     return process.returncode, output, error
 
 
 def run_bounded_command(
-    command: Sequence[str], environment: dict[str, str], timeout: float
+    command: Sequence[str],
+    environment: dict[str, str],
+    timeout: float,
+    *,
+    snapshot_guard: SnapshotMutationGuard | None = None,
 ) -> tuple[int, str, str]:
-    process = subprocess.Popen(
-        list(command),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=environment,
-        start_new_session=True,
-    )
+    if snapshot_guard is not None:
+        snapshot_guard.assert_clean()
+    try:
+        process = subprocess.Popen(
+            list(command),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            start_new_session=True,
+        )
+    except BaseException:
+        if snapshot_guard is not None:
+            snapshot_guard.assert_clean()
+        raise
     deadline = time.monotonic() + timeout
     capture: BoundedPipeCapture | None = None
     try:
+        if snapshot_guard is not None:
+            snapshot_guard.assert_clean()
         capture = BoundedPipeCapture(process)
         capture.drain_to_eof(deadline, "candidate verifier output")
         if process.poll() is None:
@@ -978,10 +1361,277 @@ def run_bounded_command(
         try:
             stop_process(process)
         finally:
-            if capture is not None:
-                capture.close()
+            try:
+                if capture is not None:
+                    capture.close()
+            finally:
+                if snapshot_guard is not None:
+                    snapshot_guard.assert_clean()
     assert process.returncode is not None
     return process.returncode, output, error
+
+
+def parse_surface_evidence(
+    status: int,
+    output: str,
+    error: str,
+    *,
+    toolkit: str,
+    secure: bool,
+    target: ProcessIdentity,
+) -> SurfaceEvidence:
+    if status != 0 or error:
+        fail(f"AT-SPI surface locator failed status={status}")
+    if len(output.encode("utf-8")) > 4096 or output.count("\n") != 1:
+        fail("AT-SPI surface locator transcript exceeded its exact contract")
+    if not output.startswith(SURFACE_PREFIX) or not output.endswith("\n"):
+        fail("AT-SPI surface locator transcript was not exact")
+    try:
+        payload = json.loads(output[len(SURFACE_PREFIX) : -1])
+    except json.JSONDecodeError as decode_error:
+        raise RuntimeError("AT-SPI surface evidence is not valid JSON") from decode_error
+    expected_keys = {
+        "schemaVersion",
+        "toolkit",
+        "toolkitName",
+        "targetPid",
+        "targetStartTime",
+        "accessiblePid",
+        "accessibleStartTime",
+        "ownerUid",
+        "role",
+        "title",
+        "x",
+        "y",
+        "width",
+        "height",
+        "clickX",
+        "clickY",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        fail("AT-SPI surface evidence fields changed")
+    integer_fields = (
+        "schemaVersion",
+        "targetPid",
+        "accessiblePid",
+        "ownerUid",
+        "x",
+        "y",
+        "width",
+        "height",
+        "clickX",
+        "clickY",
+    )
+    if any(type(payload[field]) is not int for field in integer_fields):
+        fail("AT-SPI surface evidence integer identity is invalid")
+    string_fields = (
+        "toolkit",
+        "toolkitName",
+        "targetStartTime",
+        "accessibleStartTime",
+        "role",
+        "title",
+    )
+    if any(not isinstance(payload[field], str) for field in string_fields):
+        fail("AT-SPI surface evidence string identity is invalid")
+    expected_title = EXPECTED_SURFACE_TITLES[(toolkit, secure)]
+    expected_role = (
+        "password text" if secure and toolkit == "qt" else "text"
+    )
+    expected_toolkits = {
+        "gtk": frozenset(("gtk", "gtk4")),
+        "qt": frozenset(("qt", "qt6")),
+    }
+    if (
+        payload["schemaVersion"] != 1
+        or payload["toolkit"] != toolkit
+        or payload["toolkitName"] not in expected_toolkits[toolkit]
+        or payload["targetPid"] != target.pid
+        or payload["accessiblePid"] != target.pid
+        or payload["targetStartTime"] != target.start_time
+        or payload["accessibleStartTime"] != target.start_time
+        or payload["ownerUid"] != os.getuid()
+        or payload["role"] != expected_role
+        or payload["title"] != expected_title
+        or not payload["targetStartTime"].isdigit()
+        or not payload["accessibleStartTime"].isdigit()
+    ):
+        fail("AT-SPI surface owner, role, or title identity mismatch")
+    x = payload["x"]
+    y = payload["y"]
+    width = payload["width"]
+    height = payload["height"]
+    click_x = payload["clickX"]
+    click_y = payload["clickY"]
+    if (
+        not -MAX_SCREEN_COORDINATE <= x <= MAX_SCREEN_COORDINATE
+        or not -MAX_SCREEN_COORDINATE <= y <= MAX_SCREEN_COORDINATE
+        or not 1 <= width <= MAX_SCREEN_DIMENSION
+        or not 1 <= height <= MAX_SCREEN_DIMENSION
+        or x + width > MAX_SCREEN_COORDINATE
+        or y + height > MAX_SCREEN_COORDINATE
+        or click_x != x + width // 2
+        or click_y != y + height // 2
+    ):
+        fail("AT-SPI surface screen extents are invalid")
+    return SurfaceEvidence(
+        schema_version=payload["schemaVersion"],
+        toolkit=payload["toolkit"],
+        toolkit_name=payload["toolkitName"],
+        target_pid=payload["targetPid"],
+        target_start_time=payload["targetStartTime"],
+        accessible_pid=payload["accessiblePid"],
+        accessible_start_time=payload["accessibleStartTime"],
+        owner_uid=payload["ownerUid"],
+        role=payload["role"],
+        title=payload["title"],
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        click_x=click_x,
+        click_y=click_y,
+    )
+
+
+def locate_probe_surface(
+    locator: Path,
+    toolkit: str,
+    secure: bool,
+    target: ProcessIdentity,
+    environment: dict[str, str],
+    deadline: float,
+    *,
+    require_focused: bool = False,
+    snapshot_guard: SnapshotMutationGuard | None = None,
+) -> SurfaceEvidence:
+    locator_timeout = max(
+        1,
+        min(15, int(remaining(deadline, "AT-SPI surface locator"))),
+    )
+    command = [
+        str(EXPECTED_PYTHON),
+        "-I",
+        str(locator),
+        "--pid",
+        str(target.pid),
+        "--start-time",
+        target.start_time,
+        "--executable",
+        target.executable,
+        "--toolkit",
+        toolkit,
+        "--timeout-seconds",
+        str(locator_timeout),
+    ]
+    if secure:
+        command.append("--secure")
+    if require_focused:
+        command.append("--require-focused")
+    status, output, error = run_bounded_command(
+        command,
+        environment,
+        remaining(deadline, "AT-SPI surface locator process"),
+        snapshot_guard=snapshot_guard,
+    )
+    return parse_surface_evidence(
+        status,
+        output,
+        error,
+        toolkit=toolkit,
+        secure=secure,
+        target=target,
+    )
+
+
+def run_verified_pointer_command(
+    runner: Path,
+    arguments: Sequence[str],
+    environment: dict[str, str],
+    deadline: float,
+    *,
+    snapshot_guard: SnapshotMutationGuard | None = None,
+) -> None:
+    status, output, error = run_bounded_command(
+        [
+            str(EXPECTED_PYTHON),
+            "-I",
+            str(runner),
+            "--socket",
+            environment["YDOTOOL_SOCKET"],
+            "--pid",
+            environment["MOZKEY_DOGFOOD_YDOTOOLD_PID"],
+            "--timeout-seconds",
+            "10",
+            "--",
+            *arguments,
+        ],
+        environment,
+        remaining(deadline, "verified pointer command"),
+        snapshot_guard=snapshot_guard,
+    )
+    if status != 0 or error or output != HELPER_SUCCESS_LINE + "\n":
+        fail(f"verified pointer command failed status={status}")
+
+
+def focus_probe_surface(
+    locator: Path,
+    runner: Path,
+    toolkit: str,
+    secure: bool,
+    target: ProcessIdentity,
+    environment: dict[str, str],
+    deadline: float,
+    *,
+    snapshot_guard: SnapshotMutationGuard | None = None,
+) -> SurfaceEvidence:
+    before = locate_probe_surface(
+        locator,
+        toolkit,
+        secure,
+        target,
+        environment,
+        deadline,
+        snapshot_guard=snapshot_guard,
+    )
+    run_verified_pointer_command(
+        runner,
+        ("mousemove", "--absolute", str(before.click_x), str(before.click_y)),
+        environment,
+        deadline,
+        snapshot_guard=snapshot_guard,
+    )
+    at_pointer = locate_probe_surface(
+        locator,
+        toolkit,
+        secure,
+        target,
+        environment,
+        deadline,
+        snapshot_guard=snapshot_guard,
+    )
+    if at_pointer != before:
+        fail("AT-SPI surface changed before the verified click")
+    run_verified_pointer_command(
+        runner,
+        ("click", "0xC0"),
+        environment,
+        deadline,
+        snapshot_guard=snapshot_guard,
+    )
+    focused = locate_probe_surface(
+        locator,
+        toolkit,
+        secure,
+        target,
+        environment,
+        deadline,
+        require_focused=True,
+        snapshot_guard=snapshot_guard,
+    )
+    if focused != before:
+        fail("AT-SPI surface changed while receiving verified focus")
+    return focused
 
 
 def verify_installed_candidate(
@@ -997,6 +1647,7 @@ def verify_installed_candidate(
     timeout: float,
     *,
     profile_only: bool,
+    snapshot_guard: SnapshotMutationGuard | None = None,
 ) -> dict[str, object]:
     command = [
         str(EXPECTED_PYTHON),
@@ -1024,7 +1675,10 @@ def verify_installed_candidate(
     if profile_only:
         command.append("--profile-only")
     status, output, error = run_bounded_command(
-        command, clean_command_environment(), timeout
+        command,
+        clean_command_environment(),
+        timeout,
+        snapshot_guard=snapshot_guard,
     )
     lines = output.splitlines()
     if status != 0 or error or len(lines) != 1 or not lines[0].startswith("RESULT:"):
@@ -1113,6 +1767,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
     helper = directory / "send_ime_sequence.sh"
     socket_verifier = directory / "verify_ydotool_socket.py"
     verified_ydotool = directory / "run_verified_ydotool.py"
+    surface_locator = directory / "atspi_surface_locator.py"
     candidate_verifier = directory / "verify_installed_candidate.py"
     official_attestation_verifier = root / "tools/release/linux_build_attestation.py"
     zenz_normalizer = root / "tools/release/normalize_zenz_gguf.py"
@@ -1122,6 +1777,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
     helper_blob = verify_tracked_file(root, helper, "100755")
     socket_verifier_blob = verify_tracked_file(root, socket_verifier, "100755")
     verified_ydotool_blob = verify_tracked_file(root, verified_ydotool, "100755")
+    surface_locator_blob = verify_tracked_file(root, surface_locator, "100755")
     candidate_verifier_blob = verify_tracked_file(
         root, candidate_verifier, "100755"
     )
@@ -1148,7 +1804,10 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
     ).stdout:
         fail("gate checkout tracked worktree is not clean")
     deadline = time.monotonic() + args.timeout_seconds
-    with tempfile.TemporaryDirectory(prefix="mozkey-gui-scope-gate.") as raw_build:
+    with (
+        tempfile.TemporaryDirectory(prefix="mozkey-gui-scope-gate.") as raw_build,
+        ExitStack() as snapshot_cleanup,
+    ):
         build_dir = Path(raw_build).resolve(strict=True)
         if build_dir.stat().st_uid != os.getuid():
             fail("temporary build directory owner mismatch")
@@ -1161,16 +1820,22 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         helper_snapshot = snapshot_tracked_file(
             helper, snapshot_dir / helper.name, helper_blob, 0o500
         )
-        snapshot_tracked_file(
+        socket_verifier_snapshot = snapshot_tracked_file(
             socket_verifier,
             snapshot_dir / socket_verifier.name,
             socket_verifier_blob,
             0o500,
         )
-        snapshot_tracked_file(
+        verified_ydotool_snapshot = snapshot_tracked_file(
             verified_ydotool,
             snapshot_dir / verified_ydotool.name,
             verified_ydotool_blob,
+            0o500,
+        )
+        surface_locator_snapshot = snapshot_tracked_file(
+            surface_locator,
+            snapshot_dir / surface_locator.name,
+            surface_locator_blob,
             0o500,
         )
         candidate_verifier_snapshot = snapshot_tracked_file(
@@ -1185,7 +1850,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
             official_attestation_verifier_blob,
             0o500,
         )
-        snapshot_tracked_file(
+        zenz_normalizer_snapshot = snapshot_tracked_file(
             zenz_normalizer,
             snapshot_dir / zenz_normalizer.name,
             zenz_normalizer_blob,
@@ -1194,7 +1859,28 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         fixture_snapshot = snapshot_tracked_file(
             fixture_path, snapshot_dir / fixture_path.name, fixture_blob, 0o400
         )
+        snapshot_guard = SnapshotMutationGuard(
+            snapshot_dir,
+            (
+                (source_snapshot, source_blob, 0o400),
+                (helper_snapshot, helper_blob, 0o500),
+                (socket_verifier_snapshot, socket_verifier_blob, 0o500),
+                (verified_ydotool_snapshot, verified_ydotool_blob, 0o500),
+                (surface_locator_snapshot, surface_locator_blob, 0o500),
+                (candidate_verifier_snapshot, candidate_verifier_blob, 0o500),
+                (
+                    official_attestation_verifier_snapshot,
+                    official_attestation_verifier_blob,
+                    0o500,
+                ),
+                (zenz_normalizer_snapshot, zenz_normalizer_blob, 0o400),
+                (fixture_snapshot, fixture_blob, 0o400),
+            ),
+        )
+        snapshot_cleanup.callback(snapshot_guard.close)
+        snapshot_cleanup.callback(snapshot_guard.assert_clean)
         reading, custom, baseline = load_release_fixture(fixture_snapshot)
+        snapshot_guard.assert_clean()
         if (
             not args.protocol_root.is_absolute()
             or args.protocol_root.is_symlink()
@@ -1239,8 +1925,14 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
             head,
             remaining(deadline, "fresh profile candidate preflight"),
             profile_only=True,
+            snapshot_guard=snapshot_guard,
         )
-        probe = build_probe(args.toolkit, source_snapshot, build_dir)
+        probe = build_probe(
+            args.toolkit,
+            source_snapshot,
+            build_dir,
+            snapshot_guard=snapshot_guard,
+        )
         probe_hash = sha256(probe)
         probe_metadata = probe.stat()
         environment = desktop_environment(args.toolkit, args.profile_root)
@@ -1262,6 +1954,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         if args.toolkit == "gtk":
             environment["MOZKEY_DOGFOOD_APP_ID"] = EXPECTED_PROGRAM_IDENTITIES["gtk"]
 
+        snapshot_guard.assert_clean()
         process = subprocess.Popen(
             [str(probe)],
             stdin=subprocess.DEVNULL,
@@ -1272,17 +1965,12 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         )
         capture: BoundedPipeCapture | None = None
         try:
+            snapshot_guard.assert_clean()
             capture = BoundedPipeCapture(process)
-            expected_ready = (
-                "READY:active=true focused=true "
-                f"password={'true' if args.secure else 'false'}"
-            )
-            ready_line = capture.next_stdout_line(deadline, "GUI probe readiness")
-            if ready_line != expected_ready:
-                fail("GUI probe readiness transcript was not exact")
             probe_identity = process_identity(process.pid, probe)
             if probe_identity.command != (str(probe),):
                 fail("GUI probe command identity mismatch")
+            snapshot_guard.assert_clean()
             during = installed_fcitx()
             if during != before:
                 fail("installed Fcitx identity or scope changed before input")
@@ -1298,11 +1986,47 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
                 head,
                 remaining(deadline, "immediate fresh profile preflight"),
                 profile_only=True,
+                snapshot_guard=snapshot_guard,
             )
             if stable_candidate_evidence(
                 immediate_profile_evidence
             ) != stable_candidate_evidence(profile_evidence):
                 fail("fresh profile evidence changed before GUI input")
+
+            focus_environment = {
+                key: value
+                for key, value in environment.items()
+                if key != "MOZKEY_DOGFOOD_EXPECTED_VALUE"
+            }
+            surface_evidence = focus_probe_surface(
+                surface_locator_snapshot,
+                verified_ydotool_snapshot,
+                args.toolkit,
+                args.secure,
+                probe_identity,
+                focus_environment,
+                deadline,
+                snapshot_guard=snapshot_guard,
+            )
+            expected_ready = (
+                "READY:active=true focused=true "
+                f"password={'true' if args.secure else 'false'}"
+            )
+            ready_line = capture.next_stdout_line(deadline, "GUI probe readiness")
+            if ready_line != expected_ready:
+                fail("GUI probe readiness transcript was not exact")
+            focused_surface = locate_probe_surface(
+                surface_locator_snapshot,
+                args.toolkit,
+                args.secure,
+                probe_identity,
+                focus_environment,
+                deadline,
+                require_focused=True,
+                snapshot_guard=snapshot_guard,
+            )
+            if focused_surface != surface_evidence:
+                fail("AT-SPI probe surface changed while establishing focus")
 
             helper_status, helper_output, helper_error = run_sequence_helper(
                 helper_snapshot,
@@ -1314,6 +2038,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
                     if key != "MOZKEY_DOGFOOD_EXPECTED_VALUE"
                 },
                 remaining(deadline, "canonical IME sequence"),
+                snapshot_guard=snapshot_guard,
             )
             if helper_status != 0:
                 fail(f"canonical IME sequence failed status={helper_status}")
@@ -1329,6 +2054,18 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
             result_line = capture.next_stdout_line(deadline, "GUI result")
             if process.poll() is not None:
                 fail("GUI probe exited before parent termination")
+            final_surface = locate_probe_surface(
+                surface_locator_snapshot,
+                args.toolkit,
+                args.secure,
+                probe_identity,
+                focus_environment,
+                deadline,
+                require_focused=True,
+                snapshot_guard=snapshot_guard,
+            )
+            if final_surface != surface_evidence:
+                fail("AT-SPI probe surface changed during the IME sequence")
             stop_process(process)
             if process.returncode not in (-signal.SIGTERM, -signal.SIGKILL):
                 fail("GUI probe was not terminated by its parent")
@@ -1361,6 +2098,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
                 head,
                 remaining(deadline, "installed candidate provenance"),
                 profile_only=False,
+                snapshot_guard=snapshot_guard,
             )
             for key in (
                 "addonSha256",
@@ -1408,53 +2146,81 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
                         capture.close()
                 finally:
                     try:
-                        mutation_guard.assert_clean()
+                        snapshot_guard.assert_clean()
                     finally:
-                        mutation_guard.close()
+                        try:
+                            mutation_guard.assert_clean()
+                        finally:
+                            mutation_guard.close()
 
-    if run_checked(
-        ["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"], timeout=10
-    ).stdout.strip() != head:
-        fail("gate checkout HEAD changed during the gate")
-    if run_checked(
-        [
-            "/usr/bin/git",
-            "-C",
-            str(root),
-            "status",
-            "--porcelain",
-            "--untracked-files=no",
-        ],
-        timeout=10,
-    ).stdout:
-        fail("gate checkout changed during the gate")
-    final_blobs = {
-        "runner": verify_tracked_file(root, script, "100755"),
-        "source": verify_tracked_file(root, source, "100644"),
-        "helper": verify_tracked_file(root, helper, "100755"),
-        "socket_verifier": verify_tracked_file(root, socket_verifier, "100755"),
-        "verified_ydotool": verify_tracked_file(root, verified_ydotool, "100755"),
-        "candidate_verifier": verify_tracked_file(
-            root, candidate_verifier, "100755"
-        ),
-        "official_attestation_verifier": verify_tracked_file(
-            root, official_attestation_verifier, "100755"
-        ),
-        "zenz_normalizer": verify_tracked_file(root, zenz_normalizer, "100644"),
-        "fixture": verify_tracked_file(root, fixture_path, "100644"),
-    }
-    if final_blobs != {
-        "runner": runner_blob,
-        "source": source_blob,
-        "helper": helper_blob,
-        "socket_verifier": socket_verifier_blob,
-        "verified_ydotool": verified_ydotool_blob,
-        "candidate_verifier": candidate_verifier_blob,
-        "official_attestation_verifier": official_attestation_verifier_blob,
-        "zenz_normalizer": zenz_normalizer_blob,
-        "fixture": fixture_blob,
-    }:
-        fail("tracked dogfood inputs changed during the gate")
+        if run_checked(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"],
+            timeout=10,
+            snapshot_guard=snapshot_guard,
+        ).stdout.strip() != head:
+            fail("gate checkout HEAD changed during the gate")
+        if run_checked(
+            [
+                "/usr/bin/git",
+                "-C",
+                str(root),
+                "status",
+                "--porcelain",
+                "--untracked-files=no",
+            ],
+            timeout=10,
+            snapshot_guard=snapshot_guard,
+        ).stdout:
+            fail("gate checkout changed during the gate")
+        final_blobs = {
+            "runner": verify_tracked_file(
+                root, script, "100755", snapshot_guard=snapshot_guard
+            ),
+            "source": verify_tracked_file(
+                root, source, "100644", snapshot_guard=snapshot_guard
+            ),
+            "helper": verify_tracked_file(
+                root, helper, "100755", snapshot_guard=snapshot_guard
+            ),
+            "socket_verifier": verify_tracked_file(
+                root, socket_verifier, "100755", snapshot_guard=snapshot_guard
+            ),
+            "verified_ydotool": verify_tracked_file(
+                root, verified_ydotool, "100755", snapshot_guard=snapshot_guard
+            ),
+            "surface_locator": verify_tracked_file(
+                root, surface_locator, "100755", snapshot_guard=snapshot_guard
+            ),
+            "candidate_verifier": verify_tracked_file(
+                root, candidate_verifier, "100755", snapshot_guard=snapshot_guard
+            ),
+            "official_attestation_verifier": verify_tracked_file(
+                root,
+                official_attestation_verifier,
+                "100755",
+                snapshot_guard=snapshot_guard,
+            ),
+            "zenz_normalizer": verify_tracked_file(
+                root, zenz_normalizer, "100644", snapshot_guard=snapshot_guard
+            ),
+            "fixture": verify_tracked_file(
+                root, fixture_path, "100644", snapshot_guard=snapshot_guard
+            ),
+        }
+        if final_blobs != {
+            "runner": runner_blob,
+            "source": source_blob,
+            "helper": helper_blob,
+            "socket_verifier": socket_verifier_blob,
+            "verified_ydotool": verified_ydotool_blob,
+            "surface_locator": surface_locator_blob,
+            "candidate_verifier": candidate_verifier_blob,
+            "official_attestation_verifier": official_attestation_verifier_blob,
+            "zenz_normalizer": zenz_normalizer_blob,
+            "fixture": fixture_blob,
+        }:
+            fail("tracked dogfood inputs changed during the gate")
+        snapshot_guard.assert_clean()
 
     return {
         "toolkit": args.toolkit,
@@ -1477,6 +2243,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         "sequenceHelperBlob": helper_blob,
         "socketVerifierBlob": socket_verifier_blob,
         "verifiedYdotoolBlob": verified_ydotool_blob,
+        "surfaceLocatorBlob": surface_locator_blob,
         "candidateVerifierBlob": candidate_verifier_blob,
         "officialAttestationVerifierBlob": official_attestation_verifier_blob,
         "zenzNormalizerBlob": zenz_normalizer_blob,
@@ -1490,6 +2257,23 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         "installedServerSha256": candidate_evidence["serverSha256"],
         "serverPid": candidate_evidence["serverPid"],
         "serverStartTime": candidate_evidence["serverStartTime"],
+        "focusMethod": "atspi-screen-extents+verified-ydotool",
+        "surfaceToolkit": surface_evidence.toolkit_name,
+        "surfacePid": surface_evidence.accessible_pid,
+        "surfaceStartTime": surface_evidence.accessible_start_time,
+        "surfaceOwnerUid": surface_evidence.owner_uid,
+        "surfaceRole": surface_evidence.role,
+        "surfaceTitle": surface_evidence.title,
+        "surfaceExtents": {
+            "x": surface_evidence.x,
+            "y": surface_evidence.y,
+            "width": surface_evidence.width,
+            "height": surface_evidence.height,
+        },
+        "surfaceClick": {
+            "x": surface_evidence.click_x,
+            "y": surface_evidence.click_y,
+        },
         "mozkeyHead": head,
         "identityStableBeforeAfter": True,
         "result": "pass",
