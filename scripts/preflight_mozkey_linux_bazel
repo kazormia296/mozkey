@@ -1,0 +1,182 @@
+#!/bin/sh
+
+# Validate every Bazel product input and generated metadata before a privileged
+# install writes its first target file. Run from the repository's src/ tree.
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+source_root="${repository_root}/src"
+PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
+LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}"
+. "${script_dir}/fcitx5_install_paths"
+validate_mozkey_install_environment
+
+if [ "$(pwd -P)" != "${source_root}" ]; then
+  echo "Mozkey Linux Bazel preflight must run from ${source_root}" >&2
+  exit 2
+fi
+
+if [ -n "${FCITX5_ADDON_DIR:-}" ]; then
+  validate_fcitx5_addon_dir "${FCITX5_ADDON_DIR}"
+else
+  resolved_addon_dir="$(resolve_fcitx5_addon_dir)"
+  validate_fcitx5_addon_dir "${resolved_addon_dir}"
+fi
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "required Mozkey Linux install command is unavailable: $1" >&2
+    exit 1
+  fi
+}
+
+require_nonempty_file() {
+  if [ ! -f "$1" ] || [ ! -s "$1" ]; then
+    echo "missing or empty Mozkey Linux product input: $1" >&2
+    exit 1
+  fi
+}
+
+require_executable_file() {
+  require_nonempty_file "$1"
+  if [ ! -x "$1" ]; then
+    echo "Mozkey Linux product input is not executable: $1" >&2
+    exit 1
+  fi
+}
+
+for required_command in install ldd msgfmt python3 readlink stat
+do
+  require_command "${required_command}"
+done
+
+for required_binary in \
+  bazel-bin/server/mozc_server \
+  bazel-bin/gui/tool/mozc_tool \
+  bazel-bin/unix/fcitx5/fcitx5-mozkey.so \
+  bazel-bin/unix/fcitx5/grimodex_consumer_tool \
+  bazel-bin/zenz_scorer/mozc_zenz_scorer
+do
+  require_executable_file "${required_binary}"
+done
+
+for required_script in \
+  "${script_dir}/install_fcitx5_bazel" \
+  "${script_dir}/install_server_bazel" \
+  "${script_dir}/install_zenz_runtime" \
+  "${script_dir}/smoke_test_mozkey_fcitx5_install" \
+  "${script_dir}/uninstall_mozkey_fcitx5" \
+  "${script_dir}/verify_llama_server_compatibility"
+do
+  require_executable_file "${required_script}"
+done
+
+for required_metadata in \
+  unix/fcitx5/mozkey-addon.conf \
+  unix/fcitx5/mozkey.conf \
+  unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in \
+  data/images/product_icon_32bpp-128.png \
+  data/images/unix/ime_product_icon_opensource-32.png \
+  ../scripts/icons/ui-alpha_full.png \
+  ../scripts/icons/ui-alpha_half.png \
+  ../scripts/icons/ui-direct.png \
+  ../scripts/icons/ui-hiragana.png \
+  ../scripts/icons/ui-katakana_full.png \
+  ../scripts/icons/ui-katakana_half.png \
+  ../scripts/icons/ui-dictionary.png \
+  ../scripts/icons/ui-properties.png \
+  ../scripts/icons/ui-tool.png \
+  ../LICENSE \
+  ../LICENSES/Fcitx5-Mozc-BSD-3-Clause.txt \
+  ../LICENSES/LGPL-2.1-or-later.txt \
+  ../THIRD_PARTY_NOTICES.md \
+  ../tools/dictionary/RELEASE_THIRD_PARTY_NOTICES.md \
+  ../tools/dictionary/daily_sources.lock.json \
+  ../tools/dictionary/verify_release_dictionary_artifact.py \
+  win32/installer/zenz_runtime/models/zenz-v3.2-small-Q5_K_M.gguf \
+  win32/installer/zenz_runtime/licenses/zenz-v3.2-small-gguf.txt \
+  win32/installer/zenz_runtime/licenses/llama.cpp-MIT.txt \
+  win32/installer/zenz_runtime/licenses/Apache-2.0.txt \
+  win32/installer/zenz_runtime/licenses/THIRD_PARTY_NOTICES.md \
+  ../scripts/mozkey_fcitx5_install_manifest.txt
+do
+  require_nonempty_file "${required_metadata}"
+done
+
+set -- unix/fcitx5/po/*.po
+if [ "$1" = 'unix/fcitx5/po/*.po' ]; then
+  echo "Mozkey Fcitx translation sources are missing" >&2
+  exit 1
+fi
+for po_file in "$@"
+do
+  require_nonempty_file "${po_file}"
+done
+
+set -- data/installer/*.html
+if [ "$1" = 'data/installer/*.html' ]; then
+  echo "Mozkey installer documentation is missing" >&2
+  exit 1
+fi
+for documentation_file in "$@"
+do
+  require_nonempty_file "${documentation_file}"
+done
+
+grep -Fqx 'Library=fcitx5-mozkey' unix/fcitx5/mozkey-addon.conf || {
+  echo "Fcitx addon metadata does not select fcitx5-mozkey" >&2
+  exit 1
+}
+grep -Fqx 'Addon=mozkey' unix/fcitx5/mozkey.conf || {
+  echo "Fcitx input method metadata does not select mozkey" >&2
+  exit 1
+}
+grep -Fq '<id>org.fcitx.Fcitx5.Addon.Mozkey</id>' \
+  unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in || {
+  echo "Mozkey AppStream component identity is missing" >&2
+  exit 1
+}
+
+python3 -c 'import json,sys
+p=json.load(open(sys.argv[1], encoding="utf-8"))
+release=set(p["profiles"]["release-approved-only"]["source_ids"])
+assert "dic-nico-intersection-pixiv" not in release
+assert release
+assert all(p["sources"][source]["release_approved"] for source in release)' \
+  ../tools/dictionary/daily_sources.lock.json || {
+  echo "release dictionary source lock is invalid" >&2
+  exit 1
+}
+python3 ../tools/dictionary/verify_release_dictionary_artifact.py --root .. || {
+  echo "release dictionary build outputs are not verified" >&2
+  exit 1
+}
+
+metadata_tmp="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-linux-preflight.XXXXXX")"
+trap 'rm -rf "${metadata_tmp}"' EXIT HUP INT TERM
+for po_file in unix/fcitx5/po/*.po
+do
+  language="$(basename -- "${po_file}" .po)"
+  msgfmt --check --check-format "${po_file}" \
+    -o "${metadata_tmp}/${language}.mo"
+done
+msgfmt --xml -d unix/fcitx5/po/ \
+  --template unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in \
+  -o "${metadata_tmp}/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+
+if command -v appstreamcli >/dev/null 2>&1; then
+  appstreamcli validate --no-net \
+    "${metadata_tmp}/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+fi
+
+runtime_link="${DESTDIR}${PREFIX}/lib/mozkey/llama-server"
+if { [ -e "${runtime_link}" ] || [ -L "${runtime_link}" ]; } &&
+   [ ! -L "${runtime_link}" ]; then
+  echo "refusing pre-existing non-symlink llama runtime path: ${runtime_link}" >&2
+  exit 1
+fi
+
+"${script_dir}/verify_llama_server_compatibility" "${LLAMA_SERVER_TARGET}"
+echo "Mozkey Linux Bazel install preflight passed"
