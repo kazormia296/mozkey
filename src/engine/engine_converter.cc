@@ -131,16 +131,22 @@ int32_t CalculateCursorOffset(absl::string_view committed_text) {
 }  // namespace
 
 EngineConverter::EngineConverter(
-    std::shared_ptr<const ConverterInterface> converter)
+    std::shared_ptr<const ConverterInterface> converter,
+    std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+        project_dictionary_provider)
     : EngineConverter(std::move(converter), composer::GetSharedDefaultRequest(),
-                      config::ConfigHandler::GetSharedDefaultConfig()) {}
+                      config::ConfigHandler::GetSharedDefaultConfig(),
+                      std::move(project_dictionary_provider)) {}
 
 EngineConverter::EngineConverter(
     std::shared_ptr<const ConverterInterface> converter,
     std::shared_ptr<const commands::Request> request,
-    std::shared_ptr<const Config> config)
+    std::shared_ptr<const Config> config,
+    std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+        project_dictionary_provider)
     : EngineConverterInterface(),
       converter_(std::move(converter)),
+      project_dictionary_provider_(std::move(project_dictionary_provider)),
       segments_(),
       incognito_segments_(),
       segment_index_(0),
@@ -1529,7 +1535,8 @@ void EngineConverter::FillOutput(const composer::Composer& composer,
 
 EngineConverter* EngineConverter::Clone() const {
   EngineConverter* engine_converter =
-      new EngineConverter(converter_, request_, config_);
+      new EngineConverter(converter_, request_, config_,
+                          project_dictionary_provider_);
   *engine_converter = *this;
 
   if (engine_converter->CheckState(SUGGESTION | PREDICTION | CONVERSION)) {
@@ -2017,6 +2024,27 @@ void EngineConverter::OnStartComposition(const commands::Context& context) {
     SetProjectDictionarySecureInput(context.input_field_type() ==
                                     commands::Context::PASSWORD);
   }
+
+  if (!project_dictionary_registry_.secure_input() &&
+      project_dictionary_provider_ != nullptr) {
+    dictionary::ProjectDictionaryPublication publication =
+        project_dictionary_provider_->Reload();
+    if (publication.snapshot != nullptr) {
+      const dictionary::ProjectDictionaryRegistry::PublishResult result =
+          project_dictionary_registry_.Publish(
+              std::move(publication.snapshot));
+      if (result == dictionary::ProjectDictionaryRegistry::PublishResult::
+                        kRejectedStale ||
+          result == dictionary::ProjectDictionaryRegistry::PublishResult::
+                        kRejectedConflict) {
+        // Provider ordering is authoritative.  An impossible local conflict
+        // fails closed instead of retaining a potentially mismatched overlay.
+        project_dictionary_registry_.Purge();
+      }
+    } else if (publication.clear) {
+      project_dictionary_registry_.Purge();
+    }
+  }
   project_dictionary_registry_.PinForComposition();
 
   bool revision_changed = false;
@@ -2149,6 +2177,11 @@ void EngineConverter::SetProjectDictionarySecureInput(bool secure) {
 dictionary::ProjectDictionaryRegistry::Status
 EngineConverter::GetProjectDictionaryStatus() const {
   return project_dictionary_registry_.status();
+}
+
+std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+EngineConverter::GetPinnedProjectDictionary() const {
+  return project_dictionary_registry_.pinned();
 }
 
 void EngineConverter::UpdateSelectedCandidateIndex() {

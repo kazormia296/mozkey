@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -27,6 +28,7 @@ constexpr size_t kMaxEntryCount = 20'000;
 constexpr size_t kMaxPayloadBytes = 16 * 1024 * 1024;
 constexpr size_t kMaxTextScalars = 256;
 constexpr size_t kMaxIdentifierBytes = 128;
+constexpr size_t kMaxConditionScalars = 400;
 
 absl::Status ValidateIdentifier(absl::string_view value,
                                 absl::string_view field_name) {
@@ -41,13 +43,40 @@ absl::Status ValidateIdentifier(absl::string_view value,
   return absl::OkStatus();
 }
 
+absl::Status ValidateCondition(const std::optional<std::string>& value,
+                               absl::string_view field_name) {
+  if (!value.has_value()) {
+    return absl::OkStatus();
+  }
+  if (!strings::IsValidUtf8(*value) ||
+      strings::AtLeastCharsLen(*value, kMaxConditionScalars + 1) >
+          kMaxConditionScalars) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(field_name, " is invalid or too large"));
+  }
+  return absl::OkStatus();
+}
+
+bool IsLowerHexSha256(absl::string_view digest) {
+  if (digest.empty()) {
+    return true;
+  }
+  if (digest.size() != 64) {
+    return false;
+  }
+  return std::all_of(digest.begin(), digest.end(), [](char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+  });
+}
+
 }  // namespace
 
 absl::StatusOr<std::shared_ptr<const ProjectDictionarySnapshot>>
 ProjectDictionarySnapshot::Create(
     uint64_t generation, absl::string_view source_id,
     absl::string_view fingerprint,
-    std::vector<ProjectDictionaryEntry> entries) {
+    std::vector<ProjectDictionaryEntry> entries,
+    ProjectDictionaryMetadata metadata) {
   if (entries.size() > kMaxEntryCount) {
     return absl::ResourceExhaustedError("too many project dictionary entries");
   }
@@ -60,10 +89,31 @@ ProjectDictionarySnapshot::Create(
       !status.ok()) {
     return status;
   }
+  if (const absl::Status status = ValidateCondition(metadata.topic, "topic");
+      !status.ok()) {
+    return status;
+  }
+  if (const absl::Status status = ValidateCondition(metadata.style, "style");
+      !status.ok()) {
+    return status;
+  }
+  if (const absl::Status status =
+          ValidateCondition(metadata.preference, "preference");
+      !status.ok()) {
+    return status;
+  }
+  if (!IsLowerHexSha256(metadata.payload_sha256)) {
+    return absl::InvalidArgumentError(
+        "payload_sha256 must be empty or lower-case hexadecimal SHA-256");
+  }
 
   std::vector<StoredEntry> stored_entries;
   stored_entries.reserve(entries.size());
-  size_t payload_bytes = source_id.size() + fingerprint.size();
+  size_t payload_bytes = source_id.size() + fingerprint.size() +
+                         metadata.topic.value_or("").size() +
+                         metadata.style.value_or("").size() +
+                         metadata.preference.value_or("").size() +
+                         metadata.payload_sha256.size();
   for (ProjectDictionaryEntry& entry : entries) {
     if (entry.key.empty() || entry.value.empty()) {
       return absl::InvalidArgumentError(
@@ -155,16 +205,18 @@ ProjectDictionarySnapshot::Create(
   return std::shared_ptr<const ProjectDictionarySnapshot>(
       new ProjectDictionarySnapshot(generation, std::string(source_id),
                                     std::string(fingerprint),
-                                    std::move(stored_entries)));
+                                    std::move(stored_entries),
+                                    std::move(metadata)));
 }
 
 ProjectDictionarySnapshot::ProjectDictionarySnapshot(
     uint64_t generation, std::string source_id, std::string fingerprint,
-    std::vector<StoredEntry> entries)
+    std::vector<StoredEntry> entries, ProjectDictionaryMetadata metadata)
     : generation_(generation),
       source_id_(std::move(source_id)),
       fingerprint_(std::move(fingerprint)),
-      entries_(std::move(entries)) {}
+      entries_(std::move(entries)),
+      metadata_(std::move(metadata)) {}
 
 ProjectDictionaryRegistry::ProjectDictionaryRegistry(
     const ProjectDictionaryRegistry& other) {

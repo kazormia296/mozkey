@@ -311,6 +311,10 @@ class EngineConverterInterface {
   GetProjectDictionaryStatus() const {
     return {};
   }
+  virtual std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+  GetPinnedProjectDictionary() const {
+    return nullptr;
+  }
 
   // Clone instance.
   // Callee object doesn't have the ownership of the cloned instance.

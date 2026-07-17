@@ -43,6 +43,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
@@ -114,6 +115,31 @@ CreateProjectDictionarySnapshot(uint64_t generation,
   CHECK(snapshot.ok()) << snapshot.status();
   return *std::move(snapshot);
 }
+
+class QueueProjectDictionaryProvider final
+    : public dictionary::ProjectDictionaryProviderInterface {
+ public:
+  explicit QueueProjectDictionaryProvider(
+      std::vector<dictionary::ProjectDictionaryPublication> publications)
+      : publications_(std::move(publications)) {}
+
+  dictionary::ProjectDictionaryPublication Reload() override {
+    ++reload_count_;
+    if (next_ >= publications_.size()) {
+      return publications_.empty()
+                 ? dictionary::ProjectDictionaryPublication{}
+                 : publications_.back();
+    }
+    return publications_[next_++];
+  }
+
+  size_t reload_count() const { return reload_count_; }
+
+ private:
+  std::vector<dictionary::ProjectDictionaryPublication> publications_;
+  size_t next_ = 0;
+  size_t reload_count_ = 0;
+};
 }  // namespace
 
 void AddSegmentWithSingleCandidate(Segments* segments, absl::string_view key,
@@ -3360,6 +3386,63 @@ TEST_F(EngineConverterTest, ProjectDictionaryPurgeIsSessionLocal) {
   EXPECT_FALSE(session_b.GetProjectDictionaryStatus().secure_input);
   EXPECT_EQ(session_b.GetProjectDictionaryStatus().latest_generation, 1);
   EXPECT_EQ(session_b.GetProjectDictionaryStatus().pinned_generation, 1);
+}
+
+TEST_F(EngineConverterTest, ProjectDictionaryProviderReloadsAtCompositionStart) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  const auto generation1 = CreateProjectDictionarySnapshot(1, "A");
+  const auto generation2 = CreateProjectDictionarySnapshot(2, "B");
+  auto provider = std::make_shared<QueueProjectDictionaryProvider>(
+      std::vector<dictionary::ProjectDictionaryPublication>{
+          {.snapshot = generation1}, {.snapshot = generation2}});
+  EngineConverter converter(mock_converter, request_, config_, provider);
+
+  converter.OnStartComposition(Context::default_instance());
+  EXPECT_EQ(provider->reload_count(), 1);
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), generation1);
+
+  converter.OnEndComposition();
+  converter.OnStartComposition(Context::default_instance());
+  EXPECT_EQ(provider->reload_count(), 2);
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), generation2);
+}
+
+TEST_F(EngineConverterTest, ProjectDictionaryProviderIsSkippedWhileSecure) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  const auto generation = CreateProjectDictionarySnapshot(1, "A");
+  auto provider = std::make_shared<QueueProjectDictionaryProvider>(
+      std::vector<dictionary::ProjectDictionaryPublication>{
+          {.snapshot = generation}});
+  EngineConverter converter(mock_converter, request_, config_, provider);
+
+  Context password;
+  password.set_input_field_type(Context::PASSWORD);
+  converter.OnStartComposition(password);
+  EXPECT_EQ(provider->reload_count(), 0);
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), nullptr);
+
+  Context normal;
+  normal.set_input_field_type(Context::NORMAL);
+  converter.OnStartComposition(normal);
+  EXPECT_EQ(provider->reload_count(), 1);
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), generation);
+}
+
+TEST_F(EngineConverterTest, ProjectDictionaryProviderClearFailsClosed) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  const auto generation = CreateProjectDictionarySnapshot(1, "A");
+  auto provider = std::make_shared<QueueProjectDictionaryProvider>(
+      std::vector<dictionary::ProjectDictionaryPublication>{
+          {.snapshot = generation}, {.snapshot = nullptr, .clear = true}});
+  EngineConverter converter(mock_converter, request_, config_, provider);
+
+  converter.OnStartComposition(Context::default_instance());
+  ASSERT_EQ(converter.GetPinnedProjectDictionary(), generation);
+  converter.OnEndComposition();
+  converter.OnStartComposition(Context::default_instance());
+  EXPECT_EQ(converter.GetPinnedProjectDictionary(), nullptr);
+  EXPECT_EQ(converter.GetProjectDictionaryStatus().latest_generation,
+            std::nullopt);
 }
 
 TEST_F(EngineConverterTest, DeleteCandidateFromHistory) {

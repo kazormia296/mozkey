@@ -161,6 +161,34 @@ TEST(ProjectDictionarySnapshotTest, RejectsInvalidEntries) {
       1, "project-a", "sha256:a",
       std::vector<ProjectDictionaryEntry>(20'001));
   EXPECT_FALSE(too_many_entries.ok());
+
+  auto invalid_digest = ProjectDictionarySnapshot::Create(
+      1, "project-a", "sha256:a", {Entry("key", "value", 1, "id")},
+      ProjectDictionaryMetadata{.payload_sha256 = "ABC"});
+  EXPECT_FALSE(invalid_digest.ok());
+
+  auto invalid_condition = ProjectDictionarySnapshot::Create(
+      1, "project-a", "sha256:a", {Entry("key", "value", 1, "id")},
+      ProjectDictionaryMetadata{.topic = std::string("\xC2 ")});
+  EXPECT_FALSE(invalid_condition.ok());
+}
+
+TEST(ProjectDictionarySnapshotTest, KeepsCompositionMetadataImmutable) {
+  const std::string digest(64, 'a');
+  auto snapshot = ProjectDictionarySnapshot::Create(
+      7, "project-a", "sha256:7", {Entry("key", "value", 1, "id")},
+      ProjectDictionaryMetadata{
+          .topic = "compiler",
+          .style = "concise",
+          .preference = "prefer project terminology",
+          .payload_sha256 = digest,
+      });
+  ASSERT_TRUE(snapshot.ok()) << snapshot.status();
+  EXPECT_EQ((*snapshot)->metadata().topic, "compiler");
+  EXPECT_EQ((*snapshot)->metadata().style, "concise");
+  EXPECT_EQ((*snapshot)->metadata().preference,
+            "prefer project terminology");
+  EXPECT_EQ((*snapshot)->metadata().payload_sha256, digest);
 }
 
 TEST(ProjectDictionaryRegistryTest, PinsCompositionAcrossAtomicPublish) {

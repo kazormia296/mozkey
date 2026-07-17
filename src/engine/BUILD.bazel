@@ -213,6 +213,7 @@ mozc_cc_library(
         "//converter:immutable_converter",
         "//converter:immutable_converter_interface",
         "//data_manager",
+        "//dictionary:project_dictionary",
         "//dictionary:user_dictionary",
         "//prediction:predictor",
         "//protocol:commands_cc_proto",
@@ -225,7 +226,15 @@ mozc_cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-    ],
+    ] + mozc_select(
+        oss_linux = [
+            "//base:environ",
+            "//dictionary:pos_matcher",
+            "//grimodex:project_dictionary_bridge",
+            "//grimodex:project_dictionary_provider",
+            "//grimodex:protocol_v1",
+        ],
+    ),
 )
 
 mozc_cc_test(

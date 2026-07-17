@@ -62,8 +62,13 @@ class EngineConverter : public EngineConverterInterface {
  public:
   EngineConverter(std::shared_ptr<const ConverterInterface> converter,
                   std::shared_ptr<const commands::Request> request,
-                  std::shared_ptr<const config::Config> config);
-  explicit EngineConverter(std::shared_ptr<const ConverterInterface> converter);
+                  std::shared_ptr<const config::Config> config,
+                  std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+                      project_dictionary_provider = nullptr);
+  explicit EngineConverter(
+      std::shared_ptr<const ConverterInterface> converter,
+      std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+          project_dictionary_provider = nullptr);
   EngineConverter(const EngineConverter&) = delete;
 
   // Checks if the current state is in the state bitmap.
@@ -279,6 +284,8 @@ class EngineConverter : public EngineConverterInterface {
   void SetProjectDictionarySecureInput(bool secure) override;
   dictionary::ProjectDictionaryRegistry::Status GetProjectDictionaryStatus()
       const override;
+  std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+  GetPinnedProjectDictionary() const override;
 
   // Copies EngineConverter
   EngineConverter* Clone() const override;
@@ -403,6 +410,11 @@ class EngineConverter : public EngineConverterInterface {
   PinnedProjectDictionary() const;
 
   std::shared_ptr<const ConverterInterface> converter_;
+
+  // The provider is process-shared; the mutable registry below is
+  // EngineConverter/session-owned.
+  std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+      project_dictionary_provider_;
 
   // Owned by this EngineConverter, which is itself scoped to one IME session.
   // Clone copies immutable snapshots into a new independent registry state.

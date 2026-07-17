@@ -158,7 +158,13 @@ ProjectDictionaryBridgeResult BuildProjectDictionarySnapshot(
   // invariants even when the DTO did not originate from ProtocolV1Loader.
   auto native = dictionary::ProjectDictionarySnapshot::Create(
       published->sequence, source.project_id, Fingerprint(source),
-      std::move(entries));
+      std::move(entries),
+      dictionary::ProjectDictionaryMetadata{
+          .topic = source.conditions.topic,
+          .style = source.conditions.style,
+          .preference = source.conditions.preference,
+          .payload_sha256 = source.project_sha256,
+      });
   if (!native.ok()) {
     return Failure(
         ProjectDictionaryBridgeDiagnostic::kNativeValidationFailed,

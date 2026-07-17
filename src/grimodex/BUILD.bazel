@@ -46,6 +46,19 @@ mozc_cc_library(
     ],
 )
 
+mozc_cc_library(
+    name = "project_dictionary_provider",
+    srcs = ["project_dictionary_provider.cc"],
+    hdrs = ["project_dictionary_provider.h"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":project_dictionary_bridge",
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+    ],
+)
+
 mozc_cc_test(
     name = "protocol_v1_test",
     size = "small",
