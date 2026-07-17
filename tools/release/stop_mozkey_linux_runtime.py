@@ -187,6 +187,17 @@ class Procfs:
                 executable = os.readlink(process_dir / "exe")
             except (FileNotFoundError, ProcessLookupError, NotADirectoryError) as error:
                 raise _ProcessGone from error
+            except PermissionError as error:
+                # A normal desktop session contains same-UID non-dumpable
+                # processes such as systemd --user, ssh-agent, and privileged
+                # GVfs helpers.  They are not eligible for signalling because
+                # their executable identity cannot be proven.  Ignore them
+                # only during the broad discovery scan; strict revalidation
+                # of an already identified Mozkey runtime must still fail
+                # closed if its executable becomes unreadable.
+                if not strict:
+                    return None
+                raise StopFailure("proc_identity_unreadable") from error
             except OSError as error:
                 raise StopFailure("proc_identity_unreadable") from error
 

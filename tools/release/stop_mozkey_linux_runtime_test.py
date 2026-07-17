@@ -103,6 +103,27 @@ class StopMozkeyLinuxRuntimeTest(unittest.TestCase):
             self.assertEqual([item.pid for item in roots], [10, 20])
             self.assertEqual([item.pid for item in llamas], [21])
 
+    def test_scan_skips_unreadable_same_uid_but_strict_check_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            tree = FakeProcTree(Path(temporary))
+            tree.add(10, stopper.MOZKEY_SERVER, start_time=101)
+            tree.add(20, "/usr/lib/systemd/systemd", start_time=102)
+            real_readlink = os.readlink
+
+            def readlink(path):
+                if Path(path).parent.name == "20":
+                    raise PermissionError("protected same-UID process")
+                return real_readlink(path)
+
+            procfs = stopper.Procfs(tree.root)
+            with mock.patch.object(stopper.os, "readlink", side_effect=readlink):
+                identities = procfs.scan(1000)
+                self.assertEqual([item.pid for item in identities], [10])
+                with self.assertRaisesRegex(
+                    stopper.StopFailure, "proc_identity_unreadable"
+                ):
+                    procfs.observe(20, 1000, strict=True)
+
     def test_graceful_stop_signals_roots_but_not_unrelated_llama(self):
         with tempfile.TemporaryDirectory() as temporary:
             tree = FakeProcTree(Path(temporary))
