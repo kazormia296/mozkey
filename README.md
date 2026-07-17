@@ -38,7 +38,8 @@ upstream Mozc との追従性および既存インストールとの互換性を
 --------------------------
 
 一般公開済みのインストーラーは Windows MSI です。Linux Fcitx5 版は開発者向け
-pre-release で、CI の完全製品 tar artifact とソース install script を提供します。
+pre-release で、CI は検証済み Arch Linux x86_64 packaging payload とソース install
+script を提供します。tar はクロスディストリビューションinstallerではありません。
 Linux の通常利用、Grimodex project dictionary、ローカル Zenz、install/uninstall/
 rollback は Arch Linux 実機 gate の対象です。deb/rpm/Arch package repository はまだ
 公開していないため、OS の package manager から `fcitx5-mozkey` を取得できるという
@@ -51,13 +52,16 @@ Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mo
 - Zenz 同梱版は、ローカル推論 runtime と GGUF model を含むため、従来の offline MSI よりファイルサイズが大きくなります。
 - Windows 向けリリース MSI には、ローカル生成した `daily` system dictionary profile を同梱する場合があります。
 - `daily` profile には、Mozc 標準辞書に加えて、merge-ut-dictionaries、dic-nico-intersection-pixiv、mozcdic-ut-personal-names、Mozkey syntax / expressive kana guard dictionary 由来の生成辞書が含まれます。
+- 公開 Linux artifact は `release-approved-only` profile を使用し、commit と SHA-256 を固定した merge-ut/place-names/SudachiDict/personal-names のみを取り込みます。nico/pixiv は再配布条件が十分明示されていないため local evaluation 専用で、公開物には含めません。
 - 外部辞書・同梱 runtime・model の出典とライセンス note については [Third-party notices](THIRD_PARTY_NOTICES.md) を参照してください。
 
 Linux の release targets、multiarch Fcitx path、Zenz runtime 契約、staging smoke、
 uninstall 手順は [Linux product isolation](docs/linux_product_isolation.md) を参照して
-ください。Linux artifact は addon/server/scorer/model/licenses、SHA-256、SPDX 2.3
-inventory を一体で生成します。Zenz には `--api-key` と authenticated
-`POST /completion` に対応した `llama-server` が必要です。
+ください。Arch payload は addon/server/scorer/model/licenses、SHA-256、SPDX 2.3
+inventory を一体で生成し、`fcitx5`、`llama-cpp`、`qt6-base` を外部依存とします。
+Zenz には `--api-key` と authenticated `POST /completion` に対応した
+`llama-server` が必要です。Ubuntu CI はbuild/multiarch stagingの確認だけを行い、
+Ubuntu向けproduct artifactは公開しません。
 
 > [!WARNING]
 > このビルドは google/mozc の公式配布物ではありません。
@@ -605,9 +609,10 @@ Download / Install
 ------------------
 
 The generally published installer is the Windows MSI. The Linux Fcitx5 build
-is a developer pre-release: CI produces a complete product tar artifact and
-the repository provides source install/uninstall tools, but no deb/rpm/Arch
-package repository is published yet. Linux conversion, Grimodex project data,
+is a developer pre-release: CI produces a verified Arch Linux x86_64 packaging
+payload and the repository provides source install/uninstall tools. The tar is
+not a cross-distribution installer, and no deb/rpm/Arch package repository is
+published yet. Linux conversion, Grimodex project data,
 local Zenz, install/uninstall, and rollback are gated on a real Arch Linux
 machine. macOS remains untested.
 
@@ -619,9 +624,10 @@ Windows MSI packages are available from [Releases](https://github.com/koyasi777/
 - Zenz-bundled builds are larger than the traditional offline MSI because they include a local inference runtime and a GGUF model.
 - Windows release MSI packages may include the locally generated `daily` system dictionary profile.
 - The `daily` profile is generated from the Mozc base dictionaries, merge-ut-dictionaries, dic-nico-intersection-pixiv, mozcdic-ut-personal-names, and the Mozkey syntax / expressive kana guard dictionary.
+- Public Linux artifacts use `release-approved-only`: pinned merge-ut, place-name, SudachiDict, and personal-name inputs only. Nico/Pixiv remains available for local evaluation but is excluded from public artifacts because its data redistribution terms are not explicit enough.
 - See [Third-party notices](THIRD_PARTY_NOTICES.md) for source and license notes for bundled runtimes, model files, and generated dictionary data.
 - See [Linux product isolation](docs/linux_product_isolation.md) for the Fcitx
-  multiarch path, complete release targets, compatible `llama-server`
+  multiarch path, Arch payload targets, compatible `llama-server`
   contract, staged smoke, artifact checksum/SPDX inventory, and uninstall
   procedure.
 

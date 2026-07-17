@@ -1,4 +1,3 @@
-/lib/fcitx5/fcitx5-mozkey.so
 /lib/mozkey/mozc_server
 /lib/mozkey/mozc_tool
 /lib/mozkey/mozc_zenz_scorer
@@ -6,9 +5,18 @@
 /lib/mozkey/llama-server
 /lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 /share/doc/mozkey/credits_en.html
+/share/doc/mozkey/mozkey-linux.spdx.json
 /share/fcitx5/addon/mozkey.conf
 /share/fcitx5/inputmethod/mozkey.conf
 /share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml
+/share/mozkey/fcitx5-addon-dir
+/share/licenses/mozkey/Fcitx5-Mozc-BSD-3-Clause.txt
+/share/licenses/mozkey/LGPL-2.1-or-later.txt
+/share/licenses/mozkey/Mozc-LICENSE.txt
+/share/licenses/mozkey/THIRD_PARTY_NOTICES.md
+/share/licenses/mozkey/dictionary/Apache-2.0.txt
+/share/licenses/mozkey/dictionary/THIRD_PARTY_NOTICES.md
+/share/licenses/mozkey/dictionary/daily_sources.lock.json
 /share/licenses/mozkey/zenz-runtime/Apache-2.0.txt
 /share/licenses/mozkey/zenz-runtime/THIRD_PARTY_NOTICES.md
 /share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt

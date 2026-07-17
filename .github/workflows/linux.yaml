@@ -30,7 +30,9 @@ jobs:
           python tools/dictionary/fixed_corpus_quality_gate.py smoke \
             --out-dir dist/quality/fixed-corpus-smoke
           python -m unittest \
+            tools.dictionary.daily_source_lock_test \
             tools.dictionary.prepare_daily_dictionary_linux_test \
+            tools.dictionary.verify_release_dictionary_artifact_test \
             tools.dictionary.fixed_corpus_quality_gate_test
           python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode sample
 
@@ -39,7 +41,9 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
         run: |
-          python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode download
+          python tools/dictionary/prepare_daily_dictionary_linux.py \
+            --source-mode download \
+            --profile release-approved-only
 
       - name: Upload dictionary and quality diagnostics
         if: ${{ !cancelled() }}
@@ -49,15 +53,18 @@ jobs:
           path: |
             dist/quality/**
             dist/dictionary/linux-daily-source-manifest.json
+            dist/dictionary/linux-release-approved-output-manifest.json
           if-no-files-found: warn
 
-      - name: Upload daily dictionary
+      - name: Upload release-approved dictionary outputs
         uses: actions/upload-artifact@v6
         with:
-          name: daily-dictionary
+          name: linux-release-approved-dictionary
           path: |
-            src/data/dictionary_koyasi/generated/**
-            dist/dictionary/**
+            src/data/dictionary_koyasi/generated/profiled/koyasi-syntax-guard.txt
+            src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-daily.txt
+            src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-personal-names-daily.txt
+            dist/dictionary/linux-release-approved-output-manifest.json
           if-no-files-found: error
 
   build:
@@ -76,21 +83,46 @@ jobs:
       - name: Download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: linux-release-approved-dictionary
           path: .
+
+      - name: Verify release-approved dictionary allowlist
+        run: python tools/dictionary/verify_release_dictionary_artifact.py --root .
 
       - name: Setup
         run: |
           sudo apt-get update
-          sudo apt-get install -y libibus-1.0-dev qt6-base-dev
+          sudo apt-get install -y \
+            appstream \
+            fcitx5-modules-dev \
+            gettext \
+            libibus-1.0-dev \
+            qt6-base-dev \
+            xz-utils
           #
           # Unset the Android NDK setting to skip the unnecessary configuration.
           echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
 
-      - name: bazel build
+      - name: Build legacy package and Mozkey Linux targets on Ubuntu
         working-directory: ./src
         run: |
-          bazelisk build package --config release_build
+          bazelisk build \
+            package \
+            //unix/fcitx5:fcitx5-mozkey.so \
+            //unix/fcitx5:grimodex_consumer_tool \
+            //server:mozc_server \
+            //gui/tool:mozc_tool \
+            //zenz_scorer:mozc_zenz_scorer \
+            --config oss_linux \
+            --config release_build \
+            --define=mozkey_dictionary_profile=release-approved-only \
+            --//unix/fcitx5:use_server=true
+
+      - name: Validate Ubuntu multiarch staging layout
+        working-directory: ./src
+        run: |
+          MOZKEY_LINUX_PREFLIGHT_DONE=1 \
+            ../scripts/smoke_test_mozkey_fcitx5_install
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v6
@@ -98,6 +130,103 @@ jobs:
           name: mozc.zip
           path: src/bazel-bin/unix/mozc.zip
           if-no-files-found: warn
+
+  package_archlinux:
+    # A downloadable product is emitted only after both the Ubuntu compile /
+    # layout job and the repository-wide test job are green.
+    needs: [prepare_daily_dictionary, build, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container: archlinux:base-devel
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+
+    steps:
+      - name: Install the Arch Linux target build environment
+        run: |
+          pacman -Syu --noconfirm --needed \
+            appstream \
+            bazelisk \
+            fcitx5 \
+            gettext \
+            git \
+            jdk-openjdk \
+            llama-cpp \
+            nodejs \
+            npm \
+            python \
+            qt6-base \
+            unzip \
+            xz \
+            zip
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Download release-approved dictionary
+        uses: actions/download-artifact@v6
+        with:
+          name: linux-release-approved-dictionary
+          path: .
+
+      - name: Verify dictionary and record the rolling build environment
+        run: |
+          python tools/dictionary/verify_release_dictionary_artifact.py --root .
+          mkdir -p dist
+          pacman -Q \
+            appstream \
+            bazelisk \
+            fcitx5 \
+            gcc \
+            glibc \
+            llama-cpp \
+            qt6-base \
+            > dist/archlinux-build-packages.txt
+
+      - name: Build the Arch Linux product
+        working-directory: ./src
+        run: |
+          bazelisk build \
+            //unix/fcitx5:fcitx5-mozkey.so \
+            //unix/fcitx5:grimodex_consumer_tool \
+            //server:mozc_server \
+            //gui/tool:mozc_tool \
+            //zenz_scorer:mozc_zenz_scorer \
+            --config oss_linux \
+            --config release_build \
+            --config no_sframe \
+            --define=mozkey_dictionary_profile=release-approved-only \
+            --//unix/fcitx5:use_server=true
+
+      - name: Validate llama CLI, real GGUF inference, and staged product
+        working-directory: ./src
+        run: |
+          ../scripts/verify_llama_server_compatibility /usr/bin/llama-server
+          ../scripts/preflight_mozkey_linux_bazel
+          MOZKEY_LINUX_PREFLIGHT_DONE=1 \
+            ../scripts/smoke_test_mozkey_fcitx5_install
+          ../scripts/probe_zenz_runtime_bazel
+
+      - name: Build the Arch Linux payload, checksum, and SPDX inventory
+        working-directory: ./src
+        run: |
+          MOZKEY_LINUX_OUTPUT_DIR="$(pwd)/../dist" \
+            ../scripts/package_mozkey_linux_bazel
+
+      - name: Upload the verified Arch Linux product
+        uses: actions/upload-artifact@v6
+        with:
+          name: mozkey-linux-archlinux-x86_64
+          path: |
+            dist/mozkey-v*-archlinux-x86_64.tar.xz
+            dist/mozkey-v*-archlinux-x86_64.tar.xz.sha256
+            dist/mozkey-v*-archlinux-x86_64.spdx.json
+            dist/archlinux-build-packages.txt
+          if-no-files-found: error
 
   test:
     needs: prepare_daily_dictionary
@@ -115,13 +244,44 @@ jobs:
       - name: Download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: linux-release-approved-dictionary
           path: .
+
+      - name: Verify release-approved dictionary allowlist
+        run: python tools/dictionary/verify_release_dictionary_artifact.py --root .
+
+      - name: Test Linux release, installer, provenance, and Zenz gates
+        run: |
+          python -m unittest \
+            scripts.install_mozkey_linux_bazel_test \
+            scripts.install_zenz_runtime_test \
+            scripts.package_mozkey_linux_bazel_test \
+            scripts.preflight_mozkey_linux_bazel_test \
+            scripts.verify_llama_server_compatibility_test \
+            tools.dictionary.daily_source_lock_test \
+            tools.dictionary.prepare_daily_dictionary_linux_test \
+            tools.dictionary.verify_release_dictionary_artifact_test \
+            tools.release.generate_linux_spdx_sbom_test \
+            tools.release.probe_zenz_runtime_test
+          sh -n \
+            scripts/fcitx5_install_paths \
+            scripts/install_mozkey_linux_bazel \
+            scripts/install_zenz_runtime \
+            scripts/package_mozkey_linux_bazel \
+            scripts/preflight_mozkey_linux_bazel \
+            scripts/probe_zenz_runtime_bazel \
+            scripts/smoke_test_mozkey_fcitx5_install \
+            scripts/uninstall_mozkey_fcitx5 \
+            scripts/verify_llama_server_compatibility
 
       - name: Setup
         run: |
           sudo apt-get update
-          sudo apt-get install -y libibus-1.0-dev qt6-base-dev
+          sudo apt-get install -y \
+            fcitx5-modules-dev \
+            gettext \
+            libibus-1.0-dev \
+            qt6-base-dev
           #
           # Unset the Android NDK setting to skip the unnecessary configuration.
           echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
@@ -129,4 +289,5 @@ jobs:
       - name: bazel test
         working-directory: ./src
         run: |
-          bazelisk test ... -c dbg
+          bazelisk test ... -c dbg \
+            --define=mozkey_dictionary_profile=release-approved-only

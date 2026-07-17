@@ -64,7 +64,17 @@ fcitx5_binary="$(command -v fcitx5)" || die "fcitx5 is not installed"
 dbus_run_session="$(command -v dbus-run-session)" ||
   die "dbus-run-session is not installed"
 
-require_regular_file /usr/lib/fcitx5/fcitx5-mozkey.so
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+. "${script_directory}/fcitx5_install_paths"
+PREFIX=/usr
+DESTDIR=
+validate_mozkey_install_environment || die "invalid Mozkey install layout"
+addon_record=/usr/share/mozkey/fcitx5-addon-dir
+require_regular_file "${addon_record}"
+IFS= read -r addon_dir < "${addon_record}"
+validate_fcitx5_addon_dir "${addon_dir}" ||
+  die "installed Fcitx5 addon path record is invalid"
+require_regular_file "${addon_dir}/fcitx5-mozkey.so"
 require_regular_file /usr/lib/mozkey/mozc_server
 require_regular_file /usr/share/fcitx5/addon/mozkey.conf
 require_regular_file /usr/share/fcitx5/inputmethod/mozkey.conf
@@ -75,7 +85,6 @@ grep -qx 'Library=fcitx5-mozkey' /usr/share/fcitx5/addon/mozkey.conf ||
 grep -qx 'Addon=mozkey' /usr/share/fcitx5/inputmethod/mozkey.conf ||
   die "installed input method metadata does not select the mozkey addon"
 
-script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 profile_fixture="${script_directory}/fixtures/fcitx5-mozkey-e2e/profile"
 require_regular_file "${profile_fixture}"
 

@@ -14,10 +14,33 @@ src/win32/installer/zenz_runtime/licenses/THIRD_PARTY_NOTICES.md
 That file covers the bundled Zenz GGUF model, llama.cpp / ggml runtime
 components, and the local inference privacy note.
 
+## Fcitx5 addon integration
+
+The Fcitx5 integration under `src/unix/fcitx5/` is based on
+`fcitx/mozc@102eb176a3153e53bcc7f01fb5e803f9568985a0` and includes local Mozkey
+and Grimodex changes. The Fcitx-derived engine/factory/i18n implementation and
+translation catalogs are distributed under GNU LGPL version 2.1 or any later
+version. Fcitx adapter files that carry the explicit Google/Weng Xuetian
+BSD-3-Clause header (including the key translator/handler, response parser,
+state, surrounding-text utility, and client pool) retain that file-level
+license. Independently authored Mozkey/Grimodex files retain their own
+file-level BSD-3-Clause or Apache-2.0 notices.
+
+* Source: [https://github.com/fcitx/mozc](https://github.com/fcitx/mozc)
+* Corresponding modified source and build scripts: this repository and the
+  exact revision accompanying the distributed binary artifact
+* LGPL text: `LICENSES/LGPL-2.1-or-later.txt`
+* Google/Weng BSD notice:
+  `LICENSES/Fcitx5-Mozc-BSD-3-Clause.txt`
+
 ## Generated dictionary data
 
-This project can build a `daily` dictionary profile from generated dictionary
-data derived from third-party sources.
+This project can build a broad `daily` dictionary for pinned local evaluation
+and a narrower `release-approved-only` profile for public artifacts. The
+public profile's exact revisions, payload SHA-256 values, license metadata,
+and exclusion policy are documented in
+`tools/dictionary/daily_sources.lock.json` and
+`tools/dictionary/RELEASE_THIRD_PARTY_NOTICES.md`.
 
 Generated dictionary artifacts are not committed to this repository by default.
 Before redistributing a built package that includes generated dictionaries,
@@ -43,11 +66,12 @@ notes.
 ### dic-nico-intersection-pixiv
 
 * Source: [https://github.com/ncaq/dic-nico-intersection-pixiv](https://github.com/ncaq/dic-nico-intersection-pixiv)
-* Used for: nico/pixiv delta dictionary
+* Used for: pinned local-evaluation nico/pixiv delta dictionary only
 * License note: upstream states that the code is MIT licensed.
 * Data note: upstream describes the dictionary as using data from Niconico
-  Encyclopedia and Pixiv Encyclopedia. Treat redistribution as review-required
-  because the generated data is derived from external web sources.
+  Encyclopedia and Pixiv Encyclopedia. It is excluded from public CI
+  artifacts and installed products because the data redistribution conditions
+  are not sufficiently explicit.
 
 ### mozcdic-ut-personal-names
 

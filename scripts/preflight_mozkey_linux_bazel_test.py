@@ -42,6 +42,13 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
                 resolve_fcitx5_addon_dir() {
                   printf '/usr/lib/fcitx5\\n'
                 }
+                read_installed_fcitx5_addon_dir() {
+                  record="$1"
+                  [ -f "$record" ] && [ ! -L "$record" ] || return 2
+                  IFS= read -r value < "$record"
+                  validate_fcitx5_addon_dir "$value" || return
+                  printf '%s\\n' "$value"
+                }
                 '''
             ),
             encoding="utf-8",
@@ -217,6 +224,18 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             result = self.run_preflight(preflight, source, verifier_log, destination)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("non-symlink", result.stderr)
+            self.assertFalse(verifier_log.exists())
+
+    def test_rejects_unsafe_addon_record_before_llama_probe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            preflight, source, verifier_log = self.make_harness(root)
+            destination = root / "destination"
+            record = destination / "usr/share/mozkey/fcitx5-addon-dir"
+            record.parent.mkdir(parents=True)
+            record.symlink_to("/etc/passwd")
+            result = self.run_preflight(preflight, source, verifier_log, destination)
+            self.assertNotEqual(result.returncode, 0)
             self.assertFalse(verifier_log.exists())
 
 

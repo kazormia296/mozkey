@@ -1,19 +1,39 @@
 #!/bin/sh
 
+set -eu
+
 _bldtype=${_bldtype:-Debug}
 PREFIX="${PREFIX:-/usr}"
 DESTDIR="${DESTDIR:-}"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+. "${script_dir}/fcitx5_install_paths"
+validate_mozkey_install_environment
 
-install -D -m 755 "out_linux/${_bldtype}/mozc_server" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_server"
-install -D -m 755 "out_linux/${_bldtype}/mozc_tool" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_tool"
-if [ -x "out_linux/${_bldtype}/grimodex_consumer_tool" ]; then
-  install -D -m 755 "out_linux/${_bldtype}/grimodex_consumer_tool" "${DESTDIR}${PREFIX}/lib/mozkey/unregister-grimodex-consumer"
-fi
-if [ -x "out_linux/${_bldtype}/mozc_zenz_scorer" ]; then
-  install -D -m 755 "out_linux/${_bldtype}/mozc_zenz_scorer" "${DESTDIR}${PREFIX}/lib/mozkey/mozc_zenz_scorer"
-  DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" \
-    MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}" \
-    ../scripts/install_zenz_runtime
-fi
-install -d "${DESTDIR}${PREFIX}/share/doc/mozkey/"
-install -m 644 data/installer/*.html "${DESTDIR}${PREFIX}/share/doc/mozkey/"
+for required_binary in \
+  "out_linux/${_bldtype}/mozc_server" \
+  "out_linux/${_bldtype}/mozc_tool" \
+  "out_linux/${_bldtype}/grimodex_consumer_tool" \
+  "out_linux/${_bldtype}/mozc_zenz_scorer"
+do
+  if [ ! -x "${required_binary}" ]; then
+    echo "missing required Mozkey Linux product binary: ${required_binary}" >&2
+    exit 1
+  fi
+done
+
+DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" \
+  MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}" \
+  ../scripts/install_zenz_runtime
+for documentation_file in data/installer/*.html
+do
+  atomic_install_file "${documentation_file}" 644 \
+    "${DESTDIR}${PREFIX}/share/doc/mozkey/$(basename -- "${documentation_file}")"
+done
+atomic_install_file "out_linux/${_bldtype}/mozc_tool" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_tool"
+atomic_install_file "out_linux/${_bldtype}/grimodex_consumer_tool" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/unregister-grimodex-consumer"
+atomic_install_file "out_linux/${_bldtype}/mozc_zenz_scorer" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_zenz_scorer"
+atomic_install_file "out_linux/${_bldtype}/mozc_server" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_server"

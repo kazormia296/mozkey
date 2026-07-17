@@ -25,6 +25,14 @@ else
   validate_fcitx5_addon_dir "${resolved_addon_dir}"
 fi
 
+# An existing path record participates in upgrade cleanup. Validate it before
+# the preflight performs any expensive probes and, critically, before the
+# combined installer writes metadata or server files in its data phase.
+installed_addon_record="${DESTDIR}${PREFIX}/share/mozkey/fcitx5-addon-dir"
+if [ -e "${installed_addon_record}" ] || [ -L "${installed_addon_record}" ]; then
+  read_installed_fcitx5_addon_dir "${installed_addon_record}" >/dev/null
+fi
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "required Mozkey Linux install command is unavailable: $1" >&2
@@ -47,7 +55,8 @@ require_executable_file() {
   fi
 }
 
-for required_command in install ldd msgfmt python3 readlink stat
+for required_command in \
+  awk diff find grep install ldd mktemp msgfmt mv python3 readlink rm sed sort stat
 do
   require_command "${required_command}"
 done

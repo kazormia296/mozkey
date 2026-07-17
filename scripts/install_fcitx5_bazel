@@ -1,7 +1,66 @@
 #!/bin/sh
+
+set -eu
+
 PREFIX="${PREFIX:-/usr}"
 DESTDIR="${DESTDIR:-}"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+. "${script_dir}/fcitx5_install_paths"
+validate_mozkey_install_environment
+addon_dir="$(resolve_fcitx5_addon_dir)"
+install_phase="${MOZKEY_FCITX_INSTALL_PHASE:-all}"
+case "${install_phase}" in
+  all|data|entry) ;;
+  *)
+    echo "MOZKEY_FCITX_INSTALL_PHASE must be all, data, or entry" >&2
+    exit 2
+    ;;
+esac
 
-install -D -m 755 "bazel-bin/unix/fcitx5/fcitx5-mozkey.so" "${DESTDIR}${PREFIX}/lib/fcitx5/fcitx5-mozkey.so"
+if [ "${MOZKEY_LINUX_PREFLIGHT_DONE:-0}" != 1 ]; then
+  FCITX5_ADDON_DIR="${addon_dir}" PREFIX="${PREFIX}" DESTDIR="${DESTDIR}" \
+    "${script_dir}/preflight_mozkey_linux_bazel"
+fi
 
-DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" ../scripts/install_fcitx5_data
+addon_record="${DESTDIR}${PREFIX}/share/mozkey/fcitx5-addon-dir"
+previous_addon_dir=""
+if [ "${install_phase}" != data ]; then
+  if previous_addon_dir="$(read_installed_fcitx5_addon_dir "${addon_record}")"; then
+    :
+  else
+    record_status=$?
+    if [ "${record_status}" -ne 1 ]; then
+      exit "${record_status}"
+    fi
+    previous_addon_dir=""
+  fi
+fi
+
+if [ "${install_phase}" != entry ]; then
+  DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" ../scripts/install_fcitx5_data
+fi
+
+if [ "${install_phase}" = data ]; then
+  exit 0
+fi
+
+[ -x "bazel-bin/unix/fcitx5/fcitx5-mozkey.so" ] || {
+  echo "missing Bazel-built Fcitx5 Mozkey addon" >&2
+  exit 1
+}
+atomic_install_file "bazel-bin/unix/fcitx5/fcitx5-mozkey.so" 755 \
+  "${DESTDIR}${addon_dir}/fcitx5-mozkey.so"
+
+record_tmp="$(mktemp "${TMPDIR:-/tmp}/mozkey-addon-dir.XXXXXX")"
+trap 'rm -f "$record_tmp"' EXIT HUP INT TERM
+printf '%s\n' "${addon_dir}" > "${record_tmp}"
+atomic_install_file "${record_tmp}" 644 "${addon_record}"
+
+if [ -n "${previous_addon_dir}" ] &&
+   [ "${previous_addon_dir}" != "${addon_dir}" ]; then
+  rm -f -- "${DESTDIR}${previous_addon_dir}/fcitx5-mozkey.so"
+fi
+legacy_addon_dir=/usr/lib/fcitx5
+if [ "${legacy_addon_dir}" != "${addon_dir}" ]; then
+  rm -f -- "${DESTDIR}${legacy_addon_dir}/fcitx5-mozkey.so"
+fi

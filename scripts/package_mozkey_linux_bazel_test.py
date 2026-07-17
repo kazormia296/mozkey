@@ -32,8 +32,8 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             textwrap.dedent(
                 '''\
                 MOZKEY_RELEASE_VERSION_MAJOR = 0
-                MOZKEY_RELEASE_VERSION_MINOR = 7
-                MOZKEY_RELEASE_VERSION_PATCH = 7
+                MOZKEY_RELEASE_VERSION_MINOR = 8
+                MOZKEY_RELEASE_VERSION_PATCH = 0
                 '''
             ),
             encoding="utf-8",
@@ -83,8 +83,8 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
         env = os.environ.copy()
         env.update(
             {
-                "MOZKEY_LINUX_DISTRO": "archlinux",
-                "MOZKEY_LINUX_ARCH": "x86_64",
+                "MOZKEY_LINUX_ALLOW_NON_ARCH_FOR_TESTS": "1",
+                "MOZKEY_LINUX_ARCH_FOR_TESTS": "x86_64",
                 "MOZKEY_LINUX_OUTPUT_DIR": str(output),
                 "SOURCE_DATE_EPOCH": "1",
             }
@@ -108,7 +108,7 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             first = self.run_package(repository, package_script, output)
             self.assertEqual(first.returncode, 0, first.stderr)
 
-            base = "mozkey-v0.7.7-archlinux-x86_64"
+            base = "mozkey-v0.8.0-archlinux-x86_64"
             archive = output / f"{base}.tar.xz"
             checksum = output / f"{base}.tar.xz.sha256"
             sbom = output / f"{base}.spdx.json"
@@ -121,7 +121,7 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             document = json.loads(sbom.read_text(encoding="utf-8"))
             verification = document["packages"][0]["packageVerificationCode"]
             self.assertIn(
-                "/linux/archlinux-x86_64/0.7.7/",
+                "/linux/archlinux-x86_64/0.8.0/",
                 document["documentNamespace"],
             )
             self.assertTrue(
@@ -146,15 +146,21 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             output = root / "output"
 
             wrong_arch = self.run_package(
-                repository, package_script, output, MOZKEY_LINUX_ARCH="aarch64"
+                repository,
+                package_script,
+                output,
+                MOZKEY_LINUX_ARCH_FOR_TESTS="aarch64",
             )
             self.assertNotEqual(wrong_arch.returncode, 0)
             self.assertIn("archlinux-x86_64", wrong_arch.stderr)
-            wrong_distro = self.run_package(
-                repository, package_script, output, MOZKEY_LINUX_DISTRO="ubuntu"
+            invalid_host_override = self.run_package(
+                repository,
+                package_script,
+                output,
+                MOZKEY_LINUX_ALLOW_NON_ARCH_FOR_TESTS="yes",
             )
-            self.assertNotEqual(wrong_distro.returncode, 0)
-            self.assertIn("archlinux-x86_64", wrong_distro.stderr)
+            self.assertNotEqual(invalid_host_override.returncode, 0)
+            self.assertIn("accepts only 1", invalid_host_override.stderr)
 
             version_file = repository / "src/version.bzl"
             version_file.write_text(

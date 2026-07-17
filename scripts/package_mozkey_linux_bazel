@@ -25,22 +25,26 @@ case "${MOZKEY_LINUX_ALLOW_DIRTY_TREE_FOR_TESTS:-}" in
     ;;
 esac
 
-if [ -n "${MOZKEY_LINUX_DISTRO:-}" ]; then
-  if [ "${MOZKEY_LINUX_DISTRO}" != archlinux ]; then
-    echo "Mozkey public Linux packages are restricted to archlinux-x86_64" >&2
-    exit 1
-  fi
-else
-  os_release_id="$(sed -n 's/^ID=//p' /etc/os-release 2>/dev/null |
-    sed -n '1p' | tr -d "\"'")"
-  if [ "${os_release_id}" != arch ]; then
-    echo "public packaging requires Arch Linux (ID=arch); set MOZKEY_LINUX_DISTRO=archlinux only in a verified Arch container" >&2
-    exit 1
-  fi
+os_release_id="$(sed -n 's/^ID=//p' /etc/os-release 2>/dev/null |
+  sed -n '1p' | tr -d "\"'")"
+if [ "${os_release_id}" != arch ]; then
+  case "${MOZKEY_LINUX_ALLOW_NON_ARCH_FOR_TESTS:-}" in
+    1)
+      echo "warning: bypassing the Arch host check for an isolated unit test" >&2
+      ;;
+    "")
+      echo "public packaging requires an Arch Linux container with ID=arch" >&2
+      exit 1
+      ;;
+    *)
+      echo "MOZKEY_LINUX_ALLOW_NON_ARCH_FOR_TESTS accepts only 1" >&2
+      exit 2
+      ;;
+  esac
 fi
 distro=archlinux
 
-architecture="${MOZKEY_LINUX_ARCH:-$(uname -m)}"
+architecture="${MOZKEY_LINUX_ARCH_FOR_TESTS:-$(uname -m)}"
 if [ "${architecture}" != x86_64 ]; then
   echo "Mozkey public Linux packages are restricted to archlinux-x86_64" >&2
   exit 1
@@ -86,6 +90,7 @@ trap cleanup_package EXIT HUP INT TERM
 (
   cd "${repository_root}/src"
   DESTDIR="${stage_dir}" PREFIX=/usr \
+    MOZKEY_ZENZ_LLAMA_SERVER_TARGET=/usr/bin/llama-server \
     "${script_dir}/install_mozkey_linux_bazel"
 )
 

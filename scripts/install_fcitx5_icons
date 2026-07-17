@@ -1,7 +1,12 @@
 #!/bin/sh
 
+set -eu
+
 PREFIX="${PREFIX:-/usr}"
 DESTDIR="${DESTDIR:-}"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+. "${script_dir}/fcitx5_install_paths"
+validate_mozkey_install_environment
 ICON_DIR="${DESTDIR}${PREFIX}/share/icons/hicolor"
 
 install -D -m 644 data/images/product_icon_32bpp-128.png "${ICON_DIR}/128x128/apps/org.fcitx.Fcitx5.fcitx_mozkey.png"

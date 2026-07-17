@@ -46,6 +46,10 @@ class GrimodexConsumerRegistrar final {
   static constexpr absl::string_view kConsumerId = "fcitx5-mozkey";
 
  private:
+  absl::Status RegisterWithCapabilities(
+      absl::string_view version, absl::string_view timestamp,
+      bool zenzai_v3_conditions) const;
+
   std::string root_;
 };
 

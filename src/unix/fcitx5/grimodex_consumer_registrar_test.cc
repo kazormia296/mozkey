@@ -121,7 +121,7 @@ TEST(GrimodexConsumerRegistrarTest, RefreshReplacesOnlyItsOwnFile) {
 }
 
 TEST(GrimodexConsumerRegistrarTest,
-     RuntimeMarkerPreventsPostUninstallHeartbeatResurrection) {
+     RuntimeMarkerControlsHeartbeatAndZenzRequiresCompleteRuntime) {
   TempDirectory temp = testing::MakeTempDirectoryOrDie();
   const std::string root = absl::StrCat(temp.path(), "/ime");
   const std::string marker = absl::StrCat(temp.path(), "/mozc_server");
@@ -137,6 +137,35 @@ TEST(GrimodexConsumerRegistrarTest,
   ASSERT_EQ(chmod(marker.c_str(), 0755), 0);
   EXPECT_TRUE(registrar.RefreshIfInstalled("v0.7.7", kTimeA, marker).ok());
   EXPECT_TRUE(FileUtil::FileExists(destination).ok());
+  EXPECT_FALSE(ReadJson(destination)
+                   .fields()
+                   .at("capabilities")
+                   .struct_value()
+                   .fields()
+                   .at("zenzai_v3_conditions")
+                   .bool_value());
+
+  const std::string scorer = absl::StrCat(temp.path(), "/mozc_zenz_scorer");
+  const std::string model_directory = absl::StrCat(temp.path(), "/models");
+  const std::string model =
+      absl::StrCat(model_directory, "/zenz-v3.2-small-Q5_K_M.gguf");
+  const std::string llama_server =
+      absl::StrCat(temp.path(), "/llama-server");
+  ASSERT_EQ(mkdir(model_directory.c_str(), 0700), 0);
+  ASSERT_TRUE(FileUtil::SetContents(scorer, "scorer\n").ok());
+  ASSERT_TRUE(FileUtil::SetContents(model, "gguf\n").ok());
+  ASSERT_TRUE(FileUtil::SetContents(llama_server, "runtime\n").ok());
+  ASSERT_EQ(chmod(scorer.c_str(), 0755), 0);
+  ASSERT_EQ(chmod(model.c_str(), 0644), 0);
+  ASSERT_EQ(chmod(llama_server.c_str(), 0755), 0);
+  EXPECT_TRUE(registrar.RefreshIfInstalled("v0.7.7", kTimeB, marker).ok());
+  EXPECT_TRUE(ReadJson(destination)
+                  .fields()
+                  .at("capabilities")
+                  .struct_value()
+                  .fields()
+                  .at("zenzai_v3_conditions")
+                  .bool_value());
 
   ASSERT_EQ(unlink(marker.c_str()), 0);
   EXPECT_TRUE(registrar.RefreshIfInstalled("v0.7.7", kTimeB, marker).ok());

@@ -190,10 +190,50 @@ absl::Status ValidateRuntimeMarker(absl::string_view path) {
   return absl::OkStatus();
 }
 
+bool IsRegularExecutable(absl::string_view path, bool allow_symlink) {
+  const std::string path_string(path);
+  struct stat info = {};
+  if (lstat(path_string.c_str(), &info) != 0) {
+    return false;
+  }
+  if (S_ISLNK(info.st_mode)) {
+    if (!allow_symlink || stat(path_string.c_str(), &info) != 0) {
+      return false;
+    }
+  }
+  return S_ISREG(info.st_mode) && (info.st_mode & 0111) != 0;
+}
+
+bool IsRegularImmutableData(absl::string_view path) {
+  const std::string path_string(path);
+  struct stat info = {};
+  return lstat(path_string.c_str(), &info) == 0 &&
+         S_ISREG(info.st_mode) && info.st_size > 0 &&
+         (info.st_mode & 0022) == 0;
+}
+
+bool HasCompleteZenzRuntime(absl::string_view runtime_marker) {
+  const size_t separator = runtime_marker.rfind('/');
+  if (separator == absl::string_view::npos || separator == 0) {
+    return false;
+  }
+  const absl::string_view directory = runtime_marker.substr(0, separator);
+  return IsRegularExecutable(
+             absl::StrCat(directory, "/mozc_zenz_scorer"),
+             /*allow_symlink=*/false) &&
+         IsRegularImmutableData(absl::StrCat(
+             directory, "/models/zenz-v3.2-small-Q5_K_M.gguf")) &&
+         IsRegularExecutable(absl::StrCat(directory, "/llama-server"),
+                             /*allow_symlink=*/true);
+}
+
 std::string Handshake(absl::string_view version,
-                      absl::string_view timestamp) {
+                      absl::string_view timestamp,
+                      bool zenzai_v3_conditions) {
   return absl::StrCat(
-      R"json({"capabilities":{"application_scoping":true,"dynamic_dictionary":true,"profile":true,"zenzai_v3_conditions":true},"consumer_id":"fcitx5-mozkey","format_version":1,"last_seen":")json",
+      R"json({"capabilities":{"application_scoping":true,"dynamic_dictionary":true,"profile":true,"zenzai_v3_conditions":)json",
+      zenzai_v3_conditions ? "true" : "false",
+      R"json(},"consumer_id":"fcitx5-mozkey","format_version":1,"last_seen":")json",
       timestamp,
       R"json(","name":"Mozkey for Grimodex on Linux","platform":"linux","version":")json",
       version, R"json("})json",
@@ -282,13 +322,21 @@ GrimodexConsumerRegistrar::GrimodexConsumerRegistrar(std::string root)
 
 absl::Status GrimodexConsumerRegistrar::Register(
     absl::string_view version, absl::string_view timestamp) const {
+  return RegisterWithCapabilities(version, timestamp,
+                                  /*zenzai_v3_conditions=*/true);
+}
+
+absl::Status GrimodexConsumerRegistrar::RegisterWithCapabilities(
+    absl::string_view version, absl::string_view timestamp,
+    bool zenzai_v3_conditions) const {
   if (!IsSafeVersion(version)) {
     return absl::InvalidArgumentError("invalid Mozkey consumer version");
   }
   if (!IsValidTimestamp(timestamp)) {
     return absl::InvalidArgumentError("invalid Mozkey consumer timestamp");
   }
-  const std::string payload = Handshake(version, timestamp);
+  const std::string payload =
+      Handshake(version, timestamp, zenzai_v3_conditions);
   if (payload.size() > kMaxHandshakeBytes) {
     return absl::ResourceExhaustedError(
         "Mozkey consumer handshake exceeds its wire limit");
@@ -317,7 +365,10 @@ absl::Status GrimodexConsumerRegistrar::RefreshIfInstalled(
     return absl::IsNotFound(before) ? absl::OkStatus() : before;
   }
 
-  if (absl::Status status = Register(version, timestamp); !status.ok()) {
+  if (absl::Status status =
+          RegisterWithCapabilities(version, timestamp,
+                                   HasCompleteZenzRuntime(runtime_marker));
+      !status.ok()) {
     return status;
   }
 

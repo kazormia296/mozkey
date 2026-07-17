@@ -12,20 +12,22 @@ This product includes third-party software and model files.
 - Source repository URL: https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf
 - Source file URL: https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf/blob/main/ggml-model-Q5_K_M.gguf
 - Source commit observed for the model upload: c67e03e
-- Notes: Distributed without modification except for file placement, file naming, and packaging into the MSI installer.
+- Notes: Distributed without modification except for file placement, file naming, and packaging into the Windows MSI or Linux Mozkey product.
 
 ## llama.cpp / ggml runtime
 
 - Project: ggml-org/llama.cpp
 - Source repository URL: https://github.com/ggml-org/llama.cpp
-- Included files:
+- Windows bundled files:
   - llama-server.exe
   - llama.dll
   - ggml.dll
   - ggml-base.dll
   - ggml-cpu.dll
 - License: MIT License
-- Notes: Distributed as local inference runtime components used by the bundled Zenz GGUF model.
+- Linux runtime: the product links to a compatible distribution-provided
+  `llama-server`; its package must provide the same MIT license notice.
+- Notes: Used as local inference runtime components for the bundled Zenz GGUF model.
 
 ## Privacy note
 

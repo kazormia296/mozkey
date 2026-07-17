@@ -103,6 +103,10 @@ uninstall時だけ明示helperでこの1 fileを削除する。state、project s
 consumer fileは削除しない。heartbeatは毎回 `/usr/lib/mozkey/mozc_server` を前後2回
 確認し、package removal後も古いaddonがFcitxにmapされたままならconsumerを削除する。
 uninstallerはこのruntime markerを先に外し、続けてnative unregister helperを実行する。
+Zenz capabilityはserver markerだけでは宣言せず、scorer、immutable GGUF、実行可能な
+llama runtimeが揃う時だけtrueとする。heartbeatはfeature/install completeness、
+Zenz runtime probeはmodel loadとauthenticated localhost `/completion` readinessを表し、
+両者を同一の判定として扱わない。
 
 ## Secure input
 

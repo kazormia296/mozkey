@@ -3,7 +3,7 @@
   <id>org.fcitx.Fcitx5.Addon.Mozkey</id>
   <extends>org.fcitx.Fcitx5</extends>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>BSD-3-Clause AND LGPL-2.1-or-later</project_license>
+  <project_license>BSD-3-Clause AND LGPL-2.1-or-later AND Apache-2.0</project_license>
   <name>Mozkey for Fcitx 5</name>
   <summary>Developer pre-release of Mozkey for Fcitx 5 with local Zenz support</summary>
   <description>

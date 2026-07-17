@@ -1,6 +1,8 @@
 /*
  * Copyright (C) 2017~2017 by CSSlayer
  * wengxt@gmail.com
+ * Modified by the Mozkey contributors on 2026-07-17 for the Grimodex Linux
+ * integration and per-input-context session ownership.
  *
  * This library is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as
