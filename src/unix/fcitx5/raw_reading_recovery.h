@@ -79,6 +79,8 @@ class RawReadingRecovery final {
   static bool HasHostVisibleSideEffect(const mozc::commands::Output& output);
   static bool IsRecoverableRawKey(const mozc::commands::KeyEvent& key);
   static std::string SnapshotDigest(const mozc::commands::Output& output);
+  void BestEffortAbortPartialRecovery(
+      MozcClientInterface* client, const mozc::commands::Context& context);
   void SuppressReading();
 
   std::vector<mozc::commands::KeyEvent> journal_;

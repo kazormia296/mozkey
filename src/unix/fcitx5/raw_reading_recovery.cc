@@ -65,6 +65,7 @@ RawReadingRecovery::PrepareResult RawReadingRecovery::Prepare(
         !latest_output.has_consumed() || !latest_output.consumed() ||
         !HasActiveComposition(latest_output)) {
       recovery_in_progress_ = false;
+      BestEffortAbortPartialRecovery(client, context);
       if (client->session_generation() != 0) {
         observed_session_generation_ = client->session_generation();
       }
@@ -245,6 +246,17 @@ std::string RawReadingRecovery::SnapshotDigest(
     return {};
   }
   return output.grimodex_session_status().pinned_payload_sha256();
+}
+
+void RawReadingRecovery::BestEffortAbortPartialRecovery(
+    MozcClientInterface* client, const mozc::commands::Context& context) {
+  // This is a new-session cleanup command, not replay of an old command.  A
+  // failed raw replay may already have rebuilt a prefix; never leave that
+  // invisible partial preedit to affect the next user key.
+  mozc::commands::SessionCommand revert;
+  revert.set_type(mozc::commands::SessionCommand::REVERT);
+  mozc::commands::Output ignored;
+  SendCommandWithGrimodexContext(client, revert, context, &ignored);
 }
 
 void RawReadingRecovery::SuppressReading() {
