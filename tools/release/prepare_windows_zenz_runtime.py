@@ -484,6 +484,17 @@ def _cmake_cache_values(cache: str) -> dict[str, tuple[str, str]]:
     return values
 
 
+def _same_file(
+    left: str | os.PathLike[str], right: str | os.PathLike[str]
+) -> bool:
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return os.path.normcase(os.path.abspath(left)) == os.path.normcase(
+            os.path.abspath(right)
+        )
+
+
 def _verify_cmake_cache(
     cache: str,
     architecture: str,
@@ -521,24 +532,22 @@ def _verify_cmake_cache(
         or source is None
         or ninja is None
     ):
-        raise PreparationError("cmake_architecture_contract_invalid")
+        raise PreparationError("cmake_generator_contract_invalid")
     toolchain = values.get("CMAKE_TOOLCHAIN_FILE")
     expected_toolchain = source / str(contract["toolchain_file"])
     if (
         toolchain is None
-        or toolchain[0] not in {"FILEPATH", "UNINITIALIZED"}
-        or os.path.normcase(os.path.abspath(toolchain[1]))
-        != os.path.normcase(os.path.abspath(expected_toolchain))
+        or not toolchain[1]
+        or not _same_file(toolchain[1], expected_toolchain)
     ):
-        raise PreparationError("cmake_architecture_contract_invalid")
+        raise PreparationError("cmake_toolchain_file_contract_invalid")
     make_program = values.get("CMAKE_MAKE_PROGRAM")
     if (
         make_program is None
-        or make_program[0] not in {"FILEPATH", "UNINITIALIZED"}
-        or os.path.normcase(os.path.abspath(make_program[1]))
-        != os.path.normcase(os.path.abspath(ninja))
+        or not make_program[1]
+        or not _same_file(make_program[1], ninja)
     ):
-        raise PreparationError("cmake_architecture_contract_invalid")
+        raise PreparationError("cmake_make_program_contract_invalid")
 
 
 def _find_server(build: Path) -> Path:
