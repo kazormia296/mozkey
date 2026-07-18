@@ -1,0 +1,248 @@
+name: Mozkey Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: {}
+
+concurrency:
+  group: mozkey-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    name: Validate release identity and main ancestry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+      commit: ${{ steps.validate.outputs.commit }}
+    steps:
+      - name: Checkout the release ref with main history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate tag, version.bzl, checkout, and main ancestry
+        id: validate
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+        run: >-
+          python tools/release/validate_mozkey_release.py
+          --tag "$RELEASE_TAG"
+          --ref-type "$RELEASE_REF_TYPE"
+          --version-file src/version.bzl
+          --repository .
+          --main-ref origin/main
+
+      - name: Refuse an already published release before product builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.validate.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            > "$RUNNER_TEMP/release-gate-existing.json" \
+            2> "$RUNNER_TEMP/release-gate-existing.err"; then
+            if [ "$(jq -r '.draft' "$RUNNER_TEMP/release-gate-existing.json")" != "true" ]; then
+              echo "::error::Release ${RELEASE_TAG} is already published." >&2
+              exit 1
+            fi
+          elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-gate-existing.err"; then
+            cat "$RUNNER_TEMP/release-gate-existing.err" >&2
+            exit 1
+          fi
+
+  android:
+    name: Android release artifacts
+    needs: release-gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/android.yaml
+    with:
+      release: true
+
+  linux:
+    name: Linux release artifacts
+    needs: release-gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/linux.yaml
+    with:
+      release: true
+
+  macos:
+    name: macOS release artifacts
+    needs: release-gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/macos.yaml
+    with:
+      release: true
+
+  windows:
+    name: Windows release artifacts
+    needs: release-gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows.yaml
+    with:
+      release: true
+
+  release-notes:
+    name: Generate optional Codex release notes
+    needs: release-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      notes: ${{ steps.codex-notes.outputs.final-message }}
+      outcome: ${{ steps.codex-notes.outcome }}
+    steps:
+      - name: Checkout complete release history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Generate release notes with Codex
+        id: codex-notes
+        continue-on-error: true
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/release-notes.md
+          sandbox: read-only
+          safety-strategy: drop-sudo
+          codex-args: '["--ephemeral"]'
+
+  publish:
+    name: Create or update draft prerelease
+    needs: [release-gate, android, linux, macos, windows, release-notes]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release metadata
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Refuse to mutate a published release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-gate.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            > "$RUNNER_TEMP/existing-release.json" \
+            2> "$RUNNER_TEMP/existing-release.err"; then
+            if [ "$(jq -r '.draft' "$RUNNER_TEMP/existing-release.json")" != "true" ]; then
+              echo "::error::Refusing to mutate published release ${RELEASE_TAG}." >&2
+              exit 1
+            fi
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/existing-release.err"; then
+            rm -f "$RUNNER_TEMP/existing-release.json"
+          else
+            cat "$RUNNER_TEMP/existing-release.err" >&2
+            exit 1
+          fi
+
+      - name: Download release artifacts only
+        uses: actions/download-artifact@v6
+        with:
+          pattern: release-*
+          path: release-artifacts
+
+      - name: Flatten release assets and generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p publish-assets
+          while IFS= read -r -d '' asset; do
+            name=$(basename "$asset")
+            if [ -e "publish-assets/$name" ]; then
+              echo "::error::Duplicate release asset filename: $name" >&2
+              exit 1
+            fi
+            cp "$asset" "publish-assets/$name"
+          done < <(find release-artifacts -type f -print0 | sort -z)
+
+          if ! find publish-assets -maxdepth 1 -type f -print -quit | grep -q .; then
+            echo "::error::No files were found in release-* workflow artifacts." >&2
+            exit 1
+          fi
+
+          (
+            cd publish-assets
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+              | sort -z \
+              | xargs -0 -r sha256sum > SHA256SUMS
+          )
+          test -s publish-assets/SHA256SUMS
+
+      - name: Select Codex notes or GitHub-generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-gate.outputs.tag }}
+          CODEX_RELEASE_NOTES: ${{ needs.release-notes.outputs.notes }}
+          CODEX_RELEASE_NOTES_OUTCOME: ${{ needs.release-notes.outputs.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          if [ "$CODEX_RELEASE_NOTES_OUTCOME" = "success" ] && \
+             [ -n "${CODEX_RELEASE_NOTES//[[:space:]]/}" ]; then
+            printf '%s\n' "$CODEX_RELEASE_NOTES" > "$NOTES_FILE"
+            NOTES_GENERATOR="openai-codex-action"
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              --jq '.body' > "$NOTES_FILE"
+            NOTES_GENERATOR="github-generate-notes"
+          fi
+          if [ ! -s "$NOTES_FILE" ] || ! grep -q '[^[:space:]]' "$NOTES_FILE"; then
+            echo "::error::Release notes generation returned an empty body." >&2
+            exit 1
+          fi
+          printf '\n\n<!-- release-notes-generator: %s -->\n' \
+            "$NOTES_GENERATOR" >> "$NOTES_FILE"
+          echo "RELEASE_NOTES_FILE=$NOTES_FILE" >> "$GITHUB_ENV"
+
+      - name: Create or update the draft prerelease and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-gate.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.release-gate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -s "$RUNNER_TEMP/existing-release.json" ]; then
+            gh release edit "$RELEASE_TAG" \
+              --draft \
+              --prerelease \
+              --title "Mozkey v${RELEASE_VERSION}" \
+              --notes-file "$RELEASE_NOTES_FILE"
+          else
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --draft \
+              --prerelease \
+              --title "Mozkey v${RELEASE_VERSION}" \
+              --notes-file "$RELEASE_NOTES_FILE"
+          fi
+
+          mapfile -d '' assets < <(find publish-assets -maxdepth 1 -type f -print0 | sort -z)
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber

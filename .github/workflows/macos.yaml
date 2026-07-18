@@ -1,15 +1,25 @@
 name: CI for macOS
 # https://github.com/google/mozc/blob/master/docs/build_mozc_in_osx.md
 
-# Run on push.
-on: push
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      release:
+        description: Build and upload the release installer.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 # Prevent previous workflows from running.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: macos-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -17,6 +27,8 @@ jobs:
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
     timeout-minutes: 60
+    outputs:
+      release_version: ${{ steps.release_version.outputs.value }}
 
     steps:
       - name: checkout
@@ -24,6 +36,17 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+
+      - name: Resolve Mozkey release version
+        id: release_version
+        run: |
+          version="$(sed -n \
+            -e 's/^MOZKEY_RELEASE_VERSION_MAJOR = //p' \
+            -e 's/^MOZKEY_RELEASE_VERSION_MINOR = //p' \
+            -e 's/^MOZKEY_RELEASE_VERSION_PATCH = //p' \
+            src/version.bzl | paste -sd . -)"
+          printf '%s\n' "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          printf 'value=%s\n' "${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Prepare daily dictionary
         shell: pwsh
@@ -37,13 +60,16 @@ jobs:
       - name: upload daily dictionary
         uses: actions/upload-artifact@v6
         with:
-          name: daily-dictionary
+          name: macos-daily-dictionary
           path: |
             src/data/dictionary_koyasi/generated/**
             dist/dictionary/**
           if-no-files-found: error
+          overwrite: true
+          retention-days: 1
 
   prepare_macos_zenz_runtime:
+    if: ${{ inputs.release == true }}
     runs-on: macos-15
     timeout-minutes: 60
 
@@ -95,12 +121,15 @@ jobs:
       - name: Upload arm64 Zenz runtime
         uses: actions/upload-artifact@v6
         with:
-          name: macos-arm64-zenz-runtime-b9637
+          name: macos-zenz-runtime-arm64-b9637
           path: macos-arm64-zenz-runtime.tar.gz
           if-no-files-found: error
+          overwrite: true
+          retention-days: 1
 
   build_arm64:
     needs: [prepare_daily_dictionary, prepare_macos_zenz_runtime]
+    if: ${{ inputs.release == true }}
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
     timeout-minutes: 60
@@ -115,13 +144,13 @@ jobs:
       - name: download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: macos-daily-dictionary
           path: .
 
       - name: Download arm64 Zenz runtime
         uses: actions/download-artifact@v6
         with:
-          name: macos-arm64-zenz-runtime-b9637
+          name: macos-zenz-runtime-arm64-b9637
           path: .
 
       - name: Restore arm64 Zenz runtime
@@ -156,12 +185,19 @@ jobs:
             --package src/bazel-bin/mac/Mozc.pkg \
             --timeout-seconds 300
 
-      - name: upload artifacts
+      - name: Stage versioned arm64 package
+        run: |
+          mv src/bazel-bin/mac/Mozc.pkg \
+            "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg"
+
+      - name: Upload versioned arm64 package
         uses: actions/upload-artifact@v6
         with:
-          name: Mozc_arm64.pkg
-          path: src/bazel-bin/mac/Mozc.pkg
+          name: release-macos-arm64
+          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg
           if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   test:
     needs: prepare_daily_dictionary
@@ -179,7 +215,7 @@ jobs:
       - name: download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: macos-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
@@ -211,30 +247,3 @@ jobs:
             tools.release.prepare_macos_zenz_runtime_test \
             tools.release.probe_macos_zenz_runtime_test
           PYTHONPATH=src python3 -m unittest -v mac.tweak_installer_files_test
-
-  # actions/cache works without this job, but having this would increase the likelihood of cache hit
-  # in other jobs. Another approach would be to use "needs:".
-  # https://docs.github.com/en/actions/using-jobs/using-jobs-in-a-workflow
-  cache_deps:
-    # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
-    runs-on: macos-15
-    timeout-minutes: 15
-
-    steps:
-      - name: checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: false
-          persist-credentials: false
-
-      - name: Try to restore update_deps cache
-        uses: actions/cache@v5
-        with:
-          path: src/third_party_cache
-          key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
-
-      - name: Install dependencies
-        working-directory: ./src
-        # This command uses src/third_party_cache as the download cache.
-        run: |
-          python3 build_tools/update_deps.py --cache_only

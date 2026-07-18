@@ -4,18 +4,15 @@ on:
   push:
     branches:
       - main
-      - "feature/**"
-      - "fix/**"
-      - "harden/**"
-      - "chore/**"
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ci-secure-offline-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -247,3 +244,5 @@ jobs:
           name: Mozc64.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
           if-no-files-found: error
+          overwrite: true
+          retention-days: 7

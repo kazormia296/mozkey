@@ -1,15 +1,19 @@
 name: CI for Lint checks
 # https://github.com/google/mozc/blob/master/docs/build_mozc_in_docker.md
 
-# Run on push.
-on: push
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
 
 permissions:
   contents: read
 
 # Prevent previous workflows from running.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ci-lint-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:

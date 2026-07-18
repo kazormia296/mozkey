@@ -2,7 +2,7 @@
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 
-[![macOS](https://github.com/koyasi777/mozkey/actions/workflows/macos.yaml/badge.svg)](https://github.com/koyasi777/mozkey/actions/workflows/macos.yaml)
+[![macOS](https://github.com/kazormia296/mozkey/actions/workflows/macos.yaml/badge.svg)](https://github.com/kazormia296/mozkey/actions/workflows/macos.yaml)
 
 ## Summary
 
@@ -10,7 +10,7 @@ If you are not sure what the following commands do, please check the
 descriptions below and make sure the operations before running them.
 
 ```
-git clone https://github.com/koyasi777/mozkey.git
+git clone https://github.com/kazormia296/mozkey.git
 cd mozkey/src
 
 python3 build_tools/update_deps.py
@@ -55,7 +55,7 @@ Building on Mac requires the following software.
 You can download Mozc source code as follows:
 
 ```
-git clone https://github.com/koyasi777/mozkey.git
+git clone https://github.com/kazormia296/mozkey.git
 cd mozkey/src
 ```
 
@@ -159,28 +159,28 @@ git update-index --no-assume-unchanged src/config.bzl
 ## Build with GitHub Actions
 
 GitHub Actions steps are already set up in
-[macos.yaml](../.github/workflows/macos.yaml). With that, you can build and
-install Mozc with your own commit as follows.
+[macos.yaml](../.github/workflows/macos.yaml). Pull requests and ordinary pushes
+run the macOS test gate only; they do not build or upload a package. Installer
+builds are called by the release workflow from a validated release tag.
 
-1.  Fork https://github.com/koyasi777/mozkey to your GitHub repository.
-2.  Push a new commit to your own fork.
-3.  Click "Actions" tab on your fork.
-4.  Wait until the action triggered with your commit succeeds.
-5.  Download `Mozc.pkg` from the action result page.
-6.  Install `Mozc.pkg`.
+1.  Fork https://github.com/kazormia296/mozkey to your GitHub repository.
+2.  Update `src/version.bzl`, merge the tested change into `main`, and create an
+    annotated `vX.Y.Z` tag with the same version.
+3.  Push the tag and wait for the **Mozkey Release** workflow to succeed.
+4.  Review the generated draft prerelease and its checksums.
+5.  Download `Mozkey_vX.Y.Z_macos_arm64.pkg` after publishing the release.
 
-Files in the GitHub Actions page remain available up to 90 days.
+See [Releasing Mozkey](releasing.md) for the exact version, ancestry, release
+notes, and rerun contract.
 
 You can also find Mozkey installers for macOS in the Mozkey repository. Please
 keep in mind that Mozc is not an officially supported Google product, even if
-downloaded from https://github.com/koyasi777/mozkey/.
+downloaded from https://github.com/kazormia296/mozkey/.
 
 1.  Sign in GitHub.
-2.  Check
-    [recent successful macOS runs](https://github.com/koyasi777/mozkey/actions/workflows/macos.yaml?query=is%3Asuccess)
-    in the Mozkey repository.
-3.  Find action in last 90 days and click it.
-4.  Download `Mozc.pkg` from the action result page.
+2.  Open the repository's
+    [Releases](https://github.com/kazormia296/mozkey/releases) page.
+3.  Download the macOS arm64 package for the intended version.
 
 --------------------------------------------------------------------------------
 

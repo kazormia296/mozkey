@@ -346,11 +346,43 @@ class PrepareWindowsZenzRuntimeTest(unittest.TestCase):
         self.assertIn('\\\\arm64\\\\Microsoft\\.VC[0-9]+\\.CRT\\\\', arm64_job)
         self.assertNotIn("\\x64\\Microsoft.VC145.CRT", arm64_job)
         self.assertEqual(workflow.count("if ($LASTEXITCODE -ne 0)"), 6)
+        self.assertIn("  pull_request:\n", workflow)
+        self.assertIn("  push:\n    branches:\n      - main\n", workflow)
+        self.assertIn("  workflow_call:\n    inputs:\n      release:\n", workflow)
+        self.assertIn("        type: boolean\n        default: false\n", workflow)
+        self.assertIn(
+            "group: windows-${{ github.workflow }}-"
+            "${{ github.head_ref || github.ref }}",
+            workflow,
+        )
+        self.assertEqual(workflow.count("name: windows-daily-dictionary"), 5)
+        self.assertEqual(
+            workflow.count("if: ${{ inputs.release == true }}"),
+            3,
+        )
+        test_job = workflow.split("\n  test:\n", 1)[1]
+        self.assertNotIn("inputs.release", test_job)
+        self.assertNotIn("\n  cache_deps:\n", workflow)
         self.assertIn(
             ".\\tools\\dictionary\\prepare_daily_dictionary.ps1 "
             "-ReleaseApprovedOnly",
             workflow,
         )
+        release_artifacts = {
+            "x64": "release-windows-x64",
+            "universal": "release-windows-universal",
+            "arm64": "release-windows-arm64",
+        }
+        for architecture, artifact_name in release_artifacts.items():
+            with self.subTest(architecture=architecture):
+                self.assertIn(
+                    "Mozkey_v${{ needs.prepare_daily_dictionary.outputs."
+                    "release_version }}"
+                    f"_{architecture}.msi",
+                    workflow,
+                )
+                self.assertIn(f"name: {artifact_name}", workflow)
+        self.assertEqual(workflow.count("retention-days: 7"), 3)
         bazel_commands = [
             line.strip()
             for line in workflow.splitlines()

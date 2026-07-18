@@ -88,6 +88,11 @@ publish an Ubuntu product. The separate Arch container job validates the host
 llama CLI, loads the real GGUF through the scorer, exercises authenticated
 `/completion`, and records the rolling package versions used to build it.
 
+Ordinary pull requests and `main` pushes run the Linux dictionary and test gate
+without building product payloads. The Ubuntu build/layout gate and verified
+Arch payload run only from the release workflow after a `vX.Y.Z` tag passes the
+version and `main` ancestry checks. See [Releasing Mozkey](releasing.md).
+
 Public Linux builds also pass
 `--define=mozkey_dictionary_profile=release-approved-only`. The selected
 dictionary target contains only pinned merge-ut place-name/SudachiDict data,

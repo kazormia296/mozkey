@@ -1,15 +1,25 @@
 name: CI for Linux
 # https://github.com/google/mozc/blob/master/docs/build_mozc_for_linux.md
 
-# Run on push.
-on: push
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      release:
+        description: Build and package Linux release artifacts
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 # Prevent previous workflows from running.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ci-linux-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -57,6 +67,8 @@ jobs:
             dist/dictionary/linux-daily-source-manifest.json
             dist/dictionary/linux-release-approved-output-manifest.json
           if-no-files-found: warn
+          overwrite: true
+          retention-days: 7
 
       - name: Upload release-approved dictionary outputs
         uses: actions/upload-artifact@v6
@@ -68,8 +80,11 @@ jobs:
             src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-personal-names-daily.txt
             dist/dictionary/linux-release-approved-output-manifest.json
           if-no-files-found: error
+          overwrite: true
+          retention-days: 1
 
   build:
+    if: ${{ inputs.release == true }}
     needs: prepare_daily_dictionary
     # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
     runs-on: ubuntu-24.04
@@ -115,16 +130,10 @@ jobs:
           MOZKEY_LINUX_PREFLIGHT_DONE=1 \
             ../scripts/smoke_test_mozkey_fcitx5_install
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: mozc.zip
-          path: src/bazel-bin/unix/mozc.zip
-          if-no-files-found: warn
-
   package_archlinux:
     # A downloadable product is emitted only after both the Ubuntu compile /
     # layout job and the repository-wide test job are green.
+    if: ${{ inputs.release == true }}
     needs: [prepare_daily_dictionary, build, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -204,7 +213,7 @@ jobs:
       - name: Upload the verified Arch Linux product
         uses: actions/upload-artifact@v6
         with:
-          name: mozkey-linux-archlinux-x86_64
+          name: release-linux-archlinux-x86_64
           path: |
             dist/mozkey-v*-archlinux-x86_64.tar.xz
             dist/mozkey-v*-archlinux-x86_64.tar.xz.sha256
@@ -212,6 +221,8 @@ jobs:
             dist/mozkey-v*-archlinux-x86_64.spdx.json
             dist/archlinux-build-packages.txt
           if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   test:
     needs: prepare_daily_dictionary
