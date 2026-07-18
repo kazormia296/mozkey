@@ -335,8 +335,9 @@ message Config {
   optional bool show_candidate_window_on_initial_conversion = 72
       [default = false];
 
-  // Experimental: use asynchronous zenz live correction after normal live
-  // conversion. This is intentionally default-off until the feature is verified.
+  // Use asynchronous zenz live correction after normal live conversion.
+  // Mozkey's product config enables this by default through ConfigHandler.
+  // Keep the raw proto default false so embedders must opt in deliberately.
   optional bool use_zenz_live_correction = 1003 [default = false];
 
   // Debounce in milliseconds before submitting a zenz live correction request
@@ -395,6 +396,12 @@ message Config {
       [default = true];
   optional uint32 zenz_live_correction_right_context_length = 1017
       [default = 24];
+
+  // llama.cpp backend device used by the local Zenz runtime. Empty means
+  // automatic selection with GPU offload preferred; "none" forces CPU-only
+  // inference. Other values are device names reported by llama-server
+  // --list-devices, such as CUDA0 or Vulkan0.
+  optional string zenz_live_correction_device = 1020 [default = ""];
 
   //////////////////////////////////////////////////////////////
   //

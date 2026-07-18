@@ -250,7 +250,7 @@ Windows 版では、追加のオフライン防御層として、インストー
 
 ### Zenz ライブ補正
 
-ライブ変換と Zenz ライブ補正の両方を有効にすると、まず通常の Mozc ライブ変換結果を表示し、その後でローカルの Zenz runtime に非同期で補正を依頼します。
+ライブ変換と Zenz ライブ補正の両方を有効にすると、まず通常の Mozc ライブ変換結果を表示し、その後でローカルの Zenz runtime に非同期で補正を依頼します。Mozkey の新規・未設定プロファイルでは Zenz ライブ補正は既定で有効です。明示的に無効化した設定は維持されます。
 
 Windows では Zenz request を `mozc_server` から named pipe 経由で
 `mozc_zenz_scorer.exe` に送り、同梱の `llama-server.exe` を使います。Linux では
@@ -258,6 +258,8 @@ Unix socket 経由で `mozc_zenz_scorer` に送り、product-private link から
 distro `llama-server` を起動します。どちらも random port、API key、
 `127.0.0.1` 限定の localhost endpoint でローカル推論し、固定 endpoint や
 古い内部 request の誤接続を避けます。
+
+設定画面の「Zenz 推論デバイス」では、GPU 優先の自動選択、CPU のみ、または `llama-server --list-devices` が返す `CUDA0` / `Vulkan0` などのデバイスを選択できます。実行中に設定を変えた場合はローカル runtime を再起動して切り替えます。保存済みの明示デバイスが利用できなくなった場合は CPU にフォールバックします。
 
 Zenz 補正は設定可能なデバウンス時間の後に実行されます。デフォルトは 1000 ms です。また、Zenz 補正を開始する最小文字数も設定画面から変更できます。Zenz 結果が返る前に入力内容が変わった場合、古い結果は generation / key の検査により破棄されます。
 
@@ -701,6 +703,8 @@ Main features added in this fork
   socket. Windows uses the bundled `llama-server.exe`; Linux launches a
   verified distribution `llama-server` through a product-private link.
 - Allows configuring the Zenz correction debounce delay from the config dialog. The default is 1000 ms
+- Enables Zenz live correction by default for new or previously unset Mozkey profiles while preserving an explicit opt-out
+- Allows selecting automatic GPU-preferred inference, CPU-only inference, or a concrete llama-server device from the config dialog, with live runtime switching and CPU fallback for unavailable saved devices
 - Allows configuring the minimum number of characters to start Zenz correction
 - Adds optional local feedback learning for Zenz correction results
 - Adds an opt-in auto-block setting for Zenz corrections repeatedly committed as a different value. Auto-blocking does not persist irreversible hard-reject rows; it dynamically re-evaluates existing feedback data from the current ON/OFF state and rejection-count threshold.
@@ -783,7 +787,9 @@ The live conversion feature can be enabled or disabled from the config dialog. T
 
 When both live conversion and Zenz live correction are enabled, this fork first
 shows the normal Mozc live conversion result and then asynchronously asks a local
-Zenz runtime to refine the visible preedit.
+Zenz runtime to refine the visible preedit. Zenz live correction is enabled by
+default for new or previously unset Mozkey profiles; an explicit opt-out is
+preserved.
 
 On Windows, `mozc_server` sends the request to `mozc_zenz_scorer.exe` through a
 named pipe and the scorer launches the bundled `llama-server.exe`. On Linux,
@@ -791,6 +797,11 @@ the request uses a Unix socket to `mozc_zenz_scorer`, which launches a verified
 distribution `llama-server` through a product-private link. Both use a random
 port, an API key, and a `127.0.0.1`-only endpoint for local inference. The
 transport rejects accidental or stale local endpoint mismatches.
+
+The **Zenz inference device** setting can use automatic GPU-preferred selection,
+CPU-only inference, or a concrete device such as `CUDA0` or `Vulkan0` reported by
+`llama-server --list-devices`. Changing the selection restarts the local runtime.
+If a saved explicit device is no longer available, the scorer falls back to CPU.
 
 Zenz correction is delayed by a configurable debounce interval. The default
 delay is 1000 ms. The minimum number of characters required to start Zenz

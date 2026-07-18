@@ -7,7 +7,10 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).with_name("verify_llama_server_compatibility")
-FLAGS = "--api-key --host --port --model --ctx-size --threads"
+FLAGS = (
+    "--api-key --host --port --model --ctx-size --threads "
+    "--device --list-devices"
+)
 
 
 class VerifyLlamaServerCompatibilityTest(unittest.TestCase):

@@ -4,13 +4,14 @@ import win32file
 PIPE = r"\\.\pipe\mozc_zenz_scorer"
 
 MAGIC = 0x315A4E5A
-VERSION = 1
+VERSION = 2
 KIND_REQUEST = 1
 
-REQ_HDR = struct.Struct("<IHHIIII")
+REQ_HDR = struct.Struct("<IHHIIIII")
 RESP_HDR = struct.Struct("<IHHIIIII")
 
 prompt = "\uee02彼の動きは\uee00セイサイヲカイタ\uee01".encode("utf-8")
+backend_device = b""
 
 h = win32file.CreateFile(
     PIPE,
@@ -30,9 +31,10 @@ header = REQ_HDR.pack(
     5000,   # timeout_msec
     128,    # max_output_chars
     len(prompt),
+    len(backend_device),
 )
 
-win32file.WriteFile(h, header + prompt)
+win32file.WriteFile(h, header + prompt + backend_device)
 
 _, resp_header_bytes = win32file.ReadFile(h, RESP_HDR.size)
 magic, version, kind, generation, status, latency, value_size, debug_size = RESP_HDR.unpack(resp_header_bytes)

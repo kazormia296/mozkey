@@ -45,8 +45,12 @@ std::atomic<bool> g_llama_launch_started{false};
 std::atomic<bool> g_llama_ready_probe_started{false};
 std::atomic<bool> g_llama_server_ready{false};
 std::atomic<bool> g_shutdown_requested{false};
+std::atomic<uint64_t> g_llama_runtime_generation{0};
 
 std::mutex g_llama_process_mutex;
+std::mutex g_backend_device_mutex;
+std::optional<std::string> g_requested_backend_device;
+std::string g_effective_backend_device;
 #if defined(_WIN32)
 HANDLE g_llama_process = nullptr;
 HANDLE g_llama_job = nullptr;
@@ -72,7 +76,7 @@ constexpr int kDefaultThreads = 4;
 constexpr int kDefaultNPredict = 64;
 
 constexpr uint32_t kZenzWireMagic = 0x315A4E5A;  // "ZNZ1"
-constexpr uint16_t kZenzWireVersion = 1;
+constexpr uint16_t kZenzWireVersion = 2;
 constexpr uint16_t kZenzWireKindRequest = 1;
 constexpr uint16_t kZenzWireKindResponse = 2;
 
@@ -90,6 +94,7 @@ constexpr uint32_t kMaxPromptBytes = 8192;
 constexpr uint32_t kMaxOutputChars = 256;
 constexpr uint32_t kMaxRequestTimeoutMsec = 5000;
 constexpr size_t kMaxHttpResponseBytes = 65536;
+constexpr uint32_t kMaxBackendDeviceBytes = 128;
 
 // Hard caps for environment-controlled runtime knobs.
 constexpr int kMaxCtx = 1024;
@@ -105,6 +110,7 @@ struct ZenzWireRequestHeader {
   uint32_t timeout_msec;
   uint32_t max_output_chars;
   uint32_t prompt_size;
+  uint32_t backend_device_size;
 };
 
 struct ZenzWireResponseHeader {
@@ -130,6 +136,7 @@ struct Options {
   int ctx = kDefaultCtx;
   int threads = kDefaultThreads;
   int n_predict = kDefaultNPredict;
+  std::string backend_device;
 
   std::wstring llama_server_path;
   std::wstring model_path;
@@ -145,6 +152,7 @@ struct Options {
   int ctx = kDefaultCtx;
   int threads = kDefaultThreads;
   int n_predict = kDefaultNPredict;
+  std::string backend_device;
 
   std::string llama_server_path;
   std::string model_path;
@@ -501,6 +509,17 @@ Options LoadOptions() {
   return options;
 }
 #endif
+
+bool IsValidBackendDeviceName(const std::string& name) {
+  if (name.size() > kMaxBackendDeviceBytes) {
+    return false;
+  }
+  return std::all_of(name.begin(), name.end(), [](const unsigned char ch) {
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+           (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.';
+  });
+}
+
 void AppendUtf8(uint32_t codepoint, std::string* output) {
   if (codepoint <= 0x7F) {
     output->push_back(static_cast<char>(codepoint));
@@ -890,6 +909,7 @@ void ResetLlamaReadyState() {
 }
 
 void StopLlamaServer() {
+  g_llama_runtime_generation.fetch_add(1);
   std::lock_guard<std::mutex> lock(g_llama_process_mutex);
 
   if (g_llama_job != nullptr) {
@@ -909,6 +929,26 @@ void StopLlamaServer() {
   }
 
   ResetLlamaReadyState();
+}
+
+std::string SelectBackendDevice(const std::string& backend_device) {
+  std::lock_guard<std::mutex> lock(g_backend_device_mutex);
+  if (!g_requested_backend_device.has_value()) {
+    g_requested_backend_device = backend_device;
+    g_effective_backend_device = backend_device;
+  } else if (*g_requested_backend_device != backend_device) {
+    g_requested_backend_device = backend_device;
+    g_effective_backend_device = backend_device;
+    Debug(L"backend device changed; restarting llama-server");
+    StopLlamaServer();
+  }
+  return g_effective_backend_device;
+}
+
+bool LlamaServerExited() {
+  std::lock_guard<std::mutex> lock(g_llama_process_mutex);
+  return g_llama_process != nullptr &&
+         ::WaitForSingleObject(g_llama_process, 0) == WAIT_OBJECT_0;
 }
 
 BOOL WINAPI ConsoleCtrlHandler(DWORD control_type) {
@@ -998,6 +1038,10 @@ bool LaunchLlamaServer(const Options& options, std::wstring* error) {
   // --api-key.  Do not treat it as a strong same-user secret.
   cmd += L" --api-key ";
   cmd += Utf8ToWide(options.api_key);
+  if (!options.backend_device.empty()) {
+    cmd += L" --device ";
+    cmd += Utf8ToWide(options.backend_device);
+  }
 
   Debug(L"launch llama-server port=random api_key_bytes=" +
         std::to_wstring(options.api_key.size()));
@@ -1257,12 +1301,16 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
     return;
   }
 
-  std::thread([options]() {
+  const uint64_t runtime_generation = g_llama_runtime_generation.load();
+  std::thread([options, runtime_generation]() {
     Debug(L"ready probe started");
 
     // Model loading + warmup may take several seconds on cold start.
     // This probe is intentionally outside Mozc's request path.
     for (int i = 0; i < 120; ++i) {
+      if (runtime_generation != g_llama_runtime_generation.load()) {
+        return;
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
       std::string value;
@@ -1275,9 +1323,35 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
               8,
               &value,
               &local_debug)) {
+        if (runtime_generation != g_llama_runtime_generation.load()) {
+          return;
+        }
         g_llama_server_ready = true;
         g_llama_ready_probe_started = false;
         Debug(L"ready probe succeeded");
+        return;
+      }
+
+      if (runtime_generation != g_llama_runtime_generation.load()) {
+        return;
+      }
+      if (LlamaServerExited()) {
+        if (!options.backend_device.empty() &&
+            options.backend_device != "none") {
+          std::lock_guard<std::mutex> lock(g_backend_device_mutex);
+          if (!g_requested_backend_device.has_value() ||
+              *g_requested_backend_device != options.backend_device) {
+            return;
+          }
+          g_effective_backend_device = "none";
+          Debug(L"requested backend device unavailable; falling back to CPU");
+          Options fallback_options = options;
+          fallback_options.backend_device = "none";
+          StopLlamaServer();
+          StartLlamaServerInBackground(fallback_options);
+        } else {
+          StopLlamaServer();
+        }
         return;
       }
 
@@ -1286,8 +1360,10 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
       }
     }
 
-    Debug(L"ready probe timeout");
-    StopLlamaServer();
+    if (runtime_generation == g_llama_runtime_generation.load()) {
+      Debug(L"ready probe timeout");
+      StopLlamaServer();
+    }
   }).detach();
 }
 
@@ -1406,6 +1482,12 @@ void HandleClient(HANDLE pipe, const Options& options) {
     return;
   }
 
+  if (request_header.backend_device_size > kMaxBackendDeviceBytes) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "",
+                 "backend_device_too_large");
+    return;
+  }
+
   const uint32_t timeout_msec = std::clamp<uint32_t>(
       request_header.timeout_msec == 0
           ? kMaxRequestTimeoutMsec
@@ -1427,12 +1509,28 @@ void HandleClient(HANDLE pipe, const Options& options) {
     return;
   }
 
+  std::string backend_device(request_header.backend_device_size, '\0');
+  if (!backend_device.empty() &&
+      !ReadAll(pipe, backend_device.data(), request_header.backend_device_size)) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "",
+                 "failed_to_read_backend_device");
+    return;
+  }
+  if (!IsValidBackendDeviceName(backend_device)) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "",
+                 "invalid_backend_device");
+    return;
+  }
+
+  Options request_options = options;
+  request_options.backend_device = SelectBackendDevice(backend_device);
+
   Debug(L"request gen=" + std::to_wstring(request_header.generation) +
         L" " + RedactedUtf8Bytes(L"prompt", prompt));
 
   std::string debug;
   if (!EnsureLlamaServerReadyWithinTimeout(
-          options, timeout_msec, &debug)) {
+          request_options, timeout_msec, &debug)) {
     const DWORD latency = GetTickCount() - start;
     SendResponse(pipe, request_header.generation, kStatusTimeout, latency, "",
                  debug);
@@ -1441,7 +1539,7 @@ void HandleClient(HANDLE pipe, const Options& options) {
 
   std::string value;
   if (!HttpPostCompletion(
-          options,
+          request_options,
           prompt,
           timeout_msec,
           max_output_chars,
@@ -1479,10 +1577,6 @@ int RunServer(const Options& options) {
   Debug(L"http_port_mode=random");
   Debug(L"api_key_bytes=" + std::to_wstring(options.api_key.size()));
   Debug(L"n_predict=" + std::to_wstring(options.n_predict));
-
-  // Start llama-server in the background. Never block Mozc's request path on
-  // model loading.
-  StartLlamaServerInBackground(options);
 
   while (!g_shutdown_requested.load()) {
     PSECURITY_DESCRIPTOR sd = nullptr;
@@ -1584,6 +1678,7 @@ void ResetLlamaReadyState() {
 }
 
 void StopLlamaServer() {
+  g_llama_runtime_generation.fetch_add(1);
   std::lock_guard<std::mutex> lock(g_llama_process_mutex);
   if (g_llama_process > 0) {
     ::kill(g_llama_process, SIGTERM);
@@ -1603,6 +1698,34 @@ void StopLlamaServer() {
     }
   }
   ResetLlamaReadyState();
+}
+
+std::string SelectBackendDevice(const std::string& backend_device) {
+  std::lock_guard<std::mutex> lock(g_backend_device_mutex);
+  if (!g_requested_backend_device.has_value()) {
+    g_requested_backend_device = backend_device;
+    g_effective_backend_device = backend_device;
+  } else if (*g_requested_backend_device != backend_device) {
+    g_requested_backend_device = backend_device;
+    g_effective_backend_device = backend_device;
+    Debug("backend device changed; restarting llama-server");
+    StopLlamaServer();
+  }
+  return g_effective_backend_device;
+}
+
+bool LlamaServerExited() {
+  std::lock_guard<std::mutex> lock(g_llama_process_mutex);
+  if (g_llama_process <= 0) {
+    return false;
+  }
+  int status = 0;
+  const pid_t result = ::waitpid(g_llama_process, &status, WNOHANG);
+  if (result == g_llama_process || (result < 0 && errno == ECHILD)) {
+    g_llama_process = -1;
+    return true;
+  }
+  return false;
 }
 
 void HandleSignal(int sig) {
@@ -1647,6 +1770,10 @@ bool LaunchLlamaServer(const Options& options, std::string* error) {
         "--port", std::to_string(options.port),
         "--api-key", options.api_key
     };
+    if (!options.backend_device.empty()) {
+      args.push_back("--device");
+      args.push_back(options.backend_device);
+    }
 
     std::vector<char*> c_args;
     for (auto& a : args) c_args.push_back(const_cast<char*>(a.c_str()));
@@ -1841,9 +1968,13 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
   if (!g_llama_ready_probe_started.compare_exchange_strong(expected, true)) {
     return;
   }
-  std::thread([options]() {
+  const uint64_t runtime_generation = g_llama_runtime_generation.load();
+  std::thread([options, runtime_generation]() {
     Debug("ready probe started");
     for (int i = 0; i < 120; ++i) {
+      if (runtime_generation != g_llama_runtime_generation.load()) {
+        return;
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
       std::string value;
       std::string local_debug;
@@ -1854,17 +1985,45 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
               8,
               &value,
               &local_debug)) {
+        if (runtime_generation != g_llama_runtime_generation.load()) {
+          return;
+        }
         g_llama_server_ready = true;
         g_llama_ready_probe_started = false;
         Debug("ready probe succeeded");
+        return;
+      }
+
+      if (runtime_generation != g_llama_runtime_generation.load()) {
+        return;
+      }
+      if (LlamaServerExited()) {
+        if (!options.backend_device.empty() &&
+            options.backend_device != "none") {
+          std::lock_guard<std::mutex> lock(g_backend_device_mutex);
+          if (!g_requested_backend_device.has_value() ||
+              *g_requested_backend_device != options.backend_device) {
+            return;
+          }
+          g_effective_backend_device = "none";
+          Debug("requested backend device unavailable; falling back to CPU");
+          Options fallback_options = options;
+          fallback_options.backend_device = "none";
+          StopLlamaServer();
+          StartLlamaServerInBackground(fallback_options);
+        } else {
+          StopLlamaServer();
+        }
         return;
       }
       if (i % 10 == 0) {
         Debug("ready probe waiting");
       }
     }
-    Debug("ready probe timeout");
-    StopLlamaServer();
+    if (runtime_generation == g_llama_runtime_generation.load()) {
+      Debug("ready probe timeout");
+      StopLlamaServer();
+    }
   }).detach();
 }
 
@@ -1960,6 +2119,12 @@ void HandleClient(ZenzSocketHandle pipe, const Options& options) {
     return;
   }
 
+  if (request_header.backend_device_size > kMaxBackendDeviceBytes) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "",
+                 "backend_device_too_large");
+    return;
+  }
+
   const uint32_t timeout_msec = std::clamp<uint32_t>(
       request_header.timeout_msec == 0 ? kMaxRequestTimeoutMsec : request_header.timeout_msec,
       50, kMaxRequestTimeoutMsec);
@@ -1974,18 +2139,36 @@ void HandleClient(ZenzSocketHandle pipe, const Options& options) {
     return;
   }
 
+  std::string backend_device(request_header.backend_device_size, '\0');
+  if (!backend_device.empty() &&
+      !ReadAll(pipe, backend_device.data(), request_header.backend_device_size)) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "",
+                 "failed_to_read_backend_device");
+    return;
+  }
+  if (!IsValidBackendDeviceName(backend_device)) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "",
+                 "invalid_backend_device");
+    return;
+  }
+
+  Options request_options = options;
+  request_options.backend_device = SelectBackendDevice(backend_device);
+
   Debug("request gen=" + std::to_string(request_header.generation) +
         " " + RedactedUtf8Bytes("prompt", prompt));
 
   std::string debug;
-  if (!EnsureLlamaServerReadyWithinTimeout(options, timeout_msec, &debug)) {
+  if (!EnsureLlamaServerReadyWithinTimeout(request_options, timeout_msec,
+                                           &debug)) {
     const uint64_t latency = GetTickCountMsec() - start;
     SendResponse(pipe, request_header.generation, kStatusTimeout, latency, "", debug);
     return;
   }
 
   std::string value;
-  if (!HttpPostCompletion(options, prompt, timeout_msec, max_output_chars, &value, &debug)) {
+  if (!HttpPostCompletion(request_options, prompt, timeout_msec,
+                          max_output_chars, &value, &debug)) {
     const uint64_t latency = GetTickCountMsec() - start;
     SendResponse(pipe, request_header.generation, kStatusError, latency, "", debug);
     return;
@@ -2012,8 +2195,6 @@ int RunServer(const Options& options) {
   Debug("http_port_mode=random");
   Debug("api_key_bytes=" + std::to_string(options.api_key.size()));
   Debug("n_predict=" + std::to_string(options.n_predict));
-
-  StartLlamaServerInBackground(options);
 
   std::string socket_path = options.pipe_name.empty() ?
       (std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + kDefaultPipeNameSuffix) : options.pipe_name;

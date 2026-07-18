@@ -141,7 +141,9 @@ run_bounded_probe help --help
 version_output="${probe_dir}/version.txt"
 help_output="${probe_dir}/help.txt"
 
-for required_flag in '--api-key' '--host' '--port' '--model' '--ctx-size' '--threads'
+for required_flag in \
+  '--api-key' '--host' '--port' '--model' '--ctx-size' '--threads' \
+  '--device' '--list-devices'
 do
   grep -Fq -- "${required_flag}" "${help_output}" || {
     echo "llama-server is missing required CLI flag: ${required_flag}" >&2

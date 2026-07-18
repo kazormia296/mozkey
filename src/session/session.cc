@@ -6833,6 +6833,7 @@ bool Session::AdvancePendingZenzLiveCorrection(
     request.left_context = pending_zenz_live_.left_context;
     request.mozc_value = pending_zenz_live_.mozc_value;
     request.pipe_name = config.zenz_live_correction_pipe_name();
+    request.backend_device = config.zenz_live_correction_device();
     request.timeout_msec = timeout_msec;
     request.max_output_chars = 256;
     request.issued_at = pending_zenz_live_.issued_at;
