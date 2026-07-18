@@ -32,11 +32,15 @@ from typing import Any, Mapping, Sequence
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
+MOZC_SOURCE_ROOT = REPOSITORY_ROOT / "src"
+if str(MOZC_SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(MOZC_SOURCE_ROOT))
 
+from build_tools import vs_util  # noqa: E402
 from tools.release import normalize_zenz_gguf  # noqa: E402
 
 
-SCHEMA_VERSION = "mozkey.windows_zenz_runtime.v1"
+SCHEMA_VERSION = "mozkey.windows_zenz_runtime.v2"
 LLAMA_CPP_TAG = "b9637"
 LLAMA_CPP_COMMIT = "aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3"
 LLAMA_CPP_ARCHIVE_URL = (
@@ -49,12 +53,44 @@ NORMALIZED_MODEL_SHA256 = (
     "601572033a0c231857864ab0a2ccf40fbd1abe6ee4ccecd5399bf82e3e559772"
 )
 MODEL_NAME = "zenz-v3.2-small-Q5_K_M.gguf"
+NINJA_VERSION = "1.13.2"
+NINJA_WIN_ARCHIVE_SHA256 = (
+    "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65"
+)
+LLVM_WIN_VERSION = "20.1.1"
+LLVM_WIN_ARCHIVE_SHA256 = (
+    "f8114cb674317e8a303731b1f9d22bf37b8c571b64f600abe528e92275ed4ace"
+)
+NINJA_RELATIVE_PATH = Path("src/third_party/ninja/ninja.exe")
+LLVM_BIN_RELATIVE_PATH = Path("src/third_party/llvm/bin")
 ARCHITECTURES = {
-    "x64": {"cmake_platform": "x64", "pe_machine": 0x8664},
-    "arm64": {"cmake_platform": "ARM64", "pe_machine": 0xAA64},
+    "x64": {
+        "cmake_generator": None,
+        "cmake_platform": "x64",
+        "compiler_id": "MSVC",
+        "compiler_target": None,
+        "compiler_version": None,
+        "pe_machine": 0x8664,
+        "system_processors": ("AMD64", "x64", "x86_64"),
+        "toolchain_file": None,
+        "vcvars_arch": None,
+    },
+    "arm64": {
+        "cmake_generator": "Ninja Multi-Config",
+        "cmake_platform": None,
+        "compiler_id": "Clang",
+        "compiler_target": "arm64-pc-windows-msvc",
+        "compiler_version": LLVM_WIN_VERSION,
+        "pe_machine": 0xAA64,
+        "system_processors": ("arm64",),
+        "toolchain_file": "cmake/arm64-windows-llvm.cmake",
+        "vcvars_arch": "amd64_arm64",
+    },
 }
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_MANIFEST_BYTES = 1024 * 1024
+MAX_BUILD_LOG_CHARS = 64 * 1024
+MAX_COMPILE_COMMANDS_BYTES = 32 * 1024 * 1024
 REQUIRED_CLI_FLAGS = (
     b"--api-key",
     b"--host",
@@ -69,6 +105,8 @@ REQUIRED_CMAKE_BOOL_OPTIONS = {
     "GGML_BACKEND_DL": "OFF",
     "GGML_BLAS": "OFF",
     "GGML_CPU": "ON",
+    "GGML_CPU_ALL_VARIANTS": "OFF",
+    "GGML_CPU_KLEIDIAI": "OFF",
     "GGML_CUDA": "OFF",
     "GGML_HIP": "OFF",
     "GGML_LLAMAFILE": "OFF",
@@ -223,13 +261,18 @@ def _extract_archive(archive: Path, destination: Path) -> None:
 
 
 def _run(
-    command: Sequence[str], *, cwd: Path | None = None, timeout: int = 1800
+    command: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    environment: Mapping[str, str] | None = None,
+    timeout: int = 1800,
 ) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             list(command),
             cwd=cwd,
             check=True,
+            env=environment,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -237,7 +280,18 @@ def _run(
             stderr=subprocess.STDOUT,
             timeout=timeout,
         )
-    except (OSError, subprocess.SubprocessError) as error:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        output = getattr(error, "stdout", None) or getattr(error, "output", None)
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        if output:
+            print(
+                "Windows Zenz runtime build output (tail):",
+                file=sys.stderr,
+            )
+            print(str(output)[-MAX_BUILD_LOG_CHARS:], file=sys.stderr)
+        raise PreparationError("runtime_build_command_failed") from error
+    except OSError as error:
         raise PreparationError("runtime_build_command_failed") from error
 
 
@@ -357,9 +411,21 @@ def verify_runtime(output: Path, architecture: str) -> None:
         "compiler_id",
         "compiler_version",
         "generator",
-        "generator_platform",
+        "system_processor",
         "windows_sdk_version",
     }
+    if architecture == "x64":
+        expected_toolchain_keys.add("generator_platform")
+    else:
+        expected_toolchain_keys.update(
+            (
+                "compiler_archive_sha256",
+                "compiler_target",
+                "ninja_archive_sha256",
+                "ninja_version",
+                "toolchain_file",
+            )
+        )
     if (
         not isinstance(toolchain, dict)
         or set(toolchain) != expected_toolchain_keys
@@ -369,7 +435,31 @@ def verify_runtime(output: Path, architecture: str) -> None:
         )
     ):
         raise PreparationError("runtime_manifest_toolchain_invalid")
-    if toolchain.get("compiler_id") != "MSVC":
+    contract = ARCHITECTURES[architecture]
+    if (
+        toolchain.get("compiler_id") != contract["compiler_id"]
+        or toolchain.get("system_processor")
+        not in contract["system_processors"]
+        or re.fullmatch(r"\d+\.\d+(?:\.\d+){1,2}", toolchain["windows_sdk_version"])
+        is None
+    ):
+        raise PreparationError("runtime_manifest_toolchain_invalid")
+    if architecture == "x64":
+        if (
+            not toolchain["generator"].startswith("Visual Studio ")
+            or toolchain.get("generator_platform") != contract["cmake_platform"]
+        ):
+            raise PreparationError("runtime_manifest_toolchain_invalid")
+    elif (
+        toolchain.get("generator") != contract["cmake_generator"]
+        or toolchain.get("compiler_version") != contract["compiler_version"]
+        or toolchain.get("compiler_target") != contract["compiler_target"]
+        or toolchain.get("compiler_archive_sha256")
+        != LLVM_WIN_ARCHIVE_SHA256
+        or toolchain.get("ninja_archive_sha256") != NINJA_WIN_ARCHIVE_SHA256
+        or toolchain.get("ninja_version") != NINJA_VERSION
+        or toolchain.get("toolchain_file") != contract["toolchain_file"]
+    ):
         raise PreparationError("runtime_manifest_toolchain_invalid")
 
 
@@ -394,7 +484,12 @@ def _cmake_cache_values(cache: str) -> dict[str, tuple[str, str]]:
     return values
 
 
-def _verify_cmake_cache(cache: str, architecture: str) -> None:
+def _verify_cmake_cache(
+    cache: str,
+    architecture: str,
+    source: Path | None = None,
+    ninja: Path | None = None,
+) -> None:
     values = _cmake_cache_values(cache)
     for key, expected in REQUIRED_CMAKE_BOOL_OPTIONS.items():
         if values.get(key) != ("BOOL", expected):
@@ -411,8 +506,37 @@ def _verify_cmake_cache(cache: str, architecture: str) -> None:
     for key, expected in REQUIRED_CMAKE_PATH_OPTIONS.items():
         if values.get(key) != ("FILEPATH", expected):
             raise PreparationError("cmake_backend_contract_invalid")
-    if _cache_value(cache, "CMAKE_GENERATOR_PLATFORM") != str(
-        ARCHITECTURES[architecture]["cmake_platform"]
+    contract = ARCHITECTURES[architecture]
+    generator = _cache_value(cache, "CMAKE_GENERATOR")
+    if architecture == "x64":
+        if (
+            not generator.startswith("Visual Studio ")
+            or _cache_value(cache, "CMAKE_GENERATOR_PLATFORM")
+            != contract["cmake_platform"]
+        ):
+            raise PreparationError("cmake_architecture_contract_invalid")
+        return
+    if (
+        generator != contract["cmake_generator"]
+        or source is None
+        or ninja is None
+    ):
+        raise PreparationError("cmake_architecture_contract_invalid")
+    toolchain = values.get("CMAKE_TOOLCHAIN_FILE")
+    expected_toolchain = source / str(contract["toolchain_file"])
+    if (
+        toolchain is None
+        or toolchain[0] not in {"FILEPATH", "UNINITIALIZED"}
+        or os.path.normcase(os.path.abspath(toolchain[1]))
+        != os.path.normcase(os.path.abspath(expected_toolchain))
+    ):
+        raise PreparationError("cmake_architecture_contract_invalid")
+    make_program = values.get("CMAKE_MAKE_PROGRAM")
+    if (
+        make_program is None
+        or make_program[0] not in {"FILEPATH", "UNINITIALIZED"}
+        or os.path.normcase(os.path.abspath(make_program[1]))
+        != os.path.normcase(os.path.abspath(ninja))
     ):
         raise PreparationError("cmake_architecture_contract_invalid")
 
@@ -428,30 +552,104 @@ def _find_server(build: Path) -> Path:
     return existing[0]
 
 
-def _compiler_metadata(build: Path) -> dict[str, str]:
+def _cmake_set_value(content: str, name: str, error_code: str) -> str:
+    match = re.search(
+        rf'^set\({re.escape(name)}\s+(?:"([^"]+)"|([^\s\)]+))\s*\)$',
+        content,
+        flags=re.MULTILINE,
+    )
+    if match is None:
+        raise PreparationError(error_code)
+    return match.group(1) or match.group(2)
+
+
+def _compiler_metadata(build: Path, architecture: str) -> dict[str, str]:
     candidates = list(build.glob("CMakeFiles/*/CMakeCXXCompiler.cmake"))
     if len(candidates) != 1:
-        raise PreparationError("runtime_toolchain_metadata_missing")
+        raise PreparationError("runtime_compiler_metadata_missing")
     try:
         content = candidates[0].read_text(encoding="utf-8", errors="replace")
     except OSError as error:
-        raise PreparationError("runtime_toolchain_metadata_missing") from error
-    values: dict[str, str] = {}
+        raise PreparationError("runtime_compiler_metadata_missing") from error
+    values = {}
     for output_name, cmake_name in (
         ("compiler_id", "CMAKE_CXX_COMPILER_ID"),
         ("compiler_version", "CMAKE_CXX_COMPILER_VERSION"),
     ):
-        match = re.search(
-            rf'^set\({re.escape(cmake_name)} "([^"]+)"\)$',
-            content,
-            flags=re.MULTILINE,
+        values[output_name] = _cmake_set_value(
+            content, cmake_name, "runtime_compiler_metadata_missing"
         )
-        if match is None:
-            raise PreparationError("runtime_toolchain_metadata_missing")
-        values[output_name] = match.group(1)
-    if values["compiler_id"] != "MSVC":
+    contract = ARCHITECTURES[architecture]
+    if values["compiler_id"] != contract["compiler_id"]:
         raise PreparationError("runtime_toolchain_invalid")
+    if (
+        contract["compiler_version"] is not None
+        and values["compiler_version"] != contract["compiler_version"]
+    ):
+        raise PreparationError("runtime_toolchain_invalid")
+    if contract["compiler_target"] is not None:
+        compile_commands = build / "compile_commands.json"
+        info = _require_regular(compile_commands, "compile_commands")
+        if info.st_size > MAX_COMPILE_COMMANDS_BYTES:
+            raise PreparationError("compile_commands_too_large")
+        try:
+            commands = compile_commands.read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError as error:
+            raise PreparationError("compile_commands_read_failed") from error
+        expected_flag = f"--target={contract['compiler_target']}"
+        if expected_flag not in commands:
+            raise PreparationError("runtime_compiler_target_invalid")
+        values["compiler_target"] = str(contract["compiler_target"])
     return values
+
+
+def _system_metadata(build: Path, architecture: str) -> dict[str, str]:
+    candidates = list(build.glob("CMakeFiles/*/CMakeSystem.cmake"))
+    if len(candidates) != 1:
+        raise PreparationError("runtime_system_metadata_missing")
+    try:
+        content = candidates[0].read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        raise PreparationError("runtime_system_metadata_missing") from error
+    processor = _cmake_set_value(
+        content, "CMAKE_SYSTEM_PROCESSOR", "runtime_system_metadata_missing"
+    )
+    if processor not in ARCHITECTURES[architecture]["system_processors"]:
+        raise PreparationError("runtime_system_metadata_invalid")
+    return {"processor": processor}
+
+
+def _windows_sdk_version(
+    build: Path,
+    architecture: str,
+    environment: Mapping[str, str] | None,
+) -> str:
+    if architecture == "x64":
+        candidates = list(build.rglob("llama-server.vcxproj"))
+        if len(candidates) != 1:
+            raise PreparationError("windows_sdk_metadata_missing")
+        try:
+            project = candidates[0].read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError as error:
+            raise PreparationError("windows_sdk_metadata_missing") from error
+        match = re.search(
+            r"<WindowsTargetPlatformVersion>([^<]+)"
+            r"</WindowsTargetPlatformVersion>",
+            project,
+        )
+        version = match.group(1).strip() if match else ""
+    else:
+        normalized = {
+            key.upper(): value for key, value in (environment or {}).items()
+        }
+        version = normalized.get("WINDOWSSDKVERSION", "").strip("\\/")
+    if re.fullmatch(r"\d+\.\d+(?:\.\d+){1,2}", version) is None:
+        raise PreparationError("windows_sdk_metadata_invalid")
+    return version
 
 
 def _write_manifest(
@@ -462,7 +660,27 @@ def _write_manifest(
     cache: str,
     cmake_version: str,
     compiler: Mapping[str, str],
+    system: Mapping[str, str],
 ) -> None:
+    contract = ARCHITECTURES[architecture]
+    toolchain = {
+        "cmake": cmake_version.splitlines()[0].strip(),
+        "compiler_id": compiler["compiler_id"],
+        "compiler_version": compiler["compiler_version"],
+        "generator": _cache_value(cache, "CMAKE_GENERATOR"),
+        "system_processor": system["processor"],
+        "windows_sdk_version": system["windows_sdk_version"],
+    }
+    if architecture == "x64":
+        toolchain["generator_platform"] = _cache_value(
+            cache, "CMAKE_GENERATOR_PLATFORM"
+        )
+    else:
+        toolchain["compiler_archive_sha256"] = LLVM_WIN_ARCHIVE_SHA256
+        toolchain["compiler_target"] = compiler["compiler_target"]
+        toolchain["ninja_archive_sha256"] = NINJA_WIN_ARCHIVE_SHA256
+        toolchain["ninja_version"] = NINJA_VERSION
+        toolchain["toolchain_file"] = str(contract["toolchain_file"])
     document = {
         "architecture": architecture,
         "cmake_options": REQUIRED_CMAKE_BOOL_OPTIONS,
@@ -489,24 +707,92 @@ def _write_manifest(
             "size_bytes": model.stat().st_size,
         },
         "schema_version": SCHEMA_VERSION,
-        "toolchain": {
-            "cmake": cmake_version.splitlines()[0].strip(),
-            "compiler_id": compiler["compiler_id"],
-            "compiler_version": compiler["compiler_version"],
-            "generator": _cache_value(cache, "CMAKE_GENERATOR"),
-            "generator_platform": _cache_value(
-                cache, "CMAKE_GENERATOR_PLATFORM"
-            ),
-            "windows_sdk_version": _cache_value(
-                cache, "CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION"
-            ),
-        },
+        "toolchain": toolchain,
     }
     payload = (
         json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True)
         + "\n"
     )
     destination.write_text(payload, encoding="utf-8", newline="\n")
+
+
+def _build_environment(
+    architecture: str, root: Path = REPOSITORY_ROOT
+) -> Mapping[str, str] | None:
+    vcvars_arch = ARCHITECTURES[architecture]["vcvars_arch"]
+    if vcvars_arch is None:
+        return None
+    try:
+        environment = vs_util.get_vs_env_vars(str(vcvars_arch))
+    except (ChildProcessError, OSError, ValueError) as error:
+        raise PreparationError("visual_studio_environment_invalid") from error
+    normalized = {
+        key.upper(): value for key, value in environment.items() if value
+    }
+    if not {
+        "PATH",
+        "WINDOWSSDKDIR",
+        "WINDOWSSDKVERSION",
+        "VCTOOLSINSTALLDIR",
+    }.issubset(normalized):
+        raise PreparationError("visual_studio_environment_invalid")
+    llvm_bin = root / LLVM_BIN_RELATIVE_PATH
+    _require_regular(llvm_bin / "clang.exe", "pinned_clang")
+    _require_regular(llvm_bin / "clang++.exe", "pinned_clangxx")
+    path_key = next(
+        key for key in environment if key.upper() == "PATH"
+    )
+    environment[path_key] = f"{llvm_bin}{os.pathsep}{environment[path_key]}"
+    return environment
+
+
+def _pinned_ninja(
+    root: Path, environment: Mapping[str, str] | None
+) -> Path:
+    ninja = (root / NINJA_RELATIVE_PATH).resolve()
+    _require_regular(ninja, "pinned_ninja")
+    version = _run(
+        [str(ninja), "--version"], environment=environment, timeout=30
+    ).stdout.strip()
+    if version != NINJA_VERSION:
+        raise PreparationError("pinned_ninja_version_mismatch")
+    return ninja
+
+
+def _configure_command(
+    source: Path,
+    build: Path,
+    architecture: str,
+    ninja: Path | None = None,
+) -> list[str]:
+    contract = ARCHITECTURES[architecture]
+    command = ["cmake", "-S", str(source), "-B", str(build)]
+    if contract["cmake_generator"] is not None:
+        command.extend(("-G", str(contract["cmake_generator"])))
+    if contract["cmake_platform"] is not None:
+        command.extend(("-A", str(contract["cmake_platform"])))
+    if contract["toolchain_file"] is not None:
+        toolchain = (source / str(contract["toolchain_file"])).resolve(
+            strict=True
+        )
+        command.append(f"-DCMAKE_TOOLCHAIN_FILE:FILEPATH={toolchain}")
+        if ninja is None:
+            raise PreparationError("pinned_ninja_missing")
+        command.append(f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja}")
+    command.extend(
+        f"-D{name}={value}"
+        for name, value in REQUIRED_CMAKE_BOOL_OPTIONS.items()
+    )
+    command.extend(
+        f"-D{name}={value}"
+        for name, value in REQUIRED_CMAKE_STRING_OPTIONS.items()
+    )
+    command.extend(
+        f"-D{name}:FILEPATH={value}"
+        for name, value in REQUIRED_CMAKE_PATH_OPTIONS.items()
+    )
+    command.extend(f"-D{name}=OFF" for name in LEGACY_CMAKE_OFF_OPTIONS)
+    return command
 
 
 def prepare_runtime(
@@ -528,29 +814,16 @@ def prepare_runtime(
         source = work / "source"
         build = work / "build"
         _extract_archive(archive, source)
-        configure = [
-            "cmake",
-            "-S",
-            str(source),
-            "-B",
-            str(build),
-            "-A",
-            str(ARCHITECTURES[architecture]["cmake_platform"]),
-            *(
-                f"-D{name}={value}"
-                for name, value in REQUIRED_CMAKE_BOOL_OPTIONS.items()
-            ),
-            *(
-                f"-D{name}={value}"
-                for name, value in REQUIRED_CMAKE_STRING_OPTIONS.items()
-            ),
-            *(
-                f"-D{name}:FILEPATH={value}"
-                for name, value in REQUIRED_CMAKE_PATH_OPTIONS.items()
-            ),
-            *(f"-D{name}=OFF" for name in LEGACY_CMAKE_OFF_OPTIONS),
-        ]
-        _run(configure)
+        environment = _build_environment(architecture, root)
+        ninja = (
+            _pinned_ninja(root, environment)
+            if architecture == "arm64"
+            else None
+        )
+        _run(
+            _configure_command(source, build, architecture, ninja),
+            environment=environment,
+        )
         _run(
             [
                 "cmake",
@@ -561,7 +834,8 @@ def prepare_runtime(
                 "--target",
                 "llama-server",
                 "--parallel",
-            ]
+            ],
+            environment=environment,
         )
         server = _find_server(build)
         if _pe_machine(server) != ARCHITECTURES[architecture]["pe_machine"]:
@@ -576,8 +850,14 @@ def prepare_runtime(
         cache = (build / "CMakeCache.txt").read_text(
             encoding="utf-8", errors="replace"
         )
-        _verify_cmake_cache(cache, architecture)
-        cmake_version = _run(["cmake", "--version"], timeout=30).stdout
+        _verify_cmake_cache(cache, architecture, source, ninja)
+        cmake_version = _run(
+            ["cmake", "--version"], environment=environment, timeout=30
+        ).stdout
+        system = _system_metadata(build, architecture)
+        system["windows_sdk_version"] = _windows_sdk_version(
+            build, architecture, environment
+        )
         _write_manifest(
             staged / "runtime-manifest.json",
             architecture,
@@ -585,7 +865,8 @@ def prepare_runtime(
             staged / "models" / MODEL_NAME,
             cache,
             cmake_version,
-            _compiler_metadata(build),
+            _compiler_metadata(build, architecture),
+            system,
         )
         verify_runtime(staged, architecture)
 

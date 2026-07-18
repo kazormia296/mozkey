@@ -132,6 +132,8 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         self.assertIn("*_NSGetEnviron()", source)
         self.assertIn("::prctl(PR_SET_PDEATHSIG, SIGTERM);", source)
         self.assertIn("::execv(options.llama_server_path.c_str()", source)
+        self.assertIn("sigfillset(&sa.sa_mask);", source)
+        self.assertNotIn("::sigfillset(&sa.sa_mask);", source)
 
     def test_universal_scorer_rejects_missing_architecture(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -181,10 +183,20 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         generated_label = (
-            '"//mac/zenz_runtime:generated/mozc_zenz_scorer": '
+            '"//mac/zenz_runtime:mozc_zenz_scorer": '
             '"Resources"'
         )
         self.assertIn(generated_label, server_build)
+        self.assertIn(
+            '_TARGET_COMPATIBLE_WITH = ["@platforms//os:macos"]',
+            runtime_build,
+        )
+        self.assertEqual(
+            runtime_build.count(
+                "target_compatible_with = _TARGET_COMPATIBLE_WITH"
+            ),
+            4,
+        )
         self.assertNotIn(
             '"//zenz_scorer:mozc_zenz_scorer": "Resources"',
             server_build,

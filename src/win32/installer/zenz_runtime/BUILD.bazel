@@ -1,5 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
+_TARGET_COMPATIBLE_WITH = ["@platforms//os:windows"]
+
 exports_files([
     "licenses/THIRD_PARTY_NOTICES.md",
     "licenses/Apache-2.0.txt",
@@ -19,6 +21,7 @@ filegroup(
         "@platforms//cpu:arm64": ["generated/arm64/llama-server.exe"],
         "//conditions:default": ["generated/x64/llama-server.exe"],
     }),
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
 )
 
 filegroup(
@@ -27,6 +30,7 @@ filegroup(
         "@platforms//cpu:arm64": ["generated/arm64/runtime-manifest.json"],
         "//conditions:default": ["generated/x64/runtime-manifest.json"],
     }),
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
 )
 
 filegroup(
@@ -39,4 +43,5 @@ filegroup(
             "generated/x64/models/zenz-v3.2-small-Q5_K_M.gguf",
         ],
     }),
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
 )

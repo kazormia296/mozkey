@@ -1,11 +1,30 @@
 package(default_visibility = ["//visibility:public"])
 
+_TARGET_COMPATIBLE_WITH = ["@platforms//os:macos"]
+
 # These inputs are generated and checksum-verified before a macOS package
 # build.  Keep them as explicit source labels so packaging fails closed when
 # the preparation step has not run.
-exports_files([
-    "generated/llama-server",
-    "generated/mozc_zenz_scorer",
-    "generated/models/zenz-v3.2-small-Q5_K_M.gguf",
-    "generated/zenz-runtime-manifest.json",
-])
+filegroup(
+    name = "llama_server",
+    srcs = ["generated/llama-server"],
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+filegroup(
+    name = "mozc_zenz_scorer",
+    srcs = ["generated/mozc_zenz_scorer"],
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+filegroup(
+    name = "normalized_model",
+    srcs = ["generated/models/zenz-v3.2-small-Q5_K_M.gguf"],
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+filegroup(
+    name = "runtime_manifest",
+    srcs = ["generated/zenz-runtime-manifest.json"],
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)

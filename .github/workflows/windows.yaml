@@ -83,7 +83,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Qt
         shell: cmd
@@ -216,7 +218,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Qt
         shell: cmd
@@ -349,7 +353,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           python .\tools\release\prepare_windows_zenz_runtime.py --arch arm64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python .\tools\release\prepare_windows_zenz_runtime.py --arch arm64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Qt (arm64)
         shell: cmd
@@ -367,7 +373,7 @@ jobs:
       - name: Prepare CRT redist directory expected by WiX
         shell: pwsh
         run: |
-          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
+          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\arm64\Microsoft.VC145.CRT"
 
           $requiredDlls = @(
             "msvcp140.dll",
@@ -396,14 +402,14 @@ jobs:
 
           foreach ($dll in $requiredDlls) {
             $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT\\" } |
+              Where-Object { $_.FullName -match "\\arm64\\Microsoft\.VC[0-9]+\.CRT\\" } |
               Sort-Object FullName -Descending |
               Select-Object -First 1
 
             if (-not $source) {
               Write-Host "Available CRT directories:"
               Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT$" } |
+                Where-Object { $_.FullName -match "\\arm64\\Microsoft\.VC[0-9]+\.CRT$" } |
                 Select-Object FullName
 
               throw "Required CRT DLL was not found: $dll"

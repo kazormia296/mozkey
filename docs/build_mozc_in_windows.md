@@ -73,7 +73,7 @@ In this step, additional build dependencies will be downloaded, including:
 
 *   [LLVM 20.1.1](https://github.com/llvm/llvm-project/releases/tag/llvmorg-20.1.1)
 *   [MSYS2 2025-02-21](https://github.com/msys2/msys2-installer/releases/tag/2025-02-21)
-*   [Ninja 1.11.0](https://github.com/ninja-build/ninja/releases/tag/v1.11.0)
+*   [Ninja 1.13.2](https://github.com/ninja-build/ninja/releases/tag/v1.13.2)
 *   [Qt 6.9.1](https://download.qt.io/archive/qt/6.8/6.8.0/submodules/qtbase-everywhere-src-6.9.1.tar.xz)
 *   [.NET tools](../dotnet-tools.json)
 
@@ -145,9 +145,16 @@ To build `Mozc64.msi` for ARM64, run the following commands:
 
 ```
 python ..\tools\release\prepare_windows_zenz_runtime.py --arch arm64
+python ..\tools\release\prepare_windows_zenz_runtime.py --arch arm64 --verify-only
 python build_tools/build_qt.py --release --confirm_license --target_arch=arm64
 bazelisk build --config oss_windows --config release_build package --platforms=//:windows-arm64
 ```
+
+The runtime preparation command discovers `vcvarsall.bat`, imports its
+`amd64_arm64` SDK environment, and then uses the checksum-pinned LLVM 20.1.1
+and Ninja 1.13.2 installed by `update_deps.py`. It configures llama.cpp with the
+pinned `cmake/arm64-windows-llvm.cmake` cross-toolchain; no separate Ninja or
+LLVM installation is used.
 
 ### Build `Mozc64.msi` for both X64 and ARM64
 

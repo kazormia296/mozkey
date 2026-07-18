@@ -2423,7 +2423,7 @@ int main() {
 
   struct sigaction sa = {};
   sa.sa_handler = HandleSignal;
-  ::sigfillset(&sa.sa_mask);
+  sigfillset(&sa.sa_mask);
   ::sigaction(SIGINT, &sa, nullptr);
   ::sigaction(SIGTERM, &sa, nullptr);
   ::sigaction(SIGHUP, &sa, nullptr);
