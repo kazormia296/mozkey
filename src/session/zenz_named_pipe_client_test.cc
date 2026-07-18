@@ -18,6 +18,17 @@ namespace mozc {
 namespace session {
 namespace {
 
+TEST(ZenzNamedPipeClientTest, RejectsOversizedBackendDeviceBeforeConnecting) {
+  ZenzNamedPipeClient client;
+  ZenzLiveRequest request;
+  request.backend_device = std::string(129, 'x');
+
+  const ZenzLiveResponse response = client.Convert(request);
+
+  EXPECT_FALSE(response.ok);
+  EXPECT_EQ(response.debug, "backend_device_too_large");
+}
+
 TEST(ZenzNamedPipeClientTest, LinuxFallback) {
 #ifndef _WIN32
   // Create a temporary directory to act as HOME

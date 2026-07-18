@@ -32,6 +32,9 @@ struct ZenzLiveRequest {
 
   // Runtime options.
   std::string pipe_name;
+  // Empty means automatic (GPU preferred); "none" forces CPU-only inference.
+  // Other values are names returned by llama-server --list-devices.
+  std::string backend_device;
   uint32_t timeout_msec = 180;
   uint32_t max_output_chars = 128;
 

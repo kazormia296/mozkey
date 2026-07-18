@@ -885,6 +885,36 @@ The current Windows default IME override will be saved so it can be restored lat
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
+        <source>ローカル Zenz 推論に使うデバイスです。自動では GPU を優先し、利用できない場合は CPU を使います。</source>
+        <translation>ローカル Zenz 推論に使うデバイスです。自動では GPU を優先し、利用できない場合は CPU を使います。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
+        <source>Zenz 推論デバイス</source>
+        <translation>Zenz 推論デバイス</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
+        <source>llama-server が検出した GPU、CPU のみ、または GPU 優先の自動選択を指定します。</source>
+        <translation>llama-server が検出した GPU、CPU のみ、または GPU 優先の自動選択を指定します。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>Automatic (GPU preferred)</source>
+        <translation>自動（GPU 優先）</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>CPU only</source>
+        <translation>CPU のみ</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.cc" line="0"/>
+        <source>%1 (unavailable; CPU fallback)</source>
+        <translation>%1（利用不可、CPU にフォールバック）</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="0"/>
         <source>Zenz 条件フィールド</source>
         <translation>Zenz 条件フィールド</translation>
     </message>

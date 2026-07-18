@@ -27,9 +27,10 @@ namespace session {
 namespace {
 
 constexpr uint32_t kZenzWireMagic = 0x315A4E5A;  // "ZNZ1"
-constexpr uint16_t kZenzWireVersion = 1;
+constexpr uint16_t kZenzWireVersion = 2;
 constexpr uint16_t kZenzWireKindRequest = 1;
 constexpr uint16_t kZenzWireKindResponse = 2;
+constexpr uint32_t kMaxBackendDeviceBytes = 128;
 
 #pragma pack(push, 1)
 struct ZenzWireRequestHeader {
@@ -40,6 +41,7 @@ struct ZenzWireRequestHeader {
   uint32_t timeout_msec;
   uint32_t max_output_chars;
   uint32_t prompt_size;
+  uint32_t backend_device_size;
 };
 
 struct ZenzWireResponseHeader {
@@ -522,6 +524,12 @@ ZenzLiveResponse ZenzNamedPipeClient::Convert(
   response.generation = request.generation;
   response.key = request.key;
 
+  if (request.backend_device.size() > kMaxBackendDeviceBytes) {
+    response.ok = false;
+    response.debug = "backend_device_too_large";
+    return response;
+  }
+
 #if defined(_WIN32)
   ZenzPipeDebugOutput(
       std::wstring(L"Convert entered generation=")
@@ -576,11 +584,17 @@ ZenzLiveResponse ZenzNamedPipeClient::Convert(
   request_header.timeout_msec = request.timeout_msec;
   request_header.max_output_chars = request.max_output_chars;
   request_header.prompt_size = static_cast<uint32_t>(request.prompt.size());
+  request_header.backend_device_size =
+      static_cast<uint32_t>(request.backend_device.size());
 
   bool ok = WriteAll(pipe, &request_header, sizeof(request_header));
   if (ok && !request.prompt.empty()) {
     ok = WriteAll(pipe, request.prompt.data(),
                   static_cast<uint32_t>(request.prompt.size()));
+  }
+  if (ok && !request.backend_device.empty()) {
+    ok = WriteAll(pipe, request.backend_device.data(),
+                  static_cast<uint32_t>(request.backend_device.size()));
   }
 
   if (!ok) {

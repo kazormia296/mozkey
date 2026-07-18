@@ -36,7 +36,9 @@
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QFrame>
 #include <QGridLayout>
@@ -47,6 +49,8 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QProcess>
+#include <QRegularExpression>
 #include <QSizePolicy>
 #include <QSpinBox>
 #include <QStringList>
@@ -76,6 +80,7 @@
 #include "absl/log/log.h"
 #include "absl/strings/string_view.h"
 #include "base/config_file_stream.h"
+#include "base/system_util.h"
 #include "client/client.h"
 #include "config/config_handler.h"
 #include "gui/base/util.h"
@@ -128,6 +133,82 @@ int FindComboBoxItemByData(QComboBox *combo_box, const QString &data) {
   }
 
   return -1;
+}
+
+void PopulateZenzBackendDeviceComboBox(QComboBox *combo_box,
+                                       const QString &configured_device) {
+  if (combo_box == nullptr) {
+    return;
+  }
+
+  combo_box->clear();
+  combo_box->addItem(
+      QCoreApplication::translate("ConfigDialog",
+                                  "Automatic (GPU preferred)"),
+      QString());
+  combo_box->addItem(
+      QCoreApplication::translate("ConfigDialog", "CPU only"),
+      QStringLiteral("none"));
+
+  const std::string server_directory = mozc::SystemUtil::GetServerDirectory();
+  const QString server_directory_qt = QString::fromUtf8(
+      server_directory.data(), static_cast<int>(server_directory.size()));
+#if defined(_WIN32)
+  const QString llama_server_path =
+      QDir(server_directory_qt).filePath(QStringLiteral("llama-server.exe"));
+#else
+  const QString llama_server_path =
+      QDir(server_directory_qt).filePath(QStringLiteral("llama-server"));
+#endif
+
+  if (QFileInfo::exists(llama_server_path)) {
+    QProcess process;
+    process.setProcessChannelMode(QProcess::MergedChannels);
+    process.start(llama_server_path, QStringList{QStringLiteral("--list-devices")},
+                  QIODevice::ReadOnly);
+    if (process.waitForStarted(500) && process.waitForFinished(3000)) {
+      const QString output = QString::fromUtf8(process.readAll());
+      const QRegularExpression device_pattern(
+          QStringLiteral("^\\s*([A-Za-z][A-Za-z0-9_.-]*):\\s*(.+?)\\s*$"));
+      bool in_device_list = false;
+      for (const QString &line : output.split(QLatin1Char('\n'))) {
+        if (line.trimmed() == QStringLiteral("Available devices:")) {
+          in_device_list = true;
+          continue;
+        }
+        if (!in_device_list) {
+          continue;
+        }
+        const QRegularExpressionMatch match = device_pattern.match(line);
+        if (!match.hasMatch()) {
+          continue;
+        }
+        const QString name = match.captured(1);
+        if (name.toUtf8().size() > 128 ||
+            FindComboBoxItemByData(combo_box, name) >= 0) {
+          continue;
+        }
+        const QString description = match.captured(2).left(256);
+        combo_box->addItem(
+            QStringLiteral("%1 : %2").arg(name, description), name);
+      }
+    } else if (process.state() != QProcess::NotRunning) {
+      process.kill();
+      process.waitForFinished(500);
+    }
+  }
+
+  int configured_index =
+      FindComboBoxItemByData(combo_box, configured_device);
+  if (configured_index < 0 && !configured_device.isEmpty()) {
+    combo_box->addItem(
+        QCoreApplication::translate(
+            "ConfigDialog", "%1 (unavailable; CPU fallback)")
+            .arg(configured_device),
+        configured_device);
+    configured_index = combo_box->count() - 1;
+  }
+  combo_box->setCurrentIndex(configured_index >= 0 ? configured_index : 0);
 }
 
 void AddComboBoxFontItemIfMissing(QComboBox *combo_box,
@@ -2844,6 +2925,10 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
                      kMinZenzLiveCorrectionMinKeyLength,
                      kMaxZenzLiveCorrectionMinKeyLength)));
 
+  PopulateZenzBackendDeviceComboBox(
+      zenzLiveCorrectionDeviceComboBox,
+      ToQString(config.zenz_live_correction_device()));
+
   zenzLiveCorrectionProfileLineEdit->setText(
       ToQString(config.zenz_live_correction_profile()));
   zenzLiveCorrectionTopicLineEdit->setText(
@@ -3064,6 +3149,10 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   config->set_zenz_live_correction_min_key_length(
       static_cast<uint32_t>(
           zenzLiveCorrectionMinKeyLengthSpinBox->value()));
+  const QByteArray zenz_backend_device =
+      zenzLiveCorrectionDeviceComboBox->currentData().toString().toUtf8();
+  config->set_zenz_live_correction_device(zenz_backend_device.constData(),
+                                          zenz_backend_device.size());
   config->set_zenz_live_correction_profile(
       zenzLiveCorrectionProfileLineEdit->text().toUtf8().constData());
   config->set_zenz_live_correction_topic(
@@ -3863,6 +3952,8 @@ void ConfigDialog::SelectZenzLiveCorrectionSetting(int state) {
   zenzLiveCorrectionDelaySpinBox->setEnabled(enabled);
   zenzLiveCorrectionMinKeyLengthLabel->setEnabled(enabled);
   zenzLiveCorrectionMinKeyLengthSpinBox->setEnabled(enabled);
+  zenzLiveCorrectionDeviceLabel->setEnabled(enabled);
+  zenzLiveCorrectionDeviceComboBox->setEnabled(enabled);
   zenzLiveCorrectionProfileLabel->setEnabled(enabled);
   zenzLiveCorrectionProfileLineEdit->setEnabled(enabled);
   zenzLiveCorrectionTopicLabel->setEnabled(enabled);

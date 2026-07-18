@@ -1361,6 +1361,30 @@
           </widget>
          </item>
 
+         <item row="19" column="0" colspan="3">
+          <widget class="QLabel" name="zenzLiveCorrectionDeviceLabel">
+           <property name="toolTip">
+            <string>ローカル Zenz 推論に使うデバイスです。自動では GPU を優先し、利用できない場合は CPU を使います。</string>
+           </property>
+           <property name="text">
+            <string>Zenz 推論デバイス</string>
+           </property>
+          </widget>
+         </item>
+         <item row="19" column="3" colspan="5">
+          <widget class="QComboBox" name="zenzLiveCorrectionDeviceComboBox">
+           <property name="toolTip">
+            <string>llama-server が検出した GPU、CPU のみ、または GPU 優先の自動選択を指定します。</string>
+           </property>
+           <property name="minimumContentsLength">
+            <number>24</number>
+           </property>
+           <property name="sizeAdjustPolicy">
+            <enum>QComboBox::AdjustToMinimumContentsLengthWithIcon</enum>
+           </property>
+          </widget>
+         </item>
+
 
          <item row="20" column="0" colspan="3">
           <widget class="QLabel" name="zenzLiveCorrectionProfileLabel">
@@ -2829,6 +2853,7 @@
   <tabstop>zenzLiveCorrectionCheckBox</tabstop>
   <tabstop>zenzLiveCorrectionDelaySpinBox</tabstop>
   <tabstop>zenzLiveCorrectionMinKeyLengthSpinBox</tabstop>
+  <tabstop>zenzLiveCorrectionDeviceComboBox</tabstop>
   <tabstop>zenzLiveCorrectionProfileLineEdit</tabstop>
   <tabstop>zenzLiveCorrectionTopicLineEdit</tabstop>
   <tabstop>zenzLiveCorrectionStyleLineEdit</tabstop>

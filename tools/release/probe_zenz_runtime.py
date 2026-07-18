@@ -34,11 +34,11 @@ from typing import BinaryIO, Iterable, Iterator
 
 
 WIRE_MAGIC = 0x315A4E5A
-WIRE_VERSION = 1
+WIRE_VERSION = 2
 WIRE_REQUEST = 1
 WIRE_RESPONSE = 2
 WIRE_STATUS_OK = 0
-WIRE_REQUEST_HEADER = struct.Struct("<IHHIIII")
+WIRE_REQUEST_HEADER = struct.Struct("<IHHIIIII")
 WIRE_RESPONSE_HEADER = struct.Struct("<IHHIIIII")
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -54,6 +54,7 @@ MAX_UNIX_SOCKET_PATH_BYTES = 107
 # This is the same short readiness prompt used by the scorer itself.  Neither
 # this prompt nor either model response is included in diagnostics.
 _PROBE_PROMPT = "\uee02\uee00テスト\uee01"
+_MISSING_BACKEND_DEVICE = "MozkeyProbeMissingDevice0"
 
 
 class ProbeFailure(RuntimeError):
@@ -316,9 +317,13 @@ def _process_argv(pid: int) -> list[str]:
 
 
 def _inspect_llama_argv(
-    argv: list[str], *, expected_link: Path, expected_model: Path
+    argv: list[str],
+    *,
+    expected_link: Path,
+    expected_model: Path,
+    expected_backend_device: str | None = None,
 ) -> tuple[int, str]:
-    if len(argv) != 13:
+    if len(argv) not in {13, 15}:
         raise ProbeFailure("llama_arguments_invalid")
     if argv[0] != str(expected_link):
         raise ProbeFailure("llama_arguments_invalid")
@@ -328,6 +333,27 @@ def _inspect_llama_argv(
         raise ProbeFailure("llama_arguments_invalid")
     if argv[7:12:2] != ["--host", "--port", "--api-key"]:
         raise ProbeFailure("llama_arguments_invalid")
+    backend_device = ""
+    if len(argv) == 15:
+        backend_device = argv[14]
+        if (
+            argv[13] != "--device"
+            or not backend_device
+            or len(backend_device) > 128
+            or any(
+                not (
+                    character.isascii()
+                    and (character.isalnum() or character in "_.-")
+                )
+                for character in backend_device
+            )
+        ):
+            raise ProbeFailure("llama_arguments_invalid")
+    if (
+        expected_backend_device is not None
+        and backend_device != expected_backend_device
+    ):
+        raise ProbeFailure("llama_device_invalid")
     if argv[8] != "127.0.0.1":
         raise ProbeFailure("llama_host_invalid")
 
@@ -354,6 +380,7 @@ def _wait_for_llama_child(
     expected_link: Path,
     expected_model: Path,
     expected_executable: Path,
+    expected_backend_device: str | None,
     deadline: float,
 ) -> LlamaRuntime:
     last_failure = "llama_child_missing"
@@ -373,6 +400,7 @@ def _wait_for_llama_child(
                 _process_argv(child),
                 expected_link=expected_link,
                 expected_model=expected_model,
+                expected_backend_device=expected_backend_device,
             )
             try:
                 executable = (Path("/proc") / str(child) / "exe").resolve(strict=True)
@@ -514,8 +542,10 @@ def _send_wire_request(
     generation: int,
     timeout: float,
     prompt: str = _PROBE_PROMPT,
+    backend_device: str = "",
 ) -> bool:
     prompt_bytes = prompt.encode("utf-8")
+    backend_device_bytes = backend_device.encode("ascii", errors="strict")
     request = WIRE_REQUEST_HEADER.pack(
         WIRE_MAGIC,
         WIRE_VERSION,
@@ -524,6 +554,7 @@ def _send_wire_request(
         5000,
         16,
         len(prompt_bytes),
+        len(backend_device_bytes),
     )
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.settimeout(max(0.1, min(timeout, 7.0)))
@@ -531,6 +562,7 @@ def _send_wire_request(
         connection.connect(str(socket_path))
         connection.sendall(request)
         connection.sendall(prompt_bytes)
+        connection.sendall(backend_device_bytes)
         raw_header = _recv_exact(connection, WIRE_RESPONSE_HEADER.size)
         (
             magic,
@@ -574,6 +606,8 @@ def _wait_for_wire_success(
     socket_path: Path,
     output: _BoundedOutput,
     deadline: float,
+    *,
+    backend_device: str = "",
 ) -> None:
     generation = 1
     while time.monotonic() < deadline:
@@ -584,7 +618,10 @@ def _wait_for_wire_success(
         remaining = deadline - time.monotonic()
         try:
             if _send_wire_request(
-                socket_path, generation=generation, timeout=remaining
+                socket_path,
+                generation=generation,
+                timeout=remaining,
+                backend_device=backend_device,
             ):
                 return
         except ProbeFailure as error:
@@ -797,13 +834,6 @@ def run_probe(timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
         deadline = time.monotonic() + timeout_seconds
         failure: BaseException | None = None
         try:
-            runtime = _wait_for_llama_child(
-                scorer,
-                expected_link=llama_link,
-                expected_model=model_path,
-                expected_executable=DEFAULT_LLAMA_SERVER,
-                deadline=deadline,
-            )
             while not socket_path.exists() and time.monotonic() < deadline:
                 if scorer.poll() is not None:
                     raise ProbeFailure("scorer_exited_early")
@@ -812,7 +842,45 @@ def run_probe(timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
             _require_staged_regular(
                 lock_path, mode=0o600, executable=False, nonempty=False
             )
-            _wait_for_wire_success(scorer, socket_path, output, deadline)
+            _wait_for_wire_success(
+                scorer,
+                socket_path,
+                output,
+                deadline,
+                backend_device=_MISSING_BACKEND_DEVICE,
+            )
+            if _send_wire_request(
+                socket_path,
+                generation=0x7FFFFFFF,
+                timeout=max(0.1, deadline - time.monotonic()),
+                backend_device="CUDA0 invalid",
+            ):
+                raise ProbeFailure("wire_device_validation_failed")
+            runtime = _wait_for_llama_child(
+                scorer,
+                expected_link=llama_link,
+                expected_model=model_path,
+                expected_executable=DEFAULT_LLAMA_SERVER,
+                expected_backend_device="none",
+                deadline=deadline,
+            )
+            if not _send_wire_request(
+                socket_path,
+                generation=0x7FFFFFFE,
+                timeout=max(0.1, deadline - time.monotonic()),
+                backend_device=_MISSING_BACKEND_DEVICE,
+            ):
+                raise ProbeFailure("llama_device_fallback_not_reused")
+            reused_runtime = _wait_for_llama_child(
+                scorer,
+                expected_link=llama_link,
+                expected_model=model_path,
+                expected_executable=DEFAULT_LLAMA_SERVER,
+                expected_backend_device="none",
+                deadline=deadline,
+            )
+            if reused_runtime != runtime:
+                raise ProbeFailure("llama_device_fallback_restarted")
             _validate_loopback_listener(runtime, deadline)
             _authenticated_completion(
                 runtime, timeout=max(0.1, deadline - time.monotonic())

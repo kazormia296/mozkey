@@ -112,6 +112,8 @@ Config CreateDefaultConfig() {
     config.set_use_emoji_conversion(true);
   }
 
+  config.set_use_zenz_live_correction(true);
+
   return config;
 }
 
@@ -148,6 +150,10 @@ void NormalizeConfig(Config* config) {
 
   if (!config->has_use_live_conversion()) {
     config->set_use_live_conversion(true);
+  }
+
+  if (!config->has_use_zenz_live_correction()) {
+    config->set_use_zenz_live_correction(true);
   }
 
   if (!config->has_show_candidate_window_on_initial_conversion()) {
