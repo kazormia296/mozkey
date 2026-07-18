@@ -45,11 +45,11 @@ PINNED_DEPENDENCY_LICENSE_SHA256 = {
 MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024
 MAX_WIRE_PAYLOAD_BYTES = 64 * 1024
 WIRE_MAGIC = 0x315A4E5A
-WIRE_VERSION = 1
+WIRE_VERSION = 2
 WIRE_REQUEST = 1
 WIRE_RESPONSE = 2
 WIRE_STATUS_OK = 0
-WIRE_REQUEST_HEADER = struct.Struct("<IHHIIII")
+WIRE_REQUEST_HEADER = struct.Struct("<IHHIIIII")
 WIRE_RESPONSE_HEADER = struct.Struct("<IHHIIIII")
 PROBE_PROMPT = "\uee02彼の動きは\uee00セイサイヲカイタ\uee01"
 ARCHITECTURES = (("arm64", "11.0"), ("x86_64", "10.15"))
@@ -350,6 +350,7 @@ def _send_wire_request(socket_path: Path, generation: int, timeout: float) -> bo
         5000,
         16,
         len(prompt),
+        0,
     )
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.settimeout(max(0.1, min(timeout, 7.0)))

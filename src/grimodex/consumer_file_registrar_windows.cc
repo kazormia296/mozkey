@@ -31,6 +31,12 @@ namespace mozc::grimodex {
 namespace {
 
 constexpr int kCreateAttempts = 32;
+// FileRenameInfoEx is value 22 in FILE_INFO_BY_HANDLE_CLASS.  Some Windows SDK
+// configurations hide its named enumerator when NTDDI_VERSION is older than
+// Windows 10 RS1 even though the project targets Windows 10 and the API is
+// available on the supported Windows 10 RS1-and-later runtimes.
+constexpr FILE_INFO_BY_HANDLE_CLASS kFileRenameInfoEx =
+    static_cast<FILE_INFO_BY_HANDLE_CLASS>(22);
 
 class UniqueHandle final {
  public:
@@ -593,7 +599,7 @@ absl::Status AtomicReplace(const SecureDirectory &consumers,
         std::to_wstring(nonce.fetch_add(1)) + L".tmp";
     HANDLE raw = ::CreateFileW(
         temporary_path.c_str(),
-        GENERIC_WRITE | FILE_READ_ATTRIBUTES | READ_CONTROL,
+        GENERIC_WRITE | FILE_READ_ATTRIBUTES | READ_CONTROL | DELETE,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         (*private_file)->attributes(), CREATE_NEW,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
@@ -636,16 +642,45 @@ absl::Status AtomicReplace(const SecureDirectory &consumers,
     cleanup();
     return status;
   }
-  temporary = UniqueHandle();
-  if (!::MoveFileExW(temporary_path.c_str(), destination.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-    const absl::Status status =
-        WindowsError("replace Grimodex consumer handshake",
-                     ::GetLastError());
+  if (destination.size() >
+      ((std::numeric_limits<DWORD>::max)() - sizeof(FILE_RENAME_INFO)) /
+          sizeof(wchar_t)) {
+    temporary = UniqueHandle();
+    cleanup();
+    return absl::InvalidArgumentError(
+        "Grimodex consumer handshake path is too long");
+  }
+  const size_t destination_bytes = destination.size() * sizeof(wchar_t);
+  const size_t rename_info_size =
+      sizeof(FILE_RENAME_INFO) + destination_bytes;
+  const size_t rename_storage_size =
+      (rename_info_size + sizeof(std::max_align_t) - 1) /
+      sizeof(std::max_align_t);
+  std::vector<std::max_align_t> rename_storage(rename_storage_size);
+  auto *rename_info =
+      reinterpret_cast<FILE_RENAME_INFO *>(rename_storage.data());
+  rename_info->Flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS |
+                       FILE_RENAME_FLAG_POSIX_SEMANTICS;
+  rename_info->RootDirectory = nullptr;
+  rename_info->FileNameLength = static_cast<DWORD>(destination_bytes);
+  std::copy(destination.begin(), destination.end(), rename_info->FileName);
+  rename_info->FileName[destination.size()] = L'\0';
+
+  // POSIX rename semantics keep existing shared-delete handles attached to the
+  // old file while making all subsequent opens resolve to the private
+  // replacement.  Unlike ReplaceFileW, a failed rename has no documented
+  // partial state that can remove the canonical heartbeat.
+  if (!::SetFileInformationByHandle(
+          temporary.get(), kFileRenameInfoEx, rename_info,
+          static_cast<DWORD>(rename_info_size))) {
+    const absl::Status status = WindowsError(
+        "replace Grimodex consumer handshake", ::GetLastError());
+    temporary = UniqueHandle();
     cleanup();
     return status;
   }
   moved = true;
+  temporary = UniqueHandle();
   return InspectConsumerEntry(destination, /*allow_missing=*/false);
 }
 

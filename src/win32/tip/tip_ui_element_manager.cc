@@ -460,13 +460,13 @@ bool TipUiElementManager::IsVisible(ITfUIElementMgr* ui_element_manager,
   if (it == ui_element_map_.end()) {
     return false;
   }
-  wil::com_ptr_nothrow<ITfUIElement> element = it->second.element;
-  if (!element) {
+  wil::com_ptr_nothrow<ITfUIElement> ui_element = it->second.element;
+  if (!ui_element) {
     return false;
   }
 
   BOOL shown = FALSE;
-  if (FAILED(element->IsShown(&shown))) {
+  if (FAILED(ui_element->IsShown(&shown))) {
     return false;
   }
   return !!shown;

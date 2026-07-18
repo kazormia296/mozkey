@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tools.release import probe_macos_zenz_runtime as target
+from tools.release import probe_zenz_runtime as portable_probe
 
 
 def _create_probe_layout(root: Path) -> target.RuntimeLayout:
@@ -80,6 +81,27 @@ def _create_probe_layout(root: Path) -> target.RuntimeLayout:
 
 
 class ProbeMacosZenzRuntimeTest(unittest.TestCase):
+    def test_wire_contract_matches_portable_runtime_probe(self):
+        for name in (
+            "WIRE_MAGIC",
+            "WIRE_VERSION",
+            "WIRE_REQUEST",
+            "WIRE_RESPONSE",
+            "WIRE_STATUS_OK",
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    getattr(target, name), getattr(portable_probe, name)
+                )
+        self.assertEqual(
+            target.WIRE_REQUEST_HEADER.format,
+            portable_probe.WIRE_REQUEST_HEADER.format,
+        )
+        self.assertEqual(
+            target.WIRE_RESPONSE_HEADER.format,
+            portable_probe.WIRE_RESPONSE_HEADER.format,
+        )
+
     def test_bazel_packaging_stages_canonical_runtime_resource_paths(self):
         repository = Path(__file__).resolve().parents[2]
         runtime_build = (repository / "src/mac/zenz_runtime/BUILD.bazel").read_text(
@@ -365,6 +387,21 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
             self.assertTrue(
                 target._send_wire_request(Path("/private/runtime.sock"), 7, 2.0)
             )
+        prompt = target.PROBE_PROMPT.encode("utf-8")
+        self.assertEqual(
+            connection.payload,
+            target.WIRE_REQUEST_HEADER.pack(
+                target.WIRE_MAGIC,
+                target.WIRE_VERSION,
+                target.WIRE_REQUEST,
+                7,
+                5000,
+                16,
+                len(prompt),
+                0,
+            )
+            + prompt,
+        )
 
     def test_macho_contract_rejects_dynamic_llama_dependency(self):
         layout = target.RuntimeLayout(

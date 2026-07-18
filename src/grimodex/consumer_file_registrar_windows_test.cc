@@ -163,7 +163,8 @@ TEST(WindowsConsumerFileRegistrarTest, RefreshAtomicallyReplacesOpenFile) {
 
   ConsumerHandshake second = Handshake("2026-07-18T01:17:03.456Z");
   second.version = "0.8.1";
-  ASSERT_TRUE(registrar.Refresh(second).ok());
+  const absl::Status refresh_status = registrar.Refresh(second);
+  ASSERT_TRUE(refresh_status.ok()) << refresh_status;
   absl::StatusOr<std::string> old_payload = SerializeConsumerHandshake(first);
   absl::StatusOr<std::string> new_payload = SerializeConsumerHandshake(second);
   ASSERT_TRUE(old_payload.ok());
