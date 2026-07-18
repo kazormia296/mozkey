@@ -103,7 +103,11 @@ if ($Profile -eq "release") {
     Write-Host "  --define=mozkey_dictionary_profile=release-approved-only"
 } else {
     $Content = Get-Content -Raw -Encoding UTF8 $DictionaryOssBuild
-    $DefaultPattern = '(?s)("//conditions:default"\s*:\s*\[\s*")[^"]+("\s*,?\s*\])'
+    # BUILD.bazel can contain other select() expressions (for example the
+    # evaluation baseline selector). Restrict this edit to the
+    # base_dictionary_data filegroup so profile switching cannot rewrite an
+    # unrelated default branch.
+    $DefaultPattern = '(?s)(filegroup\(\s*name\s*=\s*"base_dictionary_data".*?"//conditions:default"\s*:\s*\[\s*")[^"]+("\s*,?\s*\])'
     $Matches = [System.Text.RegularExpressions.Regex]::Matches($Content, $DefaultPattern)
     if ($Matches.Count -ne 1) {
         throw "Expected exactly one default Mozkey dictionary target in $DictionaryOssBuild"
