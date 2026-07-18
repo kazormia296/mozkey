@@ -961,6 +961,8 @@ mozc_cc_test(
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":tip_edit_session",
+        ":tip_private_context",
+        ":tip_ui_handler_impl",
         "//protocol:commands_cc_proto",
         "//testing:gunit_main",
     ],
