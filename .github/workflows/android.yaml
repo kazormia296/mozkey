@@ -1,19 +1,26 @@
 name: CI for Android
 # https://github.com/google/mozc/blob/master/docs/build_mozc_for_android.md
 
-# Run on push.
-on: push
+on:
+  workflow_call:
+    inputs:
+      release:
+        description: Build Android release artifacts
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 # Prevent previous workflows from running.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ci-android-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build_on_linux:
+    if: ${{ inputs.release == true }}
     # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -46,14 +53,30 @@ jobs:
         run: |
           bazelisk build --config oss_android package --config release_build
 
-      - name: upload artifacts
+      - name: Stage versioned Android native libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n \
+            -e 's/^MOZKEY_RELEASE_VERSION_MAJOR = //p' \
+            -e 's/^MOZKEY_RELEASE_VERSION_MINOR = //p' \
+            -e 's/^MOZKEY_RELEASE_VERSION_PATCH = //p' \
+            src/version.bzl | paste -sd . -)"
+          printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          mv src/bazel-bin/android/jni/native_libs.zip \
+            "mozkey-v${version}-android-native-libs.zip"
+
+      - name: Upload versioned Android native libraries
         uses: actions/upload-artifact@v6
         with:
-          name: native_libs.zip
-          path: src/bazel-bin/android/jni/native_libs.zip
-          if-no-files-found: warn
+          name: release-android-native-libs
+          path: mozkey-v*-android-native-libs.zip
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   build_on_mac:
+    if: ${{ inputs.release == true }}
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
     timeout-minutes: 60

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/koyasi777/mozkey/releases"><img alt="Releases" src="https://img.shields.io/github/v/release/koyasi777/mozkey?include_prereleases&label=release"></a>
+  <a href="https://github.com/kazormia296/mozkey/releases"><img alt="Releases" src="https://img.shields.io/github/v/release/kazormia296/mozkey?include_prereleases&label=release"></a>
   <img alt="Based on Mozc" src="https://img.shields.io/badge/based%20on-Mozc-88A2DD">
   <img alt="Local first" src="https://img.shields.io/badge/local--first-Zenz-53D4C7">
   <img alt="Release build" src="https://img.shields.io/badge/release-Windows%20MSI-178B8B">
@@ -46,15 +46,19 @@ rollback は Arch Linux 実機 gate の対象です。deb/rpm/Arch package repos
 意味ではありません。macOS 版は native CI で build・adapter test・package probe を
 行いますが、一般向けの Developer ID 署名・notarize 済み installer は未公開です。
 
-Windows 用のビルド済み MSI は [Releases](https://github.com/koyasi777/mozkey/releases) からダウンロードできます。
+プロダクト成果物は、`src/version.bzl` と一致する `vX.Y.Z` タグからのみビルドされ、
+確認用の draft prerelease にまとめられます。通常の pull request と `main` push はテスト
+のみを実行し、installer は生成しません。公開済みの Windows MSI は
+[Releases](https://github.com/kazormia296/mozkey/releases) からダウンロードできます。
 
 - 通常の 64-bit Windows では、Releases にある最新の `Mozkey_v*_x64.msi` を使用してください。
 - 本 fork のリリースは個人用の experimental build として公開しています。
 - Zenz 同梱版は、ローカル推論 runtime と GGUF model を含むため、従来の offline MSI よりファイルサイズが大きくなります。
-- Windows 向けリリース MSI には、ローカル生成した `daily` system dictionary profile を同梱する場合があります。
-- `daily` profile には、Mozc 標準辞書に加えて、merge-ut-dictionaries、dic-nico-intersection-pixiv、mozcdic-ut-personal-names、Mozkey syntax / expressive kana guard dictionary 由来の生成辞書が含まれます。
+- Windows 向けリリース MSI は `release-approved-only` system dictionary profile を使用します。
+- Nico/Pixiv を含む `daily` profile はローカル評価専用で、公開物には含めません。
 - 公開 Linux artifact は `release-approved-only` profile を使用し、commit と SHA-256 を固定した merge-ut/place-names/SudachiDict/personal-names のみを取り込みます。nico/pixiv は再配布条件が十分明示されていないため local evaluation 専用で、公開物には含めません。
 - 外部辞書・同梱 runtime・model の出典とライセンス note については [Third-party notices](THIRD_PARTY_NOTICES.md) を参照してください。
+- タグ、version gate、Codex リリースノート、draft 公開手順は [Releasing Mozkey](docs/releasing.md) を参照してください。
 
 Linux の release targets、multiarch Fcitx path、Zenz runtime 契約、staging smoke、
 uninstall 手順は [Linux product isolation](docs/linux_product_isolation.md) を参照して
@@ -525,7 +529,7 @@ daily local 辞書は主に以下を元に生成できます。
 
 巨大な生成辞書ファイルは、このリポジトリには commit しません。`src/data/dictionary_koyasi/generated/` 以下にローカル生成します。
 
-リリース MSI には、ローカル生成した `daily` system dictionary profile を同梱する場合があります。外部辞書の出典とライセンス note は [Third-party notices](THIRD_PARTY_NOTICES.md) および [Koyasi Dictionary Data](src/data/dictionary_koyasi/README.md) を参照してください。
+公開リリース MSI は `release-approved-only` system dictionary profile を使用します。ローカル評価用の `daily` profile を生成する場合は、外部辞書の出典とライセンス note を [Third-party notices](THIRD_PARTY_NOTICES.md) および [Koyasi Dictionary Data](src/data/dictionary_koyasi/README.md) で確認してください。
 
 強化辞書を有効にした状態で package build する前に、daily 辞書をローカルで再生成してください。
 
@@ -634,16 +638,21 @@ machine. macOS packages are built, adapter-tested, and package-probed in native
 CI, but a generally available Developer ID-signed and notarized installer is
 not yet published.
 
-Windows MSI packages are available from [Releases](https://github.com/koyasi777/mozkey/releases).
+Product artifacts are built only from a `vX.Y.Z` tag that matches
+`src/version.bzl`, then collected in a draft prerelease for review. Ordinary
+pull requests and pushes to `main` run tests without producing installers.
+Published Windows MSI packages are available from
+[Releases](https://github.com/kazormia296/mozkey/releases).
 
 - On ordinary 64-bit Windows, use the latest `Mozkey_v*_x64.msi` from Releases.
 - For the Zenz-bundled build, choose an MSI whose file name contains `zenz` or `zenz_offline`.
 - Releases from this fork are published as personal experimental builds.
 - Zenz-bundled builds are larger than the traditional offline MSI because they include a local inference runtime and a GGUF model.
-- Windows release MSI packages may include the locally generated `daily` system dictionary profile.
-- The `daily` profile is generated from the Mozc base dictionaries, merge-ut-dictionaries, dic-nico-intersection-pixiv, mozcdic-ut-personal-names, and the Mozkey syntax / expressive kana guard dictionary.
+- Windows release MSI packages use the `release-approved-only` system dictionary profile.
+- The `daily` profile, including Nico/Pixiv data, is for local evaluation only and is excluded from public artifacts.
 - Public Linux artifacts use `release-approved-only`: pinned merge-ut, place-name, SudachiDict, and personal-name inputs only. Nico/Pixiv remains available for local evaluation but is excluded from public artifacts because its data redistribution terms are not explicit enough.
 - See [Third-party notices](THIRD_PARTY_NOTICES.md) for source and license notes for bundled runtimes, model files, and generated dictionary data.
+- See [Releasing Mozkey](docs/releasing.md) for the tag/version gate, Codex release notes, and draft-publication procedure.
 - See [Linux product isolation](docs/linux_product_isolation.md) for the Fcitx
   multiarch path, Arch payload targets, compatible `llama-server`
   contract, build attestation, staged smoke, artifact checksum/SPDX inventory,
@@ -1201,7 +1210,7 @@ The daily local dictionary can be generated from:
 Large generated dictionary files are not committed to this repository.
 They are generated locally under `src/data/dictionary_koyasi/generated/`.
 
-Windows release MSI packages may include the locally generated `daily` system dictionary profile. See [Third-party notices](THIRD_PARTY_NOTICES.md) and [Koyasi Dictionary Data](src/data/dictionary_koyasi/README.md) for source and license notes.
+Public Windows release MSI packages use the `release-approved-only` system dictionary profile. For local `daily` profile generation, see [Third-party notices](THIRD_PARTY_NOTICES.md) and [Koyasi Dictionary Data](src/data/dictionary_koyasi/README.md) for source and license notes.
 
 Before building a package with the enhanced dictionary enabled, regenerate the daily dictionary locally:
 

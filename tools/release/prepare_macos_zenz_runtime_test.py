@@ -205,9 +205,37 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         self.assertIn('out = "mozc_zenz_scorer"', runtime_build)
         self.assertIn("is_executable = True", runtime_build)
         self.assertIn("runtime._verify_arm64_scorer", workflow)
-        self.assertIn("macos-arm64-zenz-runtime-b9637", workflow)
+        self.assertIn("macos-zenz-runtime-arm64-b9637", workflow)
         self.assertIn("--macos_cpus=arm64", workflow)
         self.assertIn("--timeout-seconds 300", workflow)
+        self.assertIn("  pull_request:\n", workflow)
+        self.assertIn("  push:\n    branches:\n      - main\n", workflow)
+        self.assertIn("  workflow_call:\n    inputs:\n      release:\n", workflow)
+        self.assertIn("        type: boolean\n        default: false\n", workflow)
+        self.assertIn(
+            "group: macos-${{ github.workflow }}-"
+            "${{ github.head_ref || github.ref }}",
+            workflow,
+        )
+        self.assertEqual(workflow.count("name: macos-daily-dictionary"), 3)
+        self.assertEqual(
+            workflow.count("name: macos-zenz-runtime-arm64-b9637"),
+            2,
+        )
+        self.assertEqual(
+            workflow.count("if: ${{ inputs.release == true }}"),
+            2,
+        )
+        test_job = workflow.split("\n  test:\n", 1)[1]
+        self.assertNotIn("inputs.release", test_job)
+        self.assertNotIn("\n  cache_deps:\n", workflow)
+        self.assertIn(
+            "Mozkey_v${{ needs.prepare_daily_dictionary.outputs."
+            "release_version }}_macos_arm64.pkg",
+            workflow,
+        )
+        self.assertIn("name: release-macos-arm64", workflow)
+        self.assertEqual(workflow.count("retention-days: 7"), 1)
         self.assertNotIn("--skip-live", workflow)
         self.assertNotIn("build_intel64:", workflow)
         self.assertNotIn("build_universal_binary:", workflow)

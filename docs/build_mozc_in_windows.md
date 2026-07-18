@@ -2,7 +2,7 @@
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 
-[![Windows](https://github.com/koyasi777/mozkey/actions/workflows/windows.yaml/badge.svg)](https://github.com/koyasi777/mozkey/actions/workflows/windows.yaml)
+[![Windows](https://github.com/kazormia296/mozkey/actions/workflows/windows.yaml/badge.svg)](https://github.com/kazormia296/mozkey/actions/workflows/windows.yaml)
 
 ## Summary
 
@@ -10,7 +10,7 @@ If you are unsure about what the following commands do, please review the
 descriptions below to understand the operations before running them.
 
 ```
-git clone https://github.com/koyasi777/mozkey.git
+git clone https://github.com/kazormia296/mozkey.git
 cd mozkey\src
 
 python build_tools/update_deps.py
@@ -57,7 +57,7 @@ Building Mozc on Windows requires the following software.
 ### Download the repository from GitHub
 
 ```
-git clone https://github.com/koyasi777/mozkey.git
+git clone https://github.com/kazormia296/mozkey.git
 cd mozkey\src
 ```
 
@@ -208,29 +208,31 @@ for the focused command and the security/lifecycle contract.
 ## Build with GitHub Actions
 
 GitHub Actions are already set up in
-[windows.yaml](../.github/workflows/windows.yaml). With that, you can build and
-install Mozc with your own commit as follows.
+[windows.yaml](../.github/workflows/windows.yaml). Pull requests and ordinary
+pushes run the Windows test gate only; they do not build or upload an MSI.
+Installer builds are called by the release workflow from a validated release
+tag.
 
-1.  Fork https://github.com/koyasi777/mozkey to your GitHub repository.
-2.  Push a new commit to your own fork.
-3.  Click "Actions" tab on your fork.
-4.  Wait until the action triggered by your commit succeeds.
-5.  Download `Mozc64.msi` from the action result page.
-6.  Install `Mozc64.msi`.
+1.  Fork https://github.com/kazormia296/mozkey to your GitHub repository.
+2.  Update `src/version.bzl`, merge the tested change into `main`, and create an
+    annotated `vX.Y.Z` tag with the same version.
+3.  Push the tag and wait for the **Mozkey Release** workflow to succeed.
+4.  Review the generated draft prerelease and its checksums.
+5.  Download the architecture-specific `Mozkey_vX.Y.Z_*.msi` after publishing
+    the release.
 
-Files on the GitHub Actions page remain available for up to 90 days.
+See [Releasing Mozkey](releasing.md) for the exact version, ancestry, release
+notes, and rerun contract.
 
 You can also find Mozkey installers for Windows in the Mozkey repository.
 Please keep in mind that Mozc is not an officially supported Google product,
-even if downloaded from https://github.com/koyasi777/mozkey/.
+even if downloaded from https://github.com/kazormia296/mozkey/.
 
 1.  Sign in GitHub.
-2.  Check
-    [recent successful Windows runs](https://github.com/koyasi777/mozkey/actions/workflows/windows.yaml?query=is%3Asuccess)
-    in the Mozkey repository.
-3.  Find an action from the last 90 days and click it.
-4.  Download `Mozc64.msi` from the action result page if you are using 64-bit
-    Windows.
+2.  Open the repository's
+    [Releases](https://github.com/kazormia296/mozkey/releases) page.
+3.  Download the `x64`, `universal`, or `arm64` MSI that matches the target
+    machine.
 
 --------------------------------------------------------------------------------
 

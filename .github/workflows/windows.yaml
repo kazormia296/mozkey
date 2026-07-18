@@ -1,15 +1,25 @@
 name: CI for Windows
 # https://github.com/google/mozc/blob/master/docs/build_mozc_in_windows.md
 
-# Run on push.
-on: push
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      release:
+        description: Build and upload release installers.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 # Prevent previous workflows from running.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: windows-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -17,6 +27,8 @@ jobs:
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 60
+    outputs:
+      release_version: ${{ steps.release_version.outputs.value }}
 
     steps:
       - name: Checkout
@@ -24,6 +36,23 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+
+      - name: Resolve Mozkey release version
+        id: release_version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $versionFile = Get-Content .\src\version.bzl -Raw
+          $parts = foreach ($name in @("MAJOR", "MINOR", "PATCH")) {
+            $pattern = "(?m)^MOZKEY_RELEASE_VERSION_${name} = ([0-9]+)$"
+            $match = [regex]::Match($versionFile, $pattern)
+            if (-not $match.Success) {
+              throw "Could not resolve MOZKEY_RELEASE_VERSION_${name}."
+            }
+            $match.Groups[1].Value
+          }
+          "value=$($parts -join '.')" | Out-File `
+            -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Prepare daily dictionary
         shell: pwsh
@@ -37,14 +66,17 @@ jobs:
       - name: upload daily dictionary
         uses: actions/upload-artifact@v6
         with:
-          name: daily-dictionary
+          name: windows-daily-dictionary
           path: |
             src/data/dictionary_koyasi/generated/**
             dist/dictionary/**
           if-no-files-found: error
+          overwrite: true
+          retention-days: 1
 
   build_x64:
     needs: prepare_daily_dictionary
+    if: ${{ inputs.release == true }}
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 120
@@ -59,7 +91,7 @@ jobs:
       - name: download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: windows-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
@@ -171,15 +203,26 @@ jobs:
             -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
             -ExpectedRuntimeArchitecture x64
 
-      - name: upload Mozc64_x64.msi
+      - name: Stage versioned x64 MSI
+        shell: pwsh
+        run: |
+          $destination = "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi"
+          Move-Item `
+            -LiteralPath .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -Destination $destination
+
+      - name: Upload versioned x64 MSI
         uses: actions/upload-artifact@v6
         with:
-          name: Mozc64_x64.msi
-          path: src/bazel-bin/win32/installer/Mozc64.msi
+          name: release-windows-x64
+          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi
           if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   build_universal:
     needs: prepare_daily_dictionary
+    if: ${{ inputs.release == true }}
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 120
@@ -194,7 +237,7 @@ jobs:
       - name: download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: windows-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
@@ -306,15 +349,26 @@ jobs:
             -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
             -ExpectedRuntimeArchitecture x64
 
-      - name: upload Mozc64_universal.msi
+      - name: Stage versioned universal MSI
+        shell: pwsh
+        run: |
+          $destination = "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_universal.msi"
+          Move-Item `
+            -LiteralPath .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -Destination $destination
+
+      - name: Upload versioned universal MSI
         uses: actions/upload-artifact@v6
         with:
-          name: Mozc64_universal.msi
-          path: src/bazel-bin/win32/installer/Mozc64.msi
+          name: release-windows-universal
+          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_universal.msi
           if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   build_arm64:
     needs: prepare_daily_dictionary
+    if: ${{ inputs.release == true }}
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
     runs-on: windows-2025
     timeout-minutes: 120
@@ -329,7 +383,7 @@ jobs:
       - name: download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: windows-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
@@ -441,12 +495,22 @@ jobs:
             -RuntimePath .\src\win32\installer\zenz_runtime\generated\arm64\llama-server.exe `
             -ExpectedRuntimeArchitecture arm64
 
-      - name: upload Mozc64_arm64.msi
+      - name: Stage versioned ARM64 MSI
+        shell: pwsh
+        run: |
+          $destination = "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_arm64.msi"
+          Move-Item `
+            -LiteralPath .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -Destination $destination
+
+      - name: Upload versioned ARM64 MSI
         uses: actions/upload-artifact@v6
         with:
-          name: Mozc64_arm64.msi
-          path: src/bazel-bin/win32/installer/Mozc64.msi
+          name: release-windows-arm64
+          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_arm64.msi
           if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   test:
     needs: prepare_daily_dictionary
@@ -464,7 +528,7 @@ jobs:
       - name: download daily dictionary
         uses: actions/download-artifact@v6
         with:
-          name: daily-dictionary
+          name: windows-daily-dictionary
           path: .
 
       - name: Test Windows release and uninstall contracts
@@ -506,31 +570,3 @@ jobs:
           ANDROID_NDK_HOME: ""
         run: |
           bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_windows_secure_reader_test //grimodex:consumer_file_registrar_windows_test //protocol:renderer_callback_provenance_test //win32/tip:tip_edit_session_test //win32/tip:tip_grimodex_client_context_test //win32/tip:tip_grimodex_context_util_test //win32/tip:tip_input_mode_manager_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors --define=mozkey_dictionary_profile=release-approved-only
-
-  # actions/cache works without this job, but having this would increase the likelihood of cache hit
-  # in other jobs. Another approach would be to use "needs:".
-  # https://docs.github.com/en/actions/using-jobs/using-jobs-in-a-workflow
-  cache_deps:
-    # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
-    runs-on: windows-2025
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: false
-          persist-credentials: false
-
-      - name: Try to restore update_deps cache
-        uses: actions/cache@v5
-        with:
-          path: src/third_party_cache
-          key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
-
-      - name: Install Dependencies
-        shell: cmd
-        working-directory: .\src
-        # This command uses src/third_party_cache as the download cache.
-        run: |
-          python build_tools/update_deps.py --cache_only
