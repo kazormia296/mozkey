@@ -34,6 +34,8 @@
 #include <wil/com.h>
 #include <windef.h>
 
+#include "absl/functional/function_ref.h"
+
 namespace mozc {
 namespace win32 {
 namespace tsf {
@@ -62,7 +64,8 @@ class TipCompositionUtil {
   // Removes display attributes from |composition|. Returns the result.
   static HRESULT ClearDisplayAttributes(ITfContext* context,
                                         ITfComposition* composition,
-                                        TfEditCookie write_cookie);
+                                        TfEditCookie write_cookie,
+                                        absl::FunctionRef<bool()> is_current);
 };
 
 }  // namespace tsf

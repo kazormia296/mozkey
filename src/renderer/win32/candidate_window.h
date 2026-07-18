@@ -124,6 +124,7 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   void HideWithEffects();
   void SetSendCommandInterface(
       client::SendCommandInterface* send_command_interface);
+  void SetRendererCallbackToken(uint64_t token);
 
   // Layout information for the WindowManager class.
   Size GetLayoutSize() const;
@@ -232,6 +233,8 @@ class CandidateWindow : public ATL::CWindowImpl<CandidateWindow, ATL::CWindow,
   int indicator_width_;
   bool metrics_changed_;
   bool mouse_moving_;
+  uint64_t renderer_callback_token_;
+  uint64_t mouse_down_renderer_callback_token_;
   RendererShadowWindow shadow_window_;
 };
 

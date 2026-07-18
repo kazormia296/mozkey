@@ -30,6 +30,7 @@
 #import "renderer/mac/CandidateView.h"
 
 #include <algorithm>
+#include <cstdint>
 
 #include "base/coordinates.h"
 #include "protocol/commands.pb.h"
@@ -145,6 +146,13 @@ bool CandidateController::ExecCommand(const RendererCommand &command) {
   if (command.type() != RendererCommand::UPDATE) {
     return false;
   }
+  const uint64_t renderer_callback_token =
+      command.visible() && command.has_application_info() &&
+              command.application_info().has_renderer_callback_token()
+          ? command.application_info().renderer_callback_token()
+          : 0;
+  candidate_window_->SetRendererCallbackToken(renderer_callback_token);
+  cascading_window_->SetRendererCallbackToken(renderer_callback_token);
   command_.CopyFrom(command);
 
   if (!command_.visible()) {

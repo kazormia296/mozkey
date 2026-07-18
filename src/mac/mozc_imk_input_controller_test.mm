@@ -51,6 +51,13 @@
 #include "testing/gmock.h"
 #include "testing/gunit.h"
 
+@interface MozcImkInputController (GrimodexTesting)
+- (mozc::commands::Context)buildClientContextForClient:(id<IMKTextInput>)client
+                               includeSurroundingText:(BOOL)includeSurroundingText;
+- (void)dispatchSessionCommand:(const mozc::commands::SessionCommand *)command
+                        client:(id)sender;
+@end
+
 @interface MockIMKServer : NSObject <ServerCallback> {
   // The controller which accepts user's clicks
   __weak id<ControllerCallback> expectedController_;
@@ -93,6 +100,8 @@
   NSString *overriddenLayout_;
   NSAttributedString *attributedString_;
   absl::flat_hash_map<std::string, int> counters_;
+  __weak MozcImkInputController *controllerForSecureTransition_;
+  NSInteger textAPIsBeforeSecureTransition_;
 }
 @property(readwrite, weak) NSString *bundleIdentifier;
 @property(readwrite, assign) NSRect expectedCursor;
@@ -102,6 +111,9 @@
 @property(readonly) std::string selectedMode;
 @property(readonly) NSString *insertedText;
 @property(readonly) NSString *overriddenLayout;
+@property(readwrite, weak) MozcImkInputController *controllerForSecureTransition;
+@property(readwrite, assign) NSInteger textAPIsBeforeSecureTransition;
+- (void)maybeTransitionSecureInputAfterTextAPI;
 @end
 
 @implementation MockClient
@@ -113,12 +125,15 @@
 @synthesize selectedMode = selectedMode_;
 @synthesize insertedText = insertedText_;
 @synthesize overriddenLayout = overriddenLayout_;
+@synthesize controllerForSecureTransition = controllerForSecureTransition_;
+@synthesize textAPIsBeforeSecureTransition = textAPIsBeforeSecureTransition_;
 
 - (MockClient *)init {
   self = [super init];
   self.bundleIdentifier = @"com.google.exampleBundle";
   expectedRange = NSMakeRange(NSNotFound, NSNotFound);
   lastCharacterIndex_ = NSNotFound;
+  textAPIsBeforeSecureTransition_ = -1;
   return self;
 }
 
@@ -142,11 +157,13 @@
 
 - (NSRange)selectedRange {
   counters_["selectedRange"]++;
+  [self maybeTransitionSecureInputAfterTextAPI];
   return expectedRange;
 }
 
 - (NSRange)markedRange {
   counters_["markedRange"]++;
+  [self maybeTransitionSecureInputAfterTextAPI];
   return expectedRange;
 }
 
@@ -160,18 +177,32 @@
 }
 
 - (NSInteger)length {
+  counters_["length"]++;
+  [self maybeTransitionSecureInputAfterTextAPI];
   return [attributedString_ length];
 }
 
 - (NSAttributedString *)attributedSubstringFromRange:(NSRange)range {
+  counters_["attributedSubstringFromRange:"]++;
+  [self maybeTransitionSecureInputAfterTextAPI];
   return [attributedString_ attributedSubstringFromRange:range];
+}
+
+- (void)maybeTransitionSecureInputAfterTextAPI {
+  if (textAPIsBeforeSecureTransition_ <= 0) {
+    return;
+  }
+  --textAPIsBeforeSecureTransition_;
+  if (textAPIsBeforeSecureTransition_ == 0) {
+    controllerForSecureTransition_.secureInputOverrideForTest = 1;
+  }
 }
 
 // a placeholder method which is necessary internally
 - (void)setMarkedText:(id)string
        selectionRange:(NSRange)selectionRange
      replacementRange:(NSRange)replacementRange {
-  // Do nothing
+  counters_["setMarkedText:selectionRange:replacementRange:"]++;
 }
 
 - (void)insertText:(NSString *)result replacementRange:(NSRange)range {
@@ -190,6 +221,7 @@ namespace {
 
 using ::testing::_;
 using ::testing::DoAll;
+using ::testing::Invoke;
 using ::testing::Mock;
 using ::testing::NotNull;
 using ::testing::Return;
@@ -269,6 +301,7 @@ class MozcImkInputControllerTest : public testing::Test {
     controller_ = [[MozcImkInputController alloc] initWithServer:nil
                                                         delegate:nil
                                                           client:mock_client_];
+    mock_client_.controllerForSecureTransition = controller_;
     mock_server_.expectedController = controller_;
     auto mock_mozc_client = std::make_unique<mozc::client::ClientMock>();
     mock_mozc_client_ = mock_mozc_client.get();
@@ -282,6 +315,29 @@ class MozcImkInputControllerTest : public testing::Test {
     controller_ = nil;
     mock_client_.bundleIdentifier = new_bundle_id;
     SetUpController();
+  }
+
+  uint64_t ShowCandidateWindow(int candidate_id = 1) {
+    commands::Output output;
+    commands::CandidateWindow *candidate_window =
+        output.mutable_candidate_window();
+    candidate_window->set_focused_index(0);
+    candidate_window->set_size(1);
+    candidate_window->set_position(0);
+    commands::CandidateWindow::Candidate *candidate =
+        candidate_window->add_candidate();
+    candidate->set_index(0);
+    candidate->set_value("candidate");
+    candidate->set_id(candidate_id);
+    mock_client_.expectedCursor = NSMakeRect(50, 50, 1, 10);
+    mock_client_.expectedAttributes =
+        @{ @"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 718)] };
+    [controller_ updateCandidates:&output];
+    [[NSRunLoop currentRunLoop]
+        runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    EXPECT_TRUE(controller_.rendererCommand.visible());
+    return controller_.rendererCommand.application_info()
+        .renderer_callback_token();
   }
 
   client::ClientMock *mock_mozc_client_;
@@ -902,6 +958,7 @@ TEST_F(MozcImkInputControllerTest, fillSurroundingContext) {
   commands::Context context;
   [controller_ fillSurroundingContext:&context client:(id)mock_client_];
   EXPECT_EQ(context.preceding_text(), "ab");
+  EXPECT_EQ(context.following_text(), "de");
   EXPECT_EQ([mock_client_ getCounter:"selectedRange"], 1);
   EXPECT_EQ([mock_client_ getCounter:"markedRange"], 0);
 
@@ -911,12 +968,14 @@ TEST_F(MozcImkInputControllerTest, fillSurroundingContext) {
   mock_client_.expectedRange = NSMakeRange(1, 0);
   [controller_ fillSurroundingContext:&context client:(id)mock_client_];
   EXPECT_EQ(context.preceding_text(), "0");
+  EXPECT_EQ(context.following_text(), "12345678901234567890");
   EXPECT_EQ([mock_client_ getCounter:"selectedRange"], 2);
   EXPECT_EQ([mock_client_ getCounter:"markedRange"], 0);
 
   mock_client_.expectedRange = NSMakeRange(22, 1);
   [controller_ fillSurroundingContext:&context client:(id)mock_client_];
   EXPECT_EQ(context.preceding_text(), "2345678901234567890a");
+  EXPECT_EQ(context.following_text(), "cde");
   EXPECT_EQ([mock_client_ getCounter:"selectedRange"], 3);
   EXPECT_EQ([mock_client_ getCounter:"markedRange"], 0);
 
@@ -930,8 +989,294 @@ TEST_F(MozcImkInputControllerTest, fillSurroundingContext) {
   mock_client_.expectedRange = NSMakeRange(3, 3);
   [controller_ fillSurroundingContext:&context client:(id)mock_client_];
   EXPECT_EQ(context.preceding_text(), "012");
+  EXPECT_EQ(context.following_text(), "345");
   EXPECT_EQ([mock_client_ getCounter:"selectedRange"], 4);
   EXPECT_EQ([mock_client_ getCounter:"markedRange"], 0);
+}
+
+TEST_F(MozcImkInputControllerTest, GrimodexContextUsesExactBundleIdentity) {
+  ResetClientBundleIdentifier(@"com.miyakey.grimodex");
+  controller_.secureInputOverrideForTest = 0;
+
+  const commands::Context context =
+      [controller_ buildClientContextForClient:(id)mock_client_
+                        includeSurroundingText:NO];
+  ASSERT_TRUE(context.has_grimodex());
+  EXPECT_EQ(context.grimodex().program(), "com.miyakey.grimodex");
+  EXPECT_EQ(context.grimodex().frontend(), "imkit");
+  EXPECT_FALSE(context.grimodex().secure_input());
+  EXPECT_NE(context.grimodex().focus_epoch(), 0);
+}
+
+TEST_F(MozcImkInputControllerTest, GrimodexContextClearsUnknownBundleIdentity) {
+  ResetClientBundleIdentifier(nil);
+  controller_.secureInputOverrideForTest = 0;
+
+  const commands::Context context =
+      [controller_ buildClientContextForClient:(id)mock_client_
+                        includeSurroundingText:NO];
+  ASSERT_TRUE(context.has_grimodex());
+  EXPECT_TRUE(context.grimodex().program().empty());
+  EXPECT_EQ(context.grimodex().frontend(), "imkit");
+}
+
+TEST_F(MozcImkInputControllerTest, GrimodexEpochTracksBundleAndSecurityDomain) {
+  controller_.secureInputOverrideForTest = 0;
+  [controller_ buildClientContextForClient:(id)mock_client_
+                    includeSurroundingText:NO];
+  const uint64_t initialEpoch = controller_.grimodexFocusEpochForTest;
+  EXPECT_NE(initialEpoch, 0);
+
+  [controller_ setupClientBundle:mock_client_];
+  EXPECT_EQ(controller_.grimodexFocusEpochForTest, initialEpoch);
+
+  mock_client_.bundleIdentifier = @"com.miyakey.grimodex";
+  [controller_ setupClientBundle:mock_client_];
+  const uint64_t bundleEpoch = controller_.grimodexFocusEpochForTest;
+  EXPECT_NE(bundleEpoch, initialEpoch);
+
+  controller_.secureInputOverrideForTest = 1;
+  const commands::Context secureContext =
+      [controller_ buildClientContextForClient:(id)mock_client_
+                        includeSurroundingText:NO];
+  const uint64_t secureEpoch = controller_.grimodexFocusEpochForTest;
+  EXPECT_NE(secureEpoch, bundleEpoch);
+  EXPECT_EQ(secureContext.grimodex().focus_epoch(), secureEpoch);
+
+  [controller_ buildClientContextForClient:(id)mock_client_
+                    includeSurroundingText:NO];
+  EXPECT_EQ(controller_.grimodexFocusEpochForTest, secureEpoch);
+
+  controller_.secureInputOverrideForTest = 0;
+  [controller_ buildClientContextForClient:(id)mock_client_
+                    includeSurroundingText:NO];
+  EXPECT_NE(controller_.grimodexFocusEpochForTest, secureEpoch);
+}
+
+TEST_F(MozcImkInputControllerTest, SecureContextNeverQueriesClientText) {
+  [mock_client_ setAttributedString:
+                    [[NSAttributedString alloc] initWithString:@"private"]];
+  mock_client_.expectedRange = NSMakeRange(3, 0);
+  controller_.secureInputOverrideForTest = 1;
+  const int lengthCalls = [mock_client_ getCounter:"length"];
+  const int selectedRangeCalls = [mock_client_ getCounter:"selectedRange"];
+  const int substringCalls =
+      [mock_client_ getCounter:"attributedSubstringFromRange:"];
+
+  const commands::Context context =
+      [controller_ buildClientContextForClient:(id)mock_client_
+                        includeSurroundingText:YES];
+
+  ASSERT_TRUE(context.has_grimodex());
+  EXPECT_TRUE(context.grimodex().secure_input());
+  EXPECT_EQ(context.input_field_type(), commands::Context::PASSWORD);
+  EXPECT_FALSE(context.has_preceding_text());
+  EXPECT_FALSE(context.has_following_text());
+  EXPECT_EQ([mock_client_ getCounter:"length"], lengthCalls);
+  EXPECT_EQ([mock_client_ getCounter:"selectedRange"], selectedRangeCalls);
+  EXPECT_EQ([mock_client_ getCounter:"attributedSubstringFromRange:"],
+            substringCalls);
+}
+
+TEST_F(MozcImkInputControllerTest, GrimodexContextCarriesBoundedSurroundingText) {
+  [mock_client_ setAttributedString:
+                    [[NSAttributedString alloc] initWithString:@"abcdefghij"]];
+  mock_client_.expectedRange = NSMakeRange(3, 2);
+  controller_.secureInputOverrideForTest = 0;
+
+  const commands::Context context =
+      [controller_ buildClientContextForClient:(id)mock_client_
+                        includeSurroundingText:YES];
+  EXPECT_EQ(context.preceding_text(), "abc");
+  EXPECT_EQ(context.following_text(), "fghij");
+}
+
+TEST_F(MozcImkInputControllerTest,
+       SecureTransitionDuringFetchedTextDiscardsSurroundingContext) {
+  [mock_client_ setAttributedString:
+                    [[NSAttributedString alloc] initWithString:@"abcdefghij"]];
+  mock_client_.expectedRange = NSMakeRange(5, 0);
+  controller_.secureInputOverrideForTest = 0;
+  const uint64_t initialEpoch = controller_.grimodexFocusEpochForTest;
+  // length, selectedRange, then attributedSubstringFromRange:.  Secure Event
+  // Input becomes active while the fetched substring is being returned.
+  mock_client_.textAPIsBeforeSecureTransition = 3;
+
+  const commands::Context context =
+      [controller_ buildClientContextForClient:(id)mock_client_
+                        includeSurroundingText:YES];
+
+  ASSERT_TRUE(context.has_grimodex());
+  EXPECT_TRUE(context.grimodex().secure_input());
+  EXPECT_EQ(context.input_field_type(), commands::Context::PASSWORD);
+  EXPECT_FALSE(context.has_preceding_text());
+  EXPECT_FALSE(context.has_following_text());
+  EXPECT_NE(context.grimodex().focus_epoch(), initialEpoch);
+  EXPECT_EQ([mock_client_ getCounter:"attributedSubstringFromRange:"], 1);
+}
+
+TEST_F(MozcImkInputControllerTest,
+       SynchronousOutputIsDiscardedWhenSendingEpochBecomesStale) {
+  controller_.secureInputOverrideForTest = 0;
+  commands::SessionCommand command;
+  command.set_type(commands::SessionCommand::SELECT_CANDIDATE);
+  const int insertCalls =
+      [mock_client_ getCounter:"insertText:replacementRange:"];
+  EXPECT_CALL(*mock_mozc_client_, SendCommandWithContext(_, _, NotNull()))
+      .WillOnce(Invoke(
+          [this](const commands::SessionCommand &,
+                 const commands::Context &, commands::Output *output) {
+            output->set_consumed(true);
+            output->mutable_result()->set_type(commands::Result::STRING);
+            output->mutable_result()->set_value("must-not-commit");
+            controller_.secureInputOverrideForTest = 1;
+            return true;
+          }));
+
+  [controller_ dispatchSessionCommand:&command client:mock_client_];
+
+  EXPECT_EQ([mock_client_ getCounter:"insertText:replacementRange:"],
+            insertCalls);
+}
+
+TEST_F(MozcImkInputControllerTest, DelayedCallbackIsDiscardedAfterDomainChange) {
+  controller_.secureInputOverrideForTest = 0;
+  [controller_ buildClientContextForClient:(id)mock_client_
+                    includeSurroundingText:NO];
+  commands::Output output;
+  output.set_consumed(true);
+  output.mutable_callback()->set_delay_millisec(10);
+  output.mutable_callback()->mutable_session_command()->set_type(
+      commands::SessionCommand::SUBMIT);
+  EXPECT_CALL(*mock_mozc_client_, SendCommandWithContext(_, _, NotNull()))
+      .Times(0);
+
+  [controller_ processOutput:&output client:mock_client_];
+  controller_.secureInputOverrideForTest = 1;
+  [[NSRunLoop currentRunLoop]
+      runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+}
+
+TEST_F(MozcImkInputControllerTest,
+       DeactivationRevokesEpochAndCancelsDelayedCallback) {
+  controller_.secureInputOverrideForTest = 0;
+  const uint64_t activeEpoch = controller_.grimodexFocusEpochForTest;
+  commands::Output output;
+  output.set_consumed(true);
+  output.mutable_callback()->set_delay_millisec(10);
+  output.mutable_callback()->mutable_session_command()->set_type(
+      commands::SessionCommand::SUBMIT);
+  EXPECT_CALL(*mock_mozc_client_, SendCommandWithContext(_, _, NotNull()))
+      .Times(0);
+
+  [controller_ processOutput:&output client:mock_client_];
+  [controller_ deactivateServer:nil];
+  EXPECT_NE(controller_.grimodexFocusEpochForTest, activeEpoch);
+  [[NSRunLoop currentRunLoop]
+      runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+}
+
+TEST_F(MozcImkInputControllerTest,
+       SecureTransitionDuringPreeditPositioningDropsHostMutation) {
+  controller_.secureInputOverrideForTest = 0;
+  commands::Preedit preedit;
+  preedit.set_cursor(0);
+  commands::Preedit::Segment *segment = preedit.add_segment();
+  segment->set_annotation(commands::Preedit::Segment::UNDERLINE);
+  segment->set_value("private");
+  segment->set_value_length(7);
+  [controller_ updateComposedString:&preedit];
+  controller_.replacementRange = NSMakeRange(4, 2);
+  const int markedTextCalls =
+      [mock_client_ getCounter:
+                        "setMarkedText:selectionRange:replacementRange:"];
+  const uint64_t initialEpoch = controller_.grimodexFocusEpochForTest;
+
+  // Clearing a non-empty preedit queries selectedRange.  Enter secure input
+  // from that reentrant host call and ensure no stale setMarkedText follows.
+  mock_client_.expectedRange = NSMakeRange(6, 0);
+  mock_client_.textAPIsBeforeSecureTransition = 1;
+  [controller_ updateComposedString:nullptr];
+
+  EXPECT_EQ([mock_client_ getCounter:
+                          "setMarkedText:selectionRange:replacementRange:"],
+            markedTextCalls);
+  EXPECT_NE(controller_.grimodexFocusEpochForTest, initialEpoch);
+  EXPECT_EQ([[controller_ composedString:nil] length], 0);
+  EXPECT_EQ(controller_.replacementRange.location, NSNotFound);
+}
+
+TEST_F(MozcImkInputControllerTest,
+       RendererCallbackRejectsMissingMismatchedAndSupersededTokens) {
+  const uint64_t oldToken = ShowCandidateWindow();
+  ASSERT_NE(oldToken, 0);
+  const uint64_t currentToken = ShowCandidateWindow();
+  ASSERT_NE(currentToken, 0);
+  EXPECT_NE(currentToken, oldToken);
+
+  EXPECT_CALL(*mock_mozc_client_, SendCommandWithContext(_, _, NotNull()))
+      .Times(0);
+  commands::SessionCommand command;
+  command.set_type(commands::SessionCommand::SELECT_CANDIDATE);
+  command.set_id(1);
+  [controller_ sendCommand:command];
+  command.set_renderer_callback_token(oldToken);
+  [controller_ sendCommand:command];
+  command.set_renderer_callback_token(0);
+  [controller_ sendCommand:command];
+}
+
+TEST_F(MozcImkInputControllerTest,
+       RendererCallbackAcceptsCurrentTokenAndStripsTransportField) {
+  const uint64_t currentToken = ShowCandidateWindow();
+  ASSERT_NE(currentToken, 0);
+
+  commands::SessionCommand sentCommand;
+  commands::Output response;
+  EXPECT_CALL(*mock_mozc_client_, SendCommandWithContext(_, _, NotNull()))
+      .WillOnce(DoAll(SaveArg<0>(&sentCommand), SetArgPointee<2>(response),
+                      Return(true)));
+  commands::SessionCommand command;
+  command.set_type(commands::SessionCommand::SELECT_CANDIDATE);
+  command.set_id(1);
+  command.set_renderer_callback_token(currentToken);
+
+  [controller_ sendCommand:command];
+
+  EXPECT_FALSE(sentCommand.has_renderer_callback_token());
+}
+
+TEST_F(MozcImkInputControllerTest,
+       CandidateClearAndSecureTransitionRevokeRendererCallbackToken) {
+  ShowCandidateWindow();
+  ASSERT_TRUE(controller_.rendererCommand.application_info()
+                  .has_renderer_callback_token());
+
+  [controller_ clearCandidates];
+  EXPECT_FALSE(controller_.rendererCommand.application_info()
+                   .has_renderer_callback_token());
+
+  ShowCandidateWindow();
+  ASSERT_TRUE(controller_.rendererCommand.application_info()
+                  .has_renderer_callback_token());
+  controller_.secureInputOverrideForTest = 1;
+  [controller_ buildClientContextForClient:(id)mock_client_
+                    includeSurroundingText:NO];
+  EXPECT_FALSE(controller_.rendererCommand.application_info()
+                   .has_renderer_callback_token());
+}
+
+TEST_F(MozcImkInputControllerTest, UnscopedUtilityOutputCannotCommitText) {
+  commands::Output output;
+  output.mutable_result()->set_type(commands::Result::STRING);
+  output.mutable_result()->set_value("must-not-commit");
+  const int insertCalls =
+      [mock_client_ getCounter:"insertText:replacementRange:"];
+
+  [controller_ outputResult:output];
+
+  EXPECT_EQ([mock_client_ getCounter:"insertText:replacementRange:"],
+            insertCalls);
 }
 
 }  // namespace

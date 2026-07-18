@@ -75,6 +75,16 @@ jobs:
         run: |
           python build_tools/update_deps.py
 
+      - name: Prepare pinned x64 Zenz runtime
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+
       - name: Build Qt
         shell: cmd
         working-directory: .\src
@@ -151,12 +161,20 @@ jobs:
         run: |
           bazelisk build --config release_build package
 
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          .\tools\release\verify_windows_msi.ps1 `
+            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ExpectedRuntimeArchitecture x64
+
       - name: upload Mozc64_x64.msi
         uses: actions/upload-artifact@v6
         with:
           name: Mozc64_x64.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: warn
+          if-no-files-found: error
 
   build_universal:
     needs: prepare_daily_dictionary
@@ -189,6 +207,16 @@ jobs:
         # This command uses src/third_party_cache as the download cache.
         run: |
           python build_tools/update_deps.py
+
+      - name: Prepare pinned x64 Zenz runtime
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
 
       - name: Build Qt
         shell: cmd
@@ -266,12 +294,20 @@ jobs:
         run: |
           bazelisk build --config release_build --config win_universal_installer package
 
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          .\tools\release\verify_windows_msi.ps1 `
+            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ExpectedRuntimeArchitecture x64
+
       - name: upload Mozc64_universal.msi
         uses: actions/upload-artifact@v6
         with:
           name: Mozc64_universal.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: warn
+          if-no-files-found: error
 
   build_arm64:
     needs: prepare_daily_dictionary
@@ -304,6 +340,16 @@ jobs:
         # This command uses src/third_party_cache as the download cache.
         run: |
           python build_tools/update_deps.py
+
+      - name: Prepare pinned ARM64 Zenz runtime
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch arm64
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch arm64 --verify-only
 
       - name: Build Qt (arm64)
         shell: cmd
@@ -381,12 +427,20 @@ jobs:
         run: |
           bazelisk build package --config release_build --platforms=//:windows-arm64
 
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          .\tools\release\verify_windows_msi.ps1 `
+            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\arm64\llama-server.exe `
+            -ExpectedRuntimeArchitecture arm64
+
       - name: upload Mozc64_arm64.msi
         uses: actions/upload-artifact@v6
         with:
           name: Mozc64_arm64.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: warn
+          if-no-files-found: error
 
   test:
     needs: prepare_daily_dictionary
@@ -406,6 +460,17 @@ jobs:
         with:
           name: daily-dictionary
           path: .
+
+      - name: Test Windows release and uninstall contracts
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m unittest -v `
+            tools.release.prepare_windows_zenz_runtime_test `
+            tools.release.windows_uninstall_contract_test
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -434,7 +499,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_windows_secure_reader_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors
+          bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_windows_secure_reader_test //grimodex:consumer_file_registrar_windows_test //protocol:renderer_callback_provenance_test //win32/tip:tip_edit_session_test //win32/tip:tip_grimodex_client_context_test //win32/tip:tip_grimodex_context_util_test //win32/tip:tip_input_mode_manager_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors
 
   # actions/cache works without this job, but having this would increase the likelihood of cache hit
   # in other jobs. Another approach would be to use "needs:".

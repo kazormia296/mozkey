@@ -1,6 +1,7 @@
 // Copyright 2026 The Mozkey Authors
 
 #include "grimodex/consumer_file_registrar_windows.h"
+#include "grimodex/desktop_consumer_heartbeat.h"
 
 #if defined(_WIN32)
 
@@ -195,6 +196,31 @@ TEST(WindowsConsumerFileRegistrarTest,
   EXPECT_TRUE(FileUtil::DirectoryExists(win32::WideToUtf8(projects)).ok());
   EXPECT_TRUE(FileUtil::FileExists(win32::WideToUtf8(other)).ok());
   EXPECT_TRUE(registrar.Unregister(kTsfConsumerId).ok());
+}
+
+TEST(WindowsConsumerFileRegistrarTest,
+     InstallerAppDataRemovesOnlyTheMozkeyConsumerInOssBuild) {
+  TempDirectory app_data = testing::MakeTempDirectoryOrDie();
+  const absl::StatusOr<std::string> root =
+      ResolveWindowsProtocolV1Root(/*override_root=*/"", app_data.path());
+  ASSERT_TRUE(root.ok()) << root.status();
+  WindowsConsumerFileRegistrar registrar(*root);
+  ASSERT_TRUE(registrar.Refresh(Handshake()).ok());
+  ConsumerHandshake other = Handshake();
+  other.consumer_id = "other-ime";
+  other.name = "Another IME";
+  ASSERT_TRUE(registrar.Refresh(other).ok());
+
+  ASSERT_TRUE(
+      UnregisterWindowsDesktopConsumerForAppData(app_data.path()).ok());
+  const std::string own_path = *root + "\\consumers\\tsf-mozkey.json";
+  const std::string other_path = *root + "\\consumers\\other-ime.json";
+#if defined(MOZC_BUILD)
+  EXPECT_FALSE(FileUtil::FileExists(own_path).ok());
+#else
+  EXPECT_TRUE(FileUtil::FileExists(own_path).ok());
+#endif
+  EXPECT_TRUE(FileUtil::FileExists(other_path).ok());
 }
 
 TEST(WindowsConsumerFileRegistrarTest, RejectsUnsafeIdAndReparsePoint) {

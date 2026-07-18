@@ -33,6 +33,7 @@
 #include <msctf.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -79,7 +80,9 @@ class TipSurroundingText {
   static bool PrepareForReconversionFromIme(TipTextService* text_service,
                                             ITfContext* context,
                                             TipSurroundingTextInfo* info,
-                                            bool* need_async_reconversion);
+                                            bool* need_async_reconversion,
+                                            uint64_t focus_epoch,
+                                            int32_t focus_revision);
 
   // Returns true when succeeds to delete preceding text from the beginning of
   // the selected range.
@@ -92,7 +95,8 @@ class TipSurroundingText {
   //     http://blogs.msdn.com/b/tsfaware/archive/2007/05/17/rules-of-text-services.aspx
   static bool DeletePrecedingText(
       TipTextService* text_service, ITfContext* context,
-      size_t num_characters_to_be_deleted_in_codepoint);
+      size_t num_characters_to_be_deleted_in_codepoint, uint64_t focus_epoch,
+      int32_t focus_revision, uint64_t output_application_generation);
 };
 
 class TipSurroundingTextUtil {

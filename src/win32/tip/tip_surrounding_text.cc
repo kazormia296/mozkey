@@ -34,6 +34,7 @@
 #include <windows.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -45,8 +46,11 @@
 #include "win32/base/imm_reconvert_string.h"
 #include "win32/tip/tip_composition_util.h"
 #include "win32/tip/tip_dll_module.h"
+#include "win32/tip/tip_input_mode_manager.h"
+#include "win32/tip/tip_private_context.h"
 #include "win32/tip/tip_range_util.h"
 #include "win32/tip/tip_text_service.h"
+#include "win32/tip/tip_thread_context.h"
 #include "win32/tip/tip_transitory_extension.h"
 
 namespace mozc {
@@ -57,16 +61,112 @@ namespace {
 constexpr int kMaxSurroundingLength = 20;
 constexpr int kMaxCharacterLength = 1024 * 1024;
 
+struct SurroundingTextFocusSnapshot final {
+  uint64_t focus_epoch = 0;
+  int32_t focus_revision = 0;
+};
+
+bool IsSameComObject(IUnknown* lhs, IUnknown* rhs) {
+  const auto lhs_identity = ComQuery<IUnknown>(lhs);
+  const auto rhs_identity = ComQuery<IUnknown>(rhs);
+  return lhs_identity && rhs_identity &&
+         lhs_identity.get() == rhs_identity.get();
+}
+
+SurroundingTextFocusSnapshot CaptureSurroundingTextFocusSnapshot(
+    TipTextService* text_service) {
+  if (text_service == nullptr) {
+    return {};
+  }
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_context) {
+    return {};
+  }
+  return {
+      .focus_epoch = thread_context->GetGrimodexFocusEpoch(),
+      .focus_revision = thread_context->GetFocusRevision(),
+  };
+}
+
+bool IsSurroundingTextContextCurrent(
+    TipTextService* text_service, ITfContext* expected_context,
+    SurroundingTextFocusSnapshot snapshot) {
+  if (text_service == nullptr || expected_context == nullptr ||
+      snapshot.focus_epoch == 0 || !text_service->HasThreadFocus()) {
+    return false;
+  }
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_context) {
+    return false;
+  }
+  if (thread_context->GetGrimodexFocusEpoch() != snapshot.focus_epoch ||
+      thread_context->GetFocusRevision() != snapshot.focus_revision ||
+      thread_context->GetInputModeManager()->IsPasswordInputScope()) {
+    return false;
+  }
+  wil::com_ptr_nothrow<ITfThreadMgr> thread_manager =
+      text_service->GetThreadManager();
+  if (!thread_manager ||
+      text_service->GetThreadContextLease().get() != thread_context.get()) {
+    return false;
+  }
+  wil::com_ptr_nothrow<ITfDocumentMgr> document;
+  if (FAILED(thread_manager->GetFocus(&document)) ||
+      document == nullptr ||
+      text_service->GetThreadContextLease().get() != thread_context.get()) {
+    return false;
+  }
+  wil::com_ptr_nothrow<ITfContext> focused_context;
+  if (FAILED(document->GetTop(&focused_context)) || focused_context == nullptr ||
+      !IsSameComObject(expected_context, focused_context.get()) ||
+      text_service->GetThreadContextLease().get() != thread_context.get()) {
+    return false;
+  }
+  return thread_context->GetGrimodexFocusEpoch() == snapshot.focus_epoch &&
+         thread_context->GetFocusRevision() == snapshot.focus_revision &&
+         !thread_context->GetInputModeManager()->IsPasswordInputScope() &&
+         text_service->GetThreadContextLease().get() == thread_context.get() &&
+         text_service->HasThreadFocus();
+}
+
+bool IsFullContextMappingCurrent(TipTextService* text_service,
+                                 ITfContext* source_context,
+                                 ITfContext* full_context,
+                                 SurroundingTextFocusSnapshot domain) {
+  if (!IsSurroundingTextContextCurrent(text_service, source_context, domain)) {
+    return false;
+  }
+  const wil::com_ptr_nothrow<ITfContext> current_full_context =
+      TipTransitoryExtension::AsFullContext(source_context);
+  return current_full_context != nullptr &&
+         IsSameComObject(current_full_context.get(), full_context) &&
+         IsSurroundingTextContextCurrent(text_service, source_context, domain);
+}
+
 class SurroudingTextUpdater final : public TipComImplements<ITfEditSession> {
  public:
-  SurroudingTextUpdater(wil::com_ptr_nothrow<ITfContext> context,
-                        bool move_anchor)
-      : context_(std::move(context)), move_anchor_(move_anchor) {}
+  SurroudingTextUpdater(
+      wil::com_ptr_nothrow<TipTextService> text_service,
+      wil::com_ptr_nothrow<ITfContext> source_context,
+      wil::com_ptr_nothrow<ITfContext> full_context, bool move_anchor,
+      SurroundingTextFocusSnapshot domain)
+      : text_service_(std::move(text_service)),
+        source_context_(std::move(source_context)),
+        context_(std::move(full_context)),
+        move_anchor_(move_anchor),
+        domain_(domain) {}
 
   const TipSurroundingTextInfo& result() const { return result_; }
+  bool domain_current() const { return domain_current_; }
 
  private:
   STDMETHODIMP DoEditSession(TfEditCookie edit_cookie) override {
+    if (!IsFullContextMappingCurrent(text_service_.get(), source_context_.get(),
+                                     context_.get(), domain_)) {
+      return S_OK;
+    }
     HRESULT result = S_OK;
     {
       wil::com_ptr_nothrow<ITfCompositionView> composition_view =
@@ -89,10 +189,20 @@ class SurroudingTextUpdater final : public TipComImplements<ITfEditSession> {
       // For reconversion, the active selection end should be moved to the
       // front character.
       if (move_anchor_) {
+        if (!IsFullContextMappingCurrent(
+                text_service_.get(), source_context_.get(), context_.get(),
+                domain_)) {
+          return S_OK;
+        }
         result = TipRangeUtil::SetSelection(context_.get(), edit_cookie,
                                             selected_range.get(), TF_AE_START);
         if (FAILED(result)) {
           return result;
+        }
+        if (!IsFullContextMappingCurrent(
+                text_service_.get(), source_context_.get(), context_.get(),
+                domain_)) {
+          return S_OK;
         }
       }
     }
@@ -127,23 +237,59 @@ class SurroudingTextUpdater final : public TipComImplements<ITfEditSession> {
       }
     }
 
+    domain_current_ = IsFullContextMappingCurrent(
+        text_service_.get(), source_context_.get(), context_.get(), domain_);
+    if (!domain_current_) {
+      result_ = TipSurroundingTextInfo();
+    }
     return S_OK;
   }
 
+  wil::com_ptr_nothrow<TipTextService> text_service_;
+  wil::com_ptr_nothrow<ITfContext> source_context_;
   wil::com_ptr_nothrow<ITfContext> context_;
   TipSurroundingTextInfo result_;
   bool move_anchor_;
+  SurroundingTextFocusSnapshot domain_;
+  bool domain_current_ = false;
 };
 
 class PrecedingTextDeleter final : public TipComImplements<ITfEditSession> {
  public:
-  PrecedingTextDeleter(wil::com_ptr_nothrow<ITfContext> context,
-                       size_t num_characters_in_codepoint)
-      : context_(std::move(context)),
-        num_characters_in_codepoint_(num_characters_in_codepoint) {}
+  PrecedingTextDeleter(
+      wil::com_ptr_nothrow<TipTextService> text_service,
+      wil::com_ptr_nothrow<ITfContext> source_context,
+      wil::com_ptr_nothrow<ITfContext> full_context,
+      size_t num_characters_in_codepoint,
+      SurroundingTextFocusSnapshot domain,
+      uint64_t output_application_generation)
+      : text_service_(std::move(text_service)),
+        source_context_(std::move(source_context)),
+        context_(std::move(full_context)),
+        num_characters_in_codepoint_(num_characters_in_codepoint),
+        domain_(domain),
+        output_application_generation_(output_application_generation) {}
+
+  bool domain_current() const { return domain_current_; }
 
  private:
   STDMETHODIMP DoEditSession(TfEditCookie edit_cookie) override {
+    const auto is_current = [&]() {
+      if (!IsFullContextMappingCurrent(text_service_.get(),
+                                       source_context_.get(), context_.get(),
+                                       domain_)) {
+        return false;
+      }
+      const std::shared_ptr<TipPrivateContext> private_context =
+          text_service_->GetPrivateContext(source_context_.get());
+      return private_context &&
+             private_context->IsOutputApplicationForFocusDomain(
+                 domain_.focus_epoch, domain_.focus_revision,
+                 output_application_generation_);
+    };
+    if (!is_current()) {
+      return S_OK;
+    }
     HRESULT result = S_OK;
 
     wil::com_ptr_nothrow<ITfRange> selected_range;
@@ -152,6 +298,9 @@ class PrecedingTextDeleter final : public TipComImplements<ITfEditSession> {
     if (FAILED(result)) {
       return result;
     }
+    if (!is_current()) {
+      return S_OK;
+    }
 
     const TF_HALTCOND halt_cond = {nullptr, TF_ANCHOR_START, 0};
 
@@ -159,8 +308,14 @@ class PrecedingTextDeleter final : public TipComImplements<ITfEditSession> {
     if (FAILED(selected_range->Clone(&preceding_range))) {
       return E_FAIL;
     }
+    if (!is_current()) {
+      return S_OK;
+    }
     if (FAILED(preceding_range->Collapse(edit_cookie, TF_ANCHOR_START))) {
       return E_FAIL;
+    }
+    if (!is_current()) {
+      return S_OK;
     }
 
     // If all the characters are surrogate-pair, |num_characters_in_codepoint_|
@@ -176,10 +331,16 @@ class PrecedingTextDeleter final : public TipComImplements<ITfEditSession> {
                                            &halt_cond))) {
       return E_FAIL;
     }
+    if (!is_current()) {
+      return S_OK;
+    }
     std::wstring total_string;
     if (FAILED(TipRangeUtil::GetText(preceding_range.get(), edit_cookie,
                                      &total_string))) {
       return E_FAIL;
+    }
+    if (!is_current()) {
+      return S_OK;
     }
     if (total_string.empty()) {
       return E_FAIL;
@@ -196,18 +357,27 @@ class PrecedingTextDeleter final : public TipComImplements<ITfEditSession> {
             edit_cookie, final_offset, &preceding_range_shifted, &halt_cond))) {
       return E_FAIL;
     }
+    if (!is_current()) {
+      return S_OK;
+    }
     if (final_offset != preceding_range_shifted) {
       return E_FAIL;
     }
-    if (FAILED(preceding_range->SetText(edit_cookie, 0, L"", 0))) {
+    if (!is_current() ||
+        FAILED(preceding_range->SetText(edit_cookie, 0, L"", 0))) {
       return E_FAIL;
     }
-
+    domain_current_ = is_current();
     return S_OK;
   }
 
+  wil::com_ptr_nothrow<TipTextService> text_service_;
+  wil::com_ptr_nothrow<ITfContext> source_context_;
   wil::com_ptr_nothrow<ITfContext> context_;
   size_t num_characters_in_codepoint_;
+  SurroundingTextFocusSnapshot domain_;
+  uint64_t output_application_generation_;
+  bool domain_current_ = false;
 };
 
 bool GetSurroundingTextImm32(ITfContext* context,
@@ -253,26 +423,41 @@ bool GetSurroundingTextImm32(ITfContext* context,
 
 bool TipSurroundingText::Get(TipTextService* text_service, ITfContext* context,
                              TipSurroundingTextInfo* info) {
-  if (info == nullptr) {
+  if (text_service == nullptr || context == nullptr || info == nullptr) {
     return false;
   }
   *info = TipSurroundingTextInfo();
+  const SurroundingTextFocusSnapshot domain =
+      CaptureSurroundingTextFocusSnapshot(text_service);
+  if (!IsSurroundingTextContextCurrent(text_service, context, domain)) {
+    return false;
+  }
 
   // Surrounding text retrieval through TSF APIs should be performed only with
   // the full context.
   wil::com_ptr_nothrow<ITfContext> full_context(
       TipTransitoryExtension::AsFullContext(context));
+  if (!IsSurroundingTextContextCurrent(text_service, context, domain)) {
+    return false;
+  }
   if (full_context == nullptr) {
     // Legacy IMM32-based editors fall into this category.
     // Try to retrieve surrounding text through IMR_DOCUMENTFEED as a fallback.
-    return GetSurroundingTextImm32(
+    const bool result = GetSurroundingTextImm32(
         context, ReconvertString::RequestType::kDocumentFeed, info);
+    if (!result ||
+        !IsSurroundingTextContextCurrent(text_service, context, domain)) {
+      *info = TipSurroundingTextInfo();
+      return false;
+    }
+    return true;
   }
 
   // When RequestEditSession fails, it does not maintain the reference count.
   // So we need to ensure that AddRef/Release should be called at least once
   // per object.
-  auto updater = MakeComPtr<SurroudingTextUpdater>(full_context, false);
+  auto updater = MakeComPtr<SurroudingTextUpdater>(
+      text_service, context, full_context, /*move_anchor=*/false, domain);
 
   HRESULT edit_session_result = S_OK;
   const HRESULT hr = full_context->RequestEditSession(
@@ -281,7 +466,7 @@ bool TipSurroundingText::Get(TipTextService* text_service, ITfContext* context,
   if (FAILED(hr)) {
     return false;
   }
-  if (FAILED(edit_session_result)) {
+  if (FAILED(edit_session_result) || !updater->domain_current()) {
     return false;
   }
 
@@ -292,19 +477,25 @@ bool TipSurroundingText::Get(TipTextService* text_service, ITfContext* context,
 
 bool PrepareForReconversionTSF(TipTextService* text_service,
                                ITfContext* context,
-                               TipSurroundingTextInfo* info) {
+                               TipSurroundingTextInfo* info,
+                               SurroundingTextFocusSnapshot domain) {
+  if (!IsSurroundingTextContextCurrent(text_service, context, domain)) {
+    return false;
+  }
   // Reconversion through TSF APIs should be performed only with the full
   // context.
   wil::com_ptr_nothrow<ITfContext> full_context(
       TipTransitoryExtension::AsFullContext(context));
-  if (full_context == nullptr) {
+  if (full_context == nullptr ||
+      !IsSurroundingTextContextCurrent(text_service, context, domain)) {
     return false;
   }
 
   // When RequestEditSession fails, it does not maintain the reference count.
   // So we need to ensure that AddRef/Release should be called at least once
   // per object.
-  auto updater = MakeComPtr<SurroudingTextUpdater>(full_context, true);
+  auto updater = MakeComPtr<SurroudingTextUpdater>(
+      text_service, context, full_context, /*move_anchor=*/true, domain);
 
   HRESULT edit_session_result = S_OK;
   const HRESULT hr = full_context->RequestEditSession(
@@ -313,7 +504,7 @@ bool PrepareForReconversionTSF(TipTextService* text_service,
   if (FAILED(hr)) {
     return false;
   }
-  if (FAILED(edit_session_result)) {
+  if (FAILED(edit_session_result) || !updater->domain_current()) {
     return false;
   }
 
@@ -323,17 +514,27 @@ bool PrepareForReconversionTSF(TipTextService* text_service,
 
 bool TipSurroundingText::PrepareForReconversionFromIme(
     TipTextService* text_service, ITfContext* context,
-    TipSurroundingTextInfo* info, bool* need_async_reconversion) {
-  if (info == nullptr) {
-    return false;
-  }
-  if (need_async_reconversion == nullptr) {
+    TipSurroundingTextInfo* info, bool* need_async_reconversion,
+    uint64_t focus_epoch, int32_t focus_revision) {
+  if (text_service == nullptr || context == nullptr || info == nullptr ||
+      need_async_reconversion == nullptr) {
     return false;
   }
   *info = TipSurroundingTextInfo();
   *need_async_reconversion = false;
-  if (PrepareForReconversionTSF(text_service, context, info)) {
+  const SurroundingTextFocusSnapshot domain = {
+      .focus_epoch = focus_epoch,
+      .focus_revision = focus_revision,
+  };
+  if (!IsSurroundingTextContextCurrent(text_service, context, domain)) {
+    return false;
+  }
+  if (PrepareForReconversionTSF(text_service, context, info, domain)) {
     return true;
+  }
+  if (!IsSurroundingTextContextCurrent(text_service, context, domain)) {
+    *info = TipSurroundingTextInfo();
+    return false;
   }
   if (!GetSurroundingTextImm32(
           context, ReconvertString::RequestType::kReconvertString, info)) {
@@ -346,6 +547,10 @@ bool TipSurroundingText::PrepareForReconversionFromIme(
     // TipReconvertFunction::Reconvert later.
     return false;
   }
+  if (!IsSurroundingTextContextCurrent(text_service, context, domain)) {
+    *info = TipSurroundingTextInfo();
+    return false;
+  }
   // IMM32-like reconversion requires async edit session.
   *need_async_reconversion = true;
   return true;
@@ -353,12 +558,36 @@ bool TipSurroundingText::PrepareForReconversionFromIme(
 
 bool TipSurroundingText::DeletePrecedingText(
     TipTextService* text_service, ITfContext* context,
-    size_t num_characters_to_be_deleted_in_codepoint) {
+    size_t num_characters_to_be_deleted_in_codepoint, uint64_t focus_epoch,
+    int32_t focus_revision, uint64_t output_application_generation) {
+  if (text_service == nullptr || context == nullptr) {
+    return false;
+  }
+  const SurroundingTextFocusSnapshot domain = {
+      .focus_epoch = focus_epoch,
+      .focus_revision = focus_revision,
+  };
+  if (!IsSurroundingTextContextCurrent(text_service, context, domain)) {
+    return false;
+  }
+  const std::shared_ptr<TipPrivateContext> private_context =
+      text_service->GetPrivateContext(context);
+  const auto is_output_application_current = [&]() {
+    return private_context &&
+           private_context->IsOutputApplicationForFocusDomain(
+               domain.focus_epoch, domain.focus_revision,
+               output_application_generation);
+  };
+  if (!is_output_application_current()) {
+    return false;
+  }
   // Surrounding text deletion through TSF APIs should be performed only with
   // the full context.
   wil::com_ptr_nothrow<ITfContext> full_context(
       TipTransitoryExtension::AsFullContext(context));
-  if (full_context == nullptr) {
+  if (full_context == nullptr ||
+      !IsSurroundingTextContextCurrent(text_service, context, domain) ||
+      !is_output_application_current()) {
     return false;
   }
 
@@ -366,7 +595,9 @@ bool TipSurroundingText::DeletePrecedingText(
   // So we need to ensure that AddRef/Release should be called at least once
   // per object.
   auto edit_session = MakeComPtr<PrecedingTextDeleter>(
-      full_context, num_characters_to_be_deleted_in_codepoint);
+      text_service, context, full_context,
+      num_characters_to_be_deleted_in_codepoint, domain,
+      output_application_generation);
 
   HRESULT edit_session_result = S_OK;
   const HRESULT hr = full_context->RequestEditSession(
@@ -375,7 +606,8 @@ bool TipSurroundingText::DeletePrecedingText(
   if (FAILED(hr)) {
     return false;
   }
-  if (FAILED(edit_session_result)) {
+  if (FAILED(edit_session_result) || !edit_session->domain_current() ||
+      !is_output_application_current()) {
     return false;
   }
   return true;

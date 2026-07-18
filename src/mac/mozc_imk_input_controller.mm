@@ -35,13 +35,17 @@
 #import <InputMethodKit/IMKServer.h>
 
 #include <unistd.h>
+#include <stdlib.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <new>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -57,6 +61,7 @@
 #include "base/process.h"
 #include "base/util.h"
 #include "client/client.h"
+#include "grimodex/client_context.h"
 #include "ipc/ipc.h"
 #include "protocol/candidate_window.pb.h"
 #include "protocol/commands.pb.h"
@@ -80,6 +85,20 @@ using SetOfString = std::set<std::string, std::less<>>;
 - (void)cancelDelayedSessionCommand;
 - (void)delayedInvokeSessionCommandFromTimer:(NSTimer *)timer;
 - (void)dispatchSessionCommand:(const SessionCommand *)command client:(id)sender;
+- (BOOL)refreshSecureInputState;
+- (BOOL)isCurrentGrimodexEpoch:(uint64_t)focusEpoch;
+- (BOOL)isCurrentNonSecureTextQueryEpoch:(uint64_t)focusEpoch;
+- (void)advanceGrimodexFocusEpoch;
+- (mozc::commands::Context)buildClientContextForClient:(id<IMKTextInput>)client
+                               includeSurroundingText:(BOOL)includeSurroundingText;
+- (BOOL)collectSurroundingContext:(mozc::commands::Context *)context
+                           client:(id<IMKTextInput>)client;
+- (void)resetContextForClient:(id<IMKTextInput>)client;
+- (void)processOutput:(const mozc::commands::Output *)output
+                 client:(id)sender
+      sendingFocusEpoch:(uint64_t)sendingFocusEpoch;
+- (BOOL)updateComposedString:(const mozc::commands::Preedit *)preedit
+          sendingFocusEpoch:(uint64_t)sendingFocusEpoch;
 @end
 
 namespace {
@@ -90,6 +109,14 @@ RendererReceiver *gRendererReceiver = nil;
 // TODO(horo): This value should be get from system configuration.
 //  DoubleClickInterval can be get from NSEvent (MacOSX ver >= 10.6)
 constexpr NSTimeInterval kDoubleTapInterval = 0.5;
+
+uint64_t NewRendererCallbackToken() {
+  uint64_t token = 0;
+  do {
+    ::arc4random_buf(&token, sizeof(token));
+  } while (token == 0);
+  return token;
+}
 
 constexpr int kMaxSurroundingLength = 20;
 // In some apllications when the client's text length is large, getting the
@@ -244,6 +271,7 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 @synthesize useLiveConversionForTest = useLiveConversion_;
 @synthesize allowCandidateWindowForLiveConversionForTest =
     allowCandidateWindowForLiveConversion_;
+@synthesize secureInputOverrideForTest = secureInputOverrideForTest_;
 - (mozc::client::ClientInterface *)mozcClient {
   return mozcClient_.get();
 }
@@ -255,6 +283,9 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 }
 - (void)setRenderer:(std::unique_ptr<mozc::renderer::RendererInterface>)newRenderer {
   mozcRenderer_ = std::move(newRenderer);
+}
+- (uint64_t)grimodexFocusEpochForTest {
+  return grimodexFocusEpoch_;
 }
 
 #pragma mark object init/dealloc
@@ -285,6 +316,16 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   hasLiveConversionAnchorLeft_ = false;
   useLiveConversion_ = false;
   allowCandidateWindowForLiveConversion_ = false;
+  grimodexFocusEpoch_ = mozc::grimodex::AdvanceFocusEpoch(0);
+  grimodexSecureInput_ = false;
+  grimodexSecureInputInitialized_ = false;
+  // Unit tests directly exercise the controller without IMK activation.
+  // Production controllers become active only in activateServer:.
+  grimodexActive_ = server == nil;
+  secureInputOverrideForTest_ = server == nil ? 0 : -1;
+  delayedSessionCommandFocusEpoch_ = 0;
+  rendererCommandFocusEpoch_ = 0;
+  rendererCallbackToken_ = 0;
   mozcRenderer_ = mozc::renderer::RendererClient::Create();
   mozcClient_ = mozc::client::ClientFactory::NewClient();
   lastKeyDownTime_ = 0;
@@ -315,6 +356,8 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 }
 
 - (void)dealloc {
+  [gRendererReceiver clearCurrentController:self];
+  grimodexActive_ = false;
   [self cancelDelayedSessionCommand];
   keyCodeMap_ = nil;
   originalString_ = nil;
@@ -347,7 +390,16 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     return;
   }
   [super activateServer:sender];
+  grimodexActive_ = true;
+  const uint64_t epochBeforeBundleRefresh = grimodexFocusEpoch_;
   [self setupClientBundle:sender];
+  // Each activation is a fresh input domain even when the same application
+  // remains frontmost.  Carry the new domain on RESET_CONTEXT so server-side
+  // project state cannot bleed across focus transitions.
+  if (grimodexFocusEpoch_ == epochBeforeBundleRefresh) {
+    [self advanceGrimodexFocusEpoch];
+  }
+  [self resetContextForClient:sender];
   if (rendererCommand_.visible() && mozcRenderer_) {
     mozcRenderer_->ExecCommand(rendererCommand_);
   }
@@ -368,11 +420,16 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 }
 
 - (void)deactivateServer:(id)sender {
+  // Revoke renderer and server outputs before touching the host or invoking
+  // the superclass.  Advancing the epoch invalidates every synchronous or
+  // delayed result captured for this activation.
+  [gRendererReceiver clearCurrentController:self];
+  grimodexActive_ = false;
+  [self advanceGrimodexFocusEpoch];
+
   if (imkClientForTest_) {
     return;
   }
-
-  [self cancelDelayedSessionCommand];
 
   RendererCommand clearCommand;
   clearCommand.set_type(RendererCommand::UPDATE);
@@ -437,10 +494,107 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 }
 
 - (void)setupClientBundle:(id)sender {
+  std::string newClientBundle;
   NSString *bundleIdentifier = [sender bundleIdentifier];
   if (bundleIdentifier != nil && [bundleIdentifier length] > 0) {
-    clientBundle_.assign([bundleIdentifier UTF8String]);
+    newClientBundle.assign([bundleIdentifier UTF8String]);
   }
+  if (newClientBundle != clientBundle_) {
+    clientBundle_ = std::move(newClientBundle);
+    [self advanceGrimodexFocusEpoch];
+  }
+}
+
+- (void)advanceGrimodexFocusEpoch {
+  grimodexFocusEpoch_ = mozc::grimodex::AdvanceFocusEpoch(grimodexFocusEpoch_);
+  [self cancelDelayedSessionCommand];
+  rendererCommandFocusEpoch_ = 0;
+  rendererCallbackToken_ = 0;
+  // Composition and replacement ranges belong to the input domain that
+  // created them.  Keeping either across an application/focus/security
+  // transition could make a later result mutate text in the new domain.
+  replacementRange_ = NSMakeRange(NSNotFound, 0);
+  [composedString_ deleteCharactersInRange:
+                       NSMakeRange(0, [composedString_ length])];
+  [originalString_ setString:@""];
+  cursorPosition_ = -1;
+  [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                           selector:@selector(delayedUpdateCandidates)
+                                             object:nil];
+  [self clearCandidates];
+}
+
+- (BOOL)refreshSecureInputState {
+  // This check intentionally happens before every path that may query the
+  // client's text.  The test override keeps that security contract directly
+  // verifiable without depending on process-global Carbon state.
+  const bool secureInput =
+      secureInputOverrideForTest_ >= 0 ? secureInputOverrideForTest_ != 0
+                                       : ::IsSecureEventInputEnabled();
+  const bool changed =
+      grimodexSecureInputInitialized_ && secureInput != grimodexSecureInput_;
+  const bool initiallySecure =
+      !grimodexSecureInputInitialized_ && secureInput != grimodexSecureInput_;
+  grimodexSecureInputInitialized_ = true;
+  grimodexSecureInput_ = secureInput;
+  if (changed || initiallySecure) {
+    [self advanceGrimodexFocusEpoch];
+  }
+  return secureInput;
+}
+
+- (BOOL)isCurrentGrimodexEpoch:(uint64_t)focusEpoch {
+  [self refreshSecureInputState];
+  return grimodexActive_ && focusEpoch != 0 &&
+         focusEpoch == grimodexFocusEpoch_;
+}
+
+- (BOOL)isCurrentNonSecureTextQueryEpoch:(uint64_t)focusEpoch {
+  return [self isCurrentGrimodexEpoch:focusEpoch] &&
+         !grimodexSecureInput_;
+}
+
+- (mozc::commands::Context)buildClientContextForClient:(id<IMKTextInput>)client
+                               includeSurroundingText:(BOOL)includeSurroundingText {
+  const bool secureInput = [self refreshSecureInputState];
+  const uint64_t focusEpoch = grimodexFocusEpoch_;
+  mozc::grimodex::SurroundingTextProvider surroundingTextProvider;
+  if (!secureInput && includeSurroundingText && client != nil &&
+      [composedString_ length] == 0 && CanSelectedRange(clientBundle_) &&
+      CanSurroundingText(clientBundle_)) {
+    surroundingTextProvider = [self, client]()
+        -> std::optional<mozc::grimodex::SurroundingText> {
+      mozc::commands::Context surroundingContext;
+      if (![self collectSurroundingContext:&surroundingContext client:client]) {
+        return std::nullopt;
+      }
+      mozc::grimodex::SurroundingText surroundingText;
+      surroundingText.preceding_text = surroundingContext.preceding_text();
+      surroundingText.following_text = surroundingContext.following_text();
+      return surroundingText;
+    };
+  }
+  mozc::commands::Context context = mozc::grimodex::BuildClientContext(
+      clientBundle_, "imkit", secureInput, focusEpoch, surroundingTextProvider);
+  // A Secure Event Input transition can race a non-secure text query.  The
+  // collector rechecks Carbon before every client API; rebuild from the new
+  // state if one of those checks advanced the domain while the lazy provider
+  // was running.
+  if (focusEpoch != grimodexFocusEpoch_ ||
+      secureInput != grimodexSecureInput_) {
+    context = mozc::grimodex::BuildClientContext(
+        clientBundle_, "imkit", grimodexSecureInput_, grimodexFocusEpoch_);
+  }
+  return context;
+}
+
+- (void)resetContextForClient:(id<IMKTextInput>)client {
+  SessionCommand command;
+  command.set_type(SessionCommand::RESET_CONTEXT);
+  Output output;
+  const mozc::commands::Context context =
+      [self buildClientContextForClient:client includeSurroundingText:NO];
+  mozcClient_->SendCommandWithContext(command, context, &output);
 }
 
 - (void)setupCapability {
@@ -462,8 +616,12 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   KeyEvent keyEvent;
   Output output;
   keyEvent.set_special_key(mozc::commands::KeyEvent::OFF);
-  mozcClient_->SendKey(keyEvent, &output);
-  if (output.has_result()) {
+  const mozc::commands::Context context =
+      [self buildClientContextForClient:sender includeSurroundingText:NO];
+  const uint64_t sendingFocusEpoch = context.grimodex().focus_epoch();
+  mozcClient_->SendKeyWithContext(keyEvent, context, &output);
+  if (output.has_result() &&
+      [self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
     [self commitText:output.result().value().c_str() client:sender];
   }
   if ([composedString_ length] > 0) {
@@ -483,8 +641,12 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     KeyEvent keyEvent;
     Output output;
     keyEvent.set_special_key(mozc::commands::KeyEvent::OFF);
-    mozcClient_->SendKey(keyEvent, &output);
-    if (output.has_result()) {
+    const mozc::commands::Context context =
+        [self buildClientContextForClient:sender includeSurroundingText:NO];
+    const uint64_t sendingFocusEpoch = context.grimodex().focus_epoch();
+    mozcClient_->SendKeyWithContext(keyEvent, context, &output);
+    if (output.has_result() &&
+        [self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
       [self commitText:output.result().value().c_str() client:sender];
     }
     if ([composedString_ length] > 0) {
@@ -501,7 +663,9 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     KeyEvent keyEvent;
     Output output;
     keyEvent.set_special_key(mozc::commands::KeyEvent::ON);
-    mozcClient_->SendKey(keyEvent, &output);
+    const mozc::commands::Context context =
+        [self buildClientContextForClient:sender includeSurroundingText:NO];
+    mozcClient_->SendKeyWithContext(keyEvent, context, &output);
   }
 
   // Switch composition mode.
@@ -510,7 +674,9 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   command.set_type(mozc::commands::SessionCommand::SWITCH_COMPOSITION_MODE);
   command.set_composition_mode(new_mode);
   Output output;
-  mozcClient_->SendCommand(command, &output);
+  const mozc::commands::Context context =
+      [self buildClientContextForClient:sender includeSurroundingText:NO];
+  mozcClient_->SendCommandWithContext(command, context, &output);
   mode_ = new_mode;
 }
 
@@ -534,12 +700,26 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 
 - (void)launchWordRegisterTool:(id)client {
   ::setenv(mozc::kWordRegisterEnvironmentName, "", 1);
-  if (CanSelectedRange(clientBundle_)) {
+  // Never inspect the host application's text while Secure Event Input is
+  // active, even for an explicitly requested tool launch.
+  const bool secureInput = [self refreshSecureInputState];
+  const uint64_t textQueryEpoch = grimodexFocusEpoch_;
+  if (grimodexActive_ && !secureInput && CanSelectedRange(clientBundle_)) {
     NSRange selectedRange = [client selectedRange];
+    if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+      MacProcess::LaunchMozcTool("word_register_dialog");
+      return;
+    }
     if (selectedRange.location != NSNotFound && selectedRange.length != NSNotFound &&
         selectedRange.length > 0) {
-      NSString *text = [[client attributedSubstringFromRange:selectedRange] string];
-      if (text != nil) {
+      NSAttributedString *attributedText =
+          [client attributedSubstringFromRange:selectedRange];
+      if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+        MacProcess::LaunchMozcTool("word_register_dialog");
+        return;
+      }
+      NSString *text = [attributedText string];
+      if ([self isCurrentNonSecureTextQueryEpoch:textQueryEpoch] && text != nil) {
         ::setenv(mozc::kWordRegisterEnvironmentName, [text UTF8String], 1);
       }
     }
@@ -548,11 +728,15 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 }
 
 - (void)invokeReconvert:(const SessionCommand *)command client:(id)sender {
-  if (!CanSelectedRange(clientBundle_)) {
+  if ([self refreshSecureInputState] || !CanSelectedRange(clientBundle_)) {
     return;
   }
+  const uint64_t textQueryEpoch = grimodexFocusEpoch_;
 
   NSRange selectedRange = [sender selectedRange];
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    return;
+  }
   if (selectedRange.location == NSNotFound || selectedRange.length == NSNotFound) {
     // the application does not support reconversion.
     return;
@@ -571,25 +755,47 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   }
 
   if (!sending_command.has_text()) {
-    NSString *text = [[sender attributedSubstringFromRange:selectedRange] string];
+    NSAttributedString *attributedText =
+        [sender attributedSubstringFromRange:selectedRange];
+    if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+      return;
+    }
+    NSString *text = [attributedText string];
+    if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+      return;
+    }
     if (!text) {
       return;
     }
     sending_command.set_text([text UTF8String]);
   }
 
-  if (mozcClient_->SendCommand(sending_command, &output)) {
-    replacementRange_ = selectedRange;
-    [self processOutput:&output client:sender];
+  const mozc::commands::Context context =
+      [self buildClientContextForClient:sender includeSurroundingText:NO];
+  const uint64_t sendingFocusEpoch = context.grimodex().focus_epoch();
+  if (sendingFocusEpoch != textQueryEpoch) {
+    return;
+  }
+  if (mozcClient_->SendCommandWithContext(sending_command, context, &output)) {
+    if ([self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+      replacementRange_ = selectedRange;
+    }
+    [self processOutput:&output
+                   client:sender
+        sendingFocusEpoch:sendingFocusEpoch];
   }
 }
 
 - (void)invokeUndo:(id)sender {
-  if (!CanSelectedRange(clientBundle_)) {
+  if ([self refreshSecureInputState] || !CanSelectedRange(clientBundle_)) {
     return;
   }
+  const uint64_t textQueryEpoch = grimodexFocusEpoch_;
 
   NSRange selectedRange = [sender selectedRange];
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    return;
+  }
   if (selectedRange.location == NSNotFound || selectedRange.length == NSNotFound ||
       // Some applications such like iTunes does not return NSNotFound
       // range but (0, 0).  However, the range starting with negative
@@ -602,12 +808,29 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   SessionCommand command;
   Output output;
   command.set_type(SessionCommand::UNDO);
-  if (mozcClient_->SendCommand(command, &output)) {
-    [self processOutput:&output client:sender];
+  const mozc::commands::Context context =
+      [self buildClientContextForClient:sender includeSurroundingText:NO];
+  const uint64_t sendingFocusEpoch = context.grimodex().focus_epoch();
+  if (sendingFocusEpoch != textQueryEpoch) {
+    return;
+  }
+  if (mozcClient_->SendCommandWithContext(command, context, &output)) {
+    [self processOutput:&output
+                   client:sender
+        sendingFocusEpoch:sendingFocusEpoch];
   }
 }
 
 - (void)processOutput:(const mozc::commands::Output *)output client:(id)sender {
+  [self refreshSecureInputState];
+  [self processOutput:output
+                 client:sender
+      sendingFocusEpoch:grimodexFocusEpoch_];
+}
+
+- (void)processOutput:(const mozc::commands::Output *)output
+                 client:(id)sender
+      sendingFocusEpoch:(uint64_t)sendingFocusEpoch {
   if (output == nullptr) {
     return;
   }
@@ -615,29 +838,64 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     return;
   }
 
-  DLOG(INFO) << output->Utf8DebugString();
+  // A server round trip can reenter the host run loop.  Validate the domain
+  // that sent the request before the output is logged or allowed to mutate
+  // host text, preedit state, or candidate UI.
+  if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+    return;
+  }
+  const bool secureInput = grimodexSecureInput_;
+
+  if (!secureInput) {
+    DLOG(INFO) << output->Utf8DebugString();
+  }
   if (output->has_url()) {
+    if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+      return;
+    }
     NSString *url = [NSString stringWithUTF8String:output->url().c_str()];
     [self openLink:[NSURL URLWithString:url]];
   }
 
   if (output->has_result()) {
+    if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+      return;
+    }
     [self commitText:output->result().value().c_str() client:sender];
   }
 
   // Handles deletion range.  We do not even handle it for some
   // applications to prevent application crashes.
-  if (output->has_deletion_range() && CanSelectedRange(clientBundle_)) {
-    if ([composedString_ length] == 0 && replacementRange_.location == NSNotFound) {
+  if (!secureInput && output->has_deletion_range() &&
+      CanSelectedRange(clientBundle_)) {
+    if ([composedString_ length] == 0 && replacementRange_.location == NSNotFound &&
+        [self isCurrentNonSecureTextQueryEpoch:sendingFocusEpoch]) {
       NSRange selectedRange = [sender selectedRange];
+      if (![self isCurrentNonSecureTextQueryEpoch:sendingFocusEpoch]) {
+        return;
+      }
       const mozc::commands::DeletionRange &deletion_range = output->deletion_range();
-      if (selectedRange.location != NSNotFound || selectedRange.length != NSNotFound ||
-          selectedRange.location + deletion_range.offset() > 0) {
-        // The offset is a negative value.  See protocol/commands.proto for
-        // the details.
-        selectedRange.location += deletion_range.offset();
-        selectedRange.length += deletion_range.length();
-        replacementRange_ = selectedRange;
+      const NSUInteger maxSignedRange =
+          static_cast<NSUInteger>(std::numeric_limits<int64_t>::max());
+      if (selectedRange.location != NSNotFound &&
+          selectedRange.length != NSNotFound &&
+          selectedRange.location <= maxSignedRange &&
+          selectedRange.length <= maxSignedRange) {
+        const int64_t location = static_cast<int64_t>(selectedRange.location);
+        const int64_t length = static_cast<int64_t>(selectedRange.length);
+        const int64_t offset = deletion_range.offset();
+        const int64_t lengthDelta = deletion_range.length();
+        // DeletionRange offsets are non-positive and lengths are
+        // non-negative. Reject malformed or overflowing server output rather
+        // than allowing NSUInteger arithmetic to wrap.
+        if (offset <= 0 && lengthDelta >= 0 && location >= -offset &&
+            length <= std::numeric_limits<int64_t>::max() - lengthDelta) {
+          selectedRange.location =
+              static_cast<NSUInteger>(location + offset);
+          selectedRange.length =
+              static_cast<NSUInteger>(length + lengthDelta);
+          replacementRange_ = selectedRange;
+        }
       }
     } else {
       // We have to consider the case that there is already
@@ -649,10 +907,19 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     }
   }
 
-  [self updateComposedString:&(output->preedit())];
+  if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+    return;
+  }
+  if (![self updateComposedString:&(output->preedit())
+                sendingFocusEpoch:sendingFocusEpoch]) {
+    return;
+  }
   [self updateCandidates:output];
 
   if (output->has_mode()) {
+    if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+      return;
+    }
     CompositionMode new_mode = output->mode();
     // Do not allow HALF_ASCII with empty composition.  This should be
     // handled in the converter, but just in case.
@@ -668,6 +935,9 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   }
 
   if (output->has_launch_tool_mode()) {
+    if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+      return;
+    }
     switch (output->launch_tool_mode()) {
       case mozc::commands::Output::CONFIG_DIALOG:
         MacProcess::LaunchMozcTool("config_dialog");
@@ -686,12 +956,16 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 
   // Handle callbacks.
   if (output->has_callback() && output->callback().has_session_command()) {
+    if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+      return;
+    }
     const Output::Callback &callback = output->callback();
     const SessionCommand &callback_command = callback.session_command();
     if (callback.has_delay_millisec() && callback.delay_millisec() > 0) {
       [self cancelDelayedSessionCommand];
       delayedSessionCommand_ = std::make_unique<SessionCommand>(callback_command);
       delayedSessionCommandClient_ = sender;
+      delayedSessionCommandFocusEpoch_ = grimodexFocusEpoch_;
       const NSTimeInterval delay =
           static_cast<NSTimeInterval>(callback.delay_millisec()) / 1000.0;
       delayedSessionCommandTimer_ =
@@ -711,6 +985,7 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   delayedSessionCommandTimer_ = nil;
   delayedSessionCommand_.reset();
   delayedSessionCommandClient_ = nil;
+  delayedSessionCommandFocusEpoch_ = 0;
 }
 
 - (void)delayedInvokeSessionCommandFromTimer:(NSTimer *)timer {
@@ -718,6 +993,15 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     return;
   }
   if (!delayedSessionCommand_) {
+    return;
+  }
+  const uint64_t scheduledEpoch = delayedSessionCommandFocusEpoch_;
+  [self refreshSecureInputState];
+  if (timer != delayedSessionCommandTimer_ || !delayedSessionCommand_) {
+    return;
+  }
+  if (scheduledEpoch == 0 || scheduledEpoch != grimodexFocusEpoch_) {
+    [self cancelDelayedSessionCommand];
     return;
   }
 
@@ -734,8 +1018,14 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     [self invokeUndo:sender];
   } else {
     Output output_for_callback;
-    if (mozcClient_->SendCommand(*command, &output_for_callback)) {
-      [self processOutput:&output_for_callback client:sender];
+    const mozc::commands::Context context =
+        [self buildClientContextForClient:sender includeSurroundingText:NO];
+    const uint64_t sendingFocusEpoch = context.grimodex().focus_epoch();
+    if (mozcClient_->SendCommandWithContext(*command, context,
+                                            &output_for_callback)) {
+      [self processOutput:&output_for_callback
+                     client:sender
+          sendingFocusEpoch:sendingFocusEpoch];
     }
   }
 }
@@ -758,10 +1048,20 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 }
 
 - (void)updateComposedString:(const Preedit *)preedit {
+  [self refreshSecureInputState];
+  [self updateComposedString:preedit
+          sendingFocusEpoch:grimodexFocusEpoch_];
+}
+
+- (BOOL)updateComposedString:(const Preedit *)preedit
+          sendingFocusEpoch:(uint64_t)sendingFocusEpoch {
+  if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+    return NO;
+  }
   // If the last and the current composed string length is 0,
   // we don't update the composition.
   if (([composedString_ length] == 0) && ((preedit == nullptr || preedit->segment_size() == 0))) {
-    return;
+    return YES;
   }
 
   [composedString_ deleteCharactersInRange:NSMakeRange(0, [composedString_ length])];
@@ -787,10 +1087,20 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     replacementRange_ = NSMakeRange(NSNotFound, 0);
   }
 
+  // selectionRange may enter the host application and reenter the run loop.
+  // In particular, Secure Event Input can become enabled there.  Revalidate
+  // the sending domain before exposing the preedit to the host.  An epoch
+  // transition also clears the local composition above.
+  const NSRange selectionRange = [self selectionRange];
+  if (![self isCurrentGrimodexEpoch:sendingFocusEpoch]) {
+    return NO;
+  }
+
   // Update the composed string of the client applications.
   [[self client] setMarkedText:composedString_
-                selectionRange:[self selectionRange]
+                selectionRange:selectionRange
               replacementRange:replacementRange_];
+  return [self isCurrentGrimodexEpoch:sendingFocusEpoch];
 }
 
 - (void)commitComposition:(id)sender {
@@ -803,7 +1113,9 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   SessionCommand command;
   Output output;
   command.set_type(SessionCommand::SUBMIT);
-  mozcClient_->SendCommand(command, &output);
+  const mozc::commands::Context context =
+      [self buildClientContextForClient:sender includeSurroundingText:NO];
+  mozcClient_->SendCommandWithContext(command, context, &output);
   [self clearCandidates];
   [self updateComposedString:nullptr];
 }
@@ -815,9 +1127,12 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 - (void)clearCandidates {
   hasLiveConversionAnchorLeft_ = false;
   allowCandidateWindowForLiveConversion_ = false;
+  rendererCommandFocusEpoch_ = 0;
+  rendererCallbackToken_ = 0;
   rendererCommand_.set_type(RendererCommand::UPDATE);
   rendererCommand_.set_visible(false);
   rendererCommand_.clear_output();
+  rendererCommand_.mutable_application_info()->clear_renderer_callback_token();
   if (mozcRenderer_) {
     mozcRenderer_->ExecCommand(rendererCommand_);
   }
@@ -826,17 +1141,39 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 // |selecrionRange| method is defined at IMKInputController class and
 // means the position of cursor actually.
 - (NSRange)selectionRange {
-  if (imkClientForTest_) {
+  const bool secureInput = [self refreshSecureInputState];
+  const uint64_t textQueryEpoch = grimodexFocusEpoch_;
+  if ((!grimodexActive_ || secureInput) && cursorPosition_ == -1) {
+    return NSMakeRange(0, 0);
+  }
+
+  if (cursorPosition_ != -1) {
     return NSMakeRange(cursorPosition_, 0);
   }
 
-  return (cursorPosition_ == -1)
-             ? [super selectionRange]  // default behavior defined at super class
-             : NSMakeRange(cursorPosition_, 0);
+  // Query the active IMK text client directly so the domain can be rechecked
+  // after the potentially reentrant host call.
+  id client = [self client];
+  if (client == nil) {
+    return NSMakeRange(0, 0);
+  }
+  const NSRange selectedRange = [client selectedRange];
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    return NSMakeRange(0, 0);
+  }
+  return selectedRange;
 }
 
 - (void)delayedUpdateCandidates {
   if (!mozcRenderer_) {
+    return;
+  }
+
+  // Secure Event Input must be checked before querying any client geometry.
+  // Candidate output is also scoped to the domain that produced it.
+  if ([self refreshSecureInputState] || rendererCommandFocusEpoch_ == 0 ||
+      rendererCommandFocusEpoch_ != grimodexFocusEpoch_) {
+    [self clearCandidates];
     return;
   }
 
@@ -869,12 +1206,17 @@ int32_t GetRendererAnchorPosition(const Output &output) {
   rendererCommand_.set_visible(true);
 
   NSRect preeditRect = NSZeroRect;
+  const uint64_t geometryEpoch = rendererCommandFocusEpoch_;
   const int32_t position = GetRendererAnchorPosition(rendererCommand_.output());
   // Some applications throws error when we call attributesForCharacterIndex.
   DLOG(INFO) << "attributesForCharacterIndex: " << position;
   @try {
     NSDictionary *clientData = [[self client] attributesForCharacterIndex:position
                                                       lineHeightRectangle:&preeditRect];
+    if (![self isCurrentNonSecureTextQueryEpoch:geometryEpoch]) {
+      [self clearCandidates];
+      return;
+    }
 
     // IMKBaseline: Left-bottom of the composition.
     NSPoint baseline = [clientData[@"IMKBaseline"] pointValue];
@@ -905,6 +1247,10 @@ int32_t GetRendererAnchorPosition(const Output &output) {
                << "," << [[exception reason] UTF8String];
   }
 
+  if (![self isCurrentNonSecureTextQueryEpoch:geometryEpoch]) {
+    [self clearCandidates];
+    return;
+  }
   mozcRenderer_->ExecCommand(rendererCommand_);
 }
 
@@ -927,6 +1273,10 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 
   rendererCommand_.set_type(RendererCommand::UPDATE);
   *rendererCommand_.mutable_output() = *output;
+  rendererCommandFocusEpoch_ = grimodexFocusEpoch_;
+  rendererCallbackToken_ = NewRendererCallbackToken();
+  rendererCommand_.mutable_application_info()->set_renderer_callback_token(
+      rendererCallbackToken_);
 
   // Runs delayedUpdateCandidates in the next event loop.
   // This is because some applications like Google Docs with Chrome returns
@@ -946,13 +1296,47 @@ int32_t GetRendererAnchorPosition(const Output &output) {
 }
 
 - (BOOL)fillSurroundingContext:(mozc::commands::Context *)context client:(id<IMKTextInput>)client {
+  if ([self refreshSecureInputState]) {
+    context->clear_preceding_text();
+    context->clear_following_text();
+    return false;
+  }
+  return [self collectSurroundingContext:context client:client];
+}
+
+- (BOOL)collectSurroundingContext:(mozc::commands::Context *)context
+                           client:(id<IMKTextInput>)client {
+  context->clear_preceding_text();
+  context->clear_following_text();
+  if ([self refreshSecureInputState]) {
+    return false;
+  }
+  const uint64_t textQueryEpoch = grimodexFocusEpoch_;
+  if (!grimodexActive_) {
+    return false;
+  }
   NSInteger totalLength = [client length];
-  if (totalLength == 0 || totalLength == NSNotFound ||
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    context->clear_preceding_text();
+    context->clear_following_text();
+    return false;
+  }
+  if (totalLength <= 0 || totalLength == NSNotFound ||
       totalLength > kGetSurroundingTextClientLengthLimit) {
     return false;
   }
   NSRange selectedRange = [client selectedRange];
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    context->clear_preceding_text();
+    context->clear_following_text();
+    return false;
+  }
   if (selectedRange.location == NSNotFound || selectedRange.length == NSNotFound) {
+    return false;
+  }
+  const NSUInteger unsignedTotalLength = static_cast<NSUInteger>(totalLength);
+  if (selectedRange.location > unsignedTotalLength ||
+      selectedRange.length > unsignedTotalLength - selectedRange.location) {
     return false;
   }
   NSRange precedingRange = NSMakeRange(0, selectedRange.location);
@@ -960,10 +1344,56 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     precedingRange =
         NSMakeRange(selectedRange.location - kMaxSurroundingLength, kMaxSurroundingLength);
   }
-  NSString *precedingString = [[client attributedSubstringFromRange:precedingRange] string];
+  NSAttributedString *precedingAttributedString =
+      [client attributedSubstringFromRange:precedingRange];
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    context->clear_preceding_text();
+    context->clear_following_text();
+    return false;
+  }
+  NSString *precedingString = [precedingAttributedString string];
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    context->clear_preceding_text();
+    context->clear_following_text();
+    return false;
+  }
   if (precedingString) {
     context->set_preceding_text([precedingString UTF8String]);
-    DLOG(INFO) << "preceding_text: \"" << context->preceding_text() << "\"";
+  }
+
+  const NSUInteger followingStart = NSMaxRange(selectedRange);
+  const NSUInteger followingLength =
+      std::min(static_cast<NSUInteger>(kMaxSurroundingLength),
+               unsignedTotalLength - followingStart);
+  if (followingLength > 0) {
+    const NSRange followingRange =
+        NSMakeRange(followingStart, followingLength);
+    if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+      context->clear_preceding_text();
+      context->clear_following_text();
+      return false;
+    }
+    NSAttributedString *followingAttributedString =
+        [client attributedSubstringFromRange:followingRange];
+    if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+      context->clear_preceding_text();
+      context->clear_following_text();
+      return false;
+    }
+    NSString *followingString = [followingAttributedString string];
+    if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+      context->clear_preceding_text();
+      context->clear_following_text();
+      return false;
+    }
+    if (followingString) {
+      context->set_following_text([followingString UTF8String]);
+    }
+  }
+  if (![self isCurrentNonSecureTextQueryEpoch:textQueryEpoch]) {
+    context->clear_preceding_text();
+    context->clear_following_text();
+    return false;
   }
   return true;
 }
@@ -973,14 +1403,24 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     return NO;
   }
   if ([event type] == NSEventTypeCursorUpdate) {
+    [self refreshSecureInputState];
+    const uint64_t cursorUpdateEpoch = grimodexFocusEpoch_;
+    const NSRange selectionRange = [self selectionRange];
+    if (![self isCurrentGrimodexEpoch:cursorUpdateEpoch]) {
+      return NO;
+    }
     [[self client] setMarkedText:composedString_
-                  selectionRange:[self selectionRange]
+                  selectionRange:selectionRange
                 replacementRange:replacementRange_];
     return NO;
   }
   if ([event type] != NSEventTypeKeyDown && [event type] != NSEventTypeFlagsChanged) {
     return NO;
   }
+
+  // Establish the security boundary before any branch below can inspect the
+  // host application's selection or surrounding text.
+  [self refreshSecureInputState];
 
   // Handle KANA key and EISU key.  We explicitly handles this here
   // for mode switch because some text area such like iPhoto person
@@ -1012,7 +1452,7 @@ int32_t GetRendererAnchorPosition(const Output &output) {
       if (isDoubleTap) {
         SessionCommand command;
         command.set_type(SessionCommand::COMMIT_RAW_TEXT);
-        [self sendCommand:command];
+        [self dispatchSessionCommand:&command client:sender];
       }
       CompositionMode new_mode =
           ([composedString_ length] == 0) ? mozc::commands::DIRECT : mozc::commands::HALF_ASCII;
@@ -1057,7 +1497,8 @@ int32_t GetRendererAnchorPosition(const Output &output) {
     [originalString_ appendFormat:@"%c", keyEvent.key_code()];
   }
 
-  mozc::commands::Context context;
+  mozc::commands::Context context =
+      [self buildClientContextForClient:sender includeSurroundingText:YES];
   if (suppressSuggestion_) {
     // TODO(komatsu, horo): Support Google Omnibox too.
     context.add_experimental_features("google_search_box");
@@ -1070,33 +1511,60 @@ int32_t GetRendererAnchorPosition(const Output &output) {
       keyEvent.special_key() == mozc::commands::KeyEvent::SPACE;
   }
 
-  if ([composedString_ length] == 0 && CanSelectedRange(clientBundle_) &&
-      CanSurroundingText(clientBundle_)) {
-    [self fillSurroundingContext:&context client:sender];
-  }
+  const uint64_t sendingFocusEpoch = context.grimodex().focus_epoch();
   if (!mozcClient_->SendKeyWithContext(keyEvent, context, &output)) {
     return NO;
   }
 
-  [self processOutput:&output client:sender];
+  [self processOutput:&output
+                 client:sender
+      sendingFocusEpoch:sendingFocusEpoch];
   return output.consumed();
 }
 
 #pragma mark ControllerCallback
 - (void)sendCommand:(const SessionCommand &)command {
+  [self refreshSecureInputState];
+  const uint64_t rendererCallbackEpoch = rendererCommandFocusEpoch_;
+  // Candidate renderer commands are only meaningful for the output that is
+  // currently owned by this active domain.  Epoch transitions clear this
+  // marker, so a receiver callback cannot revive an old candidate session.
+  if (!grimodexActive_ || rendererCallbackEpoch == 0 ||
+      rendererCallbackEpoch != grimodexFocusEpoch_ ||
+      rendererCallbackToken_ == 0 || !command.has_renderer_callback_token() ||
+      command.renderer_callback_token() != rendererCallbackToken_ ||
+      !rendererCommand_.visible() || !rendererCommand_.has_output() ||
+      !rendererCommand_.has_application_info() ||
+      rendererCommand_.application_info().renderer_callback_token() !=
+          rendererCallbackToken_) {
+    return;
+  }
   Output output;
-  if (!mozcClient_->SendCommand(command, &output)) {
+  id client = [self client];
+  const mozc::commands::Context context =
+      [self buildClientContextForClient:client includeSurroundingText:NO];
+  const uint64_t sendingFocusEpoch = context.grimodex().focus_epoch();
+  if (sendingFocusEpoch != rendererCallbackEpoch) {
+    return;
+  }
+  SessionCommand scopedCommand = command;
+  scopedCommand.clear_renderer_callback_token();
+  if (!mozcClient_->SendCommandWithContext(scopedCommand, context, &output)) {
     return;
   }
 
-  [self processOutput:&output client:[self client]];
+  [self processOutput:&output
+                 client:client
+      sendingFocusEpoch:sendingFocusEpoch];
 }
 
 - (void)outputResult:(const mozc::commands::Output &)output {
-  if (!output.has_result()) {
-    return;
-  }
-  [self commitText:output.result().value().c_str() client:[self client]];
+  // This legacy utility callback carries no controller, focus epoch, or
+  // request provenance.  It therefore cannot be distinguished from an output
+  // queued for a previous application or pre-secure domain.  Keep the ABI for
+  // older tools, but fail closed instead of committing unscoped text.
+  (void)output;
+  DLOG(WARNING) << "Ignoring unscoped renderer utility output";
 }
 
 #pragma mark callbacks

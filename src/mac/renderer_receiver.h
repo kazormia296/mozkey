@@ -43,6 +43,12 @@
  */
 - (id)initWithName:(NSString *)name;
 
+/** Stops forwarding callbacks when |controller| is still the registered
+ * controller.  A controller that is deactivated after a newer controller was
+ * registered cannot accidentally clear that newer registration.
+ */
+- (void)clearCurrentController:(id<ControllerCallback>)controller;
+
 @end
 
 #endif  // MOZC_MAC_RENDERER_RECEIVER_H_

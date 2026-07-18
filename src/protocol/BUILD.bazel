@@ -30,6 +30,7 @@
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:java_lite_proto_library.bzl", "java_lite_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//:build_defs.bzl", "mozc_cc_library", "mozc_cc_test")
 load("//bazel:stubs.bzl", "jspb_proto_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -50,6 +51,24 @@ proto_library(
 cc_proto_library(
     name = "commands_cc_proto",
     deps = [":commands_proto"],
+)
+
+mozc_cc_library(
+    name = "renderer_callback_provenance",
+    srcs = ["renderer_callback_provenance.cc"],
+    hdrs = ["renderer_callback_provenance.h"],
+    deps = [":commands_cc_proto"],
+)
+
+mozc_cc_test(
+    name = "renderer_callback_provenance_test",
+    size = "small",
+    srcs = ["renderer_callback_provenance_test.cc"],
+    deps = [
+        ":commands_cc_proto",
+        ":renderer_callback_provenance",
+        "//testing:gunit_main",
+    ],
 )
 
 jspb_proto_library(

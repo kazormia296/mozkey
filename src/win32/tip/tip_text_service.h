@@ -36,6 +36,7 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <memory>
 
 namespace mozc {
 namespace commands {
@@ -48,6 +49,11 @@ namespace tsf {
 class TipPrivateContext;
 class TipThreadContext;
 
+enum class TipModeCallbackKind : uint8_t {
+  kConversion,
+  kOpenClose,
+};
+
 class TipTextService : public IUnknown {
  public:
   // Retrieves the ID of the client application.
@@ -56,11 +62,31 @@ class TipTextService : public IUnknown {
   // Retrieves the thread manager instance.
   virtual ITfThreadMgr* GetThreadManager() const = 0;
 
-  // Returns the associated private context. Returns nullptr if not found.
-  virtual TipPrivateContext* GetPrivateContext(ITfContext* context) = 0;
+  // Returns a lease on the associated private context. The lease keeps the
+  // context and its client alive across COM/IPC calls that can reenter TSF and
+  // remove the context from the service registry.
+  virtual std::shared_ptr<TipPrivateContext> GetPrivateContext(
+      ITfContext* context) = 0;
 
   // Returns the associated thread context.
   virtual TipThreadContext* GetThreadContext() = 0;
+
+  // Returns a lease only while the current activation is live. Callers that
+  // cross COM/IPC boundaries retain this lease and compare it again afterward
+  // so Deactivate/reactivation cannot invalidate or rebind their state.
+  virtual std::shared_ptr<TipThreadContext> GetThreadContextLease() = 0;
+  virtual bool HasThreadFocus() const = 0;
+
+  // Reserves the active context's output-application transaction without
+  // crossing a TSF boundary.  Callers use this before resolving the focused
+  // document so nested output cannot be overwritten by a stale outer action.
+  virtual uint64_t ReserveActiveOutputApplication(
+      uint64_t focus_epoch, int32_t focus_revision) = 0;
+
+  // Orders reentrant compartment callbacks within one focus domain.
+  virtual uint64_t ReserveModeCallback(TipModeCallbackKind kind) = 0;
+  virtual bool IsModeCallbackCurrent(TipModeCallbackKind kind,
+                                     uint64_t generation) const = 0;
 
   // Sends UI update message to the renderer.
   virtual void PostUIUpdateMessage() = 0;
@@ -69,7 +95,8 @@ class TipTextService : public IUnknown {
   virtual void PostDelayedSessionCommand(
     ITfContext* context,
     const mozc::commands::SessionCommand& command,
-    uint32_t delay_millisec) = 0;
+    uint32_t delay_millisec,
+    uint64_t output_application_generation) = 0;
 
   // Returns the GUID atom for the display attributes.
   virtual TfGuidAtom input_attribute() const = 0;
@@ -79,9 +106,21 @@ class TipTextService : public IUnknown {
   // Returns nullptr if it is not available.
   virtual HWND renderer_callback_window_handle() const = 0;
 
+  // Binds the currently rendered candidate view to the TSF focus domain that
+  // produced it. A zero token revokes all renderer callbacks.
+  virtual void SetRendererCallbackProvenance(uint64_t token,
+                                             uint64_t focus_epoch,
+                                             int32_t focus_revision,
+                                             uint64_t output_generation) = 0;
+
+  // Ends every TSF UI element before a focus/security-domain transition.
+  virtual void EndAllUiElements() = 0;
+
   // Returns an instance of ITfCompositionSink object.
   virtual wil::com_ptr_nothrow<ITfCompositionSink> CreateCompositionSink(
-      ITfContext* context) = 0;
+      ITfContext* context, uint64_t composition_focus_epoch,
+      int32_t composition_focus_revision,
+      uint64_t composition_generation) = 0;
 
   // Updates the language bar as needed.  Does nothing if the language bar is
   // not available.

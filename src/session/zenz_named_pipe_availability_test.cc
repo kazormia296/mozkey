@@ -10,17 +10,12 @@ namespace {
 
 TEST(ZenzNamedPipeAvailabilityTest, MatchesPackagedRuntimeAvailability) {
   ZenzNamedPipeClient client;
-
-#if defined(__APPLE__)
-  EXPECT_FALSE(client.IsAvailable());
-#else
   EXPECT_TRUE(client.IsAvailable());
-#endif
 }
 
 #if defined(__APPLE__)
 TEST(ZenzNamedPipeAvailabilityTest,
-     MacosFailsBeforePipeResolutionOrAutoLaunch) {
+     MacosRejectsInvalidPipeBeforeAutoLaunch) {
   ZenzNamedPipeClient client;
   ZenzLiveRequest request;
   request.generation = 42;
@@ -33,7 +28,7 @@ TEST(ZenzNamedPipeAvailabilityTest,
   EXPECT_FALSE(response.ok);
   EXPECT_EQ(response.generation, request.generation);
   EXPECT_EQ(response.key, request.key);
-  EXPECT_EQ(response.debug, "macos_runtime_not_packaged");
+  EXPECT_EQ(response.debug, "invalid_pipe_name");
 }
 #endif
 

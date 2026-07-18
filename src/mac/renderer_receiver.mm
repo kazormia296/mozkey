@@ -29,6 +29,8 @@
 
 #import "mac/renderer_receiver.h"
 
+#include <cstdint>
+
 #include "protocol/commands.pb.h"
 
 @implementation RendererReceiver {
@@ -37,6 +39,9 @@
 
   /** NSConnection to communicate with the renderer process. */
   NSConnection *_rendererConnection;
+
+  /** Revocable token for callbacks captured for the current controller. */
+  uint64_t _controllerGeneration;
 }
 
 - (id)initWithName:(NSString *)name {
@@ -54,9 +59,48 @@
 #pragma mark ServerCallback
 // Methods inherited from the ServerCallback protocol (see: common.h).
 
+- (uint64_t)currentControllerGeneration {
+  @synchronized(self) {
+    return _controllerGeneration;
+  }
+}
+
+- (void)dispatchCommand:(const mozc::commands::SessionCommand &)command
+            controller:(id<ControllerCallback>)controller
+     expectedGeneration:(uint64_t)expectedGeneration {
+  // Keep registration changes serialized with the callback.  This closes the
+  // window between validating the generation and invoking a controller that
+  // has already been deactivated or superseded.
+  @synchronized(self) {
+    if (expectedGeneration == 0 || expectedGeneration != _controllerGeneration ||
+        controller == nil || controller != _currentController) {
+      return;
+    }
+    [controller sendCommand:command];
+  }
+}
+
+- (void)dispatchOutput:(const mozc::commands::Output &)output
+           controller:(id<ControllerCallback>)controller
+    expectedGeneration:(uint64_t)expectedGeneration {
+  @synchronized(self) {
+    if (expectedGeneration == 0 || expectedGeneration != _controllerGeneration ||
+        controller == nil || controller != _currentController) {
+      return;
+    }
+    [controller outputResult:output];
+  }
+}
+
 // sendData is a method of the ServerCallback protocol.
 - (void)sendData:(NSData *)data {
-  if (!_currentController) {
+  id<ControllerCallback> controller = nil;
+  uint64_t generation = 0;
+  @synchronized(self) {
+    controller = _currentController;
+    generation = _controllerGeneration;
+  }
+  if (controller == nil || generation == 0) {
     return;
   }
 
@@ -65,22 +109,55 @@
   if (!command.ParseFromArray([data bytes], length)) {
     return;
   }
-  [_currentController sendCommand:command];
+  [self dispatchCommand:command
+             controller:controller
+      expectedGeneration:generation];
 }
 
 // outputResult is a method of the ServerCallback protocol.
 - (void)outputResult:(NSData *)result {
+  id<ControllerCallback> controller = nil;
+  uint64_t generation = 0;
+  @synchronized(self) {
+    controller = _currentController;
+    generation = _controllerGeneration;
+  }
+  if (controller == nil || generation == 0) {
+    return;
+  }
+
   mozc::commands::Output output;
   const int32_t length = static_cast<int32_t>([result length]);
   if (!output.ParseFromArray([result bytes], length)) {
     return;
   }
 
-  [_currentController outputResult:output];
+  [self dispatchOutput:output
+            controller:controller
+     expectedGeneration:generation];
 }
 
 // setCurrentController is a method of the ServerCallback protocol.
 - (void)setCurrentController:(id<ControllerCallback>)controller {
-  _currentController = controller;
+  @synchronized(self) {
+    _currentController = controller;
+    ++_controllerGeneration;
+    if (_controllerGeneration == 0) {
+      ++_controllerGeneration;
+    }
+  }
+}
+
+- (void)clearCurrentController:(id<ControllerCallback>)controller {
+  @synchronized(self) {
+    if (controller == nil || controller != _currentController) {
+      return;
+    }
+    _currentController = nil;
+    ++_controllerGeneration;
+    if (_controllerGeneration == 0) {
+      ++_controllerGeneration;
+    }
+  }
 }
 @end

@@ -352,7 +352,9 @@ CandidateWindow::CandidateWindow()
       text_renderer_(TextRenderer::Create(dpi_)),
       indicator_width_(0),
       metrics_changed_(false),
-      mouse_moving_(true) {
+      mouse_moving_(true),
+      renderer_callback_token_(0),
+      mouse_down_renderer_callback_token_(0) {
   UpdateDpiDependentResources();
 }
 
@@ -420,6 +422,8 @@ void CandidateWindow::EnableOrDisableWindowForWorkaround() {
 }
 
 void CandidateWindow::OnDestroy() {
+  renderer_callback_token_ = 0;
+  mouse_down_renderer_callback_token_ = 0;
   ClearBitmapCache();
   shadow_window_.Destroy();
   // PostQuitMessage may stop the message loop even though other
@@ -444,7 +448,7 @@ void CandidateWindow::OnGetMinMaxInfo(MINMAXINFO* min_max_info) {
 
 void CandidateWindow::HandleMouseEvent(UINT nFlags, const CPoint& point,
                                        bool close_candidatewindow) {
-  if (send_command_interface_ == nullptr) {
+  if (send_command_interface_ == nullptr || renderer_callback_token_ == 0) {
     LOG(ERROR) << "send_command_interface_ is nullptr";
     return;
   }
@@ -464,6 +468,7 @@ void CandidateWindow::HandleMouseEvent(UINT nFlags, const CPoint& point,
         command.set_type(commands::SessionCommand::HIGHLIGHT_CANDIDATE);
       }
       command.set_id(candidate.id());
+      command.set_renderer_callback_token(renderer_callback_token_);
       commands::Output output;
       send_command_interface_->SendCommand(command, &output);
       return;
@@ -472,11 +477,18 @@ void CandidateWindow::HandleMouseEvent(UINT nFlags, const CPoint& point,
 }
 
 void CandidateWindow::OnLButtonDown(UINT nFlags, CPoint point) {
+  mouse_down_renderer_callback_token_ = renderer_callback_token_;
   HandleMouseEvent(nFlags, point, false);
 }
 
 void CandidateWindow::OnLButtonUp(UINT nFlags, CPoint point) {
+  if (mouse_down_renderer_callback_token_ == 0 ||
+      mouse_down_renderer_callback_token_ != renderer_callback_token_) {
+    mouse_down_renderer_callback_token_ = 0;
+    return;
+  }
   HandleMouseEvent(nFlags, point, true);
+  mouse_down_renderer_callback_token_ = 0;
 }
 
 void CandidateWindow::OnMouseMove(UINT nFlags, CPoint point) {
@@ -897,6 +909,10 @@ void CandidateWindow::UpdateEffectWindows() {
 void CandidateWindow::SetSendCommandInterface(
     client::SendCommandInterface* send_command_interface) {
   send_command_interface_ = send_command_interface;
+}
+
+void CandidateWindow::SetRendererCallbackToken(uint64_t token) {
+  renderer_callback_token_ = token;
 }
 
 Size CandidateWindow::GetLayoutSize() const {

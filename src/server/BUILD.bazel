@@ -116,6 +116,18 @@ mozc_cc_library(
 
 mozc_macos_application(
     name = "mozc_server_macos",
+    additional_contents = {
+        "//mac/zenz_runtime:generated/llama-server": "Resources",
+        "//mac/zenz_runtime:generated/mozc_zenz_scorer": "Resources",
+        "//mac/zenz_runtime:generated/models/zenz-v3.2-small-Q5_K_M.gguf": "Resources/models",
+        "//mac/zenz_runtime:generated/zenz-runtime-manifest.json": "Resources",
+        "//win32/installer/zenz_runtime:licenses/Apache-2.0.txt": "Resources/licenses",
+        "//win32/installer/zenz_runtime:licenses/THIRD_PARTY_NOTICES.md": "Resources/licenses",
+        "//win32/installer/zenz_runtime:licenses/cpp-httplib-MIT.txt": "Resources/licenses",
+        "//win32/installer/zenz_runtime:licenses/llama.cpp-MIT.txt": "Resources/licenses",
+        "//win32/installer/zenz_runtime:licenses/nlohmann-json-MIT.txt": "Resources/licenses",
+        "//win32/installer/zenz_runtime:licenses/zenz-v3.2-small-gguf.txt": "Resources/licenses",
+    },
     app_icons = ["//data/images/mac:product_icon.icns"],
     bundle_id = MACOS_BUNDLE_ID_PREFIX + ".Converter",
     bundle_name = BRANDING + "Converter",

@@ -1,0 +1,11 @@
+package(default_visibility = ["//visibility:public"])
+
+# These inputs are generated and checksum-verified before a macOS package
+# build.  Keep them as explicit source labels so packaging fails closed when
+# the preparation step has not run.
+exports_files([
+    "generated/llama-server",
+    "generated/mozc_zenz_scorer",
+    "generated/models/zenz-v3.2-small-Q5_K_M.gguf",
+    "generated/zenz-runtime-manifest.json",
+])

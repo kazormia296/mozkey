@@ -29,11 +29,14 @@
 
 #include "win32/tip/tip_ui_handler_conventional.h"
 
+#include <bcrypt.h>
 #include <msctf.h>
 #include <wil/com.h>
 #include <windows.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <utility>
 
 #include "absl/log/check.h"
@@ -47,6 +50,7 @@
 #include "win32/base/input_state.h"
 #include "win32/tip/tip_composition_util.h"
 #include "win32/tip/tip_dll_module.h"
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_input_mode_manager.h"
 #include "win32/tip/tip_private_context.h"
 #include "win32/tip/tip_range_util.h"
@@ -67,6 +71,42 @@ using Annotation = ::mozc::commands::Preedit_Segment::Annotation;
 using IndicatorInfo = ::mozc::commands::RendererCommand_IndicatorInfo;
 using RendererCommand = ::mozc::commands::RendererCommand;
 using ApplicationInfo = ::mozc::commands::RendererCommand::ApplicationInfo;
+
+uint64_t NewRendererCallbackToken() {
+  uintptr_t token = 0;
+  do {
+    if (::BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(&token),
+                          static_cast<ULONG>(sizeof(token)),
+                          BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
+      return 0;
+    }
+  } while (token == 0);
+  return static_cast<uint64_t>(token);
+}
+
+void RevokeRendererAndHide(TipTextService* text_service) {
+  text_service->SetRendererCallbackProvenance(
+      /*token=*/0, /*focus_epoch=*/0, /*focus_revision=*/0,
+      /*output_generation=*/0);
+  RendererCommand command;
+  command.set_type(RendererCommand::UPDATE);
+  command.set_visible(false);
+  Win32RendererClient::OnUpdated(command);
+}
+
+bool IsRendererOutputGenerationCurrent(TipTextService* text_service,
+                                       ITfContext* context,
+                                       TsfFocusSnapshot renderer_domain,
+                                       uint64_t output_generation) {
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, renderer_domain,
+                                      /*require_nonsecure=*/true)) {
+    return false;
+  }
+  const std::shared_ptr<TipPrivateContext> private_context =
+      text_service->GetPrivateContext(context);
+  return (private_context ? private_context->last_output_generation() : 0) ==
+         output_generation;
+}
 
 size_t GetTargetPos(const commands::Output& output) {
   if (!output.has_candidate_window() ||
@@ -330,16 +370,66 @@ bool FillCharPosition(TipPrivateContext* private_context, ITfContext* context,
   return true;
 }
 
-void UpdateCommand(TipTextService* text_service, ITfContext* context,
+bool UpdateCommand(TipTextService* text_service, ITfContext* context,
                    TfEditCookie read_cookie, RendererCommand* command,
-                   bool* no_layout) {
+                   bool* no_layout, TsfFocusSnapshot renderer_domain,
+                   uint64_t* published_output_generation) {
+  if (published_output_generation == nullptr) {
+    return false;
+  }
+  *published_output_generation = 0;
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, renderer_domain,
+                                      /*require_nonsecure=*/true)) {
+    return false;
+  }
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  wil::com_ptr_nothrow<ITfThreadMgr> thread_manager =
+      text_service->GetThreadManager();
+  if (!thread_context || !thread_manager) {
+    return false;
+  }
   command->Clear();
   command->set_type(RendererCommand::UPDATE);
 
-  TipPrivateContext* private_context = text_service->GetPrivateContext(context);
-  if (private_context != nullptr) {
+  const std::shared_ptr<TipPrivateContext> bound_private_context =
+      text_service->GetPrivateContext(context);
+  const uint64_t output_generation =
+      bound_private_context ? bound_private_context->last_output_generation()
+                            : 0;
+  std::shared_ptr<TipPrivateContext> private_context = bound_private_context;
+  const auto is_current_output = [&]() {
+    if (!IsTsfContextFocusedForSnapshot(
+            text_service, context, renderer_domain,
+            /*require_nonsecure=*/true)) {
+      return false;
+    }
+    const std::shared_ptr<TipPrivateContext> current_private_context =
+        text_service->GetPrivateContext(context);
+    if (current_private_context.get() != bound_private_context.get()) {
+      return false;
+    }
+    if (bound_private_context &&
+        bound_private_context->last_output_generation() != output_generation) {
+      return false;
+    }
+    return !private_context ||
+           private_context->IsLastOutputForFocusDomainAndGeneration(
+               renderer_domain.focus_epoch, renderer_domain.focus_revision,
+               output_generation);
+  };
+  if (private_context != nullptr &&
+      private_context->IsLastOutputForFocusDomain(
+          renderer_domain.focus_epoch, renderer_domain.focus_revision)) {
     *command->mutable_output() = private_context->last_output();
-    private_context->GetUiElementManager()->OnUpdate(text_service, context);
+    if (private_context->GetUiElementManager()->OnUpdate(
+            text_service, context, renderer_domain, output_generation) !=
+            S_OK ||
+        !is_current_output()) {
+      return false;
+    }
+  } else {
+    private_context = nullptr;
   }
 
   ApplicationInfo* app_info = command->mutable_application_info();
@@ -350,16 +440,32 @@ void UpdateCommand(TipTextService* text_service, ITfContext* context,
       text_service->renderer_callback_window_handle()));
 
   auto ui_element_manager =
-      ComQuery<ITfUIElementMgr>(text_service->GetThreadManager());
+      ComQuery<ITfUIElementMgr>(thread_manager.get());
   DCHECK(ui_element_manager);
-  FillVisibility(ui_element_manager.get(), private_context, command);
+  if (!ui_element_manager || !is_current_output()) {
+    return false;
+  }
+  FillVisibility(ui_element_manager.get(), private_context.get(), command);
+  if (!is_current_output()) {
+    return false;
+  }
   FillWindowHandle(context, app_info);
-  FillCharPosition(private_context, context, read_cookie,
+  if (!is_current_output()) {
+    return false;
+  }
+  FillCharPosition(private_context.get(), context, read_cookie,
                    command->output().has_preedit(), app_info, no_layout);
+  if (!is_current_output()) {
+    return false;
+  }
 
   if (private_context != nullptr) {
+    if (text_service->GetThreadContextLease().get() !=
+        thread_context.get()) {
+      return false;
+    }
     const TipInputModeManager* input_mode_manager =
-        text_service->GetThreadContext()->GetInputModeManager();
+        thread_context->GetInputModeManager();
     if (private_context->input_behavior().use_mode_indicator &&
         input_mode_manager->IsIndicatorVisible()) {
       command->set_visible(true);
@@ -374,11 +480,48 @@ void UpdateCommand(TipTextService* text_service, ITfContext* context,
   // Regardless of the value of |command->visible()| here, we should hide
   // all the UI elements whenever the current threads is not focused.
   BOOL thread_focus = FALSE;
-  const HRESULT hr =
-      text_service->GetThreadManager()->IsThreadFocus(&thread_focus);
+  const HRESULT hr = thread_manager->IsThreadFocus(&thread_focus);
+  if (!is_current_output()) {
+    return false;
+  }
   if (SUCCEEDED(hr) && (thread_focus == FALSE)) {
     command->set_visible(false);
   }
+
+  if (!is_current_output()) {
+    return false;
+  }
+
+  // The caller retains the existing renderer view when layout is temporarily
+  // unavailable. Make that retained view inert: last_output may already refer
+  // to a newer unseen candidate list whose IDs overlap the visible list.
+  if (*no_layout && command->visible()) {
+    text_service->SetRendererCallbackProvenance(
+        /*token=*/0, /*focus_epoch=*/0, /*focus_revision=*/0,
+        /*output_generation=*/0);
+    return true;
+  }
+
+  uint64_t callback_token = 0;
+  if (command->visible() && command->has_output() &&
+      command->output().has_candidate_window() &&
+      command->output().candidate_window().candidate_size() > 0) {
+    callback_token = NewRendererCallbackToken();
+  }
+  if (!is_current_output()) {
+    return false;
+  }
+  if (callback_token == 0) {
+    app_info->clear_renderer_callback_token();
+  } else {
+    app_info->set_renderer_callback_token(callback_token);
+  }
+  text_service->SetRendererCallbackProvenance(
+      callback_token, renderer_domain.focus_epoch,
+      renderer_domain.focus_revision,
+      callback_token == 0 ? 0 : output_generation);
+  *published_output_generation = output_generation;
+  return true;
 }
 
 // This class is an implementation class for the ITfEditSession classes, which
@@ -389,12 +532,34 @@ class UpdateUiEditSessionImpl final : public TipComImplements<ITfEditSession> {
   // This function is called back by the TSF thread manager when an edit
   // request is granted.
   STDMETHODIMP DoEditSession(TfEditCookie edit_cookie) override {
+    if (!IsTsfContextFocusedForSnapshot(text_service_.get(), context_.get(),
+                                        renderer_domain_,
+                                        /*require_nonsecure=*/true)) {
+      return S_OK;
+    }
     RendererCommand command;
     bool no_layout = false;
-    UpdateCommand(text_service_.get(), context_.get(), edit_cookie, &command,
-                  &no_layout);
+    uint64_t output_generation = 0;
+    if (!UpdateCommand(text_service_.get(), context_.get(), edit_cookie,
+                       &command, &no_layout, renderer_domain_,
+                       &output_generation)) {
+      return S_OK;
+    }
+    if (!IsRendererOutputGenerationCurrent(
+            text_service_.get(), context_.get(), renderer_domain_,
+            output_generation)) {
+      return S_OK;
+    }
     if (!no_layout || !command.visible()) {
       Win32RendererClient::OnUpdated(command);
+      if (!IsRendererOutputGenerationCurrent(
+              text_service_.get(), context_.get(), renderer_domain_,
+              output_generation)) {
+        // OnUpdated can reenter TSF and queue a newer hide/focus update before
+        // its outer call publishes this stale command.  Compensate after the
+        // call returns so stale candidate text cannot remain pending.
+        RevokeRendererAndHide(text_service_.get());
+      }
     }
     return S_OK;
   }
@@ -403,56 +568,103 @@ class UpdateUiEditSessionImpl final : public TipComImplements<ITfEditSession> {
     // When RequestEditSession fails, it does not maintain the reference count.
     // So we need to ensure that AddRef/Release should be called at least once
     // per object.
+    const TsfFocusSnapshot renderer_domain =
+        CaptureTsfFocusSnapshot(text_service->GetThreadContext());
+    if (!IsTsfContextFocusedForSnapshot(text_service, context,
+                                        renderer_domain,
+                                        /*require_nonsecure=*/true)) {
+      return false;
+    }
     wil::com_ptr_nothrow<ITfEditSession> edit_session(
-        new UpdateUiEditSessionImpl(text_service, context));
+        new UpdateUiEditSessionImpl(text_service, context, renderer_domain));
 
     HRESULT edit_session_result = S_OK;
     const HRESULT result = context->RequestEditSession(
         text_service->GetClientID(), edit_session.get(),
         TF_ES_ASYNCDONTCARE | TF_ES_READ, &edit_session_result);
-    return SUCCEEDED(result);
+    return SUCCEEDED(result) && SUCCEEDED(edit_session_result);
   }
 
  private:
   UpdateUiEditSessionImpl(wil::com_ptr_nothrow<TipTextService> text_service,
-                          wil::com_ptr_nothrow<ITfContext> context)
-      : text_service_(std::move(text_service)), context_(std::move(context)) {}
+                          wil::com_ptr_nothrow<ITfContext> context,
+                          TsfFocusSnapshot renderer_domain)
+      : text_service_(std::move(text_service)),
+        context_(std::move(context)),
+        renderer_domain_(renderer_domain) {}
 
   wil::com_ptr_nothrow<TipTextService> text_service_;
   wil::com_ptr_nothrow<ITfContext> context_;
+  TsfFocusSnapshot renderer_domain_;
 };
 
 }  // namespace
 
 void TipUiHandlerConventional::OnActivate(TipTextService* text_service) {
-  ITfThreadMgr* thread_mgr = text_service->GetThreadManager();
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  wil::com_ptr_nothrow<ITfThreadMgr> thread_mgr =
+      text_service->GetThreadManager();
+  if (!thread_context || !thread_mgr) {
+    return;
+  }
   wil::com_ptr_nothrow<ITfDocumentMgr> document;
   if (FAILED(thread_mgr->GetFocus(&document))) {
     return;
   }
-  OnFocusChange(text_service, document.get());
+  if (text_service->GetThreadContextLease().get() != thread_context.get()) {
+    return;
+  }
+  const TsfFocusSnapshot focus_domain =
+      CaptureTsfFocusSnapshot(thread_context.get());
+  OnFocusChange(text_service, document.get(), focus_domain.focus_epoch,
+                focus_domain.focus_revision);
 }
 
 void TipUiHandlerConventional::OnDeactivate() {
+  RendererCommand command;
+  command.set_type(RendererCommand::UPDATE);
+  command.set_visible(false);
+  Win32RendererClient::OnUpdated(command);
   Win32RendererClient::OnUIThreadUninitialized();
 }
 
 void TipUiHandlerConventional::OnFocusChange(
-    TipTextService* text_service, ITfDocumentMgr* focused_document_manager) {
+    TipTextService* text_service, ITfDocumentMgr* focused_document_manager,
+    uint64_t focus_epoch, int32_t focus_revision) {
+  const TsfFocusSnapshot focus_domain = {
+      .focus_epoch = focus_epoch,
+      .focus_revision = focus_revision,
+  };
+  const auto is_focus_event_current = [&]() {
+    const std::shared_ptr<TipThreadContext> current =
+        text_service->GetThreadContextLease();
+    return current && IsTsfFocusSnapshotCurrent(current.get(), focus_domain);
+  };
+  if (!is_focus_event_current()) {
+    return;
+  }
   if (!focused_document_manager) {
     // Empty document. Hide the renderer.
     RendererCommand command;
     command.set_type(RendererCommand::UPDATE);
     command.set_visible(false);
-    Win32RendererClient::OnUpdated(command);
+    if (is_focus_event_current()) {
+      Win32RendererClient::OnUpdated(command);
+      if (!is_focus_event_current()) {
+        // The renderer call can pump a newer focus event.  Re-resolve the
+        // current document so this stale hide cannot remain the final state.
+        OnActivate(text_service);
+      }
+    }
     return;
   }
 
   wil::com_ptr_nothrow<ITfContext> context;
-  if (FAILED(focused_document_manager->GetBase(&context))) {
+  if (FAILED(focused_document_manager->GetTop(&context))) {
     return;
   }
-  if (!context) {
+  if (!context || !is_focus_event_current()) {
     return;
   }
   UpdateUiEditSessionImpl::BeginRequest(text_service, context.get());
@@ -460,12 +672,31 @@ void TipUiHandlerConventional::OnFocusChange(
 
 bool TipUiHandlerConventional::Update(TipTextService* text_service,
                                       ITfContext* context,
-                                      TfEditCookie read_cookie) {
+                                      TfEditCookie read_cookie,
+                                      uint64_t output_focus_epoch,
+                                      int32_t output_focus_revision) {
+  const TsfFocusSnapshot renderer_domain = {
+      .focus_epoch = output_focus_epoch,
+      .focus_revision = output_focus_revision,
+  };
   RendererCommand command;
   bool no_layout = false;
-  UpdateCommand(text_service, context, read_cookie, &command, &no_layout);
+  uint64_t output_generation = 0;
+  if (!UpdateCommand(text_service, context, read_cookie, &command,
+                     &no_layout, renderer_domain, &output_generation)) {
+    return false;
+  }
+  if (!IsRendererOutputGenerationCurrent(
+          text_service, context, renderer_domain, output_generation)) {
+    return false;
+  }
   if (!no_layout || !command.visible()) {
     Win32RendererClient::OnUpdated(command);
+    if (!IsRendererOutputGenerationCurrent(
+            text_service, context, renderer_domain, output_generation)) {
+      RevokeRendererAndHide(text_service);
+      return false;
+    }
   }
   return true;
 }

@@ -31,6 +31,7 @@
 
 #include <msctf.h>
 
+#include <cstdint>
 #include <memory>
 
 #include "client/client.h"
@@ -59,6 +60,21 @@ class TipPrivateContext::InternalState {
   std::unique_ptr<client::ClientInterface> client_;
   SurrogatePairObserver surrogate_pair_observer_;
   commands::Output last_output_;
+  uint64_t last_output_generation_ = 0;
+  uint64_t next_output_application_generation_ = 0;
+  uint64_t output_application_generation_ = 0;
+  uint64_t output_application_focus_epoch_ = 0;
+  int32_t output_application_focus_revision_ = 0;
+  uint64_t next_key_transaction_generation_ = 0;
+  uint64_t key_transaction_generation_ = 0;
+  uint64_t key_transaction_focus_epoch_ = 0;
+  int32_t key_transaction_focus_revision_ = 0;
+  uint64_t last_output_focus_epoch_ = 0;
+  int32_t last_output_focus_revision_ = 0;
+  uint64_t composition_focus_epoch_ = 0;
+  int32_t composition_focus_revision_ = 0;
+  uint64_t composition_generation_ = 0;
+  uint64_t next_composition_generation_ = 0;
   VirtualKey last_down_key_;
   bool has_pending_mode_indicator_key_ = false;
   KeyInformation pending_mode_indicator_key_ = 0;
@@ -66,6 +82,9 @@ class TipPrivateContext::InternalState {
   InputBehavior input_behavior_;
   TipUiElementManager ui_element_manager_;
   VKBackBasedDeleter deleter_;
+  uint64_t pending_output_focus_epoch_ = 0;
+  int32_t pending_output_focus_revision_ = 0;
+  uint64_t pending_output_application_generation_ = 0;
 };
 
 TipPrivateContext::TipPrivateContext()
@@ -115,12 +134,164 @@ VKBackBasedDeleter* TipPrivateContext::GetDeleter() {
   return &state_->deleter_;
 }
 
+void TipPrivateContext::SetPendingOutputFocusDomain(uint64_t focus_epoch,
+                                                    int32_t focus_revision,
+                                                    uint64_t output_application_generation) {
+  state_->pending_output_focus_epoch_ = focus_epoch;
+  state_->pending_output_focus_revision_ = focus_revision;
+  state_->pending_output_application_generation_ =
+      output_application_generation;
+}
+
+void TipPrivateContext::ClearPendingOutputFocusDomain() {
+  state_->pending_output_focus_epoch_ = 0;
+  state_->pending_output_focus_revision_ = 0;
+  state_->pending_output_application_generation_ = 0;
+}
+
+uint64_t TipPrivateContext::pending_output_focus_epoch() const {
+  return state_->pending_output_focus_epoch_;
+}
+
+int32_t TipPrivateContext::pending_output_focus_revision() const {
+  return state_->pending_output_focus_revision_;
+}
+
+uint64_t TipPrivateContext::pending_output_application_generation() const {
+  return state_->pending_output_application_generation_;
+}
+
 const Output& TipPrivateContext::last_output() const {
   return state_->last_output_;
 }
 
-Output* TipPrivateContext::mutable_last_output() {
-  return &state_->last_output_;
+uint64_t TipPrivateContext::last_output_generation() const {
+  return state_->last_output_generation_;
+}
+
+void TipPrivateContext::SetLastOutputForFocusDomain(
+    const Output& output, uint64_t focus_epoch, int32_t focus_revision) {
+  state_->last_output_ = output;
+  ++state_->last_output_generation_;
+  if (state_->last_output_generation_ == 0) {
+    ++state_->last_output_generation_;
+  }
+  state_->last_output_focus_epoch_ = focus_epoch;
+  state_->last_output_focus_revision_ = focus_revision;
+}
+
+bool TipPrivateContext::IsLastOutputForFocusDomainAndGeneration(
+    uint64_t focus_epoch, int32_t focus_revision,
+    uint64_t output_generation) const {
+  return output_generation != 0 &&
+         state_->last_output_generation_ == output_generation &&
+         IsLastOutputForFocusDomain(focus_epoch, focus_revision);
+}
+
+uint64_t TipPrivateContext::ReserveOutputApplicationForFocusDomain(
+    uint64_t focus_epoch, int32_t focus_revision) {
+  ++state_->next_output_application_generation_;
+  if (state_->next_output_application_generation_ == 0) {
+    ++state_->next_output_application_generation_;
+  }
+  state_->output_application_generation_ =
+      state_->next_output_application_generation_;
+  state_->output_application_focus_epoch_ = focus_epoch;
+  state_->output_application_focus_revision_ = focus_revision;
+  return state_->output_application_generation_;
+}
+
+bool TipPrivateContext::IsOutputApplicationForFocusDomain(
+    uint64_t focus_epoch, int32_t focus_revision,
+    uint64_t output_application_generation) const {
+  return output_application_generation != 0 &&
+         state_->output_application_generation_ ==
+             output_application_generation &&
+         state_->output_application_focus_epoch_ == focus_epoch &&
+         state_->output_application_focus_revision_ == focus_revision;
+}
+
+uint64_t TipPrivateContext::ReserveKeyTransactionForFocusDomain(
+    uint64_t focus_epoch, int32_t focus_revision) {
+  ++state_->next_key_transaction_generation_;
+  if (state_->next_key_transaction_generation_ == 0) {
+    ++state_->next_key_transaction_generation_;
+  }
+  state_->key_transaction_generation_ =
+      state_->next_key_transaction_generation_;
+  state_->key_transaction_focus_epoch_ = focus_epoch;
+  state_->key_transaction_focus_revision_ = focus_revision;
+  return state_->key_transaction_generation_;
+}
+
+bool TipPrivateContext::IsKeyTransactionForFocusDomain(
+    uint64_t focus_epoch, int32_t focus_revision,
+    uint64_t key_transaction_generation) const {
+  return key_transaction_generation != 0 &&
+         state_->key_transaction_generation_ == key_transaction_generation &&
+         state_->key_transaction_focus_epoch_ == focus_epoch &&
+         state_->key_transaction_focus_revision_ == focus_revision;
+}
+
+bool TipPrivateContext::IsLastOutputForFocusDomain(
+    uint64_t focus_epoch, int32_t focus_revision) const {
+  return focus_epoch != 0 && state_->last_output_focus_epoch_ == focus_epoch &&
+         state_->last_output_focus_revision_ == focus_revision;
+}
+
+uint64_t TipPrivateContext::BeginCompositionForFocusDomain(
+    uint64_t focus_epoch, int32_t focus_revision) {
+  ++state_->next_composition_generation_;
+  if (state_->next_composition_generation_ == 0) {
+    ++state_->next_composition_generation_;
+  }
+  state_->composition_focus_epoch_ = focus_epoch;
+  state_->composition_focus_revision_ = focus_revision;
+  state_->composition_generation_ = state_->next_composition_generation_;
+  return state_->composition_generation_;
+}
+
+void TipPrivateContext::ClearCompositionFocusDomain() {
+  state_->composition_focus_epoch_ = 0;
+  state_->composition_focus_revision_ = 0;
+  state_->composition_generation_ = 0;
+}
+
+bool TipPrivateContext::IsCompositionForFocusDomainAndGeneration(
+    uint64_t focus_epoch, int32_t focus_revision,
+    uint64_t composition_generation) const {
+  return composition_generation != 0 &&
+         state_->composition_generation_ == composition_generation &&
+         IsCompositionForFocusDomain(focus_epoch, focus_revision);
+}
+
+bool TipPrivateContext::ClearCompositionForFocusDomainAndGeneration(
+    uint64_t focus_epoch, int32_t focus_revision,
+    uint64_t composition_generation) {
+  if (!IsCompositionForFocusDomainAndGeneration(
+          focus_epoch, focus_revision, composition_generation)) {
+    return false;
+  }
+  ClearCompositionFocusDomain();
+  return true;
+}
+
+uint64_t TipPrivateContext::composition_generation() const {
+  return state_->composition_generation_;
+}
+
+bool TipPrivateContext::IsLatestCompositionGenerationInactive(
+    uint64_t composition_generation) const {
+  return composition_generation != 0 &&
+         state_->next_composition_generation_ == composition_generation &&
+         state_->composition_generation_ == 0;
+}
+
+bool TipPrivateContext::IsCompositionForFocusDomain(
+    uint64_t focus_epoch, int32_t focus_revision) const {
+  return focus_epoch != 0 &&
+         state_->composition_focus_epoch_ == focus_epoch &&
+         state_->composition_focus_revision_ == focus_revision;
 }
 
 const VirtualKey& TipPrivateContext::last_down_key() const {

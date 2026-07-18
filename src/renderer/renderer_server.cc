@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -48,6 +49,7 @@
 #include "ipc/process_watch_dog.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
+#include "protocol/renderer_callback_provenance.h"
 #include "protocol/renderer_command.pb.h"
 #include "renderer/renderer_interface.h"
 #include "renderer/renderer_style_handler.h"
@@ -309,7 +311,8 @@ void UpdateRendererStyleFromConfig() {
 
 class RendererServerSendCommand : public client::SendCommandInterface {
  public:
-  RendererServerSendCommand() : receiver_handle_(0) {}
+  RendererServerSendCommand()
+      : receiver_handle_(0), renderer_callback_token_(0) {}
   RendererServerSendCommand(const RendererServerSendCommand&) = delete;
   RendererServerSendCommand& operator=(const RendererServerSendCommand&) =
       delete;
@@ -318,8 +321,9 @@ class RendererServerSendCommand : public client::SendCommandInterface {
   bool SendCommand(const mozc::commands::SessionCommand& command,
                    mozc::commands::Output* output) override {
 #ifdef _WIN32
-    if ((command.type() != commands::SessionCommand::SELECT_CANDIDATE) &&
-        (command.type() != commands::SessionCommand::HIGHLIGHT_CANDIDATE)) {
+    const commands::RendererCallbackKind callback_kind =
+        commands::GetRendererCallbackKind(command.type());
+    if (callback_kind == commands::RendererCallbackKind::kUnsupported) {
       // Unsupported command.
       return false;
     }
@@ -329,14 +333,30 @@ class RendererServerSendCommand : public client::SendCommandInterface {
       LOG(ERROR) << "target window is nullptr";
       return false;
     }
-    UINT mozc_msg = ::RegisterWindowMessageW(kMessageReceiverMessageName);
+    if (!command.has_renderer_callback_token() ||
+        !commands::IsRendererCallbackTokenTransportable(
+            command.renderer_callback_token(), renderer_callback_token_,
+            std::numeric_limits<UINT_PTR>::max())) {
+      LOG(ERROR) << "renderer callback token is missing or stale";
+      return false;
+    }
+    const UINT_PTR callback_token =
+        static_cast<UINT_PTR>(command.renderer_callback_token());
+    const wchar_t* message_name =
+        callback_kind == commands::RendererCallbackKind::kSelect
+            ? kMessageReceiverMessageName
+            : kMessageReceiverHighlightMessageName;
+    UINT mozc_msg = ::RegisterWindowMessageW(message_name);
     if (mozc_msg == 0) {
       LOG(ERROR) << "RegisterWindowMessage failed: " << ::GetLastError();
       return false;
     }
-    WPARAM type = static_cast<WPARAM>(command.type());
-    LPARAM id = static_cast<LPARAM>(command.id());
-    ::PostMessage(target, mozc_msg, type, id);
+    const WPARAM token = static_cast<WPARAM>(callback_token);
+    const LPARAM id = static_cast<LPARAM>(command.id());
+    if (!::PostMessageW(target, mozc_msg, token, id)) {
+      LOG(ERROR) << "PostMessage failed: " << ::GetLastError();
+      return false;
+    }
 #endif  // _WIN32
 
     // TODO(all): implementation for Mac/Linux
@@ -346,9 +366,13 @@ class RendererServerSendCommand : public client::SendCommandInterface {
   void set_receiver_handle(uint32_t receiver_handle) {
     receiver_handle_ = receiver_handle;
   }
+  void set_renderer_callback_token(uint64_t token) {
+    renderer_callback_token_ = token;
+  }
 
  private:
   uint32_t receiver_handle_;
+  uint64_t renderer_callback_token_;
 };
 
 RendererServer::RendererServer() : RendererServer(false) {}
@@ -432,6 +456,13 @@ bool RendererServer::ExecCommandInternal(
   if (command.type() == commands::RendererCommand::UPDATE) {
     UpdateRendererStyleFromConfig();
 
+    const uint64_t renderer_callback_token =
+        command.visible() && command.has_application_info() &&
+                command.application_info().has_renderer_callback_token()
+            ? command.application_info().renderer_callback_token()
+            : 0;
+    send_command_->set_renderer_callback_token(renderer_callback_token);
+
     // set HWND of message-only window
     if (command.has_application_info() &&
         command.application_info().has_receiver_handle()) {
@@ -454,6 +485,8 @@ bool RendererServer::ExecCommandInternal(
     } else {
       LOG(WARNING) << "process id and thread id are not set";
     }
+  } else {
+    send_command_->set_renderer_callback_token(0);
   }
 
   if (renderer_interface_->ExecCommand(command)) {

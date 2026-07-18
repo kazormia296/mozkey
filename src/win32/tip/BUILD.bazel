@@ -197,6 +197,38 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "tip_grimodex_client_context",
+    srcs = ["tip_grimodex_client_context.cc"],
+    hdrs = ["tip_grimodex_client_context.h"],
+    deps = [
+        "//grimodex:client_context",
+        "//protocol:commands_cc_proto",
+    ],
+)
+
+mozc_cc_library(
+    name = "tip_grimodex_context_util",
+    srcs = ["tip_grimodex_context_util.cc"],
+    hdrs = ["tip_grimodex_context_util.h"],
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":tip_grimodex_client_context",
+        ":tip_input_mode_manager",
+        ":tip_private_context_h",
+        ":tip_surrounding_text",
+        ":tip_text_service",
+        ":tip_thread_context",
+        "//base/win32:com",
+        "//base/win32:wide_char",
+        "//client:client_interface",
+        "//grimodex:client_context",
+        "//protocol:commands_cc_proto",
+        "@com_microsoft_wil//:wil",
+    ],
+)
+
+mozc_cc_library(
     name = "tip_text_service_impl",
     srcs = ["tip_text_service.cc"],
     tags = MOZC_TAGS.WIN_ONLY,
@@ -206,6 +238,7 @@ mozc_cc_library(
         ":tip_dll_module",
         ":tip_edit_session",
         ":tip_enum_display_attributes",
+        ":tip_grimodex_context_util",
         ":tip_input_mode_manager",
         ":tip_keyevent_handler",
         ":tip_lang_bar",
@@ -217,6 +250,7 @@ mozc_cc_library(
         ":tip_status",
         ":tip_text_service",
         ":tip_thread_context",
+        ":tip_ui_element_manager",
         ":tip_ui_handler",
         "//base:const",
         "//base:process",
@@ -226,7 +260,9 @@ mozc_cc_library(
         "//base/win32:com_implements",
         "//base/win32:hresult",
         "//base/win32:hresultor",
+        "//grimodex:client_context",
         "//protocol:commands_cc_proto",
+        "//protocol:renderer_callback_provenance",
         "//win32/base:msctf_dll",  # buildcleaner: keep
         "//win32/base:win32_window_util",
         "@com_google_absl//absl/base",
@@ -245,6 +281,7 @@ mozc_cc_library(
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":tip_dll_module",
+        ":tip_grimodex_context_util",
         ":tip_text_service",
         ":tip_ui_element_delegate",
         "//base/win32:com",
@@ -348,13 +385,12 @@ mozc_cc_library(
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":tip_edit_session",
+        ":tip_grimodex_context_util",
         ":tip_input_mode_manager",
         ":tip_private_context_h",
         ":tip_status",
-        ":tip_surrounding_text",
         ":tip_text_service",
         ":tip_thread_context",
-        "//base/win32:wide_char",
         "//client:client_interface",
         "//protocol:commands_cc_proto",
         "//win32/base:conversion_mode_util",
@@ -365,7 +401,6 @@ mozc_cc_library(
         "//win32/base:surrogate_pair_observer",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
-        "@com_microsoft_wil//:wil",
     ],
 )
 
@@ -425,6 +460,7 @@ mozc_cc_library(
     tags = MOZC_TAGS.WIN_ONLY,
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
+        ":tip_grimodex_context_util",
         ":tip_input_mode_manager",
         ":tip_private_context_h",
         ":tip_text_service",
@@ -492,6 +528,7 @@ mozc_cc_library(
     deps = [
         "//base/win32:com",
         "//win32/base:tsf_profile",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_microsoft_wil//:wil",
     ],
 )
@@ -503,6 +540,7 @@ mozc_cc_library(
     tags = MOZC_TAGS.WIN_ONLY,
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
+        ":tip_grimodex_client_context",
         ":tip_input_mode_manager",
         "//base:system_util",
     ],
@@ -518,6 +556,7 @@ mozc_cc_library(
         "//base/win32:wide_char",
         "//client",
         "//client:client_interface",
+        "//grimodex:client_context",
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
     ],
@@ -561,6 +600,7 @@ mozc_cc_library(
     deps = [
         ":tip_dll_module",
         ":tip_edit_session",
+        ":tip_grimodex_context_util",
         ":tip_private_context_h",
         ":tip_resource",
         ":tip_text_service",
@@ -621,9 +661,12 @@ mozc_cc_library(
         ":tip_candidate_list",
         ":tip_dll_module",
         ":tip_edit_session",
+        ":tip_grimodex_context_util",
+        ":tip_private_context_h",
         ":tip_query_provider",
         ":tip_surrounding_text",
         ":tip_text_service",
+        ":tip_thread_context",
         "//base/win32:com",
         "//base/win32:com_implements",
         "@com_google_absl//absl/base:nullability",
@@ -639,6 +682,8 @@ mozc_cc_library(
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":tip_compartment_util",
+        "//base/win32:com",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_microsoft_wil//:wil",
     ],
 )
@@ -662,11 +707,13 @@ mozc_cc_library(
         "tip_ui_handler_conventional.h",
     ],
     features = features_gdi(),
+    linkopts = ["Bcrypt.lib"],
     tags = MOZC_TAGS.WIN_ONLY,
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":tip_composition_util",
         ":tip_dll_module",
+        ":tip_grimodex_context_util",
         ":tip_input_mode_manager",
         ":tip_private_context_h",
         ":tip_range_util",
@@ -698,8 +745,10 @@ mozc_cc_library(
         ":tip_candidate_list",
         ":tip_dll_module",
         ":tip_edit_session",
+        ":tip_grimodex_context_util",
         ":tip_query_provider",
         ":tip_text_service",
+        ":tip_thread_context",
         "//base/win32:com",
         "//base/win32:com_implements",
         "@com_google_absl//absl/base:nullability",
@@ -722,6 +771,7 @@ mozc_cc_library(
     deps = [
         ":tip_composition_util",
         ":tip_dll_module",
+        ":tip_grimodex_context_util",
         ":tip_input_mode_manager",
         ":tip_private_context_h",
         ":tip_range_util",
@@ -736,6 +786,7 @@ mozc_cc_library(
         "//client:client_interface",
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
+        "//protocol:renderer_callback_provenance",
         "//win32/base:conversion_mode_util",
         "//win32/base:deleter",
         "//win32/base:input_state",
@@ -769,8 +820,11 @@ mozc_cc_library(
     deps = [
         ":tip_composition_util",
         ":tip_dll_module",
+        ":tip_input_mode_manager",
+        ":tip_private_context_h",
         ":tip_range_util",
         ":tip_text_service",
+        ":tip_thread_context",
         ":tip_transitory_extension",
         "//base/win32:com",
         "//base/win32:wide_char",
@@ -866,6 +920,47 @@ mozc_cc_test(
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":tip_input_mode_manager",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "tip_grimodex_client_context_test",
+    size = "small",
+    srcs = ["tip_grimodex_client_context_test.cc"],
+    deps = [
+        ":tip_grimodex_client_context",
+        "//grimodex:client_context",
+        "//protocol:commands_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "tip_grimodex_context_util_test",
+    size = "small",
+    srcs = ["tip_grimodex_context_util_test.cc"],
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":tip_grimodex_context_util",
+        ":tip_input_mode_manager",
+        ":tip_thread_context",
+        "//grimodex:client_context",
+        "//protocol:commands_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "tip_edit_session_test",
+    size = "small",
+    srcs = ["tip_edit_session_test.cc"],
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":tip_edit_session",
+        "//protocol:commands_cc_proto",
         "//testing:gunit_main",
     ],
 )

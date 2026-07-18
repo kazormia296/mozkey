@@ -32,5 +32,23 @@ TEST(ConsumerRuntimeCapabilityTest, RequiresTheCompleteWindowsRuntime) {
   }
 }
 
+TEST(ConsumerRuntimeCapabilityTest, RequiresTheCompleteMacosRuntime) {
+  std::set<std::string> missing;
+  const auto probe = [&missing](absl::string_view path) {
+    return !missing.contains(std::string(path));
+  };
+
+  EXPECT_TRUE(HasCompleteMacosZenzRuntime(probe));
+  for (const char *path : {
+           "mozc_zenz_scorer",
+           "llama-server",
+           "models/zenz-v3.2-small-Q5_K_M.gguf",
+           "zenz-runtime-manifest.json",
+       }) {
+    missing = {std::string(path)};
+    EXPECT_FALSE(HasCompleteMacosZenzRuntime(probe)) << path;
+  }
+}
+
 }  // namespace
 }  // namespace mozc::grimodex

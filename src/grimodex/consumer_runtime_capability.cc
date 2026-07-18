@@ -28,4 +28,20 @@ bool HasCompleteWindowsZenzRuntime(
   return true;
 }
 
+bool HasCompleteMacosZenzRuntime(
+    const std::function<bool(absl::string_view)> &file_probe) {
+  constexpr std::array<absl::string_view, 4> kRequiredFiles = {
+      "mozc_zenz_scorer",
+      "llama-server",
+      "models/zenz-v3.2-small-Q5_K_M.gguf",
+      "zenz-runtime-manifest.json",
+  };
+  for (const absl::string_view path : kRequiredFiles) {
+    if (!file_probe(path)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace mozc::grimodex

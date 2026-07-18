@@ -1,14 +1,42 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "llama-server.exe",
-    "ggml.dll",
-    "ggml-base.dll",
-    "ggml-cpu.dll",
-    "llama.dll",
-    "models/zenz-v3.2-small-Q5_K_M.gguf",
     "licenses/THIRD_PARTY_NOTICES.md",
     "licenses/Apache-2.0.txt",
+    "licenses/cpp-httplib-MIT.txt",
     "licenses/llama.cpp-MIT.txt",
+    "licenses/nlohmann-json-MIT.txt",
     "licenses/zenz-v3.2-small-gguf.txt",
 ])
+
+# Release inputs are generated from the checksum-pinned upstream source by
+# tools/release/prepare_windows_zenz_runtime.py.  Do not fall back to the
+# historical root-level PE files: their exact source revision/toolchain is not
+# known, and all of them are x86-64.
+filegroup(
+    name = "llama_server",
+    srcs = select({
+        "@platforms//cpu:arm64": ["generated/arm64/llama-server.exe"],
+        "//conditions:default": ["generated/x64/llama-server.exe"],
+    }),
+)
+
+filegroup(
+    name = "runtime_manifest",
+    srcs = select({
+        "@platforms//cpu:arm64": ["generated/arm64/runtime-manifest.json"],
+        "//conditions:default": ["generated/x64/runtime-manifest.json"],
+    }),
+)
+
+filegroup(
+    name = "normalized_model",
+    srcs = select({
+        "@platforms//cpu:arm64": [
+            "generated/arm64/models/zenz-v3.2-small-Q5_K_M.gguf",
+        ],
+        "//conditions:default": [
+            "generated/x64/models/zenz-v3.2-small-Q5_K_M.gguf",
+        ],
+    }),
+)

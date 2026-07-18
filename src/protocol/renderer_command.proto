@@ -154,6 +154,12 @@ message RendererCommand {
 
     // used in Windows:
     optional IndicatorInfo indicator_info = 14;
+
+    // Opaque token that out-of-process renderers must echo in
+    // SessionCommand::renderer_callback_token.  This prevents callbacks queued
+    // for an older input domain or candidate view from being upgraded to the
+    // currently registered controller.
+    optional uint64 renderer_callback_token = 15;
   }
 
   optional ApplicationInfo application_info = 5;

@@ -208,15 +208,27 @@ HRESULT TipRangeUtil::GetInputScopes(ITfRange* range, TfEditCookie read_cookie,
   }
 
   auto input_scope = ComQuery<ITfInputScope>(variant.punkVal);
+  if (!input_scope) {
+    return E_NOINTERFACE;
+  }
   InputScope* input_scopes_buffer = nullptr;
   UINT num_input_scopes = 0;
   result = input_scope->GetInputScopes(&input_scopes_buffer, &num_input_scopes);
   if (FAILED(result)) {
     return result;
   }
-  input_scopes->assign(input_scopes_buffer,
-                       input_scopes_buffer + num_input_scopes);
-  ::CoTaskMemFree(input_scopes_buffer);
+  auto owned_input_scopes =
+      std::unique_ptr<InputScope, decltype(&::CoTaskMemFree)>(
+          input_scopes_buffer, &::CoTaskMemFree);
+  constexpr UINT kMaxInputScopeCount = 64;
+  if (num_input_scopes > kMaxInputScopeCount ||
+      (num_input_scopes != 0 && input_scopes_buffer == nullptr)) {
+    return E_UNEXPECTED;
+  }
+  if (num_input_scopes != 0) {
+    input_scopes->assign(input_scopes_buffer,
+                         input_scopes_buffer + num_input_scopes);
+  }
   return S_OK;
 }
 

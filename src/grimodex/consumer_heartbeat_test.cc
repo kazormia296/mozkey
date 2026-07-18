@@ -9,6 +9,7 @@
 #include "absl/time/time.h"
 #include "grimodex/consumer_file_registrar.h"
 #include "grimodex/consumer_handshake.h"
+#include "grimodex/desktop_consumer_heartbeat.h"
 #include "testing/gunit.h"
 
 namespace mozc::grimodex {
@@ -158,6 +159,19 @@ TEST(ConsumerHeartbeatTest, ShutdownLeavesRecordAndUninstallRemovesOnlyOwnId) {
   ASSERT_TRUE(uninstall.Unregister().ok());
   ASSERT_EQ(registrar.unregisters.size(), 1);
   EXPECT_EQ(registrar.unregisters.front(), kTsfConsumerId);
+}
+
+TEST(DesktopConsumerHeartbeatBrandingTest,
+     RequiresMozkeyBrandAndSupportedDesktopPlatform) {
+  using desktop_consumer_heartbeat_internal::ShouldEnable;
+  EXPECT_FALSE(ShouldEnable(/*is_mozkey_build=*/false,
+                            /*is_supported_desktop_platform=*/false));
+  EXPECT_FALSE(ShouldEnable(/*is_mozkey_build=*/false,
+                            /*is_supported_desktop_platform=*/true));
+  EXPECT_FALSE(ShouldEnable(/*is_mozkey_build=*/true,
+                            /*is_supported_desktop_platform=*/false));
+  EXPECT_TRUE(ShouldEnable(/*is_mozkey_build=*/true,
+                           /*is_supported_desktop_platform=*/true));
 }
 
 }  // namespace

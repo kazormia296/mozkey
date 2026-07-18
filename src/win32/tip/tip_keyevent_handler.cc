@@ -30,16 +30,13 @@
 #include "win32/tip/tip_keyevent_handler.h"
 
 #include <msctf.h>
-#include <wil/com.h>
 #include <windows.h>
 
 #include <cstdint>
 #include <memory>
-#include <string>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
-#include "base/win32/wide_char.h"
 #include "client/client_interface.h"
 #include "protocol/commands.pb.h"
 #include "session/key_info_util.h"
@@ -50,10 +47,10 @@
 #include "win32/base/keyevent_handler.h"
 #include "win32/base/surrogate_pair_observer.h"
 #include "win32/tip/tip_edit_session.h"
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_input_mode_manager.h"
 #include "win32/tip/tip_private_context.h"
 #include "win32/tip/tip_status.h"
-#include "win32/tip/tip_surrounding_text.h"
 #include "win32/tip/tip_text_service.h"
 #include "win32/tip/tip_thread_context.h"
 
@@ -177,13 +174,25 @@ bool GetOpenAndMode(TipTextService* text_service, ITfContext* context,
   DCHECK(open);
   DCHECK(logical_mode);
   DCHECK(visible_mode);
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_context) {
+    return false;
+  }
   const TipInputModeManager* input_mode_manager =
-      text_service->GetThreadContext()->GetInputModeManager();
+      thread_context->GetInputModeManager();
   const bool is_open = input_mode_manager->GetEffectiveOpenClose();
   *open = (!TipStatus::IsDisabledContext(context) && is_open);
+  const std::shared_ptr<TipThreadContext> current_thread_context =
+      text_service->GetThreadContextLease();
+  if (!current_thread_context ||
+      current_thread_context.get() != thread_context.get()) {
+    return false;
+  }
 
   bool prefer_kana_input = false;
-  TipPrivateContext* private_context = text_service->GetPrivateContext(context);
+  const std::shared_ptr<TipPrivateContext> private_context =
+      text_service->GetPrivateContext(context);
   if (private_context) {
     prefer_kana_input = private_context->input_behavior().prefer_kana_input;
   }
@@ -200,38 +209,61 @@ bool GetOpenAndMode(TipTextService* text_service, ITfContext* context,
 }
 
 void FillMozcContextCommon(TipTextService* text_service, ITfContext* context,
+                           bool include_surrounding_text,
                            Context* mozc_context) {
   if (mozc_context == nullptr) {
     return;
   }
-  mozc_context->set_revision(
-      text_service->GetThreadContext()->GetFocusRevision());
-  wil::com_ptr_nothrow<ITfContextView> context_view;
-  if (FAILED(context->GetActiveView(&context_view))) {
-    return;
-  }
-  if (context_view == nullptr) {
-    return;
-  }
-  HWND attached_window = nullptr;
-  if (FAILED(context_view->GetWnd(&attached_window))) {
-    return;
-  }
+
+  *mozc_context = BuildTsfMozcContext(text_service, context,
+                                      include_surrounding_text);
 }
 
 HRESULT OnTestKey(TipTextService* text_service, ITfContext* context,
                   bool is_key_down, WPARAM wparam, LPARAM lparam, BOOL* eaten) {
   DCHECK(text_service);
   DCHECK(eaten);
-  TipPrivateContext* private_context = text_service->GetPrivateContext(context);
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_context) {
+    *eaten = TRUE;
+    return S_OK;
+  }
+  const TsfFocusSnapshot test_domain =
+      CaptureTsfFocusSnapshot(thread_context.get());
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, test_domain,
+                                      /*require_nonsecure=*/false)) {
+    *eaten = TRUE;
+    return S_OK;
+  }
+  const std::shared_ptr<TipPrivateContext> private_context =
+      text_service->GetPrivateContext(context);
   if (private_context == nullptr) {
     *eaten = FALSE;
+    return S_OK;
+  }
+  const uint64_t key_transaction_generation =
+      private_context->ReserveKeyTransactionForFocusDomain(
+          test_domain.focus_epoch, test_domain.focus_revision);
+  const auto is_test_transaction_current = [&]() {
+    return IsTsfContextFocusedForSnapshot(text_service, context, test_domain,
+                                          /*require_nonsecure=*/false) &&
+           private_context->IsKeyTransactionForFocusDomain(
+               test_domain.focus_epoch, test_domain.focus_revision,
+               key_transaction_generation);
+  };
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
     return S_OK;
   }
 
   BYTE key_state[256] = {};
   if (!::GetKeyboardState(key_state)) {
-    *eaten = FALSE;
+    *eaten = is_test_transaction_current() ? FALSE : TRUE;
+    return S_OK;
+  }
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
     return S_OK;
   }
 
@@ -240,7 +272,11 @@ HRESULT OnTestKey(TipTextService* text_service, ITfContext* context,
   uint32_t visible_mode = 0;
   if (!GetOpenAndMode(text_service, context, &open, &logical_mode,
                       &visible_mode)) {
-    *eaten = FALSE;
+    *eaten = is_test_transaction_current() ? FALSE : TRUE;
+    return S_OK;
+  }
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
     return S_OK;
   }
 
@@ -254,12 +290,17 @@ HRESULT OnTestKey(TipTextService* text_service, ITfContext* context,
     const ClientAction vk_back_action =
         private_context->GetDeleter()->OnKeyEvent(
             vk.virtual_key(), key_info.IsKeyDownInImeProcessKey(), true);
+    if (!is_test_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     switch (vk_back_action) {
       case ClientAction::DO_DEFAULT_ACTION:
         // do nothing.
         break;
       case ClientAction::CALL_END_DELETION_THEN_DO_DEFAULT_ACTION:
         private_context->GetDeleter()->EndDeletion();
+        private_context->ClearPendingOutputFocusDomain();
         break;
       case ClientAction::SEND_KEY_TO_APPLICATION:
         *eaten = FALSE;  // Do not consume this key.
@@ -278,6 +319,10 @@ HRESULT OnTestKey(TipTextService* text_service, ITfContext* context,
     const SurrogatePairObserver::ClientAction surrogate_action =
         private_context->GetSurrogatePairObserver()->OnTestKeyEvent(
             vk, is_key_down);
+    if (!is_test_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     switch (surrogate_action.type) {
       case SurrogatePairObserver::DO_DEFAULT_ACTION:
         break;
@@ -305,7 +350,12 @@ HRESULT OnTestKey(TipTextService* text_service, ITfContext* context,
   // cannot be substituted for by const reference.
   InputBehavior behavior = private_context->input_behavior();
   Context mozc_context;
-  FillMozcContextCommon(text_service, context, &mozc_context);
+  FillMozcContextCommon(text_service, context,
+                        /*include_surrounding_text=*/false, &mozc_context);
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
 
   // Update On/Off mode and conversion mode.
   InputState input_state;
@@ -323,65 +373,148 @@ HRESULT OnTestKey(TipTextService* text_service, ITfContext* context,
       vk, key_info.GetScanCodeForMapVirtualKey(), is_key_down, keyboard_status,
       behavior, input_state, mozc_context, private_context->GetClient(),
       keyboard.get(), &next_state, &temporal_output);
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
   if (!result.succeeded) {
     *eaten = FALSE;
     return S_OK;
   }
 
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
   *private_context->mutable_last_down_key() = next_state.last_down_key;
 
   if (result.should_be_sent_to_server && temporal_output.has_consumed()) {
-    *private_context->mutable_last_output() = temporal_output;
+    if (!is_test_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
+    private_context->SetLastOutputForFocusDomain(
+        temporal_output, test_domain.focus_epoch, test_domain.focus_revision);
   }
 
   TipInputModeManager* input_mode_manager =
-      text_service->GetThreadContext()->GetInputModeManager();
+      thread_context->GetInputModeManager();
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
   const TipInputModeManager::Action action =
       input_mode_manager->OnTestKey(vk, is_key_down, result.should_be_eaten);
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
   if (action == TipInputModeManager::kUpdateUI) {
     text_service->PostUIUpdateMessage();
   }
 
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
   if (UpdateNoOpModeIndicatorKeyState(
-          text_service, private_context, input_mode_manager, is_key_down,
+          text_service, private_context.get(), input_mode_manager, is_key_down,
           behavior, input_state, result,
           /*is_on_key=*/false)) {
+    if (!is_test_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     *eaten = TRUE;
     return S_OK;
   }
 
+  if (!is_test_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
   *eaten = result.should_be_eaten ? TRUE : FALSE;
   return S_OK;
 }
 
 void FillMozcContextForOnKey(TipTextService* text_service, ITfContext* context,
                              Context* mozc_context) {
-  FillMozcContextCommon(text_service, context, mozc_context);
-  TipSurroundingTextInfo info;
-  if (!TipSurroundingText::Get(text_service, context, &info)) {
-    return;
-  }
-  if (info.has_preceding_text) {
-    mozc_context->set_preceding_text(WideToUtf8(info.preceding_text));
-  }
-  if (info.has_following_text) {
-    mozc_context->set_following_text(WideToUtf8(info.following_text));
-  }
+  FillMozcContextCommon(text_service, context,
+                        /*include_surrounding_text=*/true, mozc_context);
 }
 
 HRESULT OnKey(TipTextService* text_service, ITfContext* context,
               bool is_key_down, WPARAM wparam, LPARAM lparam, BOOL* eaten) {
   DCHECK(text_service);
   DCHECK(eaten);
-  TipPrivateContext* private_context = text_service->GetPrivateContext(context);
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_context) {
+    *eaten = TRUE;
+    return S_OK;
+  }
+  TsfFocusSnapshot output_domain =
+      CaptureTsfFocusSnapshot(thread_context.get());
+  const std::shared_ptr<TipPrivateContext> private_context =
+      text_service->GetPrivateContext(context);
   if (private_context == nullptr) {
     *eaten = FALSE;
     return S_OK;
   }
-
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, output_domain,
+                                      /*require_nonsecure=*/false)) {
+    *eaten = TRUE;
+    return S_OK;
+  }
+  uint64_t output_application_generation = 0;
+  if (private_context->GetDeleter()->IsDeletionOngoing() &&
+      private_context->pending_output_application_generation() != 0) {
+    output_domain = {
+        .focus_epoch = private_context->pending_output_focus_epoch(),
+        .focus_revision = private_context->pending_output_focus_revision(),
+    };
+    output_application_generation =
+        private_context->pending_output_application_generation();
+  } else {
+    output_application_generation =
+        private_context->ReserveOutputApplicationForFocusDomain(
+            output_domain.focus_epoch, output_domain.focus_revision);
+  }
+  const auto is_output_application_current = [&]() {
+    return private_context->IsOutputApplicationForFocusDomain(
+        output_domain.focus_epoch, output_domain.focus_revision,
+        output_application_generation);
+  };
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, output_domain,
+                                      /*require_nonsecure=*/false) ||
+      !is_output_application_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
+  uint64_t key_transaction_generation =
+      private_context->ReserveKeyTransactionForFocusDomain(
+          output_domain.focus_epoch, output_domain.focus_revision);
+  const auto is_key_transaction_current = [&]() {
+    return private_context->IsKeyTransactionForFocusDomain(
+        output_domain.focus_epoch, output_domain.focus_revision,
+        key_transaction_generation);
+  };
+  const auto is_key_output_transaction_current = [&]() {
+    return IsTsfContextFocusedForSnapshot(text_service, context, output_domain,
+                                          /*require_nonsecure=*/false) &&
+           is_output_application_current() && is_key_transaction_current();
+  };
+  if (!is_key_output_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
   BYTE key_state[256] = {};
   if (!::GetKeyboardState(key_state)) {
-    *eaten = FALSE;
+    *eaten = is_key_output_transaction_current() ? FALSE : TRUE;
+    return S_OK;
+  }
+  if (!is_key_output_transaction_current()) {
+    *eaten = TRUE;
     return S_OK;
   }
 
@@ -390,7 +523,11 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
   uint32_t visible_mode = 0;
   if (!GetOpenAndMode(text_service, context, &open, &logical_mode,
                       &visible_mode)) {
-    *eaten = FALSE;
+    *eaten = is_key_output_transaction_current() ? FALSE : TRUE;
+    return S_OK;
+  }
+  if (!is_key_output_transaction_current()) {
+    *eaten = TRUE;
     return S_OK;
   }
 
@@ -400,6 +537,10 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
 
   const ClientAction vk_back_action = private_context->GetDeleter()->OnKeyEvent(
       vk.virtual_key(), is_key_down, false);
+  if (!is_key_output_transaction_current()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
 
   // Check if this key event is handled by VKBackBasedDeleter to support
   // *deletion_range* rule.
@@ -412,6 +553,14 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
         break;
       case ClientAction::CALL_END_DELETION_THEN_DO_DEFAULT_ACTION:
         private_context->GetDeleter()->EndDeletion();
+        private_context->ClearPendingOutputFocusDomain();
+        output_domain = CaptureTsfFocusSnapshot(thread_context.get());
+        output_application_generation =
+            private_context->ReserveOutputApplicationForFocusDomain(
+                output_domain.focus_epoch, output_domain.focus_revision);
+        key_transaction_generation =
+            private_context->ReserveKeyTransactionForFocusDomain(
+                output_domain.focus_epoch, output_domain.focus_revision);
         break;
       case ClientAction::APPLY_PENDING_STATUS:
         use_pending_output = true;
@@ -422,6 +571,7 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
       case ClientAction::CALL_END_DELETION_BUT_NEVER_SEND_TO_SERVER:
         ignore_this_keyevent = true;
         private_context->GetDeleter()->EndDeletion();
+        private_context->ClearPendingOutputFocusDomain();
         break;
       case ClientAction::SEND_KEY_TO_APPLICATION:
       default:
@@ -436,6 +586,10 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
     const SurrogatePairObserver::ClientAction surrogate_action =
         private_context->GetSurrogatePairObserver()->OnKeyEvent(vk,
                                                                 is_key_down);
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     switch (surrogate_action.type) {
       case SurrogatePairObserver::DO_DEFAULT_ACTION:
         break;
@@ -461,15 +615,30 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
   if (use_pending_output) {
     // In this case, we have a pending output. So no need to call
     // KeyEventHandler::ImeToAsciiEx.
+    output_domain = {
+        .focus_epoch = private_context->pending_output_focus_epoch(),
+        .focus_revision = private_context->pending_output_focus_revision(),
+    };
     temporal_output = private_context->GetDeleter()->pending_output();
   } else if (open && is_key_down &&
              (vk.wide_char() == kTouchKeyboardPreviousPage)) {
     // Handle PrevPage button on the on-screen keyboard.
     SessionCommand command;
     command.set_type(SessionCommand::CONVERT_PREV_PAGE);
-    if (!private_context->GetClient()->SendCommand(command, &temporal_output)) {
+    if (!SendTsfCommand(text_service, context, private_context->GetClient(),
+                        command, &temporal_output, output_domain,
+                        /*require_nonsecure=*/false,
+                        &output_application_generation)) {
+      if (!is_key_output_transaction_current()) {
+        *eaten = TRUE;
+        return S_OK;
+      }
       *eaten = FALSE;
       return E_FAIL;
+    }
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
     }
     ignore_this_keyevent = false;
   } else if (open && is_key_down &&
@@ -477,9 +646,20 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
     // Handle NextPage button on the on-screen keyboard.
     SessionCommand command;
     command.set_type(SessionCommand::CONVERT_NEXT_PAGE);
-    if (!private_context->GetClient()->SendCommand(command, &temporal_output)) {
+    if (!SendTsfCommand(text_service, context, private_context->GetClient(),
+                        command, &temporal_output, output_domain,
+                        /*require_nonsecure=*/false,
+                        &output_application_generation)) {
+      if (!is_key_output_transaction_current()) {
+        *eaten = TRUE;
+        return S_OK;
+      }
       *eaten = FALSE;
       return E_FAIL;
+    }
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
     }
     ignore_this_keyevent = false;
   } else {
@@ -495,6 +675,10 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
     // This call is placed in OnKey instead on OnTestKey because VK_DBE_ROMAN
     // and VK_DBE_NOROMAN are handled as preserved keys in TSF Mozc.
     // See b/3118905 for why this is necessary.
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     KeyEventHandler::UpdateBehaviorInImeProcessKey(
         vk, is_key_down, ime_state, private_context->mutable_input_behavior());
 
@@ -503,6 +687,10 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
 
     Context mozc_context;
     FillMozcContextForOnKey(text_service, context, &mozc_context);
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
 
     InputState next_state;
     const KeyEventHandlerResult result = KeyEventHandler::ImeToAsciiEx(
@@ -510,27 +698,52 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
         behavior, ime_state, mozc_context, private_context->GetClient(),
         keyboard.get(), &next_state, &temporal_output);
 
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     if (!result.succeeded) {
       // no message generated.
       *eaten = FALSE;
       return S_OK;
     }
 
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     *private_context->mutable_last_down_key() = next_state.last_down_key;
 
     TipInputModeManager* input_mode_manager =
-        text_service->GetThreadContext()->GetInputModeManager();
+        thread_context->GetInputModeManager();
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     const TipInputModeManager::Action action =
         input_mode_manager->OnKey(vk, is_key_down, result.should_be_eaten);
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     if (action == TipInputModeManager::Action::kUpdateUI) {
       text_service->PostUIUpdateMessage();
     }
 
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
     const bool handled_noop_mode_indicator_key =
         UpdateNoOpModeIndicatorKeyState(
-            text_service, private_context, input_mode_manager, is_key_down,
+            text_service, private_context.get(), input_mode_manager,
+            is_key_down,
             behavior, ime_state, result,
             /*is_on_key=*/true);
+    if (!is_key_output_transaction_current()) {
+      *eaten = TRUE;
+      return S_OK;
+    }
 
     if (!result.should_be_sent_to_server) {
       // no message generated.
@@ -543,9 +756,19 @@ HRESULT OnKey(TipTextService* text_service, ITfContext* context,
                                : !result.should_be_eaten;
   }
 
+  if (!is_key_output_transaction_current()) {
+    // This key was produced for a field that lost focus while a provider,
+    // server, or IMM32-compatible handler was running. Consume it without
+    // applying stale output to the newly focused field.
+    *eaten = TRUE;
+    return S_OK;
+  }
+
   // TSF spec guarantees that key event handling can always be a synchronous
   // operation.
-  TipEditSession::OnOutputReceivedSync(text_service, context, temporal_output);
+  TipEditSession::OnOutputReceivedSync(
+      text_service, context, temporal_output, output_domain.focus_epoch,
+      output_domain.focus_revision, output_application_generation);
   *eaten = !ignore_this_keyevent ? TRUE : FALSE;
 
   return S_OK;

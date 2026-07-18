@@ -32,6 +32,8 @@
 
 #import <Carbon/Carbon.h>
 
+#include <cstdint>
+
 #include "renderer/mac/RendererBaseWindow.h"
 
 namespace mozc {
@@ -55,6 +57,7 @@ class CandidateWindow : public RendererBaseWindow {
   virtual ~CandidateWindow();
   void SetSendCommandInterface(
       client::SendCommandInterface *send_command_interface);
+  void SetRendererCallbackToken(uint64_t token);
   void SetCandidateWindow(const commands::CandidateWindow &candidate_window);
   const renderer::TableLayout *GetTableLayout() const;
 
@@ -62,6 +65,7 @@ class CandidateWindow : public RendererBaseWindow {
   void InitWindow();
   void ResetView();
   mozc::client::SendCommandInterface *command_sender_;
+  uint64_t renderer_callback_token_;
 };
 
 }  // namespace mac

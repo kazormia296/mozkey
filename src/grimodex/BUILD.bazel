@@ -123,12 +123,16 @@ mozc_cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
     ] + mozc_select(
         macos = [
             ":consumer_file_registrar_posix",
+            ":consumer_runtime_capability",
             ":protocol_v1_secure_reader",
+            "//base:file_util",
+            "//base:system_util",
         ],
         windows = [
             ":consumer_file_registrar_windows",
@@ -278,6 +282,7 @@ mozc_cc_test(
         ":consumer_file_registrar",
         ":consumer_handshake",
         ":consumer_heartbeat",
+        ":desktop_consumer_heartbeat",
         "//testing:gunit_main",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/time",
@@ -326,6 +331,7 @@ mozc_cc_test(
     deps = [
         ":consumer_file_registrar_windows",
         ":consumer_handshake",
+        ":desktop_consumer_heartbeat",
         ":protocol_v1_windows_secure_reader",
         "//base:file_util",
         "//base/file:temp_dir",

@@ -357,12 +357,20 @@ HRESULT TipLangBar::UninitLangBar() {
 }
 
 HRESULT TipLangBar::UpdateMenu(bool enabled, uint32_t composition_mode) {
+  wil::com_ptr_nothrow<TipLangBarToggleButton> input_button =
+      input_button_menu_;
+  wil::com_ptr_nothrow<TipLangBarToggleButton> input_mode_button =
+      input_mode_button_for_win8_;
+  wil::com_ptr_nothrow<TipLangBarMenuButton> tool_button = tool_button_menu_;
+  if (!input_button || !input_mode_button || !tool_button) {
+    return E_UNEXPECTED;
+  }
   const UINT menu_id = GetItemId(composition_mode);
-  input_button_menu_->SelectMenuItem(menu_id);
-  input_mode_button_for_win8_->SelectMenuItem(menu_id);
-  input_button_menu_->SetEnabled(enabled);
-  tool_button_menu_->SetEnabled(enabled);
-  input_mode_button_for_win8_->SetEnabled(enabled);
+  input_button->SelectMenuItem(menu_id);
+  input_mode_button->SelectMenuItem(menu_id);
+  input_button->SetEnabled(enabled);
+  tool_button->SetEnabled(enabled);
+  input_mode_button->SetEnabled(enabled);
   return S_OK;
 }
 

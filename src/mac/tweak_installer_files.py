@@ -41,6 +41,11 @@ import tempfile
 from build_tools import util
 
 
+_NESTED_EXECUTABLE_NAMES = frozenset(
+    ('libqcocoa.dylib', 'llama-server', 'mozc_zenz_scorer')
+)
+
+
 def ParseArguments() -> argparse.Namespace:
   """Parses command line options."""
   parser = argparse.ArgumentParser()
@@ -216,19 +221,31 @@ def Codesign(top_dir: str, identity: str) -> None:
 
   args = ['--force', '--sign', identity, '--keychain', 'login.keychain']
 
-  # --option=runtime is required for notarization.
+  # Hardened runtime and a trusted timestamp are required for notarization.
   # On the other hand, do not add the option for the pseudo identity ('-').
   # https://github.com/google/mozc/issues/1412
   if identity != '-':
-    args.append('--option=runtime')
+    args.extend(('--timestamp', '--options=runtime'))
 
-  # codesign libqcocoa.dylib
-  file_name = 'libqcocoa.dylib'
-  for cur_dir, _, files in os.walk(top_dir):  # symbolic links are not followed.
-    if file_name in files:
+  # Standalone Mach-O files nested under app Resources must be signed before
+  # their enclosing app. --deep is verification-oriented and is not a reliable
+  # substitute for signing every nested executable explicitly.
+  nested_executables = []
+  for cur_dir, dirs, files in os.walk(top_dir):
+    dirs.sort()
+    for file_name in sorted(files):
+      if file_name not in _NESTED_EXECUTABLE_NAMES:
+        continue
       path = os.path.join(cur_dir, file_name)
-      codesign = ['/usr/bin/codesign', *args, path]
-      util.RunOrDie(codesign)
+      if os.path.islink(path):
+        raise ValueError(f'refusing to codesign symlink: {path}')
+      if file_name != 'libqcocoa.dylib' and not os.access(path, os.X_OK):
+        raise ValueError(f'nested executable is not executable: {path}')
+      nested_executables.append(path)
+
+  for path in nested_executables:
+    codesign = ['/usr/bin/codesign', *args, path]
+    util.RunOrDie(codesign)
 
   # codesign apps
   # Walk the directory from the bottom to the top. This is necessary because

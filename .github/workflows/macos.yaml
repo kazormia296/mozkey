@@ -43,8 +43,64 @@ jobs:
             dist/dictionary/**
           if-no-files-found: error
 
+  prepare_macos_zenz_runtime:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Restore pinned runtime source cache
+        uses: actions/cache@v5
+        with:
+          path: src/third_party_cache
+          key: macos-zenz-b9637-${{ hashFiles('tools/release/prepare_macos_zenz_runtime.py', 'src/build_tools/update_deps.py') }}
+
+      - name: Install pinned Ninja
+        run: |
+          python3 src/build_tools/update_deps.py --noqt --nondk
+
+      - name: Build pinned universal Zenz runtime
+        run: |
+          python3 tools/release/prepare_macos_zenz_runtime.py
+
+      - name: Assert universal scorer and server Mach-O contracts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from tools.release import prepare_macos_zenz_runtime as runtime
+
+          generated = Path("src/mac/zenz_runtime/generated")
+          runtime._verify_universal_scorer(
+              generated / runtime.SCORER_NAME
+          )
+          runtime._verify_universal_server(generated / "llama-server")
+          PY
+
+      - name: Run runtime preparation contract tests
+        run: |
+          python3 -m unittest -v \
+            tools.release.prepare_macos_zenz_runtime_test \
+            tools.release.probe_macos_zenz_runtime_test
+          PYTHONPATH=src python3 -m unittest -v mac.tweak_installer_files_test
+
+      - name: Archive runtime with executable modes
+        run: |
+          tar -czf macos-zenz-runtime.tar.gz src/mac/zenz_runtime/generated
+
+      - name: Upload universal Zenz runtime
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-zenz-runtime-b9637
+          path: macos-zenz-runtime.tar.gz
+          if-no-files-found: error
+
   build_arm64:
-    needs: prepare_daily_dictionary
+    needs: [prepare_daily_dictionary, prepare_macos_zenz_runtime]
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
     timeout-minutes: 60
@@ -61,6 +117,16 @@ jobs:
         with:
           name: daily-dictionary
           path: .
+
+      - name: Download universal Zenz runtime
+        uses: actions/download-artifact@v6
+        with:
+          name: macos-zenz-runtime-b9637
+          path: .
+
+      - name: Restore universal Zenz runtime
+        run: |
+          tar -xzf macos-zenz-runtime.tar.gz
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -84,15 +150,21 @@ jobs:
         run: |
           bazelisk build package --macos_cpus=arm64 --config release_build
 
+      - name: Probe packaged universal scorer and server
+        run: |
+          python3 tools/release/probe_macos_zenz_runtime.py \
+            --package src/bazel-bin/mac/Mozc.pkg \
+            --skip-live
+
       - name: upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: Mozc_arm64.pkg
           path: src/bazel-bin/mac/Mozc.pkg
-          if-no-files-found: warn
+          if-no-files-found: error
 
   build_intel64:
-    needs: prepare_daily_dictionary
+    needs: [prepare_daily_dictionary, prepare_macos_zenz_runtime]
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
     timeout-minutes: 60
@@ -109,6 +181,16 @@ jobs:
         with:
           name: daily-dictionary
           path: .
+
+      - name: Download universal Zenz runtime
+        uses: actions/download-artifact@v6
+        with:
+          name: macos-zenz-runtime-b9637
+          path: .
+
+      - name: Restore universal Zenz runtime
+        run: |
+          tar -xzf macos-zenz-runtime.tar.gz
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -132,15 +214,21 @@ jobs:
         run: |
           bazelisk build package --macos_cpus=x86_64 --config release_build
 
+      - name: Probe packaged universal scorer and server
+        run: |
+          python3 tools/release/probe_macos_zenz_runtime.py \
+            --package src/bazel-bin/mac/Mozc.pkg \
+            --skip-live
+
       - name: upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: Mozc_intel64.pkg
           path: src/bazel-bin/mac/Mozc.pkg
-          if-no-files-found: warn
+          if-no-files-found: error
 
   build_universal_binary:
-    needs: prepare_daily_dictionary
+    needs: [prepare_daily_dictionary, prepare_macos_zenz_runtime]
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
     timeout-minutes: 90
@@ -157,6 +245,16 @@ jobs:
         with:
           name: daily-dictionary
           path: .
+
+      - name: Download universal Zenz runtime
+        uses: actions/download-artifact@v6
+        with:
+          name: macos-zenz-runtime-b9637
+          path: .
+
+      - name: Restore universal Zenz runtime
+        run: |
+          tar -xzf macos-zenz-runtime.tar.gz
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -180,12 +278,17 @@ jobs:
         run: |
           bazelisk build package --macos_cpus=x86_64,arm64 --config release_build
 
+      - name: Probe packaged universal scorer and server with real inference
+        run: |
+          python3 tools/release/probe_macos_zenz_runtime.py \
+            --package src/bazel-bin/mac/Mozc.pkg
+
       - name: upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: Mozc_universal_binary.pkg
           path: src/bazel-bin/mac/Mozc.pkg
-          if-no-files-found: warn
+          if-no-files-found: error
 
   test:
     needs: prepare_daily_dictionary
@@ -226,7 +329,15 @@ jobs:
       - name: Run portable Grimodex and macOS runtime contract tests
         working-directory: ./src
         run: |
-          bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_secure_reader_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors
+          bazelisk build //zenz_scorer:mozc_zenz_scorer -c dbg
+          bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_secure_reader_test //grimodex:consumer_file_registrar_posix_test //mac:mozc_imk_input_controller_test //mac:renderer_receiver_test //renderer:candidate_view_callback_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors
+
+      - name: Run macOS Zenz runtime script tests
+        run: |
+          python3 -m unittest -v \
+            tools.release.prepare_macos_zenz_runtime_test \
+            tools.release.probe_macos_zenz_runtime_test
+          PYTHONPATH=src python3 -m unittest -v mac.tweak_installer_files_test
 
   # actions/cache works without this job, but having this would increase the likelihood of cache hit
   # in other jobs. Another approach would be to use "needs:".

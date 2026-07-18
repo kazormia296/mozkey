@@ -31,7 +31,9 @@
 #define MOZC_WIN32_TIP_TIP_THREAD_CONTEXT_H_
 
 #include <cstdint>
+#include <string_view>
 
+#include "win32/tip/tip_grimodex_client_context.h"
 #include "win32/tip/tip_input_mode_manager.h"
 
 namespace mozc {
@@ -40,12 +42,20 @@ namespace tsf {
 
 class TipThreadContext {
  public:
-  TipThreadContext();
+  explicit TipThreadContext(uint64_t initial_focus_epoch = 1);
 
   TipInputModeManager* GetInputModeManager() { return &input_mode_manager_; }
 
   int32_t GetFocusRevision() const { return focus_revision_; }
   void IncrementFocusRevision();
+
+  uint64_t ObserveGrimodexDomain(std::string_view program,
+                                 bool secure_input) {
+    return grimodex_domain_tracker_.Observe(program, secure_input);
+  }
+  uint64_t GetGrimodexFocusEpoch() const {
+    return grimodex_domain_tracker_.focus_epoch();
+  }
 
   void set_use_async_lock_in_key_handler(bool value) {
     use_async_lock_in_key_handler_ = value;
@@ -57,6 +67,7 @@ class TipThreadContext {
  private:
   TipInputModeManager input_mode_manager_;
   int32_t focus_revision_ = 0;
+  TipGrimodexDomainTracker grimodex_domain_tracker_;
 
   // A workaround for MS Word's failure mode.
   // See https://github.com/google/mozc/issues/819 for details.

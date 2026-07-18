@@ -10,6 +10,7 @@
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/time.h"
 #include "base/environ.h"
@@ -23,7 +24,7 @@
 #include <windows.h>
 
 #include <cstdint>
-#include "absl/strings/string_view.h"
+
 #include "base/file_util.h"
 #include "base/system_util.h"
 #include "base/win32/wide_char.h"
@@ -31,12 +32,38 @@
 #include "grimodex/consumer_runtime_capability.h"
 #include "grimodex/protocol_v1_windows_secure_reader.h"
 #elif defined(__APPLE__)
+#include <sys/stat.h>
+
+#include "base/file_util.h"
+#include "base/system_util.h"
 #include "grimodex/consumer_file_registrar_posix.h"
+#include "grimodex/consumer_runtime_capability.h"
 #include "grimodex/protocol_v1_secure_reader.h"
 #endif
 
 namespace mozc::grimodex {
 namespace {
+
+#if defined(MOZC_BUILD)
+constexpr bool kIsMozkeyBuild = true;
+#else
+constexpr bool kIsMozkeyBuild = false;
+#endif
+
+#if defined(_WIN32) || defined(__APPLE__)
+constexpr bool kIsSupportedDesktopPlatform = true;
+#else
+constexpr bool kIsSupportedDesktopPlatform = false;
+#endif
+
+constexpr bool kDesktopConsumerHeartbeatEnabled =
+    desktop_consumer_heartbeat_internal::ShouldEnable(
+        kIsMozkeyBuild, kIsSupportedDesktopPlatform);
+#if defined(MOZC_BUILD) && (defined(_WIN32) || defined(__APPLE__))
+static_assert(kDesktopConsumerHeartbeatEnabled);
+#else
+static_assert(!kDesktopConsumerHeartbeatEnabled);
+#endif
 
 #if defined(_WIN32) || defined(__APPLE__)
 
@@ -80,9 +107,10 @@ bool WindowsZenzRuntimeAvailable() {
       });
 }
 
-absl::StatusOr<PlatformRegistration> MakePlatformRegistration() {
-  const absl::StatusOr<std::string> root = ResolveWindowsProtocolV1Root(
-      Environ::GetEnv("GRIMODEX_IME_ROOT"));
+absl::StatusOr<PlatformRegistration> MakePlatformRegistration(
+    absl::string_view override_root) {
+  const absl::StatusOr<std::string> root =
+      ResolveWindowsProtocolV1Root(override_root);
   if (!root.ok()) {
     return root.status();
   }
@@ -109,8 +137,37 @@ absl::StatusOr<PlatformRegistration> MakePlatformRegistration() {
 
 #elif defined(__APPLE__)
 
-absl::StatusOr<PlatformRegistration> MakePlatformRegistration() {
-  const std::string override_root = Environ::GetEnv("GRIMODEX_IME_ROOT");
+bool IsPackagedMacosRuntimeFile(absl::string_view path) {
+  struct stat info = {};
+  if (::lstat(std::string(path).c_str(), &info) != 0 ||
+      !S_ISREG(info.st_mode) || info.st_size <= 0 ||
+      (info.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+    return false;
+  }
+  const std::string filename = FileUtil::Basename(path);
+  if ((filename == "mozc_zenz_scorer" || filename == "llama-server") &&
+      (info.st_mode & S_IXUSR) == 0) {
+    return false;
+  }
+  return true;
+}
+
+bool MacosZenzRuntimeAvailable() {
+  const std::string converter_app = SystemUtil::GetServerPath();
+  if (converter_app.empty()) {
+    return false;
+  }
+  const std::string resources = FileUtil::JoinPath(
+      FileUtil::JoinPath(converter_app, "Contents"), "Resources");
+  return HasCompleteMacosZenzRuntime(
+      [&resources](absl::string_view relative_path) {
+        return IsPackagedMacosRuntimeFile(
+            FileUtil::JoinPath(resources, relative_path));
+      });
+}
+
+absl::StatusOr<PlatformRegistration> MakePlatformRegistration(
+    absl::string_view override_root) {
   const std::string home = Environ::GetEnv("HOME");
   if (override_root.empty() && home.empty()) {
     return absl::FailedPreconditionError(
@@ -131,13 +188,11 @@ absl::StatusOr<PlatformRegistration> MakePlatformRegistration() {
                   ConsumerCapabilities{
                       .profile = true,
                       .dynamic_dictionary = true,
-                      // The macOS named-pipe client remains fail-closed until
-                      // a signed native Zenz runtime is packaged.
                       .zenzai_v3_conditions = false,
                       .application_scoping = true,
                   },
           },
-      .zenz_available = [] { return false; },
+      .zenz_available = MacosZenzRuntimeAvailable,
   };
 }
 
@@ -198,8 +253,11 @@ class DesktopConsumerHeartbeatImpl final
 
 std::unique_ptr<DesktopConsumerHeartbeat> StartDesktopConsumerHeartbeat() {
 #if defined(_WIN32) || defined(__APPLE__)
+  if constexpr (!kDesktopConsumerHeartbeatEnabled) {
+    return nullptr;
+  }
   absl::StatusOr<PlatformRegistration> registration =
-      MakePlatformRegistration();
+      MakePlatformRegistration(Environ::GetEnv("GRIMODEX_IME_ROOT"));
   if (!registration.ok()) {
     LOG(ERROR) << "Failed to initialize Grimodex desktop consumer: "
                << registration.status();
@@ -214,8 +272,13 @@ std::unique_ptr<DesktopConsumerHeartbeat> StartDesktopConsumerHeartbeat() {
 
 absl::Status UnregisterDesktopConsumer() {
 #if defined(_WIN32) || defined(__APPLE__)
+  if constexpr (!kDesktopConsumerHeartbeatEnabled) {
+    return absl::OkStatus();
+  }
+  // An installer must not inherit the runtime-only test override and delete a
+  // record outside the canonical per-user Protocol v1 root.
   absl::StatusOr<PlatformRegistration> registration =
-      MakePlatformRegistration();
+      MakePlatformRegistration(/*override_root=*/"");
   if (!registration.ok()) {
     return registration.status();
   }
@@ -224,6 +287,26 @@ absl::Status UnregisterDesktopConsumer() {
 #else
   return absl::UnimplementedError(
       "desktop consumer registration is unsupported on this platform");
+#endif
+}
+
+absl::Status UnregisterWindowsDesktopConsumerForAppData(
+    absl::string_view app_data_directory) {
+#if defined(_WIN32)
+  if constexpr (!kDesktopConsumerHeartbeatEnabled) {
+    return absl::OkStatus();
+  }
+  const absl::StatusOr<std::string> root =
+      ResolveWindowsProtocolV1Root(/*override_root=*/"",
+                                   app_data_directory);
+  if (!root.ok()) {
+    return root.status();
+  }
+  return WindowsConsumerFileRegistrar(*root).Unregister(kTsfConsumerId);
+#else
+  static_cast<void>(app_data_directory);
+  return absl::UnimplementedError(
+      "Windows desktop consumer removal is unsupported on this platform");
 #endif
 }
 

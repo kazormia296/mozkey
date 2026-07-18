@@ -30,6 +30,7 @@
 load(
     "//:build_defs.bzl",
     "MOZC_TAGS",
+    "mozc_select",
     "mozc_win32_cc_prod_binary",
     "mozc_win32_resource_from_template",
 )
@@ -72,7 +73,13 @@ mozc_win32_cc_prod_binary(
         "//win32/base:uninstall_helper",
         "//win32/cache_service:cache_service_manager",
         "@com_google_absl//absl/strings",
-    ],
+    ] + mozc_select(
+        oss_windows = [
+            "//grimodex:desktop_consumer_heartbeat",
+            "@com_google_absl//absl/status",
+        ],
+        prod_windows = [],
+    ),
 )
 
 mozc_win32_resource_from_template(

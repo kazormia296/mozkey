@@ -112,7 +112,12 @@ TipCompositionUtil::GetCompositionViewFromRange(ITfRange* range,
 
 HRESULT TipCompositionUtil::ClearDisplayAttributes(ITfContext* context,
                                                    ITfComposition* composition,
-                                                   TfEditCookie write_cookie) {
+                                                   TfEditCookie write_cookie,
+                                                   absl::FunctionRef<bool()>
+                                                       is_current) {
+  if (!is_current()) {
+    return S_FALSE;
+  }
   HRESULT result = S_OK;
 
   // Retrieve the current composition range.
@@ -121,6 +126,9 @@ HRESULT TipCompositionUtil::ClearDisplayAttributes(ITfContext* context,
   if (FAILED(result)) {
     return result;
   }
+  if (!is_current()) {
+    return S_FALSE;
+  }
 
   // Get out the display attribute property
   wil::com_ptr_nothrow<ITfProperty> display_attribute;
@@ -128,12 +136,15 @@ HRESULT TipCompositionUtil::ClearDisplayAttributes(ITfContext* context,
   if (FAILED(result)) {
     return result;
   }
+  if (!is_current()) {
+    return S_FALSE;
+  }
   // Clear existing attributes.
   result = display_attribute->Clear(write_cookie, composition_range.get());
   if (FAILED(result)) {
     return result;
   }
-  return S_OK;
+  return is_current() ? S_OK : S_FALSE;
 }
 
 }  // namespace tsf

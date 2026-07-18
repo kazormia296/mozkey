@@ -29,8 +29,20 @@
 
 #import "mac/renderer_receiver.h"
 
+#include <cstdint>
+
 #include "protocol/commands.pb.h"
 #include "testing/gunit.h"
+
+@interface RendererReceiver (LifecycleTesting)
+- (uint64_t)currentControllerGeneration;
+- (void)dispatchCommand:(const mozc::commands::SessionCommand &)command
+            controller:(id<ControllerCallback>)controller
+     expectedGeneration:(uint64_t)expectedGeneration;
+- (void)dispatchOutput:(const mozc::commands::Output &)output
+           controller:(id<ControllerCallback>)controller
+    expectedGeneration:(uint64_t)expectedGeneration;
+@end
 
 class RendererReceiverTest : public testing::Test {
  protected:
@@ -76,6 +88,7 @@ TEST_F(RendererReceiverTest, sendData) {
   command.Clear();
   command.set_type(mozc::commands::SessionCommand::SELECT_CANDIDATE);
   command.set_id(0);
+  command.set_renderer_callback_token(42);
 
   std::string commandData = command.SerializeAsString();
   [_receiver sendData:[NSData dataWithBytes:commandData.data() length:commandData.size()]];
@@ -97,4 +110,50 @@ TEST_F(RendererReceiverTest, outputResult) {
   [_receiver outputResult:[NSData dataWithBytes:outputData.data() length:outputData.size()]];
   EXPECT_EQ(controller.numOutputResult, 1);
   EXPECT_EQ(controller.receivedOutput.DebugString(), output.DebugString());
+}
+
+TEST_F(RendererReceiverTest, ClearedControllerDoesNotReceiveCallbacks) {
+  MockController *controller = [[MockController alloc] init];
+  [_receiver setCurrentController:controller];
+  [_receiver clearCurrentController:controller];
+
+  mozc::commands::SessionCommand command;
+  command.set_type(mozc::commands::SessionCommand::SELECT_CANDIDATE);
+  const std::string commandData = command.SerializeAsString();
+  [_receiver sendData:[NSData dataWithBytes:commandData.data()
+                                  length:commandData.size()]];
+  EXPECT_EQ(controller.numSendCommand, 0);
+
+  mozc::commands::Output output;
+  output.mutable_result()->set_type(mozc::commands::Result::STRING);
+  output.mutable_result()->set_value("must-not-commit");
+  const std::string outputData = output.SerializeAsString();
+  [_receiver outputResult:[NSData dataWithBytes:outputData.data()
+                                        length:outputData.size()]];
+  EXPECT_EQ(controller.numOutputResult, 0);
+}
+
+TEST_F(RendererReceiverTest, QueuedCallbacksCannotCrossControllerGeneration) {
+  MockController *oldController = [[MockController alloc] init];
+  MockController *newController = [[MockController alloc] init];
+  [_receiver setCurrentController:oldController];
+  const uint64_t oldGeneration = [_receiver currentControllerGeneration];
+  [_receiver setCurrentController:newController];
+
+  mozc::commands::SessionCommand command;
+  command.set_type(mozc::commands::SessionCommand::SELECT_CANDIDATE);
+  [_receiver dispatchCommand:command
+                  controller:oldController
+           expectedGeneration:oldGeneration];
+  EXPECT_EQ(oldController.numSendCommand, 0);
+  EXPECT_EQ(newController.numSendCommand, 0);
+
+  mozc::commands::Output output;
+  output.mutable_result()->set_type(mozc::commands::Result::STRING);
+  output.mutable_result()->set_value("must-not-commit");
+  [_receiver dispatchOutput:output
+                 controller:oldController
+          expectedGeneration:oldGeneration];
+  EXPECT_EQ(oldController.numOutputResult, 0);
+  EXPECT_EQ(newController.numOutputResult, 0);
 }
