@@ -3,6 +3,13 @@
 Decision evidence sealed: 2026-07-17. Release-candidate evidence is refreshed
 separately and must not be inferred from the sealed ABProbe source identity.
 
+> [!NOTE]
+> This file preserves the platform disposition as it stood when the evidence
+> was sealed. The Windows TSF and macOS IMKit adapters described below as
+> follow-up work have since been implemented; see
+> [Grimodex Protocol v1 on Windows and macOS](grimodex_desktop_integration.md)
+> for the current contract and release gates.
+
 ## Disposition
 
 The focused 15-case migration gate passes.  The broader 1,360-case corpus does

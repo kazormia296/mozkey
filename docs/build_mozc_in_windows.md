@@ -2,7 +2,7 @@
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 
-[![Windows](https://github.com/google/mozc/actions/workflows/windows.yaml/badge.svg)](https://github.com/google/mozc/actions/workflows/windows.yaml)
+[![Windows](https://github.com/koyasi777/mozkey/actions/workflows/windows.yaml/badge.svg)](https://github.com/koyasi777/mozkey/actions/workflows/windows.yaml)
 
 ## Summary
 
@@ -10,10 +10,11 @@ If you are unsure about what the following commands do, please review the
 descriptions below to understand the operations before running them.
 
 ```
-git clone https://github.com/google/mozc.git
-cd mozc\src
+git clone https://github.com/koyasi777/mozkey.git
+cd mozkey\src
 
 python build_tools/update_deps.py
+python ..\tools\release\prepare_windows_zenz_runtime.py --arch x64
 python build_tools/build_qt.py --release --confirm_license
 bazelisk build --config release_build package
 
@@ -56,8 +57,8 @@ Building Mozc on Windows requires the following software.
 ### Download the repository from GitHub
 
 ```
-git clone https://github.com/google/mozc.git
-cd mozc\src
+git clone https://github.com/koyasi777/mozkey.git
+cd mozkey\src
 ```
 
 Hereafter you can do all the operations without changing directory.
@@ -86,6 +87,22 @@ python build_tools/build_qt.py --release --confirm_license
 
 If you would like to manually confirm the Qt license, omit the
 `--confirm_license` option.
+
+### Prepare the pinned Zenz runtime
+
+The MSI never packages the historical root-level llama.cpp PE files. Build and
+verify the architecture-specific static runtime from the checksum-pinned
+official llama.cpp `b9637` archive (commit
+`aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3`) first:
+
+```
+python ..\tools\release\prepare_windows_zenz_runtime.py --arch x64
+python ..\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+```
+
+The generated `runtime-manifest.json` records the exact binary digest, PE
+machine, CMake options, and toolchain and is included in the MSI. The generated
+directory is intentionally ignored by Git.
 
 ### Build Mozc
 
@@ -127,6 +144,7 @@ need to be installed:
 To build `Mozc64.msi` for ARM64, run the following commands:
 
 ```
+python ..\tools\release\prepare_windows_zenz_runtime.py --arch arm64
 python build_tools/build_qt.py --release --confirm_license --target_arch=arm64
 bazelisk build --config oss_windows --config release_build package --platforms=//:windows-arm64
 ```
@@ -137,9 +155,16 @@ To built a X64 installer that is also compatible with ARM64 machines, run the
 following commands:
 
 ```
+python ..\tools\release\prepare_windows_zenz_runtime.py --arch x64
 python build_tools/build_qt.py --release --confirm_license
 bazelisk build --config oss_windows --config release_build --config win_universal_installer package
 ```
+
+The universal MSI keeps its Mozc server, scorer, and pinned Zenz runtime x64
+and adds the ARM64/ARM64EC TIP bridge binaries; those x64 processes run through
+Windows-on-ARM emulation. The native ARM64 MSI instead requires and verifies an
+ARM64 Zenz runtime. Bazel selects between the generated inputs by target
+platform, and the runtime verifier rejects a mismatched PE machine.
 
 To build the above installer, the following Visual Studio components also need
 to be installed:
@@ -163,6 +188,14 @@ bazelisk test ... --config oss_windows --build_tests_only -c dbg
 
 > [!NOTE] `...` means all targets under the current and subdirectories.
 
+### Mozkey Grimodex desktop contract tests
+
+The Windows workflow also runs the portable Protocol v1 fixtures, the secure
+Windows reader/registrar tests, TSF context and edit-session tests, and renderer
+callback provenance tests. See
+[Grimodex Protocol v1 on Windows and macOS](grimodex_desktop_integration.md)
+for the focused command and the security/lifecycle contract.
+
 --------------------------------------------------------------------------------
 
 ## Build with GitHub Actions
@@ -171,7 +204,7 @@ GitHub Actions are already set up in
 [windows.yaml](../.github/workflows/windows.yaml). With that, you can build and
 install Mozc with your own commit as follows.
 
-1.  Fork https://github.com/google/mozc to your GitHub repository.
+1.  Fork https://github.com/koyasi777/mozkey to your GitHub repository.
 2.  Push a new commit to your own fork.
 3.  Click "Actions" tab on your fork.
 4.  Wait until the action triggered by your commit succeeds.
@@ -180,14 +213,14 @@ install Mozc with your own commit as follows.
 
 Files on the GitHub Actions page remain available for up to 90 days.
 
-You can also find Mozc Installers for Windows in the google/mozc repository.
+You can also find Mozkey installers for Windows in the Mozkey repository.
 Please keep in mind that Mozc is not an officially supported Google product,
-even if downloaded from https://github.com/google/mozc/.
+even if downloaded from https://github.com/koyasi777/mozkey/.
 
 1.  Sign in GitHub.
 2.  Check
-    [recent successful Windows runs](https://github.com/google/mozc/actions/workflows/windows.yaml?query=is%3Asuccess)
-    in the google/mozc repository.
+    [recent successful Windows runs](https://github.com/koyasi777/mozkey/actions/workflows/windows.yaml?query=is%3Asuccess)
+    in the Mozkey repository.
 3.  Find an action from the last 90 days and click it.
 4.  Download `Mozc64.msi` from the action result page if you are using 64-bit
     Windows.
