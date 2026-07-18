@@ -1,6 +1,12 @@
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
-load("//:build_defs.bzl", "MOZC_TAGS", "mozc_cc_library", "mozc_cc_test")
+load(
+    "//:build_defs.bzl",
+    "MOZC_TAGS",
+    "mozc_cc_library",
+    "mozc_cc_test",
+    "mozc_select",
+)
 
 package(default_visibility = ["//:__subpackages__"])
 
@@ -46,6 +52,25 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "consumer_heartbeat",
+    srcs = ["consumer_heartbeat.cc"],
+    hdrs = ["consumer_heartbeat.h"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_library(
+    name = "consumer_runtime_capability",
+    srcs = ["consumer_runtime_capability.cc"],
+    hdrs = ["consumer_runtime_capability.h"],
+    deps = ["@com_google_absl//absl/strings:string_view"],
+)
+
+mozc_cc_library(
     name = "consumer_file_registrar_posix",
     srcs = ["consumer_file_registrar_posix.cc"],
     hdrs = ["consumer_file_registrar_posix.h"],
@@ -82,6 +107,38 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
+)
+
+mozc_cc_library(
+    name = "desktop_consumer_heartbeat",
+    srcs = ["desktop_consumer_heartbeat.cc"],
+    hdrs = ["desktop_consumer_heartbeat.h"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        ":consumer_heartbeat",
+        "//base:environ",
+        "//base:thread",
+        "//base:version",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+    ] + mozc_select(
+        macos = [
+            ":consumer_file_registrar_posix",
+            ":protocol_v1_secure_reader",
+        ],
+        windows = [
+            ":consumer_file_registrar_windows",
+            ":consumer_runtime_capability",
+            ":protocol_v1_windows_secure_reader",
+            "//base:file_util",
+            "//base:system_util",
+            "//base/win32:wide_char",
+        ],
+    ),
 )
 
 mozc_cc_library(
@@ -214,6 +271,31 @@ mozc_cc_test(
 )
 
 mozc_cc_test(
+    name = "consumer_heartbeat_test",
+    size = "small",
+    srcs = ["consumer_heartbeat_test.cc"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        ":consumer_heartbeat",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_runtime_capability_test",
+    size = "small",
+    srcs = ["consumer_runtime_capability_test.cc"],
+    deps = [
+        ":consumer_runtime_capability",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
     name = "consumer_file_registrar_posix_test",
     size = "small",
     srcs = ["consumer_file_registrar_posix_test.cc"],
@@ -332,6 +414,8 @@ test_suite(
     tests = [
         ":client_context_test",
         ":consumer_handshake_test",
+        ":consumer_heartbeat_test",
+        ":consumer_runtime_capability_test",
         ":project_dictionary_bridge_test",
         ":project_dictionary_provider_test",
         ":protocol_v1_test",
