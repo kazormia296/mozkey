@@ -29,9 +29,11 @@ ApplicationScopeMode ParseApplicationScopeMode(absl::string_view value);
 bool AllowsApplication(ApplicationScopeMode mode,
                        absl::string_view program);
 
-// Linux Protocol v1 implementation of the platform-neutral provider contract.
-// Reload revalidates the state boundary for every composition while caching
-// the already indexed native snapshot for an unchanged semantic sequence.
+// Protocol v1 implementation of the platform-neutral provider contract.
+// Reload revalidates the injected reader boundary for every composition while
+// caching the already indexed native snapshot for an unchanged semantic
+// sequence.  Platform integrations decide whether a filesystem-backed reader
+// is available and construct the publisher separately.
 class ProtocolV1ProjectDictionaryProvider final
     : public dictionary::ProjectDictionaryProviderInterface {
  public:
@@ -51,11 +53,6 @@ class ProtocolV1ProjectDictionaryProvider final
   const ApplicationScopeMode scope_mode_;
   std::shared_ptr<const dictionary::ProjectDictionarySnapshot> cached_;
 };
-
-std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
-CreateProtocolV1ProjectDictionaryProvider(std::string root_path,
-                                          ProjectDictionaryPosIds pos_ids,
-                                          ApplicationScopeMode scope_mode);
 
 }  // namespace mozc::grimodex
 

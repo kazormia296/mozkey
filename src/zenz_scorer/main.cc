@@ -33,6 +33,8 @@
 #include <thread>
 #include <vector>
 
+#include "session/zenz_named_pipe_endpoint.h"
+
 #if defined(_WIN32)
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Bcrypt.lib")
@@ -51,9 +53,8 @@ std::mutex g_llama_process_mutex;
 HANDLE g_llama_process = nullptr;
 HANDLE g_llama_job = nullptr;
 
-constexpr wchar_t kDefaultPipeName[] = L"\\.\pipe\mozc_zenz_scorer";
 constexpr wchar_t kSingleInstanceMutexName[] =
-    L"Local\MozcZenzScorerSingleInstance";
+    LR"(Local\MozcZenzScorerSingleInstance)";
 #else
 pid_t g_llama_process = -1;
 #if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
@@ -121,7 +122,7 @@ struct ZenzWireResponseHeader {
 
 #if defined(_WIN32)
 struct Options {
-  std::wstring pipe_name = kDefaultPipeName;
+  std::wstring pipe_name;
   std::wstring host = kDefaultHost;
   int port = 0;
   std::string api_key;
@@ -337,6 +338,8 @@ bool FileExists(const std::wstring& path) {
 
 Options LoadOptions() {
   Options options;
+  options.pipe_name =
+      Utf8ToWide(mozc::session::kDefaultZenzNamedPipeName);
 
   const std::wstring exe_dir = GetExeDirectory();
 

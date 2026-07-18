@@ -232,7 +232,8 @@ mozc_cc_library(
             "//dictionary:pos_matcher",
             "//grimodex:project_dictionary_bridge",
             "//grimodex:project_dictionary_provider",
-            "//grimodex:protocol_v1",
+            "//grimodex:project_dictionary_provider_factory",
+            "//grimodex:protocol_v1_secure_reader",
         ],
     ),
 )

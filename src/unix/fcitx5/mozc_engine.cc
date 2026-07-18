@@ -51,7 +51,7 @@
 #include "base/init_mozc.h"
 #include "base/process.h"
 #include "base/version.h"
-#include "grimodex/protocol_v1.h"
+#include "grimodex/protocol_v1_secure_reader.h"
 #include "protocol/commands.pb.h"
 #include "unix/fcitx5/grimodex_consumer_registrar.h"
 #include "unix/fcitx5/i18nwrapper.h"

@@ -58,7 +58,8 @@
 #include "dictionary/pos_matcher.h"
 #include "grimodex/project_dictionary_bridge.h"
 #include "grimodex/project_dictionary_provider.h"
-#include "grimodex/protocol_v1.h"
+#include "grimodex/project_dictionary_provider_factory.h"
+#include "grimodex/protocol_v1_secure_reader.h"
 #endif
 
 namespace mozc {

@@ -119,7 +119,7 @@ mozc_cc_binary(
     deps = [
         ":grimodex_consumer_registrar",
         "//base:environ",
-        "//grimodex:protocol_v1",
+        "//grimodex:protocol_v1_secure_reader",
         "@com_google_absl//absl/status",
     ],
 )
@@ -254,7 +254,7 @@ mozc_cc_library(
         "//base:util",
         "//base:version",
         "//base:vlog",
-        "//grimodex:protocol_v1",
+        "//grimodex:protocol_v1_secure_reader",
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
         "@com_google_absl//absl/status",

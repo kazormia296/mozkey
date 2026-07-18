@@ -14,4 +14,5 @@ mozc_cc_binary(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
+    deps = ["//session:zenz_named_pipe_endpoint"],
 )

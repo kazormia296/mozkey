@@ -6,7 +6,7 @@
 
 #include "absl/status/status.h"
 #include "base/environ.h"
-#include "grimodex/protocol_v1.h"
+#include "grimodex/protocol_v1_secure_reader.h"
 #include "unix/fcitx5/grimodex_consumer_registrar.h"
 
 int main(int argc, char **argv) {

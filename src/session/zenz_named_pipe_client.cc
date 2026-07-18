@@ -513,7 +513,14 @@ bool ReadAll(ZenzSocketHandle handle, void* data, uint32_t size) {
 }  // namespace
 
 bool ZenzNamedPipeClient::IsAvailable() const {
+#if defined(__APPLE__)
+  // The macOS package does not ship the scorer, llama-server, or model yet.
+  // Keep the feature fail-closed until those runtime assets and their launch
+  // path are covered by the macOS packaging gates.
+  return false;
+#else
   return true;
+#endif
 }
 
 ZenzLiveResponse ZenzNamedPipeClient::Convert(
@@ -521,6 +528,16 @@ ZenzLiveResponse ZenzNamedPipeClient::Convert(
   ZenzLiveResponse response;
   response.generation = request.generation;
   response.key = request.key;
+
+#if defined(__APPLE__)
+  // Return before pipe-name resolution and OpenPipeWithAutoLaunch().  The
+  // current Unix auto-launch path relies on Linux's /proc/self/exe and no Zenz
+  // runtime is packaged for macOS, so attempting it would advertise a feature
+  // that cannot complete successfully.
+  response.ok = false;
+  response.debug = "macos_runtime_not_packaged";
+  return response;
+#endif
 
 #if defined(_WIN32)
   ZenzPipeDebugOutput(

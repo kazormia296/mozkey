@@ -1,6 +1,6 @@
 #include "session/zenz_named_pipe_client.h"
 
-#ifndef _WIN32
+#if defined(__linux__)
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -12,14 +12,24 @@
 #include <string>
 #include <thread>
 
+#include "protocol/config.pb.h"
+#include "session/zenz_named_pipe_endpoint.h"
 #include "testing/gunit.h"
 
 namespace mozc {
 namespace session {
 namespace {
 
+TEST(ZenzNamedPipeClientTest, DefaultPipeMatchesConfigContract) {
+  constexpr char kExpectedPipeName[] = R"(\\.\pipe\mozc_zenz_scorer)";
+
+  config::Config config;
+  EXPECT_STREQ(kDefaultZenzNamedPipeName, kExpectedPipeName);
+  EXPECT_EQ(config.zenz_live_correction_pipe_name(), kExpectedPipeName);
+}
+
 TEST(ZenzNamedPipeClientTest, LinuxFallback) {
-#ifndef _WIN32
+#if defined(__linux__)
   // Create a temporary directory to act as HOME
   char temp_dir[] = "/tmp/zenz_test_XXXXXX";
   EXPECT_TRUE(mkdtemp(temp_dir) != nullptr);
@@ -55,7 +65,7 @@ TEST(ZenzNamedPipeClientTest, LinuxFallback) {
   ZenzNamedPipeClient client;
   ZenzLiveRequest request;
   // Windows-style named pipe path
-  request.pipe_name = "\\\\.\\pipe\\mozc_zenz_scorer";
+  request.pipe_name = kDefaultZenzNamedPipeName;
   request.timeout_msec = 100;
 
   // The OSS Linux client uses Mozkey's product-specific fallback socket.

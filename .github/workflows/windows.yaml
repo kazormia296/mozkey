@@ -428,6 +428,14 @@ jobs:
         run: |
           bazelisk test ... -c dbg --build_tests_only
 
+      - name: Run portable Grimodex and Windows runtime contract tests
+        shell: cmd
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: |
+          bazelisk test //grimodex:portable_protocol_v1_tests //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors
+
   # actions/cache works without this job, but having this would increase the likelihood of cache hit
   # in other jobs. Another approach would be to use "needs:".
   # https://docs.github.com/en/actions/using-jobs/using-jobs-in-a-workflow

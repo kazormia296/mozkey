@@ -45,6 +45,12 @@ load("//bazel:run_build_tool.bzl", "mozc_run_build_tool")
 package(default_visibility = ["//visibility:private"])
 
 mozc_cc_library(
+    name = "zenz_named_pipe_endpoint",
+    hdrs = ["zenz_named_pipe_endpoint.h"],
+    visibility = ["//zenz_scorer:__pkg__"],
+)
+
+mozc_cc_library(
     name = "zenz_feedback_store",
     srcs = ["zenz_feedback_store.cc"],
     hdrs = ["zenz_feedback_store.h"],
@@ -140,6 +146,18 @@ mozc_cc_test(
     name = "zenz_named_pipe_client_test",
     size = "small",
     srcs = ["zenz_named_pipe_client_test.cc"],
+    deps = [
+        ":session",
+        ":zenz_named_pipe_endpoint",
+        "//protocol:config_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "zenz_named_pipe_availability_test",
+    size = "small",
+    srcs = ["zenz_named_pipe_availability_test.cc"],
     deps = [
         ":session",
         "//testing:gunit_main",

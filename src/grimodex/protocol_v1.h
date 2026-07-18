@@ -95,9 +95,10 @@ struct VerifiedFileBytes {
   static VerifiedFileBytes FromBytes(std::string bytes);
 };
 
-// Injectable at the exact state/project/state read boundary.  Production uses
-// SecureProtocolV1FileReader; tests can deterministically exercise stale
-// publication races without weakening the production filesystem checks.
+// Injectable at the exact state/project/state read boundary.  Platform
+// integrations provide the filesystem implementation; tests can
+// deterministically exercise stale publication races without weakening the
+// production filesystem checks.
 class ProtocolV1FileReader {
  public:
   virtual ~ProtocolV1FileReader() = default;
@@ -105,26 +106,6 @@ class ProtocolV1FileReader {
   virtual absl::StatusOr<VerifiedFileBytes> ReadProject(
       absl::string_view project_id, size_t max_bytes) = 0;
 };
-
-class SecureProtocolV1FileReader final : public ProtocolV1FileReader {
- public:
-  explicit SecureProtocolV1FileReader(std::string root_path);
-
-  absl::StatusOr<VerifiedFileBytes> ReadState(size_t max_bytes) override;
-  absl::StatusOr<VerifiedFileBytes> ReadProject(
-      absl::string_view project_id, size_t max_bytes) override;
-
-  const std::string &root_path() const { return root_path_; }
-
- private:
-  std::string root_path_;
-};
-
-// Pure path selection helper.  Supplying override_root makes integration and
-// tests independent of the ambient process environment.
-std::string ResolveProtocolV1Root(absl::string_view override_root,
-                                  absl::string_view xdg_data_home,
-                                  absl::string_view home_directory);
 
 class ProtocolV1Loader {
  public:
