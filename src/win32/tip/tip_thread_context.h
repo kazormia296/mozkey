@@ -45,6 +45,9 @@ class TipThreadContext {
   explicit TipThreadContext(uint64_t initial_focus_epoch = 1);
 
   TipInputModeManager* GetInputModeManager() { return &input_mode_manager_; }
+  const TipInputModeManager* GetInputModeManager() const {
+    return &input_mode_manager_;
+  }
 
   int32_t GetFocusRevision() const { return focus_revision_; }
   void IncrementFocusRevision();

@@ -1,30 +1,100 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+
 package(default_visibility = ["//visibility:public"])
 
 _TARGET_COMPATIBLE_WITH = ["@platforms//os:macos"]
 
 # These inputs are generated and checksum-verified before a macOS package
-# build.  Keep them as explicit source labels so packaging fails closed when
-# the preparation step has not run.
-filegroup(
-    name = "llama_server",
-    srcs = ["generated/llama-server"],
+# build. rules_apple preserves the owner-relative directory for
+# additional_contents, so stage every file at this package root before adding
+# it to MozcConverter.app. This keeps the installed layout canonical while
+# still failing closed when preparation has not run.
+copy_file(
+    name = "packaged_llama_server",
+    src = "generated/llama-server",
+    out = "llama-server",
+    allow_symlink = False,
+    is_executable = True,
     target_compatible_with = _TARGET_COMPATIBLE_WITH,
 )
 
-filegroup(
-    name = "mozc_zenz_scorer",
-    srcs = ["generated/mozc_zenz_scorer"],
+copy_file(
+    name = "packaged_mozc_zenz_scorer",
+    src = "generated/mozc_zenz_scorer",
+    out = "mozc_zenz_scorer",
+    allow_symlink = False,
+    is_executable = True,
     target_compatible_with = _TARGET_COMPATIBLE_WITH,
 )
 
-filegroup(
-    name = "normalized_model",
-    srcs = ["generated/models/zenz-v3.2-small-Q5_K_M.gguf"],
+copy_file(
+    name = "packaged_normalized_model",
+    src = "generated/models/zenz-v3.2-small-Q5_K_M.gguf",
+    out = "zenz-v3.2-small-Q5_K_M.gguf",
+    allow_symlink = False,
+    is_executable = False,
     target_compatible_with = _TARGET_COMPATIBLE_WITH,
 )
 
-filegroup(
-    name = "runtime_manifest",
-    srcs = ["generated/zenz-runtime-manifest.json"],
+copy_file(
+    name = "packaged_runtime_manifest",
+    src = "generated/zenz-runtime-manifest.json",
+    out = "zenz-runtime-manifest.json",
+    allow_symlink = False,
+    is_executable = False,
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+copy_file(
+    name = "packaged_license_apache_2_0",
+    src = "//win32/installer/zenz_runtime:licenses/Apache-2.0.txt",
+    out = "Apache-2.0.txt",
+    allow_symlink = False,
+    is_executable = False,
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+copy_file(
+    name = "packaged_license_third_party_notices",
+    src = "//win32/installer/zenz_runtime:licenses/THIRD_PARTY_NOTICES.md",
+    out = "THIRD_PARTY_NOTICES.md",
+    allow_symlink = False,
+    is_executable = False,
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+copy_file(
+    name = "packaged_license_cpp_httplib_mit",
+    src = "//win32/installer/zenz_runtime:licenses/cpp-httplib-MIT.txt",
+    out = "cpp-httplib-MIT.txt",
+    allow_symlink = False,
+    is_executable = False,
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+copy_file(
+    name = "packaged_license_llama_cpp_mit",
+    src = "//win32/installer/zenz_runtime:licenses/llama.cpp-MIT.txt",
+    out = "llama.cpp-MIT.txt",
+    allow_symlink = False,
+    is_executable = False,
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+copy_file(
+    name = "packaged_license_nlohmann_json_mit",
+    src = "//win32/installer/zenz_runtime:licenses/nlohmann-json-MIT.txt",
+    out = "nlohmann-json-MIT.txt",
+    allow_symlink = False,
+    is_executable = False,
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+copy_file(
+    name = "packaged_license_zenz_model",
+    src = "//win32/installer/zenz_runtime:licenses/zenz-v3.2-small-gguf.txt",
+    out = "zenz-v3.2-small-gguf.txt",
+    allow_symlink = False,
+    is_executable = False,
     target_compatible_with = _TARGET_COMPATIBLE_WITH,
 )

@@ -109,7 +109,7 @@ def _run(
         raise ProbeFailure("runtime_command_output_invalid") from error
 
 
-def _require_regular(path: Path, *, executable: bool) -> None:
+def _require_regular(path: Path, *, executable: bool | None) -> None:
     try:
         info = path.lstat()
     except OSError as error:
@@ -117,7 +117,10 @@ def _require_regular(path: Path, *, executable: bool) -> None:
     if (
         not stat.S_ISREG(info.st_mode)
         or info.st_size <= 0
-        or bool(info.st_mode & stat.S_IXUSR) != executable
+        or (
+            executable is not None
+            and bool(info.st_mode & stat.S_IXUSR) != executable
+        )
         or info.st_mode & 0o022
     ):
         raise ProbeFailure("runtime_layout_invalid")
@@ -471,7 +474,11 @@ def run_probe(package: Path, *, live: bool, timeout_seconds: float) -> None:
         package = package.resolve(strict=True)
     except OSError as error:
         raise ProbeFailure("package_missing") from error
-    _require_regular(package, executable=False)
+    # Bazel genrule outputs may carry the owner execute bit even when the
+    # generated artifact is a package.  The package itself only needs to be a
+    # nonempty, non-writable regular file; extracted runtime files retain exact
+    # executable-mode validation in _find_layout().
+    _require_regular(package, executable=None)
 
     with tempfile.TemporaryDirectory(prefix="mozkey-pkg-probe-") as temporary:
         expanded = Path(temporary) / "expanded"
