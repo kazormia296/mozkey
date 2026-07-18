@@ -22,7 +22,11 @@ FIXED_NOW = datetime.datetime(
 )
 
 
-def consumer_payload(timestamp: str = "2026-07-18T12:00:00.000Z") -> bytes:
+def consumer_payload(
+    timestamp: str = "2026-07-18T12:00:00.000Z",
+    *,
+    version: str = "v0.8.0",
+) -> bytes:
     document = {
         "capabilities": {
             "application_scoping": True,
@@ -35,7 +39,7 @@ def consumer_payload(timestamp: str = "2026-07-18T12:00:00.000Z") -> bytes:
         "last_seen": timestamp,
         "name": "Mozkey for Grimodex on Linux",
         "platform": "linux",
-        "version": "v0.8.0",
+        "version": version,
     }
     return (
         json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
@@ -111,6 +115,9 @@ class ConsumerFixturePolicyTest(unittest.TestCase):
 
     def test_private_consumer_file_is_bound_to_head_version(self) -> None:
         repository = Path(__file__).resolve().parents[3]
+        version = verify_installed_candidate.expected_mozkey_release_version(
+            repository
+        )
         now = datetime.datetime.now(datetime.timezone.utc)
         timestamp = (
             now.strftime("%Y-%m-%dT%H:%M:%S.")
@@ -122,7 +129,7 @@ class ConsumerFixturePolicyTest(unittest.TestCase):
             consumers = root / "consumers"
             consumers.mkdir(mode=0o700)
             marker = consumers / "fcitx5-mozkey.json"
-            marker.write_bytes(consumer_payload(timestamp))
+            marker.write_bytes(consumer_payload(timestamp, version=version))
             marker.chmod(0o600)
             ticks_per_second = os.sysconf("SC_CLK_TCK")
             start_time = str(
@@ -135,6 +142,9 @@ class ConsumerFixturePolicyTest(unittest.TestCase):
 
     def test_atomic_heartbeat_temporary_file_is_retried(self) -> None:
         repository = Path(__file__).resolve().parents[3]
+        version = verify_installed_candidate.expected_mozkey_release_version(
+            repository
+        )
         now = datetime.datetime.now(datetime.timezone.utc)
         timestamp = (
             now.strftime("%Y-%m-%dT%H:%M:%S.")
@@ -151,7 +161,7 @@ class ConsumerFixturePolicyTest(unittest.TestCase):
             consumers = root / "consumers"
             consumers.mkdir(mode=0o700)
             marker = consumers / "fcitx5-mozkey.json"
-            marker.write_bytes(consumer_payload(timestamp))
+            marker.write_bytes(consumer_payload(timestamp, version=version))
             marker.chmod(0o600)
             transient = consumers / f".fcitx5-mozkey.{pid}.0.tmp"
             transient.write_bytes(b"pending")
