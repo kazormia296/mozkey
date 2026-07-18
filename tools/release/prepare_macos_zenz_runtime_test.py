@@ -210,6 +210,18 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
             "-ReleaseApprovedOnly",
             workflow,
         )
+        bazel_commands = [
+            line.strip()
+            for line in workflow.splitlines()
+            if line.lstrip().startswith(("bazelisk build ", "bazelisk test "))
+        ]
+        self.assertEqual(len(bazel_commands), 6)
+        for command in bazel_commands:
+            with self.subTest(command=command):
+                self.assertIn(
+                    "--define=mozkey_dictionary_profile=release-approved-only",
+                    command,
+                )
 
     def test_dependency_licenses_are_packaged_on_macos_and_windows(self):
         server_build = (

@@ -161,7 +161,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build --config release_build package
+          bazelisk build --config release_build --define=mozkey_dictionary_profile=release-approved-only package
 
       - name: Verify MSI artifact
         shell: pwsh
@@ -296,7 +296,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build --config release_build --config win_universal_installer package
+          bazelisk build --config release_build --config win_universal_installer --define=mozkey_dictionary_profile=release-approved-only package
 
       - name: Verify MSI artifact
         shell: pwsh
@@ -431,7 +431,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build package --config release_build --platforms=//:windows-arm64
+          bazelisk build package --config release_build --platforms=//:windows-arm64 --define=mozkey_dictionary_profile=release-approved-only
 
       - name: Verify MSI artifact
         shell: pwsh
@@ -497,7 +497,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test ... -c dbg --build_tests_only --test_output=errors
+          bazelisk test ... -c dbg --build_tests_only --test_output=errors --define=mozkey_dictionary_profile=release-approved-only
 
       - name: Run portable Grimodex and Windows runtime contract tests
         shell: cmd
@@ -505,7 +505,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_windows_secure_reader_test //grimodex:consumer_file_registrar_windows_test //protocol:renderer_callback_provenance_test //win32/tip:tip_edit_session_test //win32/tip:tip_grimodex_client_context_test //win32/tip:tip_grimodex_context_util_test //win32/tip:tip_input_mode_manager_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors
+          bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_windows_secure_reader_test //grimodex:consumer_file_registrar_windows_test //protocol:renderer_callback_provenance_test //win32/tip:tip_edit_session_test //win32/tip:tip_grimodex_client_context_test //win32/tip:tip_grimodex_context_util_test //win32/tip:tip_input_mode_manager_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors --define=mozkey_dictionary_profile=release-approved-only
 
   # actions/cache works without this job, but having this would increase the likelihood of cache hit
   # in other jobs. Another approach would be to use "needs:".

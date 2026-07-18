@@ -351,6 +351,18 @@ class PrepareWindowsZenzRuntimeTest(unittest.TestCase):
             "-ReleaseApprovedOnly",
             workflow,
         )
+        bazel_commands = [
+            line.strip()
+            for line in workflow.splitlines()
+            if line.lstrip().startswith(("bazelisk build ", "bazelisk test "))
+        ]
+        self.assertEqual(len(bazel_commands), 5)
+        for command in bazel_commands:
+            with self.subTest(command=command):
+                self.assertIn(
+                    "--define=mozkey_dictionary_profile=release-approved-only",
+                    command,
+                )
 
     def test_release_build_uses_only_generated_runtime(self) -> None:
         build = (
