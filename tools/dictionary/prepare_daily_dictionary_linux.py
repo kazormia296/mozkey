@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Linux entry point for Mozkey's existing daily dictionary pipeline.
+"""Linux entry point for Mozkey's daily dictionary pipeline.
 
-The production modes intentionally delegate to prepare_daily_dictionary.ps1.
-The sample mode is an offline smoke test for the tracked merge-ut sample and
-the existing Python profiler/checker; it never selects the generated daily
-Bazel target.
+The public release profile defaults to a native, digest-pinned implementation.
+Local evaluation retains the broader PowerShell workflow.  Sample mode is an
+offline smoke test and never selects a generated Bazel target.
 """
 
 from __future__ import annotations
@@ -28,6 +27,9 @@ except ModuleNotFoundError:  # Direct script execution from the repository root.
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 PREPARE_SCRIPT = REPO_ROOT / "tools" / "dictionary" / "prepare_daily_dictionary.ps1"
+NATIVE_PREPARE_SCRIPT = (
+    REPO_ROOT / "tools" / "dictionary" / "prepare_release_dictionary_native.py"
+)
 SOURCE_MANIFEST = (
     REPO_ROOT / "dist" / "dictionary" / "linux-daily-source-manifest.json"
 )
@@ -90,6 +92,14 @@ def resolve_pwsh(requested: str | None) -> str | None:
         resolved = shutil.which(requested)
         return resolved
     return shutil.which("pwsh")
+
+
+def resolve_backend(requested: str, profile: str) -> str:
+    if requested != "auto":
+        return requested
+    if profile == daily_source_lock.RELEASE_PROFILE:
+        return "native"
+    return "powershell"
 
 
 def cached_source_paths(profile: str) -> tuple[pathlib.Path, ...]:
@@ -226,6 +236,21 @@ def build_prepare_command(
     return command
 
 
+def build_native_prepare_command(
+    source_mode: str,
+    sample_lines: int,
+    prepare_script: pathlib.Path = NATIVE_PREPARE_SCRIPT,
+) -> list[str]:
+    return [
+        sys.executable,
+        str(prepare_script),
+        "--source-mode",
+        source_mode,
+        "--sample-lines",
+        str(sample_lines),
+    ]
+
+
 def run_sample_smoke(repo_root: pathlib.Path = REPO_ROOT) -> None:
     """Profiles and checks the committed sample without repository writes."""
     tracked_sample = (
@@ -296,8 +321,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--backend",
+        choices=("auto", "native", "powershell"),
+        default="auto",
+        help=(
+            "auto uses the native pinned pipeline for release-approved-only "
+            "and PowerShell for local-evaluation"
+        ),
+    )
+    parser.add_argument(
         "--pwsh",
-        help="PowerShell executable or path. Required by download/cached modes.",
+        help="PowerShell executable or path. Required by the PowerShell backend.",
     )
     parser.add_argument(
         "--bash-path",
@@ -307,7 +341,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--sample-lines",
         type=int,
         default=5000,
-        help="SampleLines forwarded to prepare_daily_dictionary.ps1 (default: 5000).",
+        help="Number of raw sample lines to retain (default: 5000).",
     )
     return parser.parse_args(argv)
 
@@ -318,10 +352,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("error: --sample-lines must be positive", file=sys.stderr)
         return 2
 
-    pwsh = resolve_pwsh(args.pwsh)
+    backend = resolve_backend(args.backend, args.profile)
     print(f"source mode: {args.source_mode}")
     print(f"profile: {args.profile}")
-    print(f"pwsh: {pwsh or 'not found'}")
+    print(f"backend: {backend}")
 
     if args.source_mode == "sample":
         print(f"tracked sample sha256: {sha256_file(TRACKED_SAMPLE_PATH)}")
@@ -330,13 +364,21 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     lock = daily_source_lock.load_lock()
 
-    if pwsh is None:
-        print(
-            "error: pwsh is required for download/cached modes. Install PowerShell "
-            "or pass --pwsh /absolute/path/to/pwsh.",
-            file=sys.stderr,
-        )
+    if backend == "native" and args.profile != daily_source_lock.RELEASE_PROFILE:
+        print("error: the native backend supports release-approved-only", file=sys.stderr)
         return 2
+    pwsh: str | None = None
+    if backend == "powershell":
+        pwsh = resolve_pwsh(args.pwsh)
+        print(f"pwsh: {pwsh or 'not found'}")
+        if pwsh is None:
+            print(
+                "error: pwsh is required by the PowerShell backend. Install "
+                "PowerShell, pass --pwsh /absolute/path/to/pwsh, or use the "
+                "release-approved-only native backend.",
+                file=sys.stderr,
+            )
+            return 2
 
     before_records: list[dict[str, object]] | None = None
     if args.source_mode == "cached":
@@ -351,8 +393,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        print("cached mode: forwarding -SkipDownload to the PowerShell pipeline")
+        print(f"cached mode: using existing inputs with the {backend} backend")
         before_records = source_records(profile=args.profile)
+        if args.profile == daily_source_lock.RELEASE_PROFILE:
+            daily_source_lock.verify_payload(
+                lock,
+                "merge-ut-dictionaries",
+                "release_safe_output",
+                REPO_ROOT / MERGE_OUTPUT_PATH,
+            )
         daily_source_lock.verify_payload(
             lock,
             "mozcdic-ut-personal-names",
@@ -376,13 +425,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         profile=args.profile,
     )
 
-    command = build_prepare_command(
-        pwsh=pwsh,
-        source_mode=args.source_mode,
-        sample_lines=args.sample_lines,
-        bash_path=args.bash_path,
-        profile=args.profile,
-    )
+    if backend == "native":
+        command = build_native_prepare_command(
+            source_mode=args.source_mode,
+            sample_lines=args.sample_lines,
+        )
+    else:
+        assert pwsh is not None
+        command = build_prepare_command(
+            pwsh=pwsh,
+            source_mode=args.source_mode,
+            sample_lines=args.sample_lines,
+            bash_path=args.bash_path,
+            profile=args.profile,
+        )
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -418,9 +474,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     outputs: list[dict[str, object]] | None = None
     if args.profile == daily_source_lock.RELEASE_PROFILE:
         try:
-            # The PowerShell pipeline creates the profiled release outputs, so
-            # their immutable manifest must be captured only after that process
-            # has completed and the cached inputs have been revalidated.
+            # The selected pipeline creates the profiled release outputs, so
+            # their manifest is captured only after completion and input checks.
             outputs = release_output_records()
         except RuntimeError:
             write_source_manifest(

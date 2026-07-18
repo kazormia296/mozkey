@@ -12,7 +12,7 @@ from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 LOCK_PATH = REPO_ROOT / "tools" / "dictionary" / "daily_sources.lock.json"
-LOCK_SCHEMA = "mozkey.daily_dictionary_source_lock.v1"
+LOCK_SCHEMA = "mozkey.daily_dictionary_source_lock.v2"
 RELEASE_PROFILE = "release-approved-only"
 LOCAL_PROFILE = "local-evaluation"
 
@@ -74,9 +74,24 @@ def validate_lock(lock: Mapping[str, Any]) -> None:
     for source_id, source in sources.items():
         if not isinstance(source, Mapping):
             raise SourceLockError(f"source must be an object: {source_id}")
-        _require_hex(source.get("revision"), 40, f"{source_id}.revision")
-        if "tree" in source:
-            _require_hex(source.get("tree"), 40, f"{source_id}.tree")
+        kind = source.get("kind")
+        if kind == "git":
+            pin = _require_hex(source.get("revision"), 40, f"{source_id}.revision")
+            if "tree" in source:
+                _require_hex(source.get("tree"), 40, f"{source_id}.tree")
+        elif kind == "url":
+            pin = source.get("version")
+            if not isinstance(pin, str) or not pin or any(
+                character not in "0123456789abcdefghijklmnopqrstuvwxyz.-_"
+                for character in pin
+            ):
+                raise SourceLockError(f"invalid URL source version: {source_id}")
+            if "tree" in source or "revision" in source:
+                raise SourceLockError(
+                    f"URL source cannot declare a Git tree or revision: {source_id}"
+                )
+        else:
+            raise SourceLockError(f"unknown source kind: {source_id}")
         if not isinstance(source.get("repository"), str):
             raise SourceLockError(f"missing repository: {source_id}")
         if not isinstance(source.get("license_expression"), str):
@@ -90,7 +105,9 @@ def validate_lock(lock: Mapping[str, Any]) -> None:
             _require_hex(
                 payload.get("sha256"), 64, f"{source_id}.{payload_id}.sha256"
             )
-            if "url" in payload and source["revision"] not in payload["url"]:
+            if "url" in payload and (
+                not isinstance(payload["url"], str) or pin not in payload["url"]
+            ):
                 raise SourceLockError(
                     f"payload URL is not revision-pinned: {source_id}.{payload_id}"
                 )

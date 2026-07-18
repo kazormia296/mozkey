@@ -20,7 +20,12 @@ class ArtifactVerificationError(ValueError):
     pass
 
 
-def verify(root: pathlib.Path, manifest_path: pathlib.Path) -> None:
+def verify(
+    root: pathlib.Path,
+    manifest_path: pathlib.Path,
+    *,
+    require_transfer_allowlist: bool = True,
+) -> None:
     root = root.resolve()
     manifest_path = manifest_path.resolve()
     try:
@@ -59,19 +64,20 @@ def verify(root: pathlib.Path, manifest_path: pathlib.Path) -> None:
         if prepare.sha256_file(path) != record.get("sha256"):
             raise ArtifactVerificationError(f"release output SHA-256 mismatch: {path}")
 
-    generated = root / "src" / "data" / "dictionary_koyasi" / "generated"
-    unexpected = sorted(
-        path.relative_to(root).as_posix()
-        for path in generated.rglob("*")
-        if path.is_file()
-        and path.relative_to(root).as_posix() not in expected
-        and path.name != ".gitignore"
-    )
-    if unexpected:
-        raise ArtifactVerificationError(
-            "release transfer contains non-allowlisted generated files: "
-            + ", ".join(unexpected)
+    if require_transfer_allowlist:
+        generated = root / "src" / "data" / "dictionary_koyasi" / "generated"
+        unexpected = sorted(
+            path.relative_to(root).as_posix()
+            for path in generated.rglob("*")
+            if path.is_file()
+            and path.relative_to(root).as_posix() not in expected
+            and path.name != ".gitignore"
         )
+        if unexpected:
+            raise ArtifactVerificationError(
+                "release transfer contains non-allowlisted generated files: "
+                + ", ".join(unexpected)
+            )
 
 
 def main() -> int:
@@ -82,9 +88,21 @@ def main() -> int:
         type=pathlib.Path,
         default=prepare.RELEASE_OUTPUT_MANIFEST,
     )
+    parser.add_argument(
+        "--generation-workspace",
+        action="store_true",
+        help=(
+            "permit ignored raw generation inputs while still verifying the "
+            "exact three-file release manifest"
+        ),
+    )
     args = parser.parse_args()
     try:
-        verify(args.root, args.manifest)
+        verify(
+            args.root,
+            args.manifest,
+            require_transfer_allowlist=not args.generation_workspace,
+        )
     except ArtifactVerificationError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

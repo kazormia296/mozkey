@@ -21,6 +21,13 @@ public release profile enables only the pinned place-name and SudachiDict
 inputs below; broader merge-ut profiles remain local experiments and are not
 release inputs.
 
+The deterministic Linux-native runner uses the dated Japanese Wikipedia
+multistream index recorded in `daily_sources.lock.json` only to reproduce the
+upstream merge-ut hit-count cost adjustment. It does not copy the index into
+the generated dictionary, CI transfer, or installed product; only counts for
+already-present approved dictionary values affect costs. The raw index itself
+is retained only in the ignored local build cache.
+
 ## mozcdic-ut-place-names
 
 * Revision: `9951ef87972c1d2c3803e2106b86083d14a242f9`

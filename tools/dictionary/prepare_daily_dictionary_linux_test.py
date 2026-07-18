@@ -13,6 +13,27 @@ from tools.dictionary import prepare_daily_dictionary_linux as target
 
 
 class PrepareDailyDictionaryLinuxTest(unittest.TestCase):
+    def test_auto_backend_uses_native_for_public_release(self) -> None:
+        self.assertEqual(
+            target.resolve_backend("auto", daily_source_lock.RELEASE_PROFILE),
+            "native",
+        )
+        self.assertEqual(
+            target.resolve_backend("auto", daily_source_lock.LOCAL_PROFILE),
+            "powershell",
+        )
+
+    def test_native_command_does_not_require_pwsh(self) -> None:
+        command = target.build_native_prepare_command(
+            source_mode="download",
+            sample_lines=321,
+            prepare_script=pathlib.Path("prepare_native.py"),
+        )
+        self.assertEqual(command[1], "prepare_native.py")
+        self.assertEqual(
+            command[-4:], ["--source-mode", "download", "--sample-lines", "321"]
+        )
+
     def test_cached_mode_forwards_skip_download(self) -> None:
         command = target.build_prepare_command(
             pwsh="/usr/bin/pwsh",

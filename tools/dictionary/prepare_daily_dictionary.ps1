@@ -9,6 +9,26 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
+# Public artifacts use the same pinned, PowerShell-free implementation on every
+# host.  Keep this legacy entry point working without reintroducing the moving
+# mozc/master and jawiki/latest inputs used by upstream merge-ut.
+if ($ReleaseApprovedOnly) {
+    if ($SkipDownload) {
+        $NativeSourceMode = "cached"
+    } else {
+        $NativeSourceMode = "download"
+    }
+    python (Join-Path $RepoRoot "tools\dictionary\prepare_daily_dictionary_linux.py") `
+        --source-mode $NativeSourceMode `
+        --profile release-approved-only `
+        --backend native `
+        --sample-lines $SampleLines
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native release dictionary preparation failed."
+    }
+    exit 0
+}
+
 Write-Host "Repo root: $RepoRoot"
 Write-Host ""
 

@@ -6,7 +6,7 @@ if (-not (Test-Path -LiteralPath $DailySourceLockPath -PathType Leaf)) {
 }
 
 $DailySourceLock = Get-Content -Raw -Encoding UTF8 $DailySourceLockPath | ConvertFrom-Json
-if ($DailySourceLock.schema_version -ne "mozkey.daily_dictionary_source_lock.v1") {
+if ($DailySourceLock.schema_version -ne "mozkey.daily_dictionary_source_lock.v2") {
     throw "Unexpected daily dictionary source lock schema: $($DailySourceLock.schema_version)"
 }
 

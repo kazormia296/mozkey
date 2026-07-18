@@ -42,6 +42,17 @@ class VerifyReleaseDictionaryArtifactTest(unittest.TestCase):
             ):
                 target.verify(root, manifest)
 
+    def test_generation_workspace_accepts_ignored_raw_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            manifest = self.create_artifact(root)
+            raw = (
+                root
+                / "src/data/dictionary_koyasi/generated/mozcdic-ut-safe.txt"
+            )
+            raw.write_text("local generation input\n", encoding="utf-8")
+            target.verify(root, manifest, require_transfer_allowlist=False)
+
     def test_rejects_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)

@@ -21,6 +21,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 BUILD_SCRIPT = REPOSITORY_ROOT / "scripts/build_mozkey_linux_bazel"
 ATTESTATION_TOOL = REPOSITORY_ROOT / "tools/release/linux_build_attestation.py"
 ZENZ_NORMALIZER = REPOSITORY_ROOT / "tools/release/normalize_zenz_gguf.py"
+DICTIONARY_VERIFIER = (
+    REPOSITORY_ROOT
+    / "tools/dictionary/verify_release_dictionary_artifact.py"
+)
+DAILY_SOURCE_LOCK = REPOSITORY_ROOT / "tools/dictionary/daily_source_lock.py"
 
 
 class LinuxBuildAttestationTest(unittest.TestCase):
@@ -82,6 +87,17 @@ class LinuxBuildAttestationTest(unittest.TestCase):
             release_tools.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ATTESTATION_TOOL, release_tools / ATTESTATION_TOOL.name)
             shutil.copy2(ZENZ_NORMALIZER, release_tools / ZENZ_NORMALIZER.name)
+            dictionary_tools = repository / "tools/dictionary"
+            dictionary_tools.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(
+                DICTIONARY_VERIFIER,
+                dictionary_tools / DICTIONARY_VERIFIER.name,
+            )
+            shutil.copy2(
+                DAILY_SOURCE_LOCK,
+                dictionary_tools / DAILY_SOURCE_LOCK.name,
+            )
+            self.write_fake_dictionary_preparer(dictionary_tools)
 
         source_model = build_gguf(fixture_entries())
         normalized_model = zenz_normalizer.normalized_bytes(source_model)
@@ -160,6 +176,68 @@ class LinuxBuildAttestationTest(unittest.TestCase):
             check=True,
         )
         return repository
+
+    def write_fake_dictionary_preparer(self, dictionary_tools: Path) -> None:
+        script = dictionary_tools / "prepare_daily_dictionary_linux.py"
+        script.write_text(
+            textwrap.dedent(
+                '''\
+                #!/usr/bin/env python3
+                import hashlib
+                import json
+                import pathlib
+
+                REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[2]
+                RELEASE_OUTPUT_MANIFEST_SCHEMA = "mozkey.release_dictionary_outputs.v1"
+                RELEASE_OUTPUT_MANIFEST = (
+                    REPOSITORY_ROOT
+                    / "dist/dictionary/linux-release-approved-output-manifest.json"
+                )
+                RELEASE_OUTPUT_PATHS = (
+                    pathlib.Path("src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-daily.txt"),
+                    pathlib.Path("src/data/dictionary_koyasi/generated/profiled/mozcdic-ut-personal-names-daily.txt"),
+                    pathlib.Path("src/data/dictionary_koyasi/generated/profiled/koyasi-syntax-guard.txt"),
+                )
+
+                def sha256_file(path):
+                    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+                def main():
+                    records = []
+                    for index, relative in enumerate(RELEASE_OUTPUT_PATHS):
+                        path = REPOSITORY_ROOT / relative
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text(f"bootstrapped-{index}\\n", encoding="utf-8")
+                        records.append({
+                            "path": relative.as_posix(),
+                            "sha256": sha256_file(path),
+                            "size_bytes": path.stat().st_size,
+                        })
+                    lock = REPOSITORY_ROOT / "tools/dictionary/daily_sources.lock.json"
+                    manifest = {
+                        "excluded_source_ids": ["dic-nico-intersection-pixiv"],
+                        "files": records,
+                        "profile": "release-approved-only",
+                        "schema_version": RELEASE_OUTPUT_MANIFEST_SCHEMA,
+                        "source_lock_path": "tools/dictionary/daily_sources.lock.json",
+                        "source_lock_sha256": sha256_file(lock),
+                    }
+                    RELEASE_OUTPUT_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+                    RELEASE_OUTPUT_MANIFEST.write_text(
+                        json.dumps(manifest, sort_keys=True) + "\\n", encoding="utf-8"
+                    )
+                    (RELEASE_OUTPUT_MANIFEST.parent / "bootstrap-called").write_text(
+                        "yes\\n", encoding="utf-8"
+                    )
+                    return 0
+
+                if __name__ == "__main__":
+                    raise SystemExit(main())
+                '''
+            ),
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
 
     def record(self, repository: Path, relative: Path) -> dict[str, object]:
         path = repository.joinpath(*relative.parts)
@@ -423,6 +501,33 @@ class LinuxBuildAttestationTest(unittest.TestCase):
             self.assertFalse(log.exists(), "dirty worktree reached Bazel")
             self.assertFalse(
                 self.attestation_path(repository, "ubuntu-layout").exists()
+            )
+
+    def test_build_wrapper_bootstraps_fresh_clone_dictionary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = self.make_repository(
+                root, include_binaries=False, include_script=True
+            )
+            for relative in target.DICTIONARY_OUTPUT_PATHS:
+                repository.joinpath(*relative.parts).unlink()
+            repository.joinpath(*target.RELEASE_MANIFEST_PATH.parts).unlink()
+            fake_bin = self.make_fake_bazelisk(root)
+            log = root / "build.log"
+
+            result = self.run_build_script(
+                repository, fake_bin, log, "archlinux-x86_64"
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Preparing missing Mozkey release dictionary", result.stdout)
+            self.assertTrue(
+                (repository / "dist/dictionary/bootstrap-called").is_file()
+            )
+            target.verify(
+                repository,
+                "archlinux-x86_64",
+                self.attestation_path(repository, "archlinux-x86_64"),
             )
 
     def test_build_wrapper_uses_pinned_npx_fallback(self) -> None:

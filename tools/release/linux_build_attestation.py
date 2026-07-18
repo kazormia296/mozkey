@@ -28,7 +28,7 @@ except ModuleNotFoundError:  # Direct execution sets sys.path to tools/release.
 
 SCHEMA = "mozkey.linux_build_attestation.v2"
 RELEASE_DICTIONARY_MANIFEST_SCHEMA = "mozkey.release_dictionary_outputs.v1"
-SOURCE_LOCK_SCHEMA = "mozkey.daily_dictionary_source_lock.v1"
+SOURCE_LOCK_SCHEMA = "mozkey.daily_dictionary_source_lock.v2"
 RELEASE_PROFILE = "release-approved-only"
 NICO_SOURCE_ID = "dic-nico-intersection-pixiv"
 
