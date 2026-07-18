@@ -1,0 +1,45 @@
+// Copyright 2026 The Mozkey Authors
+//
+// Protocol V1 is the file contract published by Grimodex.  These messages are
+// JSON DTOs only; they deliberately do not depend on Mozc dictionary types.
+
+syntax = "proto2";
+
+package mozc.grimodex.protocol_v1;
+
+import "google/protobuf/struct.proto";
+
+message StateJson {
+  required uint32 format_version = 1;
+
+  // A Value preserves the required distinction between an absent field and
+  // the explicit JSON null used when no project is active.
+  required google.protobuf.Value active_project_id = 2;
+  required string updated_at = 3;
+}
+
+message DictionaryEntryJson {
+  required string yomi = 1;
+  required string surface = 2;
+  required string category = 3;
+  required int32 priority = 4;
+  required string entry_id = 5;
+}
+
+message ZenzaiContextJson {
+  required string topic = 1;
+
+  // These keys are required by V1, while their values may be JSON null.
+  required google.protobuf.Value style = 2;
+  required google.protobuf.Value preference = 3;
+}
+
+message ProjectJson {
+  required uint32 format_version = 1;
+  required string project_id = 2;
+  required string project_name = 3;
+  required string generated_at = 4;
+  repeated DictionaryEntryJson entries = 5;
+  optional string profile = 6;
+  optional ZenzaiContextJson zenzai_context = 7;
+}

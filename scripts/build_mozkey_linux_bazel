@@ -1,0 +1,131 @@
+#!/bin/sh
+
+# The only release build entry point that is allowed to emit a Linux build
+# attestation. The attestation is removed before the build and recreated only
+# after the exact, layout-specific Bazel invocation succeeds.
+set -eu
+umask 022
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+source_root="${repository_root}/src"
+attestation_tool="${repository_root}/tools/release/linux_build_attestation.py"
+zenz_normalizer="${repository_root}/tools/release/normalize_zenz_gguf.py"
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 ubuntu-layout|archlinux-x86_64" >&2
+  exit 2
+fi
+layout="$1"
+
+case "${layout}" in
+  ubuntu-layout)
+    set -- \
+      package \
+      //unix/fcitx5:fcitx5-mozkey.so \
+      //unix/fcitx5:grimodex_consumer_tool \
+      //server:mozc_server \
+      //gui/tool:mozc_tool \
+      //zenz_scorer:mozc_zenz_scorer \
+      --config=oss_linux \
+      --config=release_build \
+      --define=mozkey_dictionary_profile=release-approved-only \
+      --//unix/fcitx5:use_server=true
+    ;;
+  archlinux-x86_64)
+    set -- \
+      //unix/fcitx5:fcitx5-mozkey.so \
+      //unix/fcitx5:grimodex_consumer_tool \
+      //server:mozc_server \
+      //gui/tool:mozc_tool \
+      //zenz_scorer:mozc_zenz_scorer \
+      --config=oss_linux \
+      --config=release_build \
+      --config=no_sframe \
+      --define=mozkey_dictionary_profile=release-approved-only \
+      --//unix/fcitx5:use_server=true
+    ;;
+  *)
+    echo "unsupported Mozkey Linux build layout: ${layout}" >&2
+    exit 2
+    ;;
+esac
+
+for required_command in git python3 rm mkdir
+do
+  if ! command -v "${required_command}" >/dev/null 2>&1; then
+    echo "required Mozkey Linux build command is unavailable: ${required_command}" >&2
+    exit 1
+  fi
+done
+for release_tool in "${attestation_tool}" "${zenz_normalizer}"
+do
+  if [ ! -f "${release_tool}" ] || [ -L "${release_tool}" ]; then
+    echo "Linux release tool is missing or unsafe: ${release_tool}" >&2
+    exit 1
+  fi
+done
+
+attestation_dir="${repository_root}/dist/linux/${layout}"
+attestation="${attestation_dir}/build-attestation.json"
+mkdir -p "${attestation_dir}"
+rm -f -- "${attestation}"
+attestation_complete=0
+cleanup_failed_attestation() {
+  if [ "${attestation_complete}" -ne 1 ]; then
+    rm -f -- "${attestation}"
+  fi
+}
+trap cleanup_failed_attestation EXIT HUP INT TERM
+
+if ! git_status="$(
+  git -C "${repository_root}" status \
+    --porcelain=v1 \
+    --untracked-files=all \
+    --ignore-submodules
+)"; then
+  echo "failed to inspect the Mozkey release worktree" >&2
+  exit 1
+fi
+if [ -n "${git_status}" ]; then
+  echo "refusing to build from tracked changes or non-ignored untracked files" >&2
+  exit 1
+fi
+
+# The upstream Zenz GGUF carries private tokenizer metadata which an
+# unmodified llama.cpp correctly rejects.  Materialize and verify the pinned,
+# metadata-only Linux normalization before Bazel so every later provenance and
+# package step observes exactly one model artifact.
+python3 "${zenz_normalizer}" create --root "${repository_root}"
+python3 "${zenz_normalizer}" verify --root "${repository_root}"
+
+if command -v bazelisk >/dev/null 2>&1; then
+  bazel_driver=bazelisk
+  (
+    cd "${source_root}"
+    bazelisk build "$@"
+  )
+elif command -v npx >/dev/null 2>&1; then
+  bazel_driver=npx-bazelisk
+  (
+    cd "${source_root}"
+    npx --yes @bazel/bazelisk@1.28.1 build "$@"
+  )
+else
+  echo "bazelisk or npx is required for the Mozkey Linux release build" >&2
+  exit 1
+fi
+
+python3 "${attestation_tool}" create \
+  --root "${repository_root}" \
+  --layout "${layout}" \
+  --output "${attestation}" \
+  --bazel-driver "${bazel_driver}"
+python3 "${attestation_tool}" verify \
+  --root "${repository_root}" \
+  --layout "${layout}" \
+  --attestation "${attestation}"
+
+attestation_complete=1
+trap - EXIT HUP INT TERM
+printf 'Mozkey Linux %s build attested: %s\n' "${layout}" "${attestation}"

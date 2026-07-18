@@ -1,0 +1,47 @@
+#!/bin/sh
+
+set -eu
+
+PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+. "${script_dir}/fcitx5_install_paths"
+validate_mozkey_install_environment
+
+if [ "${MOZKEY_LINUX_PREFLIGHT_DONE:-0}" != 1 ]; then
+  PREFIX="${PREFIX}" DESTDIR="${DESTDIR}" \
+    MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}" \
+    "${script_dir}/preflight_mozkey_linux_bazel"
+fi
+
+for required_binary in \
+  bazel-bin/server/mozc_server \
+  bazel-bin/gui/tool/mozc_tool \
+  bazel-bin/unix/fcitx5/grimodex_consumer_tool \
+  bazel-bin/zenz_scorer/mozc_zenz_scorer
+do
+  if [ ! -x "${required_binary}" ]; then
+    echo "missing required Mozkey Linux product binary: ${required_binary}" >&2
+    exit 1
+  fi
+done
+
+# Populate data, notices, and inactive helpers before atomically replacing the
+# server marker. An already mapped old addon therefore sees either the old
+# server or a complete new server/runtime set, never a truncated executable.
+DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" \
+  MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}" \
+  ../scripts/install_zenz_runtime
+for documentation_file in data/installer/*.html
+do
+  atomic_install_file "${documentation_file}" 644 \
+    "${DESTDIR}${PREFIX}/share/doc/mozkey/$(basename -- "${documentation_file}")"
+done
+atomic_install_file "bazel-bin/gui/tool/mozc_tool" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_tool"
+atomic_install_file "bazel-bin/unix/fcitx5/grimodex_consumer_tool" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/unregister-grimodex-consumer"
+atomic_install_file "bazel-bin/zenz_scorer/mozc_zenz_scorer" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_zenz_scorer"
+atomic_install_file "bazel-bin/server/mozc_server" 755 \
+  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_server"

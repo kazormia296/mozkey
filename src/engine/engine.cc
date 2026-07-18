@@ -53,6 +53,14 @@
 #include "rewriter/rewriter.h"
 #include "rewriter/rewriter_interface.h"
 
+#if defined(MOZC_BUILD) && defined(__linux__)
+#include "base/environ.h"
+#include "dictionary/pos_matcher.h"
+#include "grimodex/project_dictionary_bridge.h"
+#include "grimodex/project_dictionary_provider.h"
+#include "grimodex/protocol_v1.h"
+#endif
+
 namespace mozc {
 
 absl::StatusOr<std::unique_ptr<Engine>> Engine::CreateEngine(
@@ -87,6 +95,24 @@ absl::Status Engine::ReloadModules(std::unique_ptr<engine::Modules> modules) {
 }
 
 absl::Status Engine::Init(std::unique_ptr<engine::Modules> modules) {
+#if defined(MOZC_BUILD) && defined(__linux__)
+  const dictionary::PosMatcher& pos_matcher = modules->GetPosMatcher();
+  const uint16_t person_id = pos_matcher.GetFirstNameId();
+  const uint16_t place_id = pos_matcher.GetUniqueNounId();
+  const uint16_t noun_id = pos_matcher.GetGeneralNounId();
+  const grimodex::ProjectDictionaryPosIds project_pos_ids{
+      .person = {.lid = person_id, .rid = person_id},
+      .place = {.lid = place_id, .rid = place_id},
+      .noun = {.lid = noun_id, .rid = noun_id},
+  };
+  const std::string project_root = grimodex::ResolveProtocolV1Root(
+      Environ::GetEnv("GRIMODEX_IME_ROOT"),
+      Environ::GetEnv("XDG_DATA_HOME"), Environ::GetEnv("HOME"));
+  const grimodex::ApplicationScopeMode project_scope =
+      grimodex::ParseApplicationScopeMode(
+          Environ::GetEnv("MOZKEY_GRIMODEX_SCOPE"));
+#endif
+
   auto immutable_converter_factory = [](const engine::Modules& modules) {
     return std::make_unique<ImmutableConverter>(modules);
   };
@@ -115,6 +141,15 @@ absl::Status Engine::Init(std::unique_ptr<engine::Modules> modules) {
   }
 
   converter_ = std::move(converter);
+
+#if defined(MOZC_BUILD) && defined(__linux__)
+  project_dictionary_provider_ =
+      grimodex::CreateProtocolV1ProjectDictionaryProvider(project_root,
+                                                          project_pos_ids,
+                                                          project_scope);
+#else
+  project_dictionary_provider_.reset();
+#endif
 
   return absl::OkStatus();
 }

@@ -8,16 +8,37 @@ Original model file:
   ggml-model-Q5_K_M.gguf
 
 Included as:
-  models/zenz-v3.2-small-Q5_K_M.gguf
+  Windows: models/zenz-v3.2-small-Q5_K_M.gguf
+  Linux: /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 
 License:
   Apache License 2.0
 
-Source commit observed:
-  c67e03e
+Source commit:
+  c67e03e07d215c869f591b274c1631170d3e11fe
+
+Source SHA-256:
+  29c223d4c23327b80fd13ebb5ab2555057a46317997d5da391584ffbef0db673
 
 Notes:
-  Distributed without modification except for file placement, file naming, and packaging into the MSI installer.
+  The Windows MSI receives the source GGUF unchanged except for file placement,
+  file naming, and packaging.
+
+  On 2026-07-17, Mozkey added a deterministic Linux-only metadata
+  normalization so the fixed model can load in an unmodified upstream
+  llama.cpp. The derived Linux GGUF changes only these metadata fields:
+    tokenizer.ggml.pre = gpt-2
+    tokenizer.ggml.bos_token_id = 2
+    tokenizer.ggml.eos_token_id = 3
+    tokenizer.ggml.unknown_token_id = 0
+
+  Tensor descriptors and the complete tensor-data region remain byte-for-byte
+  identical to the source. The normalized Linux GGUF has SHA-256
+  601572033a0c231857864ab0a2ccf40fbd1abe6ee4ccecd5399bf82e3e559772;
+  its unchanged tensor-data region has SHA-256
+  e943d954852ad629c01a278ee61ec4b80b26401d18695e01ef5da5610429b67e.
+  The source, transformation, and derived file are pinned and verified by
+  tools/release/zenz_gguf_normalization.lock.json.
 
 Required license file:
   Apache-2.0.txt

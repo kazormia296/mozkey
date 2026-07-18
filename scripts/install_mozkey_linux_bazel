@@ -1,0 +1,43 @@
+#!/bin/sh
+
+# Formal Bazel install entry point.  The Fcitx entry point is installed last,
+# after a no-write preflight and the complete staged isolation smoke pass.
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
+. "${script_dir}/fcitx5_install_paths"
+validate_mozkey_install_environment
+
+# Resolve the distribution-specific addon directory exactly once. Every child
+# process receives the pinned absolute value rather than querying pkg-config
+# again after validation.
+resolved_addon_dir="$(resolve_fcitx5_addon_dir)"
+FCITX5_ADDON_DIR="${resolved_addon_dir}"
+export FCITX5_ADDON_DIR
+
+PREFIX="${PREFIX}" DESTDIR="${DESTDIR}" \
+  "${script_dir}/preflight_mozkey_linux_bazel"
+MOZKEY_LINUX_PREFLIGHT_DONE=1
+export MOZKEY_LINUX_PREFLIGHT_DONE
+
+# This uses a separate temporary DESTDIR and therefore makes no changes to the
+# requested installation target.
+FCITX5_ADDON_DIR="${FCITX5_ADDON_DIR}" \
+  "${script_dir}/smoke_test_mozkey_fcitx5_install"
+
+# Populate inert Fcitx data before the server marker, then publish the addon
+# binary and its path record only after every other install step has succeeded.
+PREFIX="${PREFIX}" DESTDIR="${DESTDIR}" \
+  MOZKEY_FCITX_INSTALL_PHASE=data \
+  "${script_dir}/install_fcitx5_bazel"
+PREFIX="${PREFIX}" DESTDIR="${DESTDIR}" \
+  MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}" \
+  "${script_dir}/install_server_bazel"
+PREFIX="${PREFIX}" DESTDIR="${DESTDIR}" \
+  MOZKEY_FCITX_INSTALL_PHASE=entry \
+  "${script_dir}/install_fcitx5_bazel"
+
+printf 'Mozkey Linux product installed; Fcitx addon: %s\n' \
+  "${FCITX5_ADDON_DIR}/fcitx5-mozkey.so"

@@ -1,0 +1,114 @@
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//:build_defs.bzl", "MOZC_TAGS", "mozc_cc_library", "mozc_cc_test")
+
+package(default_visibility = ["//:__subpackages__"])
+
+proto_library(
+    name = "protocol_v1_proto",
+    srcs = ["protocol_v1.proto"],
+    deps = ["@com_google_protobuf//:struct_proto"],
+)
+
+cc_proto_library(
+    name = "protocol_v1_cc_proto",
+    deps = [":protocol_v1_proto"],
+)
+
+mozc_cc_library(
+    name = "protocol_v1",
+    srcs = ["protocol_v1.cc"],
+    hdrs = ["protocol_v1.h"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":protocol_v1_cc_proto",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_protobuf//:json_util",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+mozc_cc_library(
+    name = "project_dictionary_bridge",
+    srcs = ["project_dictionary_bridge.cc"],
+    hdrs = ["project_dictionary_bridge.h"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_library(
+    name = "project_dictionary_provider",
+    srcs = ["project_dictionary_provider.cc"],
+    hdrs = ["project_dictionary_provider.h"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":project_dictionary_bridge",
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_test(
+    name = "protocol_v1_test",
+    size = "small",
+    srcs = ["protocol_v1_test.cc"],
+    data = glob(["testdata/protocol_v1/**/*.json"]),
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":protocol_v1",
+        "//base:file_util",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_test(
+    name = "project_dictionary_bridge_test",
+    size = "small",
+    srcs = ["project_dictionary_bridge_test.cc"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":project_dictionary_bridge",
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "project_dictionary_provider_test",
+    size = "small",
+    srcs = ["project_dictionary_provider_test.cc"],
+    tags = MOZC_TAGS.LINUX_ONLY,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":project_dictionary_bridge",
+        ":project_dictionary_provider",
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)

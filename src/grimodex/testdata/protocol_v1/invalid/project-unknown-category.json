@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "project_id": "project-a",
+  "project_name": "Unknown category",
+  "generated_at": "2026-07-11T00:00:00.000Z",
+  "entries": [
+    {
+      "yomi": "せつな",
+      "surface": "刹那",
+      "category": "organization",
+      "priority": 2,
+      "entry_id": "entry-setsuna"
+    }
+  ]
+}

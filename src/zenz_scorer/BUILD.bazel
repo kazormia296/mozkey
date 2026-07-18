@@ -5,12 +5,13 @@ package(default_visibility = ["//visibility:private"])
 mozc_cc_binary(
     name = "mozc_zenz_scorer",
     srcs = ["main.cc"],
-    linkopts = [
-        "Advapi32.lib",
-        "Bcrypt.lib",
-        "Winhttp.lib",
-    ],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
+    linkopts = select({
+        "@platforms//os:windows": [
+            "Advapi32.lib",
+            "Bcrypt.lib",
+            "Winhttp.lib",
+        ],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )

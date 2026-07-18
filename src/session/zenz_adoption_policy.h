@@ -35,22 +35,28 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "protocol/candidate_window.pb.h"
 
 namespace mozc::session {
 
-// A surface that normal Mozc live conversion has already selected from a
-// user-dictionary candidate.  Zenz live correction is allowed to improve the
-// surrounding sentence, but must not silently destroy these surfaces.
+// Returns true for dictionary candidates whose selected surface must be kept
+// intact across Zenz live correction.
+bool IsZenzProtectedDictionaryCandidate(
+    const commands::CandidateWord& candidate);
+
+// A surface that normal Mozc live conversion has already selected from a user
+// or project dictionary candidate.  Zenz live correction is allowed to improve
+// the surrounding sentence, but must not silently destroy these surfaces.
 struct ProtectedConversionSpan {
   enum class Tier {
     // Product names, handles, ASCII/mixed-script spellings, and other surfaces
     // where the exact spelling is part of the user's intent.
     kIdentityCritical,
 
-    // Other user-dictionary surfaces selected by normal Mozc live conversion.
-    // They are protected from silent overwrite.  They are not eligible for
-    // reading-derived kana replacement, but boundary/attachment repair may be
-    // applied when it is locally safe.
+    // Other protected dictionary surfaces selected by normal Mozc live
+    // conversion.  They are protected from silent overwrite.  They are not
+    // eligible for reading-derived kana replacement, but boundary/attachment
+    // repair may be applied when it is locally safe.
     kUserPreferred,
   };
 

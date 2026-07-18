@@ -1,0 +1,23 @@
+{
+  "normalized": {
+    "metadata_changes": {
+      "tokenizer.ggml.bos_token_id": 2,
+      "tokenizer.ggml.eos_token_id": 3,
+      "tokenizer.ggml.pre": "gpt-2",
+      "tokenizer.ggml.unknown_token_id": 0
+    },
+    "path": "dist/zenz/linux/zenz-v3.2-small-Q5_K_M.gguf",
+    "sha256": "601572033a0c231857864ab0a2ccf40fbd1abe6ee4ccecd5399bf82e3e559772",
+    "size_bytes": 73871936,
+    "tensor_payload_sha256": "e943d954852ad629c01a278ee61ec4b80b26401d18695e01ef5da5610429b67e"
+  },
+  "schema_version": "mozkey.zenz_gguf_normalization.v1",
+  "source": {
+    "path": "src/win32/installer/zenz_runtime/models/zenz-v3.2-small-Q5_K_M.gguf",
+    "repository": "https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf",
+    "repository_commit": "c67e03e07d215c869f591b274c1631170d3e11fe",
+    "sha256": "29c223d4c23327b80fd13ebb5ab2555057a46317997d5da391584ffbef0db673",
+    "size_bytes": 73871936,
+    "source_filename": "ggml-model-Q5_K_M.gguf"
+  }
+}

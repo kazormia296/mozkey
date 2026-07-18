@@ -7,10 +7,14 @@
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "daily_source_lock.ps1")
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $WorkRoot = Join-Path $RepoRoot "dist\dictionary\merge-ut"
 $OutDir = Join-Path $RepoRoot "src\data\dictionary_koyasi\generated"
-$MergeRepo = Join-Path $WorkRoot "merge-ut-dictionaries"
+$MergeSource = Get-DailyLockedSource -Id "merge-ut-dictionaries"
+$MergeRevision = $MergeSource.revision
+$MergeRepo = Join-Path $WorkRoot "merge-ut-dictionaries-$($MergeRevision.Substring(0, 12))"
 
 if ($Profile -eq "safe") {
     $EffectiveProfile = "sample"
@@ -120,24 +124,41 @@ function Find-Bash {
 $BashPath = Find-Bash -RequestedBashPath $BashPath
 Write-Host "Using bash: $BashPath"
 
-if (-not (Test-Path $MergeRepo)) {
-    Write-Host "Cloning merge-ut-dictionaries..."
-    git clone --depth 1 https://github.com/utuhiro78/merge-ut-dictionaries.git $MergeRepo
-    if ($LASTEXITCODE -ne 0) {
-        throw "git clone failed."
-    }
+if (-not (Test-Path (Join-Path $MergeRepo ".git"))) {
+    Write-Host "Fetching pinned merge-ut-dictionaries revision..."
+    New-Item -ItemType Directory -Force $MergeRepo | Out-Null
+    git -C $MergeRepo init
+    if ($LASTEXITCODE -ne 0) { throw "git init failed." }
+    git -C $MergeRepo config core.autocrlf false
+    if ($LASTEXITCODE -ne 0) { throw "git config failed." }
+    git -C $MergeRepo remote add origin $MergeSource.repository
+    if ($LASTEXITCODE -ne 0) { throw "git remote add failed." }
+    git -C $MergeRepo fetch --depth 1 origin $MergeRevision
+    if ($LASTEXITCODE -ne 0) { throw "git fetch failed." }
+    git -C $MergeRepo checkout --detach FETCH_HEAD
+    if ($LASTEXITCODE -ne 0) { throw "git checkout failed." }
 } else {
-    Write-Host "Updating merge-ut-dictionaries..."
-    git -C $MergeRepo pull --ff-only
-    if ($LASTEXITCODE -ne 0) {
-        throw "git pull failed."
+    $Origin = (& git -C $MergeRepo remote get-url origin).Trim()
+    if ($LASTEXITCODE -ne 0 -or $Origin -ne $MergeSource.repository) {
+        throw "Pinned merge-ut checkout has an unexpected origin: $Origin"
     }
 }
+
+Assert-DailyLockedGitRevision -SourceId "merge-ut-dictionaries" -RepositoryPath $MergeRepo
+
+# A prior run patches this generated checkout. Restore the one controlled file
+# from the already verified immutable revision before applying the current
+# profile. This checkout lives below ignored dist/dictionary, never in src/.
+git -C $MergeRepo checkout -- src/merge/make.sh
+if ($LASTEXITCODE -ne 0) { throw "failed to restore pinned make.sh." }
 
 $MakePath = Join-Path $MergeRepo "src\merge\make.sh"
 if (-not (Test-Path $MakePath)) {
     throw "make.sh was not found: $MakePath"
 }
+
+Assert-DailyLockedFile -SourceId "merge-ut-dictionaries" -PayloadId "make_script" -Path $MakePath
+Assert-DailyLockedFile -SourceId "merge-ut-dictionaries" -PayloadId "merge_script" -Path (Join-Path $MergeRepo "src\merge\merge_dictionaries.py")
 
 $Flags = @{
     alt_cannadic   = $false
@@ -230,6 +251,35 @@ function Set-MakeFlag {
     return [System.Text.RegularExpressions.Regex]::Replace($Content, $Pattern, $Replacement)
 }
 
+function Set-PinnedGitClone {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Content,
+        [Parameter(Mandatory = $true)]
+        [string]$SourceId,
+        [Parameter(Mandatory = $true)]
+        [string]$Directory,
+        [Parameter(Mandatory = $true)]
+        [string]$PayloadId
+    )
+
+    $Source = Get-DailyLockedSource -Id $SourceId
+    $Payload = Get-DailyLockedPayload -SourceId $SourceId -PayloadId $PayloadId
+    $Original = "git clone --depth 1 $($Source.repository)"
+    if (-not $Content.Contains($Original)) {
+        throw "Pinned clone site was not found for $SourceId"
+    }
+    $Replacement = @(
+        "git init $Directory",
+        "git -C $Directory config core.autocrlf false",
+        "git -C $Directory remote add origin $($Source.repository)",
+        "git -C $Directory fetch --depth 1 origin $($Source.revision)",
+        "git -C $Directory checkout --detach $($Source.revision)",
+        "printf '%s  %s\n' '$($Payload.sha256)' '$Directory/$($Payload.path)' | sha256sum -c - || exit 1"
+    ) -join "`n"
+    return $Content.Replace($Original, $Replacement)
+}
+
 Write-Host "Patching make.sh for profile: $EffectiveProfile"
 
 $Content = Get-Content -Raw -Encoding UTF8 $MakePath
@@ -237,6 +287,19 @@ $Content = Get-Content -Raw -Encoding UTF8 $MakePath
 foreach ($Key in $Flags.Keys) {
     $Content = Set-MakeFlag -Content $Content -Name $Key -Enabled $Flags[$Key]
 }
+
+$Content = Set-PinnedGitClone -Content $Content `
+    -SourceId "mozcdic-ut-place-names" `
+    -Directory "mozcdic-ut-place-names" `
+    -PayloadId "dictionary_bz2"
+$Content = Set-PinnedGitClone -Content $Content `
+    -SourceId "mozcdic-ut-sudachidict" `
+    -Directory "mozcdic-ut-sudachidict" `
+    -PayloadId "dictionary_bz2"
+$Content = Set-PinnedGitClone -Content $Content `
+    -SourceId "mozcdic-ut-personal-names" `
+    -Directory "mozcdic-ut-personal-names" `
+    -PayloadId "dictionary_bz2"
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($MakePath, $Content, $Utf8NoBom)
@@ -252,6 +315,22 @@ try {
     }
 } finally {
     Pop-Location
+}
+
+if ($Flags.place_names) {
+    $PlaceRepo = Join-Path $MergeDir "mozcdic-ut-place-names"
+    Assert-DailyLockedGitRevision -SourceId "mozcdic-ut-place-names" -RepositoryPath $PlaceRepo
+    Assert-DailyLockedFile -SourceId "mozcdic-ut-place-names" -PayloadId "dictionary_bz2" -Path (Join-Path $PlaceRepo "mozcdic-ut-place-names.txt.bz2")
+}
+if ($Flags.sudachidict) {
+    $SudachiRepo = Join-Path $MergeDir "mozcdic-ut-sudachidict"
+    Assert-DailyLockedGitRevision -SourceId "mozcdic-ut-sudachidict" -RepositoryPath $SudachiRepo
+    Assert-DailyLockedFile -SourceId "mozcdic-ut-sudachidict" -PayloadId "dictionary_bz2" -Path (Join-Path $SudachiRepo "mozcdic-ut-sudachidict.txt.bz2")
+}
+if ($Flags.personal_names) {
+    $PersonalNamesRepo = Join-Path $MergeDir "mozcdic-ut-personal-names"
+    Assert-DailyLockedGitRevision -SourceId "mozcdic-ut-personal-names" -RepositoryPath $PersonalNamesRepo
+    Assert-DailyLockedFile -SourceId "mozcdic-ut-personal-names" -PayloadId "dictionary_bz2" -Path (Join-Path $PersonalNamesRepo "mozcdic-ut-personal-names.txt.bz2")
 }
 
 $Generated = Join-Path $MergeDir "mozcdic-ut.txt"

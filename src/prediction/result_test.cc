@@ -29,6 +29,8 @@
 
 #include "prediction/result.h"
 
+#include "converter/attribute.h"
+#include "dictionary/dictionary_token.h"
 #include "testing/gunit.h"
 
 namespace mozc {
@@ -170,6 +172,26 @@ TEST(ResultTest, ResultWCostLessTest) {
     EXPECT_TRUE(wcost_less(r1, r2));
     EXPECT_FALSE(wcost_less(r2, r1));
   }
+}
+
+TEST(ResultTest, ProjectDictionaryTokenDisablesGlobalLearning) {
+  dictionary::Token token("key", "value", 3000, 10, 10,
+                          dictionary::Token::PROJECT_DICTIONARY);
+  Result result;
+  result.InitializeByTokenAndTypes(token, UNIGRAM);
+
+  EXPECT_NE(result.candidate_attributes &
+                converter::Attribute::PROJECT_DICTIONARY,
+            0);
+  EXPECT_EQ(result.candidate_attributes & converter::Attribute::NO_LEARNING,
+            converter::Attribute::NO_LEARNING);
+  EXPECT_NE(result.candidate_attributes & converter::Attribute::NO_DELETABLE,
+            0);
+  EXPECT_NE(result.candidate_attributes &
+                converter::Attribute::NO_VARIANTS_EXPANSION,
+            0);
+  EXPECT_NE(result.candidate_attributes & converter::Attribute::NO_MODIFICATION,
+            0);
 }
 
 }  // namespace

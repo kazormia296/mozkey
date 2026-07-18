@@ -112,6 +112,9 @@ void FillCandidateWord(const converter::Candidate& segment_candidate,
   if (segment_candidate.attributes & converter::Attribute::USER_DICTIONARY) {
     candidate_word_proto->add_attributes(commands::USER_DICTIONARY);
   }
+  if (segment_candidate.attributes & converter::Attribute::PROJECT_DICTIONARY) {
+    candidate_word_proto->add_attributes(commands::PROJECT_DICTIONARY);
+  }
   if (segment_candidate.attributes &
       converter::Attribute::USER_HISTORY_PREDICTION) {
     candidate_word_proto->add_attributes(commands::USER_HISTORY);

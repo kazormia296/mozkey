@@ -45,6 +45,7 @@
 #include "converter/candidate.h"
 #include "converter/converter_interface.h"
 #include "converter/segments.h"
+#include "dictionary/project_dictionary.h"
 #include "engine/candidate_list.h"
 #include "engine/engine_converter_interface.h"
 #include "protocol/commands.pb.h"
@@ -61,8 +62,13 @@ class EngineConverter : public EngineConverterInterface {
  public:
   EngineConverter(std::shared_ptr<const ConverterInterface> converter,
                   std::shared_ptr<const commands::Request> request,
-                  std::shared_ptr<const config::Config> config);
-  explicit EngineConverter(std::shared_ptr<const ConverterInterface> converter);
+                  std::shared_ptr<const config::Config> config,
+                  std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+                      project_dictionary_provider = nullptr);
+  explicit EngineConverter(
+      std::shared_ptr<const ConverterInterface> converter,
+      std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+          project_dictionary_provider = nullptr);
   EngineConverter(const EngineConverter&) = delete;
 
   // Checks if the current state is in the state bitmap.
@@ -269,6 +275,17 @@ class EngineConverter : public EngineConverterInterface {
 
   // Set setting by the context.
   void OnStartComposition(const commands::Context& context) override;
+  void OnEndComposition() override;
+
+  dictionary::ProjectDictionaryRegistry::PublishResult
+  PublishProjectDictionary(
+      std::shared_ptr<const dictionary::ProjectDictionarySnapshot> snapshot)
+      override;
+  void SetProjectDictionarySecureInput(bool secure) override;
+  dictionary::ProjectDictionaryRegistry::Status GetProjectDictionaryStatus()
+      const override;
+  std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+  GetPinnedProjectDictionary() const override;
 
   // Copies EngineConverter
   EngineConverter* Clone() const override;
@@ -389,7 +406,19 @@ class EngineConverter : public EngineConverterInterface {
   void SetRequestType(ConversionRequest::RequestType request_type,
                       ConversionRequest::Options& options);
 
+  std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+  PinnedProjectDictionary() const;
+
   std::shared_ptr<const ConverterInterface> converter_;
+
+  // The provider is process-shared; the mutable registry below is
+  // EngineConverter/session-owned.
+  std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+      project_dictionary_provider_;
+
+  // Owned by this EngineConverter, which is itself scoped to one IME session.
+  // Clone copies immutable snapshots into a new independent registry state.
+  dictionary::ProjectDictionaryRegistry project_dictionary_registry_;
 
   // Conversion stats used by converter_.
   Segments segments_;

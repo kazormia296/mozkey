@@ -1034,6 +1034,126 @@ TEST_F(SessionPlaybackTest, PushAndResetHistoryWithNoModeTest) {
   EXPECT_EQ(history.size(), 0);
 }
 
+TEST_F(SessionPlaybackTest, GrimodexManagedInputIsNeverJournaled) {
+  const int mock_id = 123;
+  ASSERT_TRUE(SetupConnection(mock_id));
+
+  commands::Output mock_output;
+  mock_output.set_id(mock_id);
+  mock_output.set_consumed(true);
+  SetMockOutput(mock_output);
+
+  commands::KeyEvent key_event;
+  key_event.set_key_code('a');
+  commands::Context context;
+  context.mutable_grimodex()->set_program("org.example.Editor");
+  context.mutable_grimodex()->set_frontend("wayland");
+  context.mutable_grimodex()->set_focus_epoch(7);
+
+  commands::Output output;
+  ASSERT_TRUE(client_->SendKeyWithContext(key_event, context, &output));
+
+  std::vector<commands::Input> history;
+  client_peer().GetHistoryInputs(&history);
+  EXPECT_TRUE(history.empty());
+}
+
+TEST_F(SessionPlaybackTest, GrimodexSecureBoundaryClearsExistingJournal) {
+  const int mock_id = 123;
+  ASSERT_TRUE(SetupConnection(mock_id));
+
+  commands::Output mock_output;
+  mock_output.set_id(mock_id);
+  mock_output.set_consumed(true);
+  SetMockOutput(mock_output);
+
+  commands::KeyEvent key_event;
+  key_event.set_key_code('a');
+  commands::Output output;
+  ASSERT_TRUE(client_->SendKey(key_event, &output));
+
+  std::vector<commands::Input> history;
+  client_peer().GetHistoryInputs(&history);
+  ASSERT_EQ(history.size(), 1);
+
+  commands::Context secure_context;
+  secure_context.mutable_grimodex()->set_secure_input(true);
+  secure_context.mutable_grimodex()->set_focus_epoch(8);
+  ASSERT_TRUE(
+      client_->SendKeyWithContext(key_event, secure_context, &output));
+
+  client_peer().GetHistoryInputs(&history);
+  EXPECT_TRUE(history.empty());
+}
+
+TEST_F(SessionPlaybackTest, GrimodexCommandIsNotRetriedIntoNewSession) {
+  constexpr int kOldSessionId = 123;
+  constexpr int kReplacementSessionId = 456;
+  ASSERT_TRUE(SetupConnection(kOldSessionId));
+
+  commands::Context context;
+  context.mutable_grimodex()->set_focus_epoch(9);
+  commands::Output valid_output;
+  valid_output.set_id(kOldSessionId);
+  valid_output.set_consumed(true);
+  SetMockOutput(valid_output);
+  commands::KeyEvent key;
+  key.set_key_code('a');
+  commands::Output output;
+  ASSERT_TRUE(client_->SendKeyWithContext(key, context, &output));
+  EXPECT_EQ(client_->session_generation(), 1);
+
+  commands::Output stale_output;
+  stale_output.set_id(kReplacementSessionId);
+  stale_output.set_consumed(true);
+  SetMockOutput(stale_output);
+
+  commands::SessionCommand select;
+  select.set_type(commands::SessionCommand::SELECT_CANDIDATE);
+  select.set_id(0);
+
+  const size_t request_count_before =
+      ipc_client_factory_->GetGeneratedRequestCount();
+  EXPECT_FALSE(client_->SendCommandWithContext(select, context, &output));
+  EXPECT_EQ(client_->session_generation(), 2);
+
+  // The transport sees the candidate selection once on the old session and
+  // then only replacement-session setup (CREATE_SESSION and, when present,
+  // SET_REQUEST).  No SEND_COMMAND may follow CREATE_SESSION.
+  const size_t request_count_after =
+      ipc_client_factory_->GetGeneratedRequestCount();
+  ASSERT_GE(request_count_after, request_count_before + 2);
+  commands::Input attempted_select;
+  ASSERT_TRUE(attempted_select.ParseFromString(
+      ipc_client_factory_->GetGeneratedRequest(request_count_before)));
+  ASSERT_EQ(attempted_select.type(), commands::Input::SEND_COMMAND);
+  EXPECT_EQ(attempted_select.id(), kOldSessionId);
+  EXPECT_EQ(attempted_select.command().type(),
+            commands::SessionCommand::SELECT_CANDIDATE);
+  int create_session_count = 0;
+  int replayed_command_count = 0;
+  for (size_t index = request_count_before + 1; index < request_count_after;
+       ++index) {
+    commands::Input replacement_request;
+    ASSERT_TRUE(replacement_request.ParseFromString(
+        ipc_client_factory_->GetGeneratedRequest(index)));
+    if (replacement_request.type() == commands::Input::CREATE_SESSION) {
+      ++create_session_count;
+    }
+    if (replacement_request.type() == commands::Input::SEND_COMMAND) {
+      ++replayed_command_count;
+    }
+    EXPECT_TRUE(replacement_request.type() == commands::Input::CREATE_SESSION ||
+                replacement_request.type() == commands::Input::SET_REQUEST);
+  }
+  EXPECT_EQ(create_session_count, 1);
+  EXPECT_EQ(replayed_command_count, 0);
+
+  std::vector<commands::Input> history;
+  client_peer().GetHistoryInputs(&history);
+  EXPECT_TRUE(history.empty());
+}
+
 // b/2797557
 TEST_F(SessionPlaybackTest, PushAndResetHistoryWithModeTest) {
   const int mock_id = 123;

@@ -105,6 +105,11 @@ class ClientInterface {
   // if session id is invalid, re-issue a valid sssion id.
   virtual bool EnsureSession() = 0;
 
+  // Monotonically advances whenever this client successfully creates a new
+  // session.  Adapters may use this to invalidate session-scoped UI handles
+  // such as candidate IDs.  Zero means that no session has been created yet.
+  virtual uint64_t session_generation() const { return 0; }
+
   // Checks protocol/product version.
   // If a  new version is available, restart the server.
   // return true the server is available.

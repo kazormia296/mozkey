@@ -84,6 +84,7 @@ mozc_cc_test(
         "//composer:table",
         "//converter:inner_segment",
         "//converter:segments",
+        "//dictionary:project_dictionary",
         "//prediction:result",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",

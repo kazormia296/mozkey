@@ -1,0 +1,172 @@
+# Linux product isolation
+
+Mozkey's OSS Linux build is intentionally installable alongside a distribution
+Mozc package. The two products do not share an Fcitx addon identity, profile,
+server endpoint, or installed executable directory.
+
+| Resource | Mozkey path or identity |
+| --- | --- |
+| Fcitx addon | `mozkey`, `${fcitx5_libdir}/fcitx5/fcitx5-mozkey.so` |
+| Fcitx input method | `mozkey` |
+| Profile | `$XDG_CONFIG_HOME/mozkey`, otherwise `~/.config/mozkey` |
+| Legacy profile | `~/.mozkey` |
+| Linux abstract IPC prefix | `/tmp/.mozkey.` (the leading slash becomes NUL) |
+| Server and tools | `/usr/lib/mozkey` |
+| Zenz socket and lock | `~/.mozkey_zenz_scorer_pipe`, `~/.mozkey_zenz_scorer.lock` |
+| Zenz runtime | `/usr/lib/mozkey/llama-server` -> distro `/usr/bin/llama-server` |
+| Zenz model | `/usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf` |
+
+Grimodex project data is application-scoped independently of these product
+paths. The default `MOZKEY_GRIMODEX_SCOPE` is `grimodex-only`: only exact,
+case-insensitive `grimodex` and `com.miyakey.grimodex` program identities may
+pin the project dictionary or its Zenz context. Empty/unknown identities fail
+closed. `MOZKEY_GRIMODEX_SCOPE=all` is the explicit all-applications opt-in;
+`off` and unknown non-empty values disable project integration without
+disabling ordinary Mozkey conversion or learning.
+
+`/usr/lib/mozkey` is used as the product-private libexec directory because the
+server, GUI tool, and Zenz scorer are implementation helpers launched by the
+frontend and are not general-purpose commands for `$PATH`. The directory also
+matches `SystemUtil::GetServerDirectory()` in the OSS Linux Bazel build.
+
+The Fcitx addon directory is distribution-specific. Source installation asks
+`pkg-config --variable=libdir Fcitx5Core` and appends `/fcitx5`; Debian/Ubuntu
+multiarch paths and Fedora `/usr/lib64` therefore do not fall back to the Arch
+path. Packagers may set an absolute `FCITX5_ADDON_DIR`, but it must remain under
+a validated `/usr` library directory. The resolved path is installed as
+`/usr/share/mozkey/fcitx5-addon-dir`, consumed by E2E and uninstall, and audited
+by the staging smoke. `PREFIX` is intentionally fixed to `/usr` because the
+OSS binary embeds `/usr/lib/mozkey`; only `DESTDIR` is relocatable for package
+staging.
+
+After building the release targets from `src/`, run:
+
+```sh
+../scripts/preflight_mozkey_linux_bazel
+../scripts/smoke_test_mozkey_fcitx5_install
+sudo env PREFIX=/usr ../scripts/install_mozkey_linux_bazel
+MOZKEY_LINUX_OUTPUT_DIR="$(pwd)/../dist" \
+  ../scripts/package_mozkey_linux_bazel
+```
+
+The combined installer performs a no-write preflight, a full temporary-stage
+smoke, installs metadata, then the server/runtime set, and atomically publishes
+the Fcitx entry point last.  Individual Bazel install scripts are internal
+primitives. The smoke also covers a changed multiarch addon path and rejects an
+unsafe installed path record before the data phase.
+
+Release binaries must be produced by `scripts/build_mozkey_linux_bazel`. Its
+attestation binds the current Git HEAD, exact Bazel targets and flags,
+`release-approved-only` manifest/lock/outputs, every installed ELF digest, and
+the Zenz source/normalization-lock/derived-model/tensor-payload digests.
+Preflight and packaging reject stale or differently configured `bazel-bin`
+outputs. The Arch payload and SPDX inventory also contain that attestation and
+the exact `pacman -Q` build package list, so the rolling build environment is
+not merely an unauthenticated CI sidecar.
+
+The package script is intentionally restricted to a clean Arch Linux x86_64
+checkout. It emits an Arch packaging payload `.tar.xz`, a basename-scoped
+SHA-256 sidecar, and an SPDX 2.3 file inventory; it is not a portable Linux
+installer or a package-manager repository. The payload requires compatible
+Arch packages for at least `fcitx5`, `llama-cpp`, and `qt6-base`. Ubuntu CI
+compiles the same targets and tests its multiarch staging layout, but does not
+publish an Ubuntu product. The separate Arch container job validates the host
+llama CLI, loads the real GGUF through the scorer, exercises authenticated
+`/completion`, and records the rolling package versions used to build it.
+
+Public Linux builds also pass
+`--define=mozkey_dictionary_profile=release-approved-only`. The selected
+dictionary target contains only pinned merge-ut place-name/SudachiDict data,
+pinned personal names, and the Mozkey syntax guard. Nico/Pixiv stays available
+to the separately named local-evaluation profile but is absent from the CI
+dictionary transfer artifact and compiled public product. The installed
+dictionary notice, Apache-2.0 text, and immutable source lock live under
+`/usr/share/licenses/mozkey/dictionary/`.
+
+Linux packaging must depend on a compatible `llama-server` provider.  The
+default private link targets `/usr/bin/llama-server`; a distro package with a
+different absolute path can set `MOZKEY_ZENZ_LLAMA_SERVER_TARGET` while
+staging. The tracked source GGUF uses a private tokenizer metadata name and
+incorrect special-token IDs, so `scripts/build_mozkey_linux_bazel` generates a
+pinned Linux derivative before Bazel. The transformation changes only four
+GGUF metadata values; tensor descriptors and tensor data are byte-identical.
+Preflight, attestation, and installation independently verify the fixed source
+SHA-256, normalized SHA-256, tensor-payload SHA-256, and deterministic output.
+The resulting GGUF and its notices are installed from that verified build
+state, so release mode never depends on an environment override or a patched
+llama.cpp fork.
+The supported runtime contract is the `-m`/`--model`, `-c`/`--ctx-size`,
+`-t`/`--threads`, `--host`, `--port`, and `--api-key` CLI plus authenticated
+`POST /completion` returning a JSON `content` field. A real install runs the
+bounded CLI compatibility check; release CI and dogfood additionally load the
+bundled model and exercise `/completion` while checking that the child listener
+is loopback-only. The 2026-07-17 host dogfood gate uses llama.cpp build 9859
+(`4fc4ec5541`); the Arch CI payload records its exact rolling package version.
+Prompt construction follows the model's reference tokenizer preparation:
+ASCII spaces become U+3000 and line feeds are removed before inference. This
+keeps the Windows source model and Linux normalized model on one prompt
+contract even though their llama.cpp integration differs.
+
+`zenzai_v3_conditions` in the consumer heartbeat means the installed product
+has an executable scorer, immutable non-empty GGUF, and executable llama
+runtime. It is false for a partial install. It does not claim that the large
+model is already loaded; endpoint readiness is proved by the separate Zenz
+runtime probe.
+
+The smoke test installs into a temporary `DESTDIR`, validates the Fcitx and
+AppStream metadata, repeats the install as an upgrade, removes only the audited
+Mozkey manifest, proves Hazkey/Mozc/user-data sentinels survive, and reinstalls
+the product. For a live uninstall, first stop Fcitx so it cannot respawn the
+per-user server, then run the bounded runtime gate as that desktop user while
+the installed executable paths still exist:
+
+```sh
+fcitx5-remote -e
+./scripts/stop_mozkey_linux_runtime
+```
+
+The stop gate uses Linux pidfds and repeated `/proc` identity checks. It can
+signal only the exact `/usr/lib/mozkey/mozc_server` and
+`/usr/lib/mozkey/mozc_zenz_scorer` processes belonging to the target UID, plus
+an exact `/usr/bin/llama-server` proven to descend from that scorer. It never
+falls back to a basename or command-line match. Root automation must name the
+non-root desktop UID explicitly with `--uid`; `DESTDIR` and non-`/usr` layouts
+are rejected. Only after that gate succeeds should the product files be
+removed:
+
+```sh
+sudo env PREFIX=/usr ./scripts/uninstall_mozkey_fcitx5
+```
+
+It deliberately preserves `$XDG_CONFIG_HOME/mozkey`, `~/.config/mozkey`, the
+legacy profile, per-user Zenz feedback, and Grimodex Protocol v1 snapshots.
+The system-owned bundled GGUF is a product file and is removed. Windows and
+macOS product paths are unchanged.
+
+To remove only this product's consumer heartbeat during a root-owned package
+uninstall, pass the user's absolute Protocol v1 root explicitly:
+
+```sh
+sudo env PREFIX=/usr MOZKEY_REMOVE_GRIMODEX_CONSUMER=1 \
+  GRIMODEX_IME_ROOT="$HOME/.local/share/com.miyakey.grimodex/ime" \
+  ./scripts/uninstall_mozkey_fcitx5
+```
+
+The uninstaller resolves the root owner before removing the runtime marker and
+uses `setpriv` to run the native unregister helper as that owner.  The helper
+still performs its fd-relative ownership, mode, and symlink checks; it removes
+only `consumers/fcitx5-mozkey.json`.
+
+## Real Fcitx5 consumer E2E
+
+Grimodex's ignored Linux process test must use the installed addon rather than
+launch `mozc_server` directly. After installing the Mozkey Fcitx5 and server
+products, point `GRIMODEX_LINUX_MOZKEY_LAUNCHER` at
+`scripts/launch_fcitx5_mozkey_e2e` in this checkout. The launcher preserves the
+test-provided `GRIMODEX_IME_ROOT`, `HOME`, and XDG homes, installs a private
+Mozkey-only Fcitx profile, and starts foreground Fcitx5 on a new D-Bus session.
+Detection of `consumers/fcitx5-mozkey.json` therefore proves the actual addon
+was loaded and executed its startup heartbeat. This is intentionally a
+heartbeat-only process gate. Native session fault injection separately proves
+snapshot reload, security-domain purge, stale-candidate rejection and server
+restart recovery; real toolkit dogfood proves key/preedit/candidate behavior.

@@ -212,6 +212,45 @@ constexpr uint32_t kMaxZenzLiveCorrectionTimeoutMsec = 1000;
 // async, a longer poll window does not block the IME thread.
 constexpr uint32_t kZenzLiveCorrectionAsyncWaitMsec = 3000;
 
+// These match the Fcitx ingress bounds.  The server independently enforces
+// them because Context is an IPC input and must not trust one particular
+// adapter implementation.
+constexpr size_t kMaxGrimodexProgramBytes = 256;
+constexpr size_t kMaxGrimodexFrontendBytes = 128;
+
+int32_t GrimodexRevisionFromFocusEpoch(uint64_t focus_epoch) {
+  const uint32_t revision = static_cast<uint32_t>(focus_epoch & 0x7FFFFFFFU);
+  return static_cast<int32_t>(revision == 0 ? 1 : revision);
+}
+
+std::string DecodeLowerHexSha256(absl::string_view hex) {
+  if (hex.size() != 64) {
+    return "";
+  }
+
+  auto nibble = [](char c) -> int {
+    if ('0' <= c && c <= '9') {
+      return c - '0';
+    }
+    if ('a' <= c && c <= 'f') {
+      return c - 'a' + 10;
+    }
+    return -1;
+  };
+
+  std::string bytes;
+  bytes.reserve(32);
+  for (size_t i = 0; i < hex.size(); i += 2) {
+    const int high = nibble(hex[i]);
+    const int low = nibble(hex[i + 1]);
+    if (high < 0 || low < 0) {
+      return "";
+    }
+    bytes.push_back(static_cast<char>((high << 4) | low));
+  }
+  return bytes;
+}
+
 bool IsLiveConversionTrailingDecorativeSymbol(char32_t c) {
   switch (c) {
     case 0x007E:  // ~
@@ -1463,16 +1502,6 @@ bool ShouldKeepPendingLiveConversionForTransientSokuon(absl::string_view key) {
          has_transient_stem_suffix("まわ");    // 回っ...
 }
 
-bool CandidateWordHasAttribute(const commands::CandidateWord& candidate,
-                               commands::CandidateAttribute attribute) {
-  for (int i = 0; i < candidate.attributes_size(); ++i) {
-    if (candidate.attributes(i) == attribute) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool IsAsciiIdentityChar(const unsigned char c) {
   return (('0' <= c) && (c <= '9')) || (('A' <= c) && (c <= 'Z')) ||
          (('a' <= c) && (c <= 'z')) || c == '_' || c == '-' || c == '.' ||
@@ -1934,7 +1963,7 @@ std::vector<ProtectedConversionSpan> BuildZenzProtectedConversionSpans(
       const commands::CandidateWord& candidate = candidate_list.candidates(i);
       const bool focused_candidate = candidate.index() == focused_index;
 
-      if (!CandidateWordHasAttribute(candidate, commands::USER_DICTIONARY)) {
+      if (!IsZenzProtectedDictionaryCandidate(candidate)) {
         continue;
       }
 
@@ -2912,6 +2941,10 @@ void SetSessionState(const ImeContext::State state, ImeContext* context) {
   switch (state) {
     case ImeContext::DIRECT:
     case ImeContext::PRECOMPOSITION:
+      if (prev_state == ImeContext::COMPOSITION ||
+          prev_state == ImeContext::CONVERSION) {
+        context->mutable_converter()->OnEndComposition();
+      }
       context->mutable_composer()->Reset();
       break;
     case ImeContext::CONVERSION:
@@ -3073,6 +3106,262 @@ void Session::ClearUndoContext() { undo_contexts_.clear(); }
 
 bool Session::HasUndoContext() const { return !undo_contexts_.empty(); }
 
+bool Session::IsGrimodexSecureInput() const {
+  return grimodex_domain_.initialized && grimodex_domain_.secure_input;
+}
+
+void Session::ApplyCurrentGrimodexDomainToContext(
+    commands::Context* context, bool clear_surrounding_text) const {
+  DCHECK(context);
+  if (!grimodex_domain_.initialized) {
+    return;
+  }
+
+  commands::GrimodexClientContext* grimodex = context->mutable_grimodex();
+  grimodex->set_program(grimodex_domain_.program);
+  grimodex->set_frontend(grimodex_domain_.frontend);
+  grimodex->set_secure_input(grimodex_domain_.secure_input);
+  grimodex->set_focus_epoch(grimodex_domain_.focus_epoch);
+  context->set_revision(
+      GrimodexRevisionFromFocusEpoch(grimodex_domain_.focus_epoch));
+
+  if (clear_surrounding_text || grimodex_domain_.secure_input) {
+    context->clear_preceding_text();
+    context->clear_following_text();
+  }
+  if (grimodex_domain_.secure_input) {
+    context->set_input_field_type(commands::Context::PASSWORD);
+  } else if (context->input_field_type() == commands::Context::PASSWORD) {
+    // A stale secure callback cannot keep the replacement non-secure domain in
+    // password mode after the current epoch has explicitly left that domain.
+    context->set_input_field_type(commands::Context::NORMAL);
+  }
+}
+
+void Session::PurgeForGrimodexDomainTransition(bool secure_input) {
+  // None of these pending states may be confirmed as a consequence of a focus
+  // or security transition.  In particular, direct-commit learning is reverted
+  // and Zenz feedback is discarded instead of being written to either store.
+  DiscardPendingDirectCommitLearning("grimodex_domain_transition");
+  DiscardPendingZenzFeedback("grimodex_domain_transition");
+  ClearPendingRerankedPreeditCommitAfterConvertCancel();
+  ClearLiveConversionState();
+  ClearUndoContext();
+
+  engine::EngineConverterInterface* converter =
+      context_->mutable_converter();
+
+  // Toggling through secure=true is the EngineConverter's fail-closed purge
+  // API.  It drops both latest and pinned snapshots.  The second call selects
+  // the new domain mode, but secure=false intentionally cannot resurrect the
+  // released generation.
+  converter->SetProjectDictionarySecureInput(true);
+  converter->Reset();
+  converter->SetProjectDictionarySecureInput(secure_input);
+
+  context_->mutable_composer()->Reset();
+  context_->mutable_composer()->SetInputFieldType(
+      secure_input ? commands::Context::PASSWORD
+                   : commands::Context::NORMAL);
+  if (context_->state() != ImeContext::DIRECT) {
+    context_->set_state(ImeContext::PRECOMPOSITION);
+  }
+  context_->mutable_client_context()->Clear();
+  context_->mutable_output()->Clear();
+}
+
+void Session::UpdateGrimodexContext(commands::Command* command) {
+  DCHECK(command);
+  if (!command->has_input()) {
+    return;
+  }
+
+  commands::Input* input = command->mutable_input();
+  const bool has_context = input->has_context();
+  commands::Context* wire_context =
+      has_context ? input->mutable_context() : nullptr;
+  const bool has_grimodex =
+      wire_context != nullptr && wire_context->has_grimodex();
+
+  if (!has_grimodex) {
+    // Ordinary Mozc clients remain untouched.  Once a session is managed,
+    // however, a contextless command is treated as a delayed callback from the
+    // current domain, never as permission to leave secure input.
+    if (!grimodex_domain_.initialized) {
+      return;
+    }
+    if (wire_context != nullptr &&
+        wire_context->input_field_type() == commands::Context::PASSWORD &&
+        !grimodex_domain_.secure_input) {
+      PurgeForGrimodexDomainTransition(/*secure_input=*/true);
+      grimodex_domain_.secure_input = true;
+    }
+    wire_context = input->mutable_context();
+    ApplyCurrentGrimodexDomainToContext(
+        wire_context, /*clear_surrounding_text=*/true);
+    if (grimodex_domain_.secure_input) {
+      *context_->mutable_client_context() = *wire_context;
+    }
+    return;
+  }
+
+  const commands::GrimodexClientContext& wire = wire_context->grimodex();
+  const bool requested_secure =
+      wire.secure_input() ||
+      wire_context->input_field_type() == commands::Context::PASSWORD;
+  const bool valid_epoch = wire.has_focus_epoch() && wire.focus_epoch() != 0;
+  const bool bounded_metadata =
+      wire.program().size() <= kMaxGrimodexProgramBytes &&
+      wire.frontend().size() <= kMaxGrimodexFrontendBytes;
+  const bool valid_metadata_utf8 =
+      strings::IsValidUtf8(wire.program()) &&
+      strings::IsValidUtf8(wire.frontend());
+
+  if (!valid_epoch || !bounded_metadata || !valid_metadata_utf8) {
+    // Malformed metadata cannot select a new domain.  An explicit secure bit
+    // still fails closed, while a false/missing epoch cannot unlock an already
+    // secure session.
+    if (requested_secure &&
+        (!grimodex_domain_.initialized ||
+         !grimodex_domain_.secure_input)) {
+      if (!grimodex_domain_.initialized) {
+        grimodex_domain_.initialized = true;
+        // A malformed identifier is not retained even when its secure bit is
+        // honored fail-closed.  Empty identifiers are valid opaque domain
+        // metadata and cannot contain a truncated UTF-8 scalar.
+        grimodex_domain_.program =
+            bounded_metadata && valid_metadata_utf8 ? wire.program() : "";
+        grimodex_domain_.frontend =
+            bounded_metadata && valid_metadata_utf8 ? wire.frontend() : "";
+        grimodex_domain_.focus_epoch = 0;
+      }
+      PurgeForGrimodexDomainTransition(/*secure_input=*/true);
+      grimodex_domain_.secure_input = true;
+    }
+    if (grimodex_domain_.initialized) {
+      ApplyCurrentGrimodexDomainToContext(
+          wire_context, /*clear_surrounding_text=*/true);
+      if (grimodex_domain_.secure_input) {
+        *context_->mutable_client_context() = *wire_context;
+      }
+    } else {
+      // Do not retain invalid typed metadata as an ordinary Mozc client
+      // context.  It is neither a usable project domain nor safe surrounding
+      // text for Zenz.
+      wire_context->clear_grimodex();
+      wire_context->clear_preceding_text();
+      wire_context->clear_following_text();
+    }
+    return;
+  }
+
+  if (grimodex_domain_.initialized &&
+      wire.focus_epoch() < grimodex_domain_.focus_epoch) {
+    // A delayed callback is allowed to keep operating only inside the current
+    // domain.  It cannot replace metadata, surrounding text, or secure state.
+    // Conversely an explicit secure=true remains fail-closed even if stale.
+    if (requested_secure && !grimodex_domain_.secure_input) {
+      PurgeForGrimodexDomainTransition(/*secure_input=*/true);
+      grimodex_domain_.secure_input = true;
+    }
+    ApplyCurrentGrimodexDomainToContext(
+        wire_context, /*clear_surrounding_text=*/true);
+    if (grimodex_domain_.secure_input) {
+      *context_->mutable_client_context() = *wire_context;
+    }
+    return;
+  }
+
+  if (grimodex_domain_.initialized &&
+      wire.focus_epoch() == grimodex_domain_.focus_epoch &&
+      (wire.program() != grimodex_domain_.program ||
+       wire.frontend() != grimodex_domain_.frontend ||
+       requested_secure != grimodex_domain_.secure_input)) {
+    // An epoch names exactly one security-domain tuple.  Only a strictly newer
+    // epoch may replace it.  A same-epoch mismatch is a delayed/forged
+    // callback and is canonicalized to the current tuple.  secure=true remains
+    // fail-closed even in that case, but never adopts the mismatching metadata.
+    if (requested_secure && !grimodex_domain_.secure_input) {
+      PurgeForGrimodexDomainTransition(/*secure_input=*/true);
+      grimodex_domain_.secure_input = true;
+    }
+    ApplyCurrentGrimodexDomainToContext(
+        wire_context, /*clear_surrounding_text=*/true);
+    if (grimodex_domain_.secure_input) {
+      *context_->mutable_client_context() = *wire_context;
+    }
+    return;
+  }
+
+  const bool first_domain = !grimodex_domain_.initialized;
+  const bool domain_transition =
+      !first_domain &&
+      wire.focus_epoch() > grimodex_domain_.focus_epoch;
+
+  if (first_domain || domain_transition) {
+    grimodex_domain_.initialized = true;
+    grimodex_domain_.program = wire.program();
+    grimodex_domain_.frontend = wire.frontend();
+    grimodex_domain_.focus_epoch = wire.focus_epoch();
+    grimodex_domain_.secure_input = requested_secure;
+
+    if (domain_transition || requested_secure) {
+      PurgeForGrimodexDomainTransition(requested_secure);
+    } else {
+      context_->mutable_converter()->SetProjectDictionarySecureInput(false);
+    }
+  }
+
+  ApplyCurrentGrimodexDomainToContext(
+      wire_context, /*clear_surrounding_text=*/false);
+  if (domain_transition || requested_secure ||
+      !context_->client_context().has_grimodex()) {
+    *context_->mutable_client_context() = *wire_context;
+  }
+}
+
+void Session::AttachGrimodexSessionStatus(commands::Command* command) const {
+  DCHECK(command);
+  if (!grimodex_domain_.initialized) {
+    return;
+  }
+
+  commands::GrimodexSessionStatus* output_status =
+      command->mutable_output()->mutable_grimodex_session_status();
+  output_status->Clear();
+
+  const dictionary::ProjectDictionaryRegistry::Status registry_status =
+      context_->converter().GetProjectDictionaryStatus();
+  const std::shared_ptr<const dictionary::ProjectDictionarySnapshot> pinned =
+      context_->converter().GetPinnedProjectDictionary();
+
+  uint64_t sequence = 0;
+  if (registry_status.pinned_generation.has_value()) {
+    sequence = *registry_status.pinned_generation;
+  } else if (registry_status.latest_generation.has_value()) {
+    sequence = *registry_status.latest_generation;
+  }
+  output_status->set_registry_sequence(sequence);
+
+  if (registry_status.secure_input || IsGrimodexSecureInput()) {
+    output_status->set_scope(
+        commands::GrimodexSessionStatus::SECURE_REVOKED);
+    return;
+  }
+
+  if (pinned == nullptr) {
+    output_status->set_scope(commands::GrimodexSessionStatus::OFF);
+    return;
+  }
+
+  output_status->set_scope(commands::GrimodexSessionStatus::PROJECT);
+  const std::string digest =
+      DecodeLowerHexSha256(pinned->metadata().payload_sha256);
+  if (!digest.empty()) {
+    output_status->set_pinned_payload_sha256(digest);
+  }
+}
+
 bool Session::IsCancelKeyForCompositionOrConversion(
     const commands::KeyEvent& key) const {
   const keymap::KeyMapManager* keymap = &context_->GetKeyMapManager();
@@ -3107,7 +3396,9 @@ void Session::EnsureIMEIsOn() {
 bool Session::SendCommand(commands::Command* command) {
   UpdateTime();
   UpdatePreferences(command);
+  UpdateGrimodexContext(command);
   if (!command->input().has_command()) {
+    AttachGrimodexSessionStatus(command);
     return false;
   }
   TransformInput(command->mutable_input());
@@ -3120,6 +3411,7 @@ bool Session::SendCommand(commands::Command* command) {
   if (session_command.type() ==
       commands::SessionCommand::SWITCH_COMPOSITION_MODE) {
     if (!session_command.has_composition_mode()) {
+      AttachGrimodexSessionStatus(command);
       return false;
     }
     switch (session_command.composition_mode()) {
@@ -3146,6 +3438,7 @@ bool Session::SendCommand(commands::Command* command) {
         break;
     }
     MaybeSetUndoStatus(command);
+    AttachGrimodexSessionStatus(command);
     return result;
   }
 
@@ -3232,6 +3525,10 @@ bool Session::SendCommand(commands::Command* command) {
       break;
 
     case commands::SessionCommand::REQUEST_NWP: {
+      if (IsGrimodexSecureInput()) {
+        result = DoNothing(command);
+        break;
+      }
       ConversionPreferences conversion_preferences =
           context_->converter().conversion_preferences();
       conversion_preferences.request_suggestion =
@@ -3258,12 +3555,14 @@ bool Session::SendCommand(commands::Command* command) {
   }
 
   MaybeSetUndoStatus(command);
+  AttachGrimodexSessionStatus(command);
   return result;
 }
 
 bool Session::TestSendKey(commands::Command* command) {
   UpdateTime();
   UpdatePreferences(command);
+  UpdateGrimodexContext(command);
   TransformInput(command->mutable_input());
 
   if (context_->state() == ImeContext::NONE) {
@@ -3377,6 +3676,7 @@ bool Session::TestSendKey(commands::Command* command) {
 bool Session::SendKey(commands::Command* command) {
   UpdateTime();
   UpdatePreferences(command);
+  UpdateGrimodexContext(command);
   TransformInput(command->mutable_input());
   // To support indirect IME on/off by using KeyEvent::activated, use effective
   // state instead of directly using context_->state().
@@ -3411,6 +3711,7 @@ bool Session::SendKey(commands::Command* command) {
   }
 
   MaybeSetUndoStatus(command);
+  AttachGrimodexSessionStatus(command);
   return result;
 }
 
@@ -4407,6 +4708,13 @@ bool Session::GetStatus(commands::Command* command) {
 }
 
 bool Session::RequestConvertReverse(commands::Command* command) {
+  // Reverse conversion asks the client for selected application text.  A
+  // managed secure domain must never request that text, even if a delayed or
+  // forged key command reaches this handler after the domain transition.
+  if (IsGrimodexSecureInput()) {
+    return DoNothing(command);
+  }
+
   if (context_->state() != ImeContext::PRECOMPOSITION &&
       context_->state() != ImeContext::DIRECT) {
     return DoNothing(command);
@@ -4442,6 +4750,10 @@ bool Session::RequestReconvertSelectionOrInsertSpace(
 }
 
 bool Session::ConvertReverse(commands::Command* command) {
+  if (IsGrimodexSecureInput()) {
+    return DoNothing(command);
+  }
+
   if (context_->state() != ImeContext::PRECOMPOSITION &&
       context_->state() != ImeContext::DIRECT) {
     return DoNothing(command);
@@ -4748,7 +5060,8 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
     return false;
   }
 
-  if (context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
+  if (IsGrimodexSecureInput() ||
+      context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
     return false;
   }
 
@@ -4974,7 +5287,8 @@ bool Session::MaybeScheduleLiveConversion(commands::Command* command) {
     return false;
   }
 
-  if (context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
+  if (IsGrimodexSecureInput() ||
+      context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
     return false;
   }
 
@@ -5165,6 +5479,10 @@ bool Session::FlushPendingLiveConversion() {
 }
 
 std::string Session::ExtractZenzLeftContext(uint32_t max_chars) const {
+  if (IsGrimodexSecureInput()) {
+    return "";
+  }
+
   if (max_chars == 0) {
     return "";
   }
@@ -5185,6 +5503,10 @@ std::string Session::ExtractZenzLeftContext(uint32_t max_chars) const {
 }
 
 std::string Session::ExtractZenzRightContext(uint32_t max_chars) const {
+  if (IsGrimodexSecureInput()) {
+    return "";
+  }
+
   if (max_chars == 0) {
     return "";
   }
@@ -5229,6 +5551,10 @@ void Session::RecordZenzLiveCorrectionAccepted(
     absl::string_view key,
     absl::string_view left_context,
     absl::string_view value) {
+  if (IsGrimodexSecureInput()) {
+    return;
+  }
+
   if (!UseZenzFeedbackLearning(context_->GetConfig())) {
     return;
   }
@@ -5280,6 +5606,10 @@ void Session::RecordZenzLiveCorrectionAccepted(
 bool Session::MaybeLearnZenzCandidateToMozcHistory(
     absl::string_view key,
     absl::string_view value) {
+  if (IsGrimodexSecureInput()) {
+    return false;
+  }
+
   if (!UseZenzFeedbackLearning(context_->GetConfig())) {
     return false;
   }
@@ -5335,6 +5665,10 @@ int Session::MaybeLearnZenzReverseSegmentsToMozcHistory(
 
 int Session::MaybeLearnZenzProjectedSegmentsToMozcHistory(
     const std::vector<ZenzProjectedLearningSegment>& segments) {
+  if (IsGrimodexSecureInput()) {
+    return 0;
+  }
+
   if (!UseZenzFeedbackLearning(context_->GetConfig())) {
     return 0;
   }
@@ -5418,6 +5752,10 @@ void Session::SetPendingZenzFeedbackAccepted(
     absl::string_view key,
     absl::string_view context_class,
     absl::string_view value) {
+  if (IsGrimodexSecureInput()) {
+    return;
+  }
+
   if (!UseZenzFeedbackLearning(context_->GetConfig())) {
     return;
   }
@@ -5473,6 +5811,10 @@ void Session::SetPendingZenzFeedbackAccepted(
 }
 
 void Session::SetPendingZenzFeedbackRejected(absl::string_view reason) {
+  if (IsGrimodexSecureInput()) {
+    return;
+  }
+
   if (!UseZenzFeedbackLearning(context_->GetConfig())) {
     return;
   }
@@ -5882,7 +6224,8 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
     return false;
   }
 
-  if (context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
+  if (IsGrimodexSecureInput() ||
+      context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
     return false;
   }
 
@@ -6071,7 +6414,8 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
     return false;
   }
 
-  if (context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
+  if (IsGrimodexSecureInput() ||
+      context_->composer().GetInputFieldType() == commands::Context::PASSWORD) {
     return false;
   }
 
@@ -6140,6 +6484,25 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
   prompt_options.topic = config.zenz_live_correction_topic();
   prompt_options.style = config.zenz_live_correction_style();
   prompt_options.settings = config.zenz_live_correction_settings();
+
+  // Conditions are carried by the exact immutable dictionary snapshot pinned
+  // for this composition.  Reading them here prevents a new project reload
+  // from mixing prompt metadata with an older native dictionary generation.
+  if (const std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+          project = context_->converter().GetPinnedProjectDictionary();
+      project != nullptr) {
+    const dictionary::ProjectDictionaryMetadata& metadata =
+        project->metadata();
+    if (metadata.topic.has_value()) {
+      prompt_options.topic = *metadata.topic;
+    }
+    if (metadata.style.has_value()) {
+      prompt_options.style = *metadata.style;
+    }
+    if (metadata.preference.has_value()) {
+      prompt_options.settings = *metadata.preference;
+    }
+  }
 
   ZenzProtectedPromptInput protected_prompt_input;
   protected_prompt_input.key = live_conversion_key_;
@@ -6956,6 +7319,10 @@ bool Session::RevertZenzLiveCorrectionToNormalConversion(
 }
 
 bool Session::CommitZenzLiveCorrectionResult(commands::Command* command) {
+  if (IsGrimodexSecureInput()) {
+    return false;
+  }
+
   if (!HasVisibleZenzLiveCorrection()) {
     return false;
   }
@@ -7696,6 +8063,22 @@ bool Session::CommitInternal(commands::Command* command,
         (ImeContext::COMPOSITION | ImeContext::CONVERSION))) {
     return DoNothing(command);
   }
+
+  // EngineConverter's ordinary Commit/CommitPreedit paths call
+  // FinishConversion and therefore learn.  Managed secure input must instead
+  // commit the composer's literal submission and reset all converter state.
+  // This check is session-owned rather than dependent on the keymap's password
+  // behavior, so SEND_COMMAND::SUBMIT is covered as well as Enter.
+  if (IsGrimodexSecureInput()) {
+    ClearPendingRerankedPreeditCommitAfterConvertCancel();
+    DiscardPendingDirectCommitLearning("grimodex_secure_commit");
+    DiscardPendingZenzFeedback("grimodex_secure_commit");
+    ClearLiveConversionState();
+    ClearUndoContext();
+    CommitCompositionDirectly(command);
+    return true;
+  }
+
   command->mutable_output()->set_consumed(true);
 
   PushUndoContext();
@@ -7738,6 +8121,10 @@ bool Session::Commit(commands::Command* command) {
       " ", ZenzRedactedTextStats("zenz_key", zenz_live_key_),
       " ", ZenzRedactedTextStats("zenz_value", zenz_live_value_),
       " state=", static_cast<int>(context_->state())));
+
+  if (IsGrimodexSecureInput()) {
+    return CommitInternal(command, /*trigger_zero_query_suggest=*/false);
+  }
 
   if (CommitZenzLiveCorrectionResult(command)) {
     return true;
@@ -7972,6 +8359,10 @@ bool ShouldSuppressShiftedAsciiAutoSuggestion(
 }  // namespace
 
 bool Session::Suggest(const commands::Input& input) {
+  if (IsGrimodexSecureInput()) {
+    return false;
+  }
+
   if (SuppressSuggestion(input)) {
     return false;
   }
@@ -8437,6 +8828,10 @@ bool Session::ToggleAlphanumericMode(commands::Command* command) {
 }
 
 bool Session::DeleteCandidateFromHistory(commands::Command* command) {
+  if (IsGrimodexSecureInput()) {
+    return DoNothing(command);
+  }
+
   std::optional<int> id = std::nullopt;
   if (command->input().has_command() && command->input().command().has_id()) {
     id = command->input().command().id();
@@ -8448,6 +8843,10 @@ bool Session::DeleteCandidateFromHistory(commands::Command* command) {
 }
 
 bool Session::Convert(commands::Command* command) {
+  if (IsGrimodexSecureInput()) {
+    return DoNothing(command);
+  }
+
   CancelPendingLiveConversion();
   command->mutable_output()->set_consumed(true);
   const std::string composition = context_->composer().GetQueryForConversion();
@@ -8507,6 +8906,10 @@ bool Session::Convert(commands::Command* command) {
 }
 
 bool Session::ConvertWithoutHistory(commands::Command* command) {
+  if (IsGrimodexSecureInput()) {
+    return DoNothing(command);
+  }
+
   CancelPendingLiveConversion();
   command->mutable_output()->set_consumed(true);
 
@@ -8871,6 +9274,10 @@ bool Session::PredictAndConvertFromLiveConversion(commands::Command* command) {
 }
 
 bool Session::PredictAndConvert(commands::Command* command) {
+  if (IsGrimodexSecureInput()) {
+    return DoNothing(command);
+  }
+
   CancelPendingLiveConversion();
 
   if (context_->state() == ImeContext::CONVERSION) {
@@ -9317,8 +9724,11 @@ void Session::TransformInput(commands::Input* input) {
 
 bool Session::SwitchInputFieldType(commands::Command* command) {
   command->mutable_output()->set_consumed(true);
-  context_->mutable_composer()->SetInputFieldType(
-      command->input().context().input_field_type());
+  const commands::Context::InputFieldType input_field_type =
+      command->input().context().input_field_type();
+  context_->mutable_composer()->SetInputFieldType(input_field_type);
+  context_->mutable_converter()->SetProjectDictionarySecureInput(
+      input_field_type == commands::Context::PASSWORD);
   Output(command);
   return true;
 }

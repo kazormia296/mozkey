@@ -357,8 +357,9 @@ CandidateFilter::ResultType CandidateFilter::FilterCandidateInternal(
     return CandidateFilter::BAD_CANDIDATE;
   }
 
-  // Don't remove duplications if USER_DICTIONARY.
-  if (candidate->attributes & Attribute::USER_DICTIONARY) {
+  // Preserve scoped dictionary provenance until the final ranking/dedup pass.
+  if (candidate->attributes &
+      (Attribute::USER_DICTIONARY | Attribute::PROJECT_DICTIONARY)) {
     return CandidateFilter::GOOD_CANDIDATE;
   }
 

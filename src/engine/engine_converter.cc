@@ -131,16 +131,22 @@ int32_t CalculateCursorOffset(absl::string_view committed_text) {
 }  // namespace
 
 EngineConverter::EngineConverter(
-    std::shared_ptr<const ConverterInterface> converter)
+    std::shared_ptr<const ConverterInterface> converter,
+    std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+        project_dictionary_provider)
     : EngineConverter(std::move(converter), composer::GetSharedDefaultRequest(),
-                      config::ConfigHandler::GetSharedDefaultConfig()) {}
+                      config::ConfigHandler::GetSharedDefaultConfig(),
+                      std::move(project_dictionary_provider)) {}
 
 EngineConverter::EngineConverter(
     std::shared_ptr<const ConverterInterface> converter,
     std::shared_ptr<const commands::Request> request,
-    std::shared_ptr<const Config> config)
+    std::shared_ptr<const Config> config,
+    std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+        project_dictionary_provider)
     : EngineConverterInterface(),
       converter_(std::move(converter)),
+      project_dictionary_provider_(std::move(project_dictionary_provider)),
       segments_(),
       incognito_segments_(),
       segment_index_(0),
@@ -193,6 +199,7 @@ bool EngineConverter::ConvertWithPreferences(
           .SetRequestView(*request_)
           .SetConfigView(*config_)
           .SetOptions(std::move(options))
+          .SetProjectDictionary(PinnedProjectDictionary())
           .Build();
 
   if (!converter_->StartConversion(conversion_request, &segments_)) {
@@ -493,6 +500,7 @@ bool EngineConverter::SwitchKanaType(const composer::Composer& composer) {
               .SetComposer(composer)
               .SetRequestView(*request_)
               .SetConfigView(*config_)
+              .SetProjectDictionary(PinnedProjectDictionary())
               .Build();
       if (!converter_->ResizeSegments(&segments_, conversion_request, 0,
                                       {offset})) {
@@ -590,6 +598,7 @@ bool EngineConverter::SuggestWithPreferences(
           .SetContextView(context)
           .SetConfigView(*config_)
           .SetOptions(std::move(options))
+          .SetProjectDictionary(PinnedProjectDictionary())
           .Build();
 
   // Start actual suggestion/prediction.
@@ -618,6 +627,7 @@ bool EngineConverter::SuggestWithPreferences(
             .SetConversionRequestView(conversion_request)
             .SetConfigView(*config_)
             .SetOptions(std::move(incognito_options))
+            .SetProjectDictionary(PinnedProjectDictionary())
             .Build();
     incognito_segments_.Clear();
     result = converter_->StartPrediction(incognito_conversion_request,
@@ -678,6 +688,7 @@ bool EngineConverter::PredictWithPreferences(
           .SetRequestView(*request_)
           .SetConfigView(*config_)
           .SetOptions(std::move(options))
+          .SetProjectDictionary(PinnedProjectDictionary())
           .Build();
 
   const bool predict_first =
@@ -748,6 +759,7 @@ void EngineConverter::Cancel() {
 
 void EngineConverter::Reset() {
   DCHECK(CheckState(COMPOSITION | SUGGESTION | PREDICTION | CONVERSION));
+  project_dictionary_registry_.EndComposition();
 
   // Even if composition mode, call ResetConversion
   // in order to clear history segments.
@@ -793,8 +805,11 @@ void EngineConverter::Commit(const composer::Composer& composer,
                                                    .SetRequestView(*request_)
                                                    .SetContextView(context)
                                                    .SetConfigView(*config_)
+                                                   .SetProjectDictionary(
+                                                       PinnedProjectDictionary())
                                                    .Build();
   converter_->FinishConversion(conversion_request, &segments_);
+  project_dictionary_registry_.EndComposition();
   ResetState();
 }
 
@@ -805,6 +820,8 @@ void EngineConverter::CommitContext(const composer::Composer& composer,
                                                    .SetRequestView(*request_)
                                                    .SetContextView(context)
                                                    .SetConfigView(*config_)
+                                                   .SetProjectDictionary(
+                                                       PinnedProjectDictionary())
                                                    .Build();
   converter_->CommitContext(conversion_request);
 }
@@ -837,6 +854,7 @@ bool EngineConverter::LearnExternalConversionResult(
           .SetContextView(context)
           .SetConfigView(*config_)
           .SetOptions(std::move(options))
+          .SetProjectDictionary(PinnedProjectDictionary())
           .SetKey(key)
           .Build();
 
@@ -879,6 +897,7 @@ bool EngineConverter::LearnExternalConversionSegments(
           .SetContextView(context)
           .SetConfigView(*config_)
           .SetOptions(std::move(options))
+          .SetProjectDictionary(PinnedProjectDictionary())
           .SetKey(full_key)
           .Build();
 
@@ -949,9 +968,12 @@ bool EngineConverter::CommitSuggestionInternal(
                                                      .SetRequestView(*request_)
                                                      .SetContextView(context)
                                                      .SetConfigView(*config_)
+                                                     .SetProjectDictionary(
+                                                         PinnedProjectDictionary())
                                                      .Build();
     converter_->FinishConversion(conversion_request, &segments_);
     DCHECK_EQ(0, segments_.conversion_segments_size());
+    project_dictionary_registry_.EndComposition();
     ResetState();
   }
   return true;
@@ -1153,8 +1175,10 @@ void EngineConverter::CommitPreedit(
           .SetContextView(context)
           .SetConfigView(*config_)
           .SetOptions(std::move(options))
+          .SetProjectDictionary(PinnedProjectDictionary())
           .Build();
   converter_->FinishConversion(conversion_request, &segments_);
+  project_dictionary_registry_.EndComposition();
   ResetState();
 }
 
@@ -1173,7 +1197,10 @@ void EngineConverter::CommitHead(size_t count,
   output::FillCursorOffsetResult(CalculateCursorOffset(composition), &result_);
 }
 
-void EngineConverter::Revert() { converter_->RevertConversion(&segments_); }
+void EngineConverter::Revert() {
+  converter_->RevertConversion(&segments_);
+  project_dictionary_registry_.EndComposition();
+}
 
 bool EngineConverter::DeleteCandidateFromHistory(std::optional<int> id) {
   if (id == std::nullopt) {
@@ -1255,6 +1282,8 @@ void EngineConverter::ResizeSegmentWidth(const composer::Composer& composer,
                                                    .SetComposer(composer)
                                                    .SetRequestView(*request_)
                                                    .SetConfigView(*config_)
+                                                   .SetProjectDictionary(
+                                                       PinnedProjectDictionary())
                                                    .Build();
   if (!converter_->ResizeSegment(&segments_, conversion_request, segment_index_,
                                  delta)) {
@@ -1506,7 +1535,8 @@ void EngineConverter::FillOutput(const composer::Composer& composer,
 
 EngineConverter* EngineConverter::Clone() const {
   EngineConverter* engine_converter =
-      new EngineConverter(converter_, request_, config_);
+      new EngineConverter(converter_, request_, config_,
+                          project_dictionary_provider_);
   *engine_converter = *this;
 
   if (engine_converter->CheckState(SUGGESTION | PREDICTION | CONVERSION)) {
@@ -1520,6 +1550,11 @@ EngineConverter* EngineConverter::Clone() const {
 }
 
 void EngineConverter::ResetResult() { result_.Clear(); }
+
+std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+EngineConverter::PinnedProjectDictionary() const {
+  return project_dictionary_registry_.pinned();
+}
 
 void EngineConverter::ResetState() {
   state_ = COMPOSITION;
@@ -1985,6 +2020,45 @@ void EngineConverter::SetConfig(std::shared_ptr<const config::Config> config) {
 }
 
 void EngineConverter::OnStartComposition(const commands::Context& context) {
+  if (context.has_input_field_type()) {
+    SetProjectDictionarySecureInput(context.input_field_type() ==
+                                    commands::Context::PASSWORD);
+  }
+
+  absl::string_view focused_program;
+  if (context.has_grimodex()) {
+    focused_program = context.grimodex().program();
+  }
+  const bool application_allowed =
+      project_dictionary_provider_ == nullptr ||
+      project_dictionary_provider_->AllowsApplication(focused_program);
+  if (!application_allowed) {
+    // Application identity is a privacy boundary for unpublished project
+    // terms and Zenz context.  A focus transition already purges session
+    // state, but rechecking here keeps direct/non-Fcitx callers fail closed.
+    project_dictionary_registry_.Purge();
+  } else if (!project_dictionary_registry_.secure_input() &&
+             project_dictionary_provider_ != nullptr) {
+    dictionary::ProjectDictionaryPublication publication =
+        project_dictionary_provider_->Reload();
+    if (publication.snapshot != nullptr) {
+      const dictionary::ProjectDictionaryRegistry::PublishResult result =
+          project_dictionary_registry_.Publish(
+              std::move(publication.snapshot));
+      if (result == dictionary::ProjectDictionaryRegistry::PublishResult::
+                        kRejectedStale ||
+          result == dictionary::ProjectDictionaryRegistry::PublishResult::
+                        kRejectedConflict) {
+        // Provider ordering is authoritative.  An impossible local conflict
+        // fails closed instead of retaining a potentially mismatched overlay.
+        project_dictionary_registry_.Purge();
+      }
+    } else if (publication.clear) {
+      project_dictionary_registry_.Purge();
+    }
+  }
+  project_dictionary_registry_.PinForComposition();
+
   bool revision_changed = false;
   if (context.has_revision()) {
     revision_changed = (context.revision() != client_revision_);
@@ -2096,6 +2170,30 @@ void EngineConverter::OnStartComposition(const commands::Context& context) {
       "[mozc-left-context] engine reconstructed history=[",
       reconstructed_history, "]"));
 #endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
+}
+
+void EngineConverter::OnEndComposition() {
+  project_dictionary_registry_.EndComposition();
+}
+
+dictionary::ProjectDictionaryRegistry::PublishResult
+EngineConverter::PublishProjectDictionary(
+    std::shared_ptr<const dictionary::ProjectDictionarySnapshot> snapshot) {
+  return project_dictionary_registry_.Publish(std::move(snapshot));
+}
+
+void EngineConverter::SetProjectDictionarySecureInput(bool secure) {
+  project_dictionary_registry_.SetSecureInput(secure);
+}
+
+dictionary::ProjectDictionaryRegistry::Status
+EngineConverter::GetProjectDictionaryStatus() const {
+  return project_dictionary_registry_.status();
+}
+
+std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+EngineConverter::GetPinnedProjectDictionary() const {
+  return project_dictionary_registry_.pinned();
 }
 
 void EngineConverter::UpdateSelectedCandidateIndex() {

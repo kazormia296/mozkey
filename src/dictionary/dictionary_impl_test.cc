@@ -43,6 +43,7 @@
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/dictionary_token.h"
 #include "dictionary/pos_matcher.h"
+#include "dictionary/project_dictionary.h"
 #include "dictionary/system/system_dictionary.h"
 #include "dictionary/system/value_dictionary.h"
 #include "dictionary/user_dictionary.h"
@@ -381,6 +382,55 @@ TEST_F(DictionaryImplTest, HasKeyValue) {
 
   EXPECT_FALSE(d->HasKey("__きょうと__"));
   EXPECT_FALSE(d->HasValue("__京都__"));
+}
+
+TEST_F(DictionaryImplTest, RequestScopedProjectDictionaryOverlay) {
+  std::unique_ptr<DictionaryData> data = CreateDictionaryData();
+  DictionaryInterface* dictionary = data->dictionary.get();
+  auto snapshot = ProjectDictionarySnapshot::Create(
+      12, "project-a", "sha256:test",
+      {ProjectDictionaryEntry{
+          .key = "こーでっくすじしょ",
+          .value = "Codex辞書",
+          .cost = 2500,
+          .lid = data->pos_matcher->GetGeneralNounId(),
+          .rid = data->pos_matcher->GetGeneralNounId(),
+          .priority = 3,
+          .entry_id = "entry-1",
+      }});
+  ASSERT_TRUE(snapshot.ok()) << snapshot.status();
+
+  const ConversionRequest with_project =
+      ConversionRequestBuilder()
+          .SetConfig(config_)
+          .SetProjectDictionary(*snapshot)
+          .Build();
+  CheckKeyValueExistenceCallback exact_callback("こーでっくすじしょ",
+                                                "Codex辞書");
+  dictionary->LookupExact("こーでっくすじしょ", with_project,
+                          &exact_callback);
+  EXPECT_TRUE(exact_callback.found());
+
+  const ConversionRequest without_project = ConvReq(config_);
+  CheckKeyValueExistenceCallback isolated_callback("こーでっくすじしょ",
+                                                   "Codex辞書");
+  dictionary->LookupExact("こーでっくすじしょ", without_project,
+                          &isolated_callback);
+  EXPECT_FALSE(isolated_callback.found());
+
+  ConversionRequest::Options options;
+  options.incognito_mode = true;
+  const ConversionRequest incognito =
+      ConversionRequestBuilder()
+          .SetConfig(config_)
+          .SetProjectDictionary(*snapshot)
+          .SetOptions(options)
+          .Build();
+  CheckKeyValueExistenceCallback incognito_callback("こーでっくすじしょ",
+                                                    "Codex辞書");
+  dictionary->LookupExact("こーでっくすじしょ", incognito,
+                          &incognito_callback);
+  EXPECT_FALSE(incognito_callback.found());
 }
 
 }  // namespace dictionary

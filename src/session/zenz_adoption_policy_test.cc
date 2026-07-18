@@ -33,10 +33,24 @@
 #include <utility>
 #include <vector>
 
+#include "protocol/candidate_window.pb.h"
 #include "testing/gunit.h"
 
 namespace mozc::session {
 namespace {
+
+TEST(ZenzAdoptionPolicyTest, ProtectsUserAndProjectDictionaryCandidates) {
+  commands::CandidateWord standard;
+  EXPECT_FALSE(IsZenzProtectedDictionaryCandidate(standard));
+
+  commands::CandidateWord user;
+  user.add_attributes(commands::USER_DICTIONARY);
+  EXPECT_TRUE(IsZenzProtectedDictionaryCandidate(user));
+
+  commands::CandidateWord project;
+  project.add_attributes(commands::PROJECT_DICTIONARY);
+  EXPECT_TRUE(IsZenzProtectedDictionaryCandidate(project));
+}
 
 ProtectedConversionSpan BuildSpan(
     std::string key, std::string value, ProtectedConversionSpan::Tier tier,
@@ -68,6 +82,47 @@ TEST(ZenzAdoptionPolicyTest, ProtectPromptKeyAndRestorePlaceholder) {
       "点滴の彼は__MOZC_ZENZ_PROTECTED_0__を使用しています",
       prompt.protected_spans);
   EXPECT_EQ(restored, "点滴の彼はMozkeyを使用しています");
+}
+
+TEST(ZenzAdoptionPolicyTest,
+     PreservesExactMixedLiteralAndConvertsAdjacentKana) {
+  ZenzAdoptionPolicy policy;
+  ZenzProtectedPromptInput input;
+  input.key = "RUST_LOG=debugでくわしいろぐをだす";
+  input.protected_spans = {
+      BuildSpan("RUST_LOG", "RUST_LOG",
+                ProtectedConversionSpan::Tier::kIdentityCritical, true),
+      BuildSpan("debug", "debug",
+                ProtectedConversionSpan::Tier::kIdentityCritical, true),
+  };
+
+  const ZenzProtectedPromptResult prompt = policy.ProtectPromptKey(input);
+  ASSERT_EQ(prompt.protected_spans.size(), 2);
+  EXPECT_EQ(prompt.placeholder_count, 2);
+  EXPECT_EQ(prompt.key,
+            "__MOZC_ZENZ_PROTECTED_0__="
+            "__MOZC_ZENZ_PROTECTED_1__でくわしいろぐをだす");
+
+  const std::string restored = policy.RestorePlaceholders(
+      "__MOZC_ZENZ_PROTECTED_0__="
+      "__MOZC_ZENZ_PROTECTED_1__で詳しいログを出す",
+      prompt.protected_spans);
+  EXPECT_EQ(restored, "RUST_LOG=debugで詳しいログを出す");
+
+  ZenzAdoptionInput adoption_input;
+  adoption_input.key = input.key;
+  adoption_input.mozc_value = "RUST_LOG=debugで詳しいログを出す";
+  adoption_input.zenz_value = restored;
+  adoption_input.protected_spans = prompt.protected_spans;
+
+  const ZenzAdoptionResult result = policy.Decide(adoption_input);
+  EXPECT_EQ(result.action, ZenzAdoptionResult::Action::kAcceptAsIs);
+  EXPECT_EQ(result.value, "RUST_LOG=debugで詳しいログを出す");
+
+  adoption_input.zenz_value = "RUST_LOGdebugで詳しいログを出す";
+  const ZenzAdoptionResult rejected = policy.Decide(adoption_input);
+  EXPECT_EQ(rejected.action, ZenzAdoptionResult::Action::kReject);
+  EXPECT_EQ(rejected.value, "RUST_LOG=debugで詳しいログを出す");
 }
 
 TEST(ZenzAdoptionPolicyTest, DoesNotPlaceholderUserPreferredJapaneseSurface) {

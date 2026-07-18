@@ -1,0 +1,4 @@
+OK:	たしました	足しました	Conversion Expected	足しました	hazkey-fixture-v1
+OK:	たいじんすきる	対人スキル	Conversion Expected	対人スキル	hazkey-fixture-v1
+FAILED:	もずきー	モズキー	Conversion Expected	Mozkey	hazkey-fixture-v1
+FAILED:	みせいこう	未成工	Conversion Expected	未成功	hazkey-fixture-v1

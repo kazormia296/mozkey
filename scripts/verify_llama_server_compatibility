@@ -1,0 +1,157 @@
+#!/bin/sh
+
+# Cheap install-time contract check. The release/dogfood probe additionally
+# loads the bundled GGUF and exercises authenticated POST /completion.  This
+# script intentionally refuses user-controlled executables when called from a
+# privileged installer.
+set -eu
+
+llama_server="${1:-/usr/bin/llama-server}"
+case "${llama_server}" in
+  /*) ;;
+  *)
+    echo "llama-server path must be absolute" >&2
+    exit 2
+    ;;
+esac
+case "${llama_server}" in
+  *//*|*/./*|*/../*|*/.|*/..)
+    echo "llama-server path must be normalized" >&2
+    exit 2
+    ;;
+esac
+if [ ! -f "${llama_server}" ] || [ ! -x "${llama_server}" ] ||
+   [ ! -s "${llama_server}" ]; then
+  echo "compatible executable llama-server is required: ${llama_server}" >&2
+  exit 1
+fi
+
+resolved_server="$(readlink -f -- "${llama_server}")"
+if [ -z "${resolved_server}" ] || [ ! -f "${resolved_server}" ] ||
+   [ ! -x "${resolved_server}" ]; then
+  echo "llama-server could not be resolved to an executable regular file" >&2
+  exit 1
+fi
+
+reject_untrusted_metadata() {
+  metadata_path="$1"
+  metadata="$(stat -Lc '%u %A' -- "${metadata_path}" 2>/dev/null)" || {
+    echo "could not inspect trusted path: ${metadata_path}" >&2
+    return 1
+  }
+  owner="${metadata%% *}"
+  permissions="${metadata#* }"
+  if [ "${owner}" != 0 ]; then
+    echo "trusted llama-server path must be root-owned: ${metadata_path}" >&2
+    return 1
+  fi
+  case "${permissions}" in
+    ?????w????|????????w?)
+      echo "trusted llama-server path must not be group/other writable: ${metadata_path}" >&2
+      return 1
+      ;;
+  esac
+}
+
+verify_trusted_parent_chain() {
+  current="$1"
+  while :
+  do
+    reject_untrusted_metadata "${current}" || return
+    [ "${current}" = / ] && break
+    current="$(dirname -- "${current}")"
+  done
+}
+
+case "${MOZKEY_LLAMA_ALLOW_UNTRUSTED_FOR_TESTS:-}" in
+  "")
+    reject_untrusted_metadata "${resolved_server}"
+    verify_trusted_parent_chain "$(dirname -- "${resolved_server}")"
+    if [ -L "${llama_server}" ]; then
+      link_owner="$(stat -c '%u' -- "${llama_server}")"
+      if [ "${link_owner}" != 0 ]; then
+        echo "trusted llama-server symlink must be root-owned: ${llama_server}" >&2
+        exit 1
+      fi
+    fi
+    verify_trusted_parent_chain "$(dirname -- "${llama_server}")"
+    ;;
+  1)
+    echo "warning: bypassing llama-server ownership checks for tests" >&2
+    ;;
+  *)
+    echo "MOZKEY_LLAMA_ALLOW_UNTRUSTED_FOR_TESTS accepts only 1" >&2
+    exit 2
+    ;;
+esac
+
+probe_timeout="${MOZKEY_LLAMA_PROBE_TIMEOUT_SECONDS:-5}"
+case "${probe_timeout}" in
+  ''|*[!0-9]*)
+    echo "MOZKEY_LLAMA_PROBE_TIMEOUT_SECONDS must be an integer" >&2
+    exit 2
+    ;;
+esac
+if [ "${probe_timeout}" -lt 1 ] || [ "${probe_timeout}" -gt 30 ]; then
+  echo "MOZKEY_LLAMA_PROBE_TIMEOUT_SECONDS must be between 1 and 30" >&2
+  exit 2
+fi
+
+timeout_command=/usr/bin/timeout
+if [ ! -x "${timeout_command}" ]; then
+  echo "GNU timeout is required at ${timeout_command}" >&2
+  exit 1
+fi
+
+probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-llama-probe.XXXXXX")"
+trap 'rm -rf "${probe_dir}"' EXIT HUP INT TERM
+max_output_bytes=65536
+file_limit_blocks=128
+
+run_bounded_probe() {
+  probe_name="$1"
+  probe_argument="$2"
+  probe_output="${probe_dir}/${probe_name}.txt"
+  if (
+    ulimit -f "${file_limit_blocks}"
+    exec "${timeout_command}" --signal=TERM --kill-after=1 \
+      "${probe_timeout}" "${resolved_server}" "${probe_argument}"
+  ) >"${probe_output}" 2>&1; then
+    probe_status=0
+  else
+    probe_status=$?
+  fi
+  probe_size="$(wc -c < "${probe_output}")"
+  if [ "${probe_size}" -gt "${max_output_bytes}" ]; then
+    echo "llama-server ${probe_argument} exceeded the output limit" >&2
+    return 1
+  fi
+  if [ "${probe_status}" -eq 124 ] || [ "${probe_status}" -eq 137 ]; then
+    echo "llama-server ${probe_argument} timed out" >&2
+    return 1
+  fi
+  if [ "${probe_status}" -ne 0 ]; then
+    echo "llama-server ${probe_argument} failed (status ${probe_status})" >&2
+    return 1
+  fi
+}
+
+run_bounded_probe version --version
+run_bounded_probe help --help
+version_output="${probe_dir}/version.txt"
+help_output="${probe_dir}/help.txt"
+
+for required_flag in '--api-key' '--host' '--port' '--model' '--ctx-size' '--threads'
+do
+  grep -Fq -- "${required_flag}" "${help_output}" || {
+    echo "llama-server is missing required CLI flag: ${required_flag}" >&2
+    exit 1
+  }
+done
+
+version_line="$(sed -n '1p' "${version_output}")"
+if [ -z "${version_line}" ]; then
+  echo "llama-server returned an empty version" >&2
+  exit 1
+fi
+printf 'compatible llama-server CLI: %s\n' "${version_line}"

@@ -1,9 +1,23 @@
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 
 #include <windows.h>
 #include <bcrypt.h>
 #include <sddl.h>
 #include <winhttp.h>
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <sys/prctl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <cstring>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -19,9 +33,11 @@
 #include <thread>
 #include <vector>
 
+#if defined(_WIN32)
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Bcrypt.lib")
 #pragma comment(lib, "Winhttp.lib")
+#endif
 
 namespace {
 
@@ -31,12 +47,21 @@ std::atomic<bool> g_llama_server_ready{false};
 std::atomic<bool> g_shutdown_requested{false};
 
 std::mutex g_llama_process_mutex;
+#if defined(_WIN32)
 HANDLE g_llama_process = nullptr;
 HANDLE g_llama_job = nullptr;
 
-constexpr wchar_t kDefaultPipeName[] = L"\\\\.\\pipe\\mozc_zenz_scorer";
+constexpr wchar_t kDefaultPipeName[] = L"\\.\pipe\mozc_zenz_scorer";
 constexpr wchar_t kSingleInstanceMutexName[] =
-    L"Local\\MozcZenzScorerSingleInstance";
+    L"Local\MozcZenzScorerSingleInstance";
+#else
+pid_t g_llama_process = -1;
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+constexpr char kDefaultPipeNameSuffix[] = "/.mozkey_zenz_scorer_pipe";
+#else
+constexpr char kDefaultPipeNameSuffix[] = "/.mozc_zenz_scorer_pipe";
+#endif
+#endif
 
 constexpr wchar_t kDefaultHost[] = L"127.0.0.1";
 constexpr int kRandomPortMin = 49152;
@@ -94,6 +119,7 @@ struct ZenzWireResponseHeader {
 };
 #pragma pack(pop)
 
+#if defined(_WIN32)
 struct Options {
   std::wstring pipe_name = kDefaultPipeName;
   std::wstring host = kDefaultHost;
@@ -108,7 +134,24 @@ struct Options {
   std::wstring llama_server_path;
   std::wstring model_path;
 };
+#else
+struct Options {
+  std::string pipe_name;
+  std::string host = "127.0.0.1";
+  int port = 0;
+  std::string api_key;
+  bool random_ok = false;
 
+  int ctx = kDefaultCtx;
+  int threads = kDefaultThreads;
+  int n_predict = kDefaultNPredict;
+
+  std::string llama_server_path;
+  std::string model_path;
+};
+#endif
+
+#if defined(_WIN32)
 void Debug(const std::wstring& message) {
   std::wstring line = L"[mozc-zenz-scorer] ";
   line.append(message);
@@ -336,6 +379,128 @@ Options LoadOptions() {
   return options;
 }
 
+#else
+void Debug(const std::string& message) {
+  std::string line = "[mozc-zenz-scorer] ";
+  line.append(message);
+  line.push_back('\n');
+  std::cerr << line;
+}
+
+std::string RedactedBytes(const char* label, size_t bytes) {
+  std::string output(label);
+  output.append("_bytes=");
+  output.append(std::to_string(bytes));
+  return output;
+}
+
+std::string RedactedWideChars(const char* label, const std::string& text) {
+  std::string output(label);
+  output.append("_chars=");
+  output.append(std::to_string(text.size()));
+  return output;
+}
+
+std::string RedactedUtf8Bytes(const char* label, const std::string& text) {
+  return RedactedBytes(label, text.size());
+}
+
+// std::string Utf8ToWide(const std::string& input) { return input; }
+// std::string WideToUtf8(const std::string& input) { return input; }
+
+std::string GetEnvString(const char* name) {
+  const char* value = std::getenv(name);
+  return value ? std::string(value) : "";
+}
+
+int GetEnvInt(const char* name, int default_value) {
+  std::string value = GetEnvString(name);
+  if (value.empty()) return default_value;
+  char* end = nullptr;
+  long parsed = std::strtol(value.c_str(), &end, 10);
+  if (end == value.c_str() || parsed <= 0) return default_value;
+  return static_cast<int>(parsed);
+}
+
+bool FillRandomBytes(void* buffer, size_t size) {
+  if (buffer == nullptr) return false;
+  if (size == 0) return true;
+  FILE* f = std::fopen("/dev/urandom", "rb");
+  if (!f) return false;
+  size_t read = std::fread(buffer, 1, size, f);
+  std::fclose(f);
+  return read == size;
+}
+
+int GenerateRandomPort() {
+  uint32_t value = 0;
+  if (!FillRandomBytes(&value, sizeof(value))) return 0;
+  constexpr int kRange = kRandomPortMax - kRandomPortMin + 1;
+  return kRandomPortMin + static_cast<int>(value % kRange);
+}
+
+std::string GenerateApiKey() {
+  std::vector<uint8_t> bytes(kApiKeyBytes);
+  if (!FillRandomBytes(bytes.data(), bytes.size())) return "";
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string output;
+  output.reserve(bytes.size() * 2);
+  for (uint8_t b : bytes) {
+    output.push_back(kHex[(b >> 4) & 0x0f]);
+    output.push_back(kHex[b & 0x0f]);
+  }
+  return output;
+}
+
+std::string GetExeDirectory() {
+  char path[4096] = {};
+  ssize_t size = ::readlink("/proc/self/exe", path, sizeof(path) - 1);
+  if (size <= 0) return ".";
+  path[size] = '\0';
+  std::string full(path);
+  size_t pos = full.find_last_of('/');
+  return pos == std::string::npos ? "." : full.substr(0, pos);
+}
+
+std::string JoinPath(const std::string& dir, const std::string& file) {
+  if (dir.empty()) return file;
+  if (dir.back() == '/') return dir + file;
+  return dir + "/" + file;
+}
+
+bool FileExists(const std::string& path) {
+  return ::access(path.c_str(), F_OK) == 0;
+}
+
+Options LoadOptions() {
+  Options options;
+  const std::string exe_dir = GetExeDirectory();
+
+#if !defined(NDEBUG)
+  options.llama_server_path = GetEnvString("MOZC_ZENZ_LLAMA_SERVER");
+#endif
+  if (options.llama_server_path.empty()) {
+    options.llama_server_path = JoinPath(exe_dir, "llama-server");
+  }
+
+#if !defined(NDEBUG)
+  options.model_path = GetEnvString("MOZC_ZENZ_MODEL");
+#endif
+  if (options.model_path.empty()) {
+    options.model_path = JoinPath(JoinPath(exe_dir, "models"), "zenz-v3.2-small-Q5_K_M.gguf");
+  }
+
+  options.port = GenerateRandomPort();
+  options.api_key = GenerateApiKey();
+  options.random_ok = options.port >= kRandomPortMin && options.port <= kRandomPortMax && !options.api_key.empty();
+
+  options.ctx = std::clamp(GetEnvInt("MOZC_ZENZ_CTX", kDefaultCtx), 64, kMaxCtx);
+  options.threads = std::clamp(GetEnvInt("MOZC_ZENZ_THREADS", kDefaultThreads), 1, kMaxThreads);
+  options.n_predict = std::clamp(GetEnvInt("MOZC_ZENZ_N_PREDICT", kDefaultNPredict), 4, kMaxNPredict);
+
+  return options;
+}
+#endif
 void AppendUtf8(uint32_t codepoint, std::string* output) {
   if (codepoint <= 0x7F) {
     output->push_back(static_cast<char>(codepoint));
@@ -597,6 +762,7 @@ std::string CleanGeneratedText(std::string text, uint32_t max_output_chars) {
   return text;
 }
 
+#if defined(_WIN32)
 bool ReadAll(HANDLE handle, void* data, uint32_t size) {
   uint8_t* ptr = static_cast<uint8_t*>(data);
   uint32_t remaining = size;
@@ -1072,19 +1238,17 @@ void StartLlamaServerInBackground(const Options& options) {
     return;
   }
 
-  std::thread([options]() {
-    std::wstring launch_error;
-    if (!LaunchLlamaServer(options, &launch_error)) {
-      Debug(L"background launch failed: " + launch_error);
-      g_llama_launch_started = false;
-      g_llama_ready_probe_started = false;
-      g_llama_server_ready = false;
-      return;
-    }
+  std::wstring launch_error;
+  if (!LaunchLlamaServer(options, &launch_error)) {
+    Debug(L"background launch failed: " + launch_error);
+    g_llama_launch_started = false;
+    g_llama_ready_probe_started = false;
+    g_llama_server_ready = false;
+    return;
+  }
 
-    Debug(L"background launch requested");
-    StartLlamaReadyProbeInBackground(options);
-  }).detach();
+  Debug(L"background launch requested");
+  StartLlamaReadyProbeInBackground(options);
 }
 
 void StartLlamaReadyProbeInBackground(const Options& options) {
@@ -1373,8 +1537,534 @@ int RunServer(const Options& options) {
   return 0;
 }
 
+#else
+using ZenzSocketHandle = int;
+const ZenzSocketHandle kInvalidZenzSocket = -1;
+// void CloseZenzSocket(ZenzSocketHandle h) { if (h >= 0) ::close(h); }
+
+bool ReadAll(ZenzSocketHandle handle, void* data, uint32_t size) {
+  uint8_t* ptr = static_cast<uint8_t*>(data);
+  uint32_t remaining = size;
+  while (remaining > 0) {
+    ssize_t r = ::recv(handle, ptr, remaining, 0);
+    if (r <= 0) {
+      if (errno == EINTR) continue;
+      return false;
+    }
+    ptr += r;
+    remaining -= r;
+  }
+  return true;
+}
+
+bool WriteAll(ZenzSocketHandle handle, const void* data, uint32_t size) {
+#if defined(__APPLE__)
+  constexpr int kSendFlags = 0;
+#else
+  constexpr int kSendFlags = MSG_NOSIGNAL;
+#endif
+  const uint8_t* ptr = static_cast<const uint8_t*>(data);
+  uint32_t remaining = size;
+  while (remaining > 0) {
+    ssize_t w = ::send(handle, ptr, remaining, kSendFlags);
+    if (w <= 0) {
+      if (errno == EINTR) continue;
+      return false;
+    }
+    ptr += w;
+    remaining -= w;
+  }
+  return true;
+}
+
+void ResetLlamaReadyState() {
+  g_llama_launch_started = false;
+  g_llama_ready_probe_started = false;
+  g_llama_server_ready = false;
+}
+
+void StopLlamaServer() {
+  std::lock_guard<std::mutex> lock(g_llama_process_mutex);
+  if (g_llama_process > 0) {
+    ::kill(g_llama_process, SIGTERM);
+    for (int i = 0; i < 30; ++i) {
+      int status = 0;
+      pid_t ret = ::waitpid(g_llama_process, &status, WNOHANG);
+      if (ret == g_llama_process || (ret < 0 && errno == ECHILD)) {
+        g_llama_process = -1;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (g_llama_process > 0) {
+      ::kill(g_llama_process, SIGKILL);
+      ::waitpid(g_llama_process, nullptr, 0);
+      g_llama_process = -1;
+    }
+  }
+  ResetLlamaReadyState();
+}
+
+void HandleSignal(int sig) {
+  g_shutdown_requested = true;
+  StopLlamaServer();
+}
+
+bool LaunchLlamaServer(const Options& options, std::string* error) {
+  if (!FileExists(options.llama_server_path)) {
+    *error = "llama_server_not_found";
+    return false;
+  }
+  if (!FileExists(options.model_path)) {
+    *error = "model_not_found";
+    return false;
+  }
+
+  Debug("launch llama-server port=random api_key_bytes=" + std::to_string(options.api_key.size()));
+
+  pid_t pid = ::fork();
+  if (pid < 0) {
+    *error = "fork_failed";
+    return false;
+  }
+
+  if (pid == 0) {
+    ::prctl(PR_SET_PDEATHSIG, SIGTERM);
+    int fd = ::open("/dev/null", O_RDWR);
+    if (fd >= 0) {
+      ::dup2(fd, STDIN_FILENO);
+      ::dup2(fd, STDOUT_FILENO);
+      ::dup2(fd, STDERR_FILENO);
+      if (fd > 2) ::close(fd);
+    }
+
+    std::vector<std::string> args = {
+        options.llama_server_path,
+        "-m", options.model_path,
+        "-c", std::to_string(options.ctx),
+        "-t", std::to_string(options.threads),
+        "--host", "127.0.0.1",
+        "--port", std::to_string(options.port),
+        "--api-key", options.api_key
+    };
+
+    std::vector<char*> c_args;
+    for (auto& a : args) c_args.push_back(const_cast<char*>(a.c_str()));
+    c_args.push_back(nullptr);
+
+    ::execv(options.llama_server_path.c_str(), c_args.data());
+    ::_exit(127);
+  }
+
+  std::lock_guard<std::mutex> lock(g_llama_process_mutex);
+  g_llama_process = pid;
+  return true;
+}
+
+bool HttpPostCompletion(
+    const Options& options,
+    const std::string& prompt,
+    uint32_t timeout_msec,
+    uint32_t max_output_chars,
+    std::string* value,
+    std::string* debug) {
+  value->clear();
+  debug->clear();
+
+  int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) {
+    *debug = "socket_failed";
+    return false;
+  }
+
+  struct timeval tv;
+  tv.tv_sec = timeout_msec / 1000;
+  tv.tv_usec = (timeout_msec % 1000) * 1000;
+  ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+  struct sockaddr_in server_addr;
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_port = htons(options.port);
+  if (inet_pton(AF_INET, options.host.c_str(), &server_addr.sin_addr) <= 0) {
+    ::close(sock);
+    *debug = "inet_pton_failed";
+    return false;
+  }
+
+  if (::connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    ::close(sock);
+    *debug = "connect_failed";
+    return false;
+  }
+
+  const int requested_n_predict =
+      max_output_chars > 0 ? static_cast<int>(max_output_chars)
+                          : options.n_predict;
+  const int n_predict =
+      std::max(4, std::min(options.n_predict, requested_n_predict));
+
+  std::string body;
+  body += "{";
+  body += "\"prompt\":\"";
+  body += JsonEscapeUtf8(prompt);
+  body += "\",";
+  body += "\"n_predict\":";
+  body += std::to_string(n_predict);
+  body += ",";
+  body += "\"temperature\":0.0,";
+  body += "\"top_k\":1,";
+  body += "\"top_p\":1.0,";
+  body += "\"stream\":false,";
+  body += "\"cache_prompt\":true,";
+  body += "\"stop\":["
+          "\"\\uee00\","
+          "\"\\uee01\","
+          "\"\\uee02\","
+          "\"\\uee03\","
+          "\"\\uee04\","
+          "\"\\uee05\","
+          "\"\\uee06\","
+          "\"\\uee07\","
+          "\"\\uee08\","
+          "\"\\uee09\","
+          "\"\\uee0a\","
+          "\"\\uee0b\","
+          "\"\\uee0c\","
+          "\"\\uee0d\","
+          "\"\\uee0e\","
+          "\"\\uee0f\","
+          "\"\\n\","
+          "\"\\r\""
+          "]";
+  body += "}";
+
+  std::string request = "POST /completion HTTP/1.1\r\n";
+  request += "Host: " + options.host + ":" + std::to_string(options.port) + "\r\n";
+  request += "Content-Type: application/json; charset=utf-8\r\n";
+  request += "Authorization: Bearer " + options.api_key + "\r\n";
+  request += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+  request += "Connection: close\r\n\r\n";
+  request += body;
+
+  const char* ptr = request.c_str();
+  size_t remaining = request.size();
+  while (remaining > 0) {
+#if defined(__APPLE__)
+    constexpr int kSendFlags = 0;
+#else
+    constexpr int kSendFlags = MSG_NOSIGNAL;
+#endif
+    ssize_t written = ::send(sock, ptr, remaining, kSendFlags);
+    if (written <= 0) {
+      ::close(sock);
+      *debug = "send_failed";
+      return false;
+    }
+    ptr += written;
+    remaining -= written;
+  }
+
+  std::string response_body;
+  char buffer[4096];
+  while (true) {
+    ssize_t read_bytes = ::recv(sock, buffer, sizeof(buffer), 0);
+    if (read_bytes < 0) {
+      if (errno == EINTR) continue;
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        ::close(sock);
+        *debug = "timeout";
+        return false;
+      }
+      ::close(sock);
+      *debug = "recv_failed";
+      return false;
+    }
+    if (read_bytes == 0) {
+      break;
+    }
+    if (response_body.size() + read_bytes > kMaxHttpResponseBytes) {
+      ::close(sock);
+      *debug = "http_response_too_large";
+      return false;
+    }
+    response_body.append(buffer, read_bytes);
+  }
+  ::close(sock);
+
+  size_t header_end = response_body.find("\r\n\r\n");
+  if (header_end == std::string::npos) {
+    *debug = "invalid_http_response";
+    return false;
+  }
+
+  std::string content;
+  if (!ExtractJsonStringField(response_body.substr(header_end + 4), "content", &content)) {
+    *debug = "content_field_not_found";
+    return false;
+  }
+
+  content = CleanGeneratedText(content, max_output_chars);
+  if (content.empty()) {
+    *debug = "empty_content";
+    return false;
+  }
+
+  *value = std::move(content);
+  *debug = "ok";
+  return true;
+}
+
+void StartLlamaReadyProbeInBackground(const Options& options);
+
+void StartLlamaServerInBackground(const Options& options) {
+  bool expected = false;
+  if (!g_llama_launch_started.compare_exchange_strong(expected, true)) {
+    StartLlamaReadyProbeInBackground(options);
+    return;
+  }
+
+  std::string launch_error;
+  if (!LaunchLlamaServer(options, &launch_error)) {
+    Debug("background launch failed: " + launch_error);
+    g_llama_launch_started = false;
+    g_llama_ready_probe_started = false;
+    g_llama_server_ready = false;
+    return;
+  }
+  Debug("background launch requested");
+  StartLlamaReadyProbeInBackground(options);
+}
+
+void StartLlamaReadyProbeInBackground(const Options& options) {
+  bool expected = false;
+  if (!g_llama_ready_probe_started.compare_exchange_strong(expected, true)) {
+    return;
+  }
+  std::thread([options]() {
+    Debug("ready probe started");
+    for (int i = 0; i < 120; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      std::string value;
+      std::string local_debug;
+      if (HttpPostCompletion(
+              options,
+              "\xEE\xB8\x82\xEE\xB8\x80テスト\xEE\xB8\x81",
+              1500,
+              8,
+              &value,
+              &local_debug)) {
+        g_llama_server_ready = true;
+        g_llama_ready_probe_started = false;
+        Debug("ready probe succeeded");
+        return;
+      }
+      if (i % 10 == 0) {
+        Debug("ready probe waiting");
+      }
+    }
+    Debug("ready probe timeout");
+    StopLlamaServer();
+  }).detach();
+}
+
+uint64_t GetTickCountMsec() {
+  auto now = std::chrono::steady_clock::now();
+  return std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+}
+
+bool EnsureLlamaServerReadyWithinTimeout(const Options& options,
+                                         uint32_t timeout_msec,
+                                         std::string* debug) {
+  if (g_llama_server_ready.load()) {
+    *debug = "server_ready";
+    return true;
+  }
+
+  StartLlamaServerInBackground(options);
+  StartLlamaReadyProbeInBackground(options);
+
+  const uint32_t wait_budget_msec =
+      std::max<uint32_t>(
+          std::max<uint32_t>(timeout_msec, 50),
+          kMinLlamaReadyWaitMsec);
+
+  constexpr uint32_t kReadyWaitStepMsec = 25;
+  const uint64_t start = GetTickCountMsec();
+
+  while (GetTickCountMsec() - start < wait_budget_msec) {
+    if (g_llama_server_ready.load()) {
+      const uint64_t waited = GetTickCountMsec() - start;
+      *debug = "server_ready_after_wait";
+      Debug("server ready wait succeeded waited_msec=" + std::to_string(waited));
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(kReadyWaitStepMsec));
+  }
+
+  *debug = "server_loading";
+  Debug("server ready wait timeout budget_msec=" + std::to_string(wait_budget_msec));
+  return false;
+}
+
+void SendResponse(
+    ZenzSocketHandle pipe,
+    uint32_t generation,
+    uint32_t status,
+    uint32_t latency_msec,
+    const std::string& value,
+    const std::string& debug) {
+  ZenzWireResponseHeader header = {};
+  header.magic = kZenzWireMagic;
+  header.version = kZenzWireVersion;
+  header.kind = kZenzWireKindResponse;
+  header.generation = generation;
+  header.status = status;
+  header.latency_msec = latency_msec;
+  header.value_size = static_cast<uint32_t>(value.size());
+  header.debug_size = static_cast<uint32_t>(debug.size());
+
+  WriteAll(pipe, &header, sizeof(header));
+
+  if (!value.empty()) {
+    WriteAll(pipe, value.data(), static_cast<uint32_t>(value.size()));
+  }
+
+  if (!debug.empty()) {
+    WriteAll(pipe, debug.data(), static_cast<uint32_t>(debug.size()));
+  }
+}
+
+void HandleClient(ZenzSocketHandle pipe, const Options& options) {
+  const uint64_t start = GetTickCountMsec();
+
+  ZenzWireRequestHeader request_header = {};
+  if (!ReadAll(pipe, &request_header, sizeof(request_header))) {
+    return;
+  }
+
+  if (request_header.magic != kZenzWireMagic ||
+      request_header.version != kZenzWireVersion ||
+      request_header.kind != kZenzWireKindRequest) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "", "bad_request_header");
+    return;
+  }
+
+  if (request_header.prompt_size == 0) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "", "empty_prompt");
+    return;
+  }
+
+  if (request_header.prompt_size > kMaxPromptBytes) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "", "prompt_too_large");
+    return;
+  }
+
+  const uint32_t timeout_msec = std::clamp<uint32_t>(
+      request_header.timeout_msec == 0 ? kMaxRequestTimeoutMsec : request_header.timeout_msec,
+      50, kMaxRequestTimeoutMsec);
+
+  const uint32_t max_output_chars = std::clamp<uint32_t>(
+      request_header.max_output_chars == 0 ? kMaxOutputChars : request_header.max_output_chars,
+      1, kMaxOutputChars);
+
+  std::string prompt(request_header.prompt_size, '\0');
+  if (!ReadAll(pipe, prompt.data(), request_header.prompt_size)) {
+    SendResponse(pipe, request_header.generation, kStatusError, 0, "", "failed_to_read_prompt");
+    return;
+  }
+
+  Debug("request gen=" + std::to_string(request_header.generation) +
+        " " + RedactedUtf8Bytes("prompt", prompt));
+
+  std::string debug;
+  if (!EnsureLlamaServerReadyWithinTimeout(options, timeout_msec, &debug)) {
+    const uint64_t latency = GetTickCountMsec() - start;
+    SendResponse(pipe, request_header.generation, kStatusTimeout, latency, "", debug);
+    return;
+  }
+
+  std::string value;
+  if (!HttpPostCompletion(options, prompt, timeout_msec, max_output_chars, &value, &debug)) {
+    const uint64_t latency = GetTickCountMsec() - start;
+    SendResponse(pipe, request_header.generation, kStatusError, latency, "", debug);
+    return;
+  }
+
+  const uint64_t latency = GetTickCountMsec() - start;
+  Debug("response gen=" + std::to_string(request_header.generation) +
+        " latency=" + std::to_string(latency) +
+        " " + RedactedUtf8Bytes("value", value));
+
+  SendResponse(pipe, request_header.generation, kStatusOk, latency, value, debug);
+}
+
+int RunServer(const Options& options) {
+  Debug("server start " + RedactedWideChars("pipe_name", options.pipe_name) +
+        " " + RedactedWideChars("llama_server_path", options.llama_server_path) +
+        " " + RedactedWideChars("model_path", options.model_path));
+
+  if (!options.random_ok) {
+    Debug("secure random initialization failed");
+    return 1;
+  }
+
+  Debug("http_port_mode=random");
+  Debug("api_key_bytes=" + std::to_string(options.api_key.size()));
+  Debug("n_predict=" + std::to_string(options.n_predict));
+
+  StartLlamaServerInBackground(options);
+
+  std::string socket_path = options.pipe_name.empty() ?
+      (std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + kDefaultPipeNameSuffix) : options.pipe_name;
+
+  int server_sock = ::socket(AF_UNIX, SOCK_STREAM, 0);
+  if (server_sock < 0) {
+    Debug("Failed to create UNIX domain socket");
+    return 1;
+  }
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  std::strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
+  ::unlink(socket_path.c_str());
+
+  if (::bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    Debug("Failed to bind UNIX domain socket");
+    ::close(server_sock);
+    return 1;
+  }
+
+  if (::listen(server_sock, 128) < 0) {
+    Debug("Failed to listen on UNIX domain socket");
+    ::close(server_sock);
+    return 1;
+  }
+
+  while (!g_shutdown_requested.load()) {
+    struct sockaddr_un client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    int client_sock = ::accept(server_sock, (struct sockaddr*)&client_addr, &client_len);
+    if (client_sock < 0) {
+      if (errno == EINTR) continue;
+      Debug("accept failed error=" + std::to_string(errno));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      continue;
+    }
+
+    HandleClient(client_sock, options);
+    ::close(client_sock);
+  }
+
+  ::close(server_sock);
+  ::unlink(socket_path.c_str());
+  StopLlamaServer();
+  return 0;
+}
+#endif
 }  // namespace
 
+#if defined(_WIN32)
 int wmain() {
   ::SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
@@ -1400,3 +2090,43 @@ int wmain() {
 
   return result;
 }
+#else
+int main() {
+  struct sigaction sa = {};
+  sa.sa_handler = HandleSignal;
+  ::sigfillset(&sa.sa_mask);
+  ::sigaction(SIGINT, &sa, nullptr);
+  ::sigaction(SIGTERM, &sa, nullptr);
+  ::sigaction(SIGHUP, &sa, nullptr);
+
+  std::string lock_path =
+      std::string(getenv("HOME") ? getenv("HOME") : "/tmp") +
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+      "/.mozkey_zenz_scorer.lock";
+#else
+      "/.mozc_zenz_scorer.lock";
+#endif
+  int lock_fd = ::open(lock_path.c_str(), O_RDWR | O_CREAT, 0600);
+  if (lock_fd >= 0) {
+    struct flock fl = {};
+    fl.l_type = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    if (::fcntl(lock_fd, F_SETLK, &fl) < 0) {
+      Debug("another scorer instance already exists");
+      ::close(lock_fd);
+      return 0;
+    }
+  }
+
+  const Options options = LoadOptions();
+  const int result = RunServer(options);
+
+  StopLlamaServer();
+  if (lock_fd >= 0) {
+    ::close(lock_fd);
+    ::unlink(lock_path.c_str());
+  }
+
+  return result;
+}
+#endif

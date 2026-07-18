@@ -18,6 +18,7 @@ constexpr char kZenzSettingsBegin[] = "\xEE\xB8\x86";      // U+EE06
 constexpr char kZenzRightContextBegin[] = "\xEE\xB8\x87";  // U+EE07
 
 constexpr size_t kMaxZenzConditionChars = 64;
+constexpr char kIdeographicSpace[] = "\xE3\x80\x80";  // U+3000
 
 }  // namespace
 
@@ -136,7 +137,10 @@ std::string ZenzPromptBuilder::SanitizeConditionText(
     }
 
     if (IsUnsafeControlCodepoint(cp)) {
-      if (cp == '\t' || cp == '\n' || cp == '\r') {
+      // The reference Zenz tokenizer preparation deletes line feeds.  Keep
+      // horizontal separators deterministic; the final tokenizer whitespace
+      // pass below converts the resulting ASCII space to U+3000.
+      if (cp == '\t' || cp == '\r') {
         output.push_back(' ');
         ++chars;
       }
@@ -151,6 +155,25 @@ std::string ZenzPromptBuilder::SanitizeConditionText(
     }
   }
 
+  return output;
+}
+
+std::string ZenzPromptBuilder::NormalizeTokenizerWhitespace(
+    absl::string_view input) {
+  // The published Zenz v3.2 vocabulary does not contain the GPT-2 byte-level
+  // pieces for ASCII space or line feed.  The reference implementation maps
+  // ASCII space to the model's U+3000 token and removes line feeds before
+  // encoding.  Applying the same transformation here keeps Windows and the
+  // normalized Linux GGUF on one prompt contract.
+  std::string output;
+  output.reserve(input.size());
+  for (const char byte : input) {
+    if (byte == ' ') {
+      output.append(kIdeographicSpace);
+    } else if (byte != '\n') {
+      output.push_back(byte);
+    }
+  }
   return output;
 }
 
@@ -247,7 +270,7 @@ std::string ZenzPromptBuilder::Build(
   prompt.append(reading_katakana);
   prompt.append(kZenzOutputBegin);
 
-  return prompt;
+  return NormalizeTokenizerWhitespace(prompt);
 }
 
 }  // namespace session

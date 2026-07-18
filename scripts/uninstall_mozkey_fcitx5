@@ -1,0 +1,133 @@
+#!/bin/sh
+
+# Removes only the immutable product files listed in the audited manifest.
+# User profiles and Grimodex project snapshots are deliberately preserved.
+set -eu
+
+PREFIX="${PREFIX:-/usr}"
+DESTDIR="${DESTDIR:-}"
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "${script_dir}/fcitx5_install_paths"
+validate_mozkey_install_environment
+manifest="${script_dir}/mozkey_fcitx5_install_manifest.txt"
+install_root="${DESTDIR}${PREFIX}"
+if [ ! -f "${manifest}" ] || [ -z "${install_root}" ] ||
+   [ "${install_root}" = / ]; then
+  echo "invalid Mozkey uninstall manifest or root" >&2
+  exit 2
+fi
+
+addon_record="${install_root}/share/mozkey/fcitx5-addon-dir"
+recorded_addon_dir=""
+if [ -e "${addon_record}" ] || [ -L "${addon_record}" ]; then
+  recorded_addon_dir="$(read_installed_fcitx5_addon_dir "${addon_record}")" || {
+    echo "installed Fcitx5 addon path record is unsafe" >&2
+    exit 2
+  }
+fi
+
+# The addon binary is published immediately before its bookkeeping record. A
+# power loss or killed installer in that narrow window must still be
+# uninstallable. Resolve the current distro path independently, while retaining
+# a valid recorded path so an interrupted multiarch migration removes both.
+current_addon_dir=""
+if current_addon_dir="$(resolve_fcitx5_addon_dir 2>/dev/null)"; then
+  :
+elif [ -n "${recorded_addon_dir}" ]; then
+  current_addon_dir="${recorded_addon_dir}"
+else
+  echo "cannot resolve the current or recorded Fcitx5 addon directory" >&2
+  exit 2
+fi
+
+if [ "${MOZKEY_REMOVE_GRIMODEX_CONSUMER:-0}" = 1 ]; then
+  if [ -z "${GRIMODEX_IME_ROOT:-}" ]; then
+    echo "GRIMODEX_IME_ROOT is required when removing the user consumer" >&2
+    exit 2
+  fi
+  case "${GRIMODEX_IME_ROOT}" in
+    /*) ;;
+    *)
+      echo "GRIMODEX_IME_ROOT must be absolute" >&2
+      exit 2
+      ;;
+  esac
+  consumer_helper="${install_root}/lib/mozkey/unregister-grimodex-consumer"
+  if [ ! -x "${consumer_helper}" ] || [ ! -d "${GRIMODEX_IME_ROOT}" ] ||
+     [ -L "${GRIMODEX_IME_ROOT}" ]; then
+    echo "consumer helper or GRIMODEX_IME_ROOT is unavailable" >&2
+    exit 2
+  fi
+  ime_root_owner=$(stat -c '%u:%g' -- "${GRIMODEX_IME_ROOT}")
+  ime_root_uid=${ime_root_owner%%:*}
+  ime_root_gid=${ime_root_owner#*:}
+  case "${ime_root_uid}:${ime_root_gid}" in
+    *[!0-9:]*|:|*:)
+      echo "invalid GRIMODEX_IME_ROOT owner: ${ime_root_owner}" >&2
+      exit 2
+      ;;
+  esac
+  setpriv_path=
+  env_path=
+  if [ "$(id -u)" = 0 ] && [ "${ime_root_uid}" != 0 ]; then
+    setpriv_path=$(command -v setpriv || true)
+    env_path=$(command -v env || true)
+    if [ -z "${setpriv_path}" ] || [ -z "${env_path}" ]; then
+      echo "setpriv and env are required for root-owned package removal" >&2
+      exit 2
+    fi
+  fi
+  # Remove the product marker first. A still-running Fcitx process may keep
+  # this addon mapped, but its heartbeat rechecks the marker after publishing
+  # and therefore cannot resurrect the consumer after the helper returns.
+  rm -f -- "${install_root}/lib/mozkey/mozc_server"
+  if [ "$(id -u)" = 0 ] && [ "${ime_root_uid}" != 0 ]; then
+    "${setpriv_path}" --reuid "${ime_root_uid}" --regid "${ime_root_gid}" \
+      --clear-groups -- "${env_path}" \
+      GRIMODEX_IME_ROOT="${GRIMODEX_IME_ROOT}" "${consumer_helper}"
+  else
+    GRIMODEX_IME_ROOT="${GRIMODEX_IME_ROOT}" "${consumer_helper}"
+  fi
+fi
+
+# The addon lives under the distribution's Fcitx multiarch libdir and is not
+# relative to /usr in the static product manifest.
+rm -f -- "${DESTDIR}${current_addon_dir}/fcitx5-mozkey.so"
+if [ -n "${recorded_addon_dir}" ] &&
+   [ "${recorded_addon_dir}" != "${current_addon_dir}" ]; then
+  rm -f -- "${DESTDIR}${recorded_addon_dir}/fcitx5-mozkey.so"
+fi
+legacy_addon_dir=/usr/lib/fcitx5
+if [ "${legacy_addon_dir}" != "${current_addon_dir}" ] &&
+   [ "${legacy_addon_dir}" != "${recorded_addon_dir}" ]; then
+  rm -f -- "${DESTDIR}${legacy_addon_dir}/fcitx5-mozkey.so"
+fi
+
+while IFS= read -r relative_path; do
+  case "${relative_path}" in
+    /*) ;;
+    *)
+      echo "invalid manifest path: ${relative_path}" >&2
+      exit 2
+      ;;
+  esac
+  case "${relative_path}" in
+    *..*)
+      echo "refusing traversal-like manifest path: ${relative_path}" >&2
+      exit 2
+      ;;
+  esac
+  rm -f -- "${install_root}${relative_path}"
+done < "${manifest}"
+
+# Remove only product-private directories, and only when already empty.
+rmdir "${install_root}/lib/mozkey/models" 2>/dev/null || true
+rmdir "${install_root}/lib/mozkey" 2>/dev/null || true
+rmdir "${install_root}/share/doc/mozkey" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey/dictionary" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey/zenz-runtime" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey" 2>/dev/null || true
+rmdir "${install_root}/share/mozkey" 2>/dev/null || true
+
+echo "Mozkey Fcitx5 product files removed; project snapshots and profiles preserved"

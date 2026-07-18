@@ -1,0 +1,24 @@
+#!/bin/sh
+
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 ubuntu-layout|archlinux-x86_64" >&2
+  exit 2
+fi
+layout="$1"
+case "${layout}" in
+  ubuntu-layout|archlinux-x86_64) ;;
+  *)
+    echo "unsupported Mozkey Linux build layout: ${layout}" >&2
+    exit 2
+    ;;
+esac
+
+exec python3 "${repository_root}/tools/release/linux_build_attestation.py" verify \
+  --root "${repository_root}" \
+  --layout "${layout}" \
+  --attestation "${repository_root}/dist/linux/${layout}/build-attestation.json"

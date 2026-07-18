@@ -49,7 +49,8 @@ class SystemUtil {
   SystemUtil() = delete;
   SystemUtil(const SystemUtil&) = delete;
   SystemUtil& operator=(const SystemUtil&) = delete;
-  // return "~/.mozc" for Unix/Mac
+  // Returns the product profile directory (for example,
+  // "$XDG_CONFIG_HOME/mozkey" for OSS Linux).
   // return "%USERPROFILE%\\AppData\\LocalLow\\"
   //        "Google\\Google Japanese Input" for Windows Vista and later.
   static std::string GetUserProfileDirectory();

@@ -1,0 +1,16 @@
+id	reading	expected	category	notes
+sentence-weather	きょうはいいてんきです	今日はいい天気です	general	ordinary sentence
+term-japanese-input	にほんごにゅうりょく	日本語入力	general	common compound
+proper-yamanashi-museum	やまなしけんりつびじゅつかん	山梨県立美術館	proper-noun	long place and facility name
+suffix-shiga-direction	しがほうめん	滋賀方面	proper-noun	place suffix composition
+verb-append	ついきしたい	追記したい	general	verb inflection
+mixed-main-merge	mainにまーじしました	mainにマージしました	mixed-ascii	ASCII project term with Japanese suffix
+mixed-github-particle	githubには	githubには	mixed-ascii	ASCII service name with particles
+syntax-particle	には	には	syntax	avoid one-character over-conversion
+syntax-colloquial	してたの	してたの	syntax	avoid unnatural kanji split
+idiom-close-at-hand	はだみはなさず	肌身離さず	syntax	fixed idiom
+particle-tea	おちゃはいりません	お茶はいりません	syntax	particle boundary ambiguity
+compound-interpersonal	たいじんすきる	対人スキル	compound	loanword suffix
+compound-sleep-call	ねおちつうわ	寝落ち通話	compound	modern compound
+expressive-very	めっちゃ	めっちゃ	expressive	prefer natural kana surface
+ambiguity-rainbow	にじ	虹	ambiguity	short reading disambiguation

@@ -54,6 +54,8 @@ mozc_cc_library(
         "//session:__pkg__",
     ],
     deps = [
+        "//base:system_util",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -73,6 +75,7 @@ mozc_cc_library(
     srcs = ["zenz_adoption_policy.cc"],
     hdrs = ["zenz_adoption_policy.h"],
     deps = [
+        "//protocol:candidate_window_cc_proto",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -128,6 +131,17 @@ mozc_cc_test(
     srcs = ["zenz_adoption_policy_test.cc"],
     deps = [
         ":zenz_adoption_policy",
+        "//protocol:candidate_window_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "zenz_named_pipe_client_test",
+    size = "small",
+    srcs = ["zenz_named_pipe_client_test.cc"],
+    deps = [
+        ":session",
         "//testing:gunit_main",
     ],
 )
@@ -169,6 +183,7 @@ mozc_cc_test(
         "//converter:segments",
         "//data_manager/testing:mock_data_manager",
         "//dictionary:pos_matcher",
+        "//dictionary:project_dictionary",
         "//engine",
         "//engine:engine_converter",
         "//engine:engine_mock",
@@ -230,6 +245,7 @@ mozc_cc_library(
     visibility = [
         "//android/jni:__pkg__",
         "//ios:__pkg__",
+        "//unix/fcitx5:__pkg__",
     ],
     deps = [
         ":keymap",
@@ -425,6 +441,7 @@ mozc_cc_library(
     hdrs = ["key_info_util.h"],
     visibility = [
         "//client:__pkg__",
+        "//unix/fcitx5:__pkg__",
         "//win32/base:__pkg__",
     ],
     deps = [

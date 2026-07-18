@@ -1,0 +1,11 @@
+[Groups/0]
+Name=Mozkey E2E
+Default Layout=us
+DefaultIM=mozkey
+
+[Groups/0/Items/0]
+Name=mozkey
+Layout=
+
+[GroupOrder]
+0=Mozkey E2E

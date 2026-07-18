@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("sample", "daily", "rich", "max")]
+    [ValidateSet("sample", "daily", "release", "rich", "max")]
     [string]$Profile = "sample"
 )
 
@@ -12,6 +12,7 @@ $KoyasiBuild = Join-Path $RepoRoot "src\data\dictionary_koyasi\BUILD.bazel"
 $ProfileTargets = @{
     sample = "//data/dictionary_koyasi:mozcdic_ut_sample"
     daily  = "//data/dictionary_koyasi:mozcdic_ut_daily_local"
+    release = "//data/dictionary_koyasi:mozcdic_ut_daily_release_local"
     rich   = "//data/dictionary_koyasi:mozcdic_ut_rich_local"
     max    = "//data/dictionary_koyasi:mozcdic_ut_max_local"
 }
@@ -19,6 +20,7 @@ $ProfileTargets = @{
 $RequiredFiles = @{
     sample = Join-Path $RepoRoot "src\data\dictionary_koyasi\sample\mozcdic-ut-sample.txt"
     daily  = Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\mozcdic-ut-daily.txt"
+    release = Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\mozcdic-ut-daily.txt"
     rich   = Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\mozcdic-ut-rich.txt"
     max    = Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\mozcdic-ut-max.txt"
 }
@@ -43,6 +45,9 @@ $AdditionalRequiredFiles = @()
 
 if ($Profile -eq "daily") {
     $AdditionalRequiredFiles += Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\dic-nico-pixiv-delta.txt"
+    $AdditionalRequiredFiles += Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\koyasi-syntax-guard.txt"
+    $AdditionalRequiredFiles += Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\mozcdic-ut-personal-names-daily.txt"
+} elseif ($Profile -eq "release") {
     $AdditionalRequiredFiles += Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\koyasi-syntax-guard.txt"
     $AdditionalRequiredFiles += Join-Path $RepoRoot "src\data\dictionary_koyasi\generated\profiled\mozcdic-ut-personal-names-daily.txt"
 }
@@ -75,7 +80,7 @@ if (-not (Test-Path $RequiredFile)) {
     Write-Host "  $RequiredFile"
     Write-Host ""
 
-    if ($Profile -eq "daily") {
+    if ($Profile -eq "daily" -or $Profile -eq "release") {
         Write-Host "Generate it with:"
         Write-Host "  .\tools\dictionary\import_merge_ut.ps1 -Profile sample -SampleLines 5000"
         Write-Host "  python tools/dictionary/profile_merge_ut.py --profile daily"
@@ -92,35 +97,34 @@ if (-not (Test-Path $RequiredFile)) {
     throw "Cannot switch to profile '$Profile' because the required dictionary file is missing."
 }
 
-$Content = Get-Content -Raw -Encoding UTF8 $DictionaryOssBuild
-
-$KnownTargets = @(
-    "//data/dictionary_koyasi:mozcdic_ut_sample",
-    "//data/dictionary_koyasi:mozcdic_ut_daily_local",
-    "//data/dictionary_koyasi:mozcdic_ut_rich_local",
-    "//data/dictionary_koyasi:mozcdic_ut_max_local"
-)
-
-$Matched = $false
-
-foreach ($KnownTarget in $KnownTargets) {
-    $QuotedKnownTarget = '"' + $KnownTarget + '"'
-    if ($Content.Contains($QuotedKnownTarget)) {
-        $Content = $Content.Replace($QuotedKnownTarget, '"' + $Target + '"')
-        $Matched = $true
+if ($Profile -eq "release") {
+    Write-Host ""
+    Write-Host "Release profile validated. Build public artifacts with:"
+    Write-Host "  --define=mozkey_dictionary_profile=release-approved-only"
+} else {
+    $Content = Get-Content -Raw -Encoding UTF8 $DictionaryOssBuild
+    # BUILD.bazel can contain other select() expressions (for example the
+    # evaluation baseline selector). Restrict this edit to the
+    # base_dictionary_data filegroup so profile switching cannot rewrite an
+    # unrelated default branch.
+    $DefaultPattern = '(?s)(filegroup\(\s*name\s*=\s*"base_dictionary_data".*?"//conditions:default"\s*:\s*\[\s*")[^"]+("\s*,?\s*\])'
+    $Matches = [System.Text.RegularExpressions.Regex]::Matches($Content, $DefaultPattern)
+    if ($Matches.Count -ne 1) {
+        throw "Expected exactly one default Mozkey dictionary target in $DictionaryOssBuild"
     }
+    $Content = [System.Text.RegularExpressions.Regex]::Replace(
+        $Content,
+        $DefaultPattern,
+        ('$1' + $Target + '$2')
+    )
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($DictionaryOssBuild, $Content, $Utf8NoBom)
+
+    Write-Host ""
+    Write-Host "Updated default local profile:"
+    Write-Host "  $DictionaryOssBuild"
 }
 
-if (-not $Matched) {
-    throw "No known merge-ut dictionary target was found in $DictionaryOssBuild"
-}
-
-$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($DictionaryOssBuild, $Content, $Utf8NoBom)
-
 Write-Host ""
-Write-Host "Updated:"
-Write-Host "  $DictionaryOssBuild"
-Write-Host ""
-Write-Host "Current merge-ut profile target:"
+Write-Host "Current merge-ut profile targets:"
 Select-String -Path $DictionaryOssBuild -Pattern "mozcdic_ut_"

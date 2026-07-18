@@ -1,0 +1,147 @@
+#!/bin/sh
+
+# Build outputs must already exist. This publishes only the currently verified
+# Arch Linux x86_64 target, with deterministic archive and SPDX identities.
+set -eu
+umask 022
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+output_dir="${MOZKEY_LINUX_OUTPUT_DIR:-${repository_root}/dist}"
+
+case "${MOZKEY_LINUX_ALLOW_DIRTY_TREE_FOR_TESTS:-}" in
+  "")
+    if [ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=all)" ]; then
+      echo "refusing to package a dirty Mozkey worktree" >&2
+      exit 1
+    fi
+    ;;
+  1)
+    echo "warning: packaging a dirty tree under the explicit test override" >&2
+    ;;
+  *)
+    echo "MOZKEY_LINUX_ALLOW_DIRTY_TREE_FOR_TESTS accepts only 1" >&2
+    exit 2
+    ;;
+esac
+
+os_release_id="$(sed -n 's/^ID=//p' /etc/os-release 2>/dev/null |
+  sed -n '1p' | tr -d "\"'")"
+if [ "${os_release_id}" != arch ]; then
+  case "${MOZKEY_LINUX_ALLOW_NON_ARCH_FOR_TESTS:-}" in
+    1)
+      echo "warning: bypassing the Arch host check for an isolated unit test" >&2
+      ;;
+    "")
+      echo "public packaging requires an Arch Linux container with ID=arch" >&2
+      exit 1
+      ;;
+    *)
+      echo "MOZKEY_LINUX_ALLOW_NON_ARCH_FOR_TESTS accepts only 1" >&2
+      exit 2
+      ;;
+  esac
+fi
+distro=archlinux
+
+architecture="${MOZKEY_LINUX_ARCH_FOR_TESTS:-$(uname -m)}"
+if [ "${architecture}" != x86_64 ]; then
+  echo "Mozkey public Linux packages are restricted to archlinux-x86_64" >&2
+  exit 1
+fi
+
+"${script_dir}/verify_mozkey_linux_build_attestation" archlinux-x86_64
+build_attestation="${repository_root}/dist/linux/archlinux-x86_64/build-attestation.json"
+build_packages="${repository_root}/dist/archlinux-build-packages.txt"
+for provenance_file in "${build_attestation}" "${build_packages}"
+do
+  if [ ! -f "${provenance_file}" ] || [ -L "${provenance_file}" ] ||
+     [ ! -s "${provenance_file}" ]; then
+    echo "missing or unsafe Arch build provenance: ${provenance_file}" >&2
+    exit 1
+  fi
+done
+
+case "${output_dir}" in
+  /*) ;;
+  *)
+    output_parent="$(dirname -- "${output_dir}")"
+    mkdir -p "${output_parent}"
+    output_dir="$(CDPATH= cd -- "${output_parent}" && pwd -P)/$(basename -- "${output_dir}")"
+    ;;
+esac
+mkdir -p "${output_dir}"
+
+version="$(sed -n \
+  -e 's/^MOZKEY_RELEASE_VERSION_MAJOR = //p' \
+  -e 's/^MOZKEY_RELEASE_VERSION_MINOR = //p' \
+  -e 's/^MOZKEY_RELEASE_VERSION_PATCH = //p' \
+  "${repository_root}/src/version.bzl" | paste -sd . -)"
+printf '%s\n' "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+  echo "could not resolve Mozkey release version" >&2
+  exit 1
+}
+revision="$(git -C "${repository_root}" rev-parse HEAD)"
+source_date_epoch="${SOURCE_DATE_EPOCH:-$(git -C "${repository_root}" log -1 --format=%ct)}"
+case "${source_date_epoch}" in
+  ''|*[!0-9]*)
+    echo "SOURCE_DATE_EPOCH must be a non-negative integer" >&2
+    exit 2
+    ;;
+esac
+export SOURCE_DATE_EPOCH="${source_date_epoch}"
+
+artifact_base="mozkey-v${version}-${distro}-${architecture}"
+stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-linux-package.XXXXXX")"
+publish_dir="$(mktemp -d "${output_dir}/.mozkey-linux-publish.XXXXXX")"
+cleanup_package() {
+  rm -rf "${stage_dir}" "${publish_dir}"
+}
+trap cleanup_package EXIT HUP INT TERM
+
+(
+  cd "${repository_root}/src"
+  DESTDIR="${stage_dir}" PREFIX=/usr \
+    MOZKEY_ZENZ_LLAMA_SERVER_TARGET=/usr/bin/llama-server \
+    "${script_dir}/install_mozkey_linux_bazel"
+)
+
+install -D -m 644 "${build_attestation}" \
+  "${stage_dir}/usr/share/doc/mozkey/linux-build-attestation.json"
+install -D -m 644 "${build_packages}" \
+  "${stage_dir}/usr/share/doc/mozkey/archlinux-build-packages.txt"
+
+sbom="${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json"
+python3 "${repository_root}/tools/release/generate_linux_spdx_sbom.py" \
+  --root "${stage_dir}" \
+  --output "${sbom}" \
+  --version "${version}" \
+  --revision "${revision}" \
+  --distro "${distro}" \
+  --architecture "${architecture}"
+install -m 644 "${sbom}" "${publish_dir}/${artifact_base}.spdx.json"
+install -m 644 "${build_attestation}" \
+  "${publish_dir}/${artifact_base}.build-attestation.json"
+
+archive_name="${artifact_base}.tar.xz"
+tar --format=gnu --sort=name --owner=0 --group=0 --numeric-owner \
+  --mtime="@${source_date_epoch}" \
+  -C "${stage_dir}" -cJf "${publish_dir}/${archive_name}" usr
+(
+  cd "${publish_dir}"
+  sha256sum "${archive_name}" > "${archive_name}.sha256"
+)
+
+for published_file in \
+  "${artifact_base}.build-attestation.json" \
+  "${artifact_base}.spdx.json" \
+  "${archive_name}" \
+  "${archive_name}.sha256"
+do
+  mv -f "${publish_dir}/${published_file}" "${output_dir}/${published_file}"
+done
+
+printf 'Mozkey Linux product: %s\n' "${output_dir}/${archive_name}"
+printf 'SPDX inventory: %s\n' "${output_dir}/${artifact_base}.spdx.json"
+printf 'Build attestation: %s\n' \
+  "${output_dir}/${artifact_base}.build-attestation.json"

@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Stop the live per-user Mozkey runtime before package removal.  Fcitx must be
+# stopped first so it cannot create a replacement server after this gate.
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+
+exec python3 "${repository_root}/tools/release/stop_mozkey_linux_runtime.py" "$@"

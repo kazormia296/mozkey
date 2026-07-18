@@ -202,6 +202,10 @@ bool Client::EnsureSession() {
     return false;
   }
 
+  if (++session_generation_ == 0) {
+    session_generation_ = 1;
+  }
+
   // Call SET_REQUEST if request_ is not nullptr.
   if (request_) {
     commands::Input input;
@@ -240,6 +244,10 @@ void Client::DumpHistorySnapshot(const absl::string_view filename,
 }
 
 void Client::PlaybackHistory() {
+  if (grimodex_managed_session_) {
+    history_inputs_.clear();
+    return;
+  }
   if (history_inputs_.size() >= kMaxPlayBackSize) {
     ResetHistory();
     return;
@@ -266,6 +274,11 @@ void Client::PushHistory(const commands::Input &input,
   // Update mode
   if (output.has_mode()) {
     last_mode_ = output.mode();
+  }
+
+  if (grimodex_managed_session_) {
+    history_inputs_.clear();
+    return;
   }
 
   // don't insert a new input when history_inputs_.size()
@@ -303,6 +316,19 @@ void Client::ResetHistory() {
     history_inputs_.push_back(input);
   }
 #endif  // __APPLE__
+}
+
+void Client::PrepareGrimodexManagedInput(const commands::Input &input) {
+  if (!input.has_context() || !input.context().has_grimodex()) {
+    return;
+  }
+
+  // This runs before EnsureSession/PlaybackHistory.  Therefore a request that
+  // enters a secure field, changes focus domain, or merely arrives after a
+  // server crash cannot replay old candidate selections, commits, callbacks,
+  // or surrounding context into the replacement session.
+  grimodex_managed_session_ = true;
+  history_inputs_.clear();
 }
 
 void Client::GetHistoryInputs(std::vector<commands::Input> *result) const {
@@ -368,6 +394,7 @@ bool Client::CheckVersionOrRestartServer() {
 
 bool Client::EnsureCallCommand(commands::Input *input,
                                commands::Output *output) {
+  PrepareGrimodexManagedInput(*input);
   if (!EnsureSession()) {
     LOG(ERROR) << "EnsureSession failed";
     return false;
@@ -391,6 +418,14 @@ bool Client::EnsureCallCommand(commands::Input *input,
   if (server_status_ == SERVER_SHUTDOWN ||
       server_status_ == SERVER_INVALID_SESSION) {
     if (EnsureSession()) {
+      if (grimodex_managed_session_) {
+        // Candidate IDs, callback generations, effects, and commits belong to
+        // the destroyed session.  Do not retry even the current protobuf
+        // command automatically.  The Fcitx adapter may reconstruct a bounded
+        // non-secure raw reading, but secure input is never recovered.
+        history_inputs_.clear();
+        return false;
+      }
       // playback the history to restore the previous state.
       PlaybackHistory();
       InitInput(input);

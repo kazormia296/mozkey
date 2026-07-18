@@ -1,0 +1,334 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load(
+    "//:build_defs.bzl",
+    "mozc_cc_binary",
+    "mozc_cc_library",
+    "mozc_cc_test",
+)
+
+package(default_visibility = ["//:__subpackages__"])
+
+bool_flag(
+    name = "use_server",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "without_server",
+    flag_values = {
+        ":use_server": "False",
+    },
+)
+
+mozc_cc_library(
+    name = "mozc_client_interface",
+    hdrs = [
+        "mozc_client_interface.h",
+    ],
+    deps = [
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+    ],
+)
+
+mozc_cc_library(
+    name = "mozc_client_pool",
+    srcs = [
+        "mozc_client_pool.cc",
+    ],
+    hdrs = [
+        "mozc_client_pool.h",
+    ],
+    deps = [
+        ":mozc_client_interface",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "@fcitx5",
+    ],
+)
+
+mozc_cc_library(
+    name = "grimodex_context",
+    srcs = [
+        "grimodex_context.cc",
+    ],
+    hdrs = [
+        "grimodex_context.h",
+    ],
+    deps = [
+        ":mozc_client_interface",
+        "//protocol:commands_cc_proto",
+    ],
+)
+
+mozc_cc_library(
+    name = "raw_reading_recovery",
+    srcs = [
+        "raw_reading_recovery.cc",
+    ],
+    hdrs = [
+        "raw_reading_recovery.h",
+    ],
+    deps = [
+        ":grimodex_context",
+        ":mozc_client_interface",
+        "//protocol:commands_cc_proto",
+    ],
+)
+
+mozc_cc_test(
+    name = "raw_reading_recovery_test",
+    size = "small",
+    srcs = [
+        "raw_reading_recovery_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":mozc_client_interface",
+        ":raw_reading_recovery",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_library(
+    name = "grimodex_consumer_registrar",
+    srcs = [
+        "grimodex_consumer_registrar.cc",
+    ],
+    hdrs = [
+        "grimodex_consumer_registrar.h",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_binary(
+    name = "grimodex_consumer_tool",
+    srcs = [
+        "grimodex_consumer_tool.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":grimodex_consumer_registrar",
+        "//base:environ",
+        "//grimodex:protocol_v1",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+mozc_cc_test(
+    name = "grimodex_consumer_registrar_test",
+    size = "small",
+    srcs = [
+        "grimodex_consumer_registrar_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":grimodex_consumer_registrar",
+        "//base:file_util",
+        "//base/file:temp_dir",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_protobuf//:json_util",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+mozc_cc_test(
+    name = "grimodex_context_test",
+    size = "small",
+    srcs = [
+        "grimodex_context_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":grimodex_context",
+        ":mozc_client_interface",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "mozc_client_pool_test",
+    size = "small",
+    srcs = [
+        "mozc_client_pool_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":mozc_client_interface",
+        ":mozc_client_pool",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//testing:gunit_main",
+        "@fcitx5",
+    ],
+)
+
+mozc_cc_library(
+    name = "mozc_direct_client",
+    srcs = [
+        "mozc_direct_client.cc",
+    ],
+    hdrs = [
+        "mozc_direct_client.h",
+    ],
+    deps = [
+        ":mozc_client_interface",
+        "//base:vlog",
+        "//config:config_handler",
+        "//data_manager/oss:oss_data_manager",
+        "//engine",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//session:key_info_util",
+        "//session:session_handler",
+        "@com_google_absl//absl/log",
+    ],
+)
+
+mozc_cc_library(
+    name = "mozc_ipc_client",
+    srcs = [
+        "mozc_ipc_client.cc",
+    ],
+    hdrs = [
+        "mozc_ipc_client.h",
+    ],
+    deps = [
+        ":mozc_client_interface",
+        "//client",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+    ],
+)
+
+mozc_cc_library(
+    name = "i18nwrapper",
+    hdrs = [
+        "i18nwrapper.h",
+    ],
+    deps = [
+        "@fcitx5",
+    ],
+)
+
+mozc_cc_library(
+    name = "mozc_engine",
+    srcs = [
+        "mozc_engine.cc",
+        "mozc_response_parser.cc",
+        "mozc_state.cc",
+    ],
+    hdrs = [
+        "mozc_engine.h",
+        "mozc_response_parser.h",
+        "mozc_state.h",
+    ],
+    deps = [
+        ":fcitx_key_util",
+        ":grimodex_consumer_registrar",
+        ":grimodex_context",
+        ":i18nwrapper",
+        ":mozc_client_pool",
+        ":raw_reading_recovery",
+        ":surrounding_text_util",
+        "//base:environ",
+        "//base:init_mozc",
+        "//base:port",
+        "//base:process",
+        "//base:run_level",
+        "//base:util",
+        "//base:version",
+        "//base:vlog",
+        "//grimodex:protocol_v1",
+        "//protocol:candidate_window_cc_proto",
+        "//protocol:commands_cc_proto",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/time",
+        "@fcitx5",
+    ] + select({
+        ":without_server": [
+            ":mozc_direct_client",
+        ],
+        "//conditions:default": [
+            ":mozc_ipc_client",
+        ],
+    }),
+)
+
+mozc_cc_test(
+    name = "mozc_state_test",
+    size = "small",
+    srcs = [
+        "mozc_state_test.cc",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":mozc_engine",
+        "//testing:gunit_main",
+        "@fcitx5",
+    ],
+)
+
+mozc_cc_library(
+    name = "fcitx_key_util",
+    srcs = [
+        "fcitx_key_event_handler.cc",
+        "fcitx_key_translator.cc",
+    ],
+    hdrs = [
+        "fcitx_key_event_handler.h",
+        "fcitx_key_translator.h",
+    ],
+    deps = [
+        "//base:port",
+        "//base:vlog",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "@com_google_absl//absl/log:check",
+        "@fcitx5",
+    ],
+)
+
+mozc_cc_library(
+    name = "surrounding_text_util",
+    srcs = [
+        "surrounding_text_util.cc",
+    ],
+    hdrs = [
+        "surrounding_text_util.h",
+    ],
+    deps = [
+        "//base:port",
+        "//base:util",
+        "//base:vlog",
+        "@com_google_absl//absl/log:check",
+        "@fcitx5",
+    ],
+)
+
+mozc_cc_binary(
+    name = "fcitx5-mozkey.so",
+    srcs = [
+        "mozc_engine_factory.cc",
+    ],
+    linkshared = 1,
+    linkstatic = 1,
+    deps = [
+        ":mozc_engine",
+    ],
+)

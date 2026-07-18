@@ -1,0 +1,240 @@
+#!/bin/sh
+
+# Stages the Bazel-built Linux product and proves that no system Mozc-owned
+# path is populated. Run this script from the src/ Bazel workspace.
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+. "${script_dir}/fcitx5_install_paths"
+PREFIX=/usr
+DESTDIR=
+validate_mozkey_install_environment
+addon_dir="$(resolve_fcitx5_addon_dir)"
+
+stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-install-smoke.XXXXXX")"
+expected_paths="$(mktemp "${TMPDIR:-/tmp}/mozkey-install-expected.XXXXXX")"
+actual_paths="$(mktemp "${TMPDIR:-/tmp}/mozkey-install-actual.XXXXXX")"
+trap 'rm -rf "${stage_dir}"; rm -f "${expected_paths}" "${actual_paths}"' EXIT HUP INT TERM
+
+require_file() {
+  if [ ! -f "${stage_dir}$1" ]; then
+    echo "missing staged file: $1" >&2
+    exit 1
+  fi
+}
+
+reject_path() {
+  if [ -e "${stage_dir}$1" ] || [ -L "${stage_dir}$1" ]; then
+    echo "system Mozc path was populated: $1" >&2
+    exit 1
+  fi
+}
+
+require_absent() {
+  if [ -e "${stage_dir}$1" ] || [ -L "${stage_dir}$1" ]; then
+    echo "staged file should have been removed: $1" >&2
+    exit 1
+  fi
+}
+
+require_resolved_links() {
+  binary_path="${stage_dir}$1"
+  link_report="$(ldd "${binary_path}" 2>&1)" || {
+    echo "ldd failed for staged binary: $1" >&2
+    echo "${link_report}" >&2
+    exit 1
+  }
+  if printf '%s\n' "${link_report}" | grep -q 'not found'; then
+    echo "unresolved staged library dependency: $1" >&2
+    echo "${link_report}" >&2
+    exit 1
+  fi
+}
+
+install_product() {
+  DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_fcitx5_bazel || return
+  DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_server_bazel
+}
+
+install_product
+
+require_file "${addon_dir}/fcitx5-mozkey.so"
+require_file /usr/lib/mozkey/mozc_server
+require_file /usr/lib/mozkey/mozc_tool
+require_file /usr/lib/mozkey/mozc_zenz_scorer
+require_file /usr/lib/mozkey/unregister-grimodex-consumer
+require_file /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
+if [ "$(stat -c '%a' "${stage_dir}/usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf")" != 644 ]; then
+  echo "staged Zenz model must be immutable mode 0644" >&2
+  exit 1
+fi
+require_resolved_links "${addon_dir}/fcitx5-mozkey.so"
+require_resolved_links /usr/lib/mozkey/mozc_server
+require_resolved_links /usr/lib/mozkey/mozc_tool
+require_resolved_links /usr/lib/mozkey/mozc_zenz_scorer
+require_resolved_links /usr/lib/mozkey/unregister-grimodex-consumer
+llama_server_link="${stage_dir}/usr/lib/mozkey/llama-server"
+if [ ! -L "${llama_server_link}" ] ||
+   [ "$(readlink "${llama_server_link}")" != "/usr/bin/llama-server" ]; then
+  echo "invalid staged llama-server runtime link" >&2
+  exit 1
+fi
+require_file /usr/share/fcitx5/addon/mozkey.conf
+require_file /usr/share/fcitx5/inputmethod/mozkey.conf
+require_file /usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml
+require_file /usr/share/mozkey/fcitx5-addon-dir
+require_file /usr/share/licenses/mozkey/Fcitx5-Mozc-BSD-3-Clause.txt
+require_file /usr/share/licenses/mozkey/LGPL-2.1-or-later.txt
+require_file /usr/share/licenses/mozkey/Mozc-LICENSE.txt
+require_file /usr/share/licenses/mozkey/THIRD_PARTY_NOTICES.md
+require_file /usr/share/licenses/mozkey/dictionary/Apache-2.0.txt
+require_file /usr/share/licenses/mozkey/dictionary/THIRD_PARTY_NOTICES.md
+require_file /usr/share/licenses/mozkey/dictionary/daily_sources.lock.json
+require_file /usr/share/icons/hicolor/32x32/apps/org.fcitx.Fcitx5.fcitx_mozkey.png
+
+grep -qx 'Library=fcitx5-mozkey' "${stage_dir}/usr/share/fcitx5/addon/mozkey.conf"
+grep -qx 'Addon=mozkey' "${stage_dir}/usr/share/fcitx5/inputmethod/mozkey.conf"
+grep -Fqx "${addon_dir}" "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+grep -q 'fcitx/mozc@102eb176a3153e53bcc7f01fb5e803f9568985a0' \
+  "${stage_dir}/usr/share/licenses/mozkey/THIRD_PARTY_NOTICES.md"
+grep -q 'Weng Xuetian' \
+  "${stage_dir}/usr/share/licenses/mozkey/Fcitx5-Mozc-BSD-3-Clause.txt"
+grep -q 'dic-nico-intersection-pixiv.*local quality' \
+  "${stage_dir}/usr/share/licenses/mozkey/dictionary/THIRD_PARTY_NOTICES.md"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); release=set(p["profiles"]["release-approved-only"]["source_ids"]); assert "dic-nico-intersection-pixiv" not in release; assert all(p["sources"][source]["release_approved"] for source in release)' \
+  "${stage_dir}/usr/share/licenses/mozkey/dictionary/daily_sources.lock.json"
+
+reject_path "${addon_dir}/fcitx5-mozc.so"
+reject_path /usr/lib/mozc
+reject_path /usr/share/fcitx5/addon/mozc.conf
+reject_path /usr/share/fcitx5/inputmethod/mozc.conf
+reject_path /usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
+reject_path /usr/share/icons/hicolor/32x32/apps/fcitx_mozc.png
+
+# Model a distro multiarch-path migration. The prior product record must be
+# consumed before it is replaced, and only the prior Mozkey addon may be
+# removed after the new entry point is published.
+previous_addon_dir=/usr/lib/legacy-triplet/fcitx5
+install -D -m 755 /dev/null \
+  "${stage_dir}${previous_addon_dir}/fcitx5-mozkey.so"
+printf '%s\n' "${previous_addon_dir}" > \
+  "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+
+# A second install models an in-place package upgrade and must be idempotent.
+install_product
+require_absent "${previous_addon_dir}/fcitx5-mozkey.so"
+require_file "${addon_dir}/fcitx5-mozkey.so"
+grep -Fqx "${addon_dir}" "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+
+# An attacker-controlled record must stop the upgrade before the data phase.
+mv "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir" \
+  "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir.valid"
+ln -s /etc/passwd "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+if install_product >/dev/null 2>&1; then
+  echo "unsafe addon path record was accepted" >&2
+  exit 1
+fi
+rm -f -- "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+mv "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir.valid" \
+  "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+
+# Uninstall must preserve other IMEs and all user-owned state.
+install -D -m 644 /dev/null "${stage_dir}${addon_dir}/fcitx5-hazkey.so"
+install -D -m 644 /dev/null "${stage_dir}/usr/share/fcitx5/addon/hazkey.conf"
+install -D -m 644 /dev/null "${stage_dir}${addon_dir}/fcitx5-mozc.so"
+if [ "${addon_dir}" != /usr/lib/fcitx5 ]; then
+  install -D -m 755 /dev/null \
+    "${stage_dir}/usr/lib/fcitx5/fcitx5-mozkey.so"
+fi
+install -D -m 600 /dev/null "${stage_dir}/user-data-sentinel"
+install -D -m 600 /dev/null "${stage_dir}/user-ime/state.json"
+install -D -m 600 /dev/null "${stage_dir}/user-ime/consumers/other-ime.json"
+install -D -m 600 /dev/null "${stage_dir}/user-ime/consumers/fcitx5-mozkey.json"
+DESTDIR="${stage_dir}" PREFIX=/usr \
+  MOZKEY_REMOVE_GRIMODEX_CONSUMER=1 \
+  GRIMODEX_IME_ROOT="${stage_dir}/user-ime" \
+  ../scripts/uninstall_mozkey_fcitx5
+
+require_absent "${addon_dir}/fcitx5-mozkey.so"
+require_absent /usr/lib/fcitx5/fcitx5-mozkey.so
+require_absent /usr/lib/mozkey/mozc_server
+require_absent /usr/lib/mozkey/unregister-grimodex-consumer
+require_absent /usr/lib/mozkey/llama-server
+require_absent /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
+require_absent /usr/share/fcitx5/addon/mozkey.conf
+require_absent /usr/share/mozkey/fcitx5-addon-dir
+require_absent /usr/share/licenses/mozkey/LGPL-2.1-or-later.txt
+require_absent /usr/share/licenses/mozkey/dictionary/daily_sources.lock.json
+require_file "${addon_dir}/fcitx5-hazkey.so"
+require_file /usr/share/fcitx5/addon/hazkey.conf
+require_file "${addon_dir}/fcitx5-mozc.so"
+require_file /user-data-sentinel
+require_file /user-ime/state.json
+require_file /user-ime/consumers/other-ime.json
+require_absent /user-ime/consumers/fcitx5-mozkey.json
+
+# Reinstall is the rollback-forward path after an uninstall exercise.
+install_product
+require_file "${addon_dir}/fcitx5-mozkey.so"
+require_file /usr/lib/mozkey/mozc_server
+require_file /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
+require_file /usr/share/licenses/mozkey/dictionary/daily_sources.lock.json
+
+# Model interruption after the addon binary was atomically published but
+# before its path record was replaced. With an old multiarch record, rollback
+# must remove both the current and the recorded product entry points.
+interrupted_old_addon_dir=/usr/lib/interrupted-triplet/fcitx5
+install -D -m 755 /dev/null \
+  "${stage_dir}${interrupted_old_addon_dir}/fcitx5-mozkey.so"
+printf '%s\n' "${interrupted_old_addon_dir}" > \
+  "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/uninstall_mozkey_fcitx5
+require_absent "${addon_dir}/fcitx5-mozkey.so"
+require_absent "${interrupted_old_addon_dir}/fcitx5-mozkey.so"
+
+# A fresh-install interruption has no record at all. The uninstaller must use
+# the validated current distro path instead of refusing rollback.
+install_product
+rm -f -- "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"
+DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/uninstall_mozkey_fcitx5
+require_absent "${addon_dir}/fcitx5-mozkey.so"
+
+# Leave a complete product tree for the exact manifest audit below.
+install_product
+require_file "${addon_dir}/fcitx5-mozkey.so"
+require_file /usr/share/mozkey/fcitx5-addon-dir
+
+# Every installed file or symlink must be owned by the audited manifest. The
+# Arch provenance and the embedded SPDX document are package-generated after
+# this source-install smoke, so those manifest entries are intentionally absent.
+{
+  sed \
+    -e '/^\/share\/doc\/mozkey\/archlinux-build-packages\.txt$/d' \
+    -e '/^\/share\/doc\/mozkey\/linux-build-attestation\.json$/d' \
+    -e '/^\/share\/doc\/mozkey\/mozkey-linux\.spdx\.json$/d' \
+    -e 's#^#/usr#' \
+    "${script_dir}/mozkey_fcitx5_install_manifest.txt"
+  printf '%s\n' "${addon_dir}/fcitx5-mozkey.so"
+} | LC_ALL=C sort -u > "${expected_paths}"
+# The uninstall exercise deliberately leaves these three foreign-IME
+# sentinels in /usr. Exclude only those exact paths; every other staged file or
+# symlink must still be owned by the Mozkey manifest.
+find "${stage_dir}/usr" \( -type f -o -type l \) -printf '/usr/%P\n' |
+  awk \
+    -v hazkey_addon="${addon_dir}/fcitx5-hazkey.so" \
+    -v mozc_addon="${addon_dir}/fcitx5-mozc.so" \
+    '$0 != hazkey_addon &&
+     $0 != mozc_addon &&
+     $0 != "/usr/share/fcitx5/addon/hazkey.conf"' |
+  LC_ALL=C sort -u > "${actual_paths}"
+if ! diff -u "${expected_paths}" "${actual_paths}"; then
+  echo "staged product differs from the audited install manifest" >&2
+  exit 1
+fi
+
+if command -v appstreamcli >/dev/null 2>&1; then
+  appstreamcli validate --no-net \
+    "${stage_dir}/usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+fi
+
+echo "Mozkey staged install/upgrade/uninstall/reinstall isolation smoke passed"

@@ -42,6 +42,7 @@
 #include "converter/converter_interface.h"
 #include "data_manager/data_manager.h"
 #include "dictionary/user_dictionary.h"
+#include "dictionary/project_dictionary.h"
 #include "engine/data_loader.h"
 #include "engine/engine_converter.h"
 #include "engine/engine_converter_interface.h"
@@ -81,7 +82,8 @@ class Engine : public EngineInterface {
 
   std::unique_ptr<engine::EngineConverterInterface> CreateEngineConverter()
       const override {
-    return std::make_unique<engine::EngineConverter>(GetConverter());
+    return std::make_unique<engine::EngineConverter>(
+        GetConverter(), project_dictionary_provider_);
   }
 
   // Functions for Reload, Sync, Wait return true if successfully operated
@@ -146,6 +148,8 @@ class Engine : public EngineInterface {
   std::unique_ptr<engine::SupplementalModelInterface> supplemental_model_;
   std::shared_ptr<converter::Converter> converter_;
   std::shared_ptr<ConverterInterface> minimal_converter_;
+  std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
+      project_dictionary_provider_;
   std::unique_ptr<DataLoader::Response> loader_response_;
   std::unique_ptr<user_dictionary::AsyncUserDictionaryImporter>
       async_user_dictionary_importer_;

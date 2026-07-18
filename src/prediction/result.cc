@@ -141,6 +141,12 @@ void Result::SetTypesAndTokenAttributes(PredictionTypes prediction_types,
         (Attribute::USER_DICTIONARY | Attribute::NO_MODIFICATION |
          Attribute::NO_VARIANTS_EXPANSION);
   }
+  if (token_attr & Token::PROJECT_DICTIONARY) {
+    candidate_attributes |=
+        (Attribute::PROJECT_DICTIONARY | Attribute::NO_LEARNING |
+         Attribute::NO_DELETABLE | Attribute::NO_VARIANTS_EXPANSION |
+         Attribute::NO_MODIFICATION);
+  }
 }
 
 void PopulateTypeCorrectedQuery(

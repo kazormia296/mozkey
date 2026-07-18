@@ -86,13 +86,21 @@ namespace {
 #if defined(MOZC_SERVER_DIR)
 constexpr absl::string_view kMozcServerDir = MOZC_SERVER_DIR;
 #else  // MOZC_SERVER_DIR
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+constexpr absl::string_view kMozcServerDir = "/usr/lib/mozkey";
+#else
 constexpr absl::string_view kMozcServerDir = "/usr/lib/mozc";
+#endif
 #endif  // MOZC_SERVER_DIR
 
 #if defined(MOZC_DOCUMENT_DIR)
 constexpr absl::string_view kMozcDocumentDir = MOZC_DOCUMENT_DIR;
 #else  // MOZC_DOCUMENT_DIR
+#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+constexpr absl::string_view kMozcDocumentDir = "/usr/lib/mozkey/documents";
+#else
 constexpr absl::string_view kMozcDocumentDir = "/usr/lib/mozc/documents";
+#endif
 #endif  // MOZC_DOCUMENT_DIR
 
 class ProgramInvocationNameHolder final {
@@ -333,12 +341,21 @@ std::string UserProfileDirectoryImpl::GetUserProfileDirectory() const {
 #endif  //  GOOGLE_JAPANESE_INPUT_BUILD
 
 #elif defined(__linux__)
-    // 1. If "$HOME/.mozc" already exists,
-    //    use "$HOME/.mozc" for backward compatibility.
+    // Keep the OSS Mozkey profile separate from system Mozc.  Official Google
+    // Japanese Input builds retain their existing product-specific behavior.
+#if !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+    constexpr absl::string_view kLegacyProfileName = ".mozkey";
+    constexpr absl::string_view kXdgProfileName = "mozkey";
+#else
+    constexpr absl::string_view kLegacyProfileName = ".mozc";
+    constexpr absl::string_view kXdgProfileName = "mozc";
+#endif
+    // 1. If the product-specific legacy directory already exists, use it for
+    //    backward compatibility.
     // 2. If $XDG_CONFIG_HOME is defined
-    //    use "$XDG_CONFIG_HOME/mozc".
+    //    use "$XDG_CONFIG_HOME/<product>".
     // 3. Otherwise
-    //    use "$HOME/.config/mozc" as the default value of $XDG_CONFIG_HOME
+    //    use "$HOME/.config/<product>" as the XDG default.
     // https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
     const std::string home = Environ::GetEnv("HOME");
     if (home.empty()) {
@@ -349,19 +366,20 @@ std::string UserProfileDirectoryImpl::GetUserProfileDirectory() const {
           << "Can't get passwd entry for uid " << uid << ".";
       CHECK_LT(0, strlen(pw.pw_dir))
           << "Home directory for uid " << uid << " is not set.";
-      return FileUtil::JoinPath(pw.pw_dir, ".mozc");
+      return FileUtil::JoinPath(pw.pw_dir, kLegacyProfileName);
     }
 
-    std::string old_dir = FileUtil::JoinPath(home, ".mozc");
+    std::string old_dir = FileUtil::JoinPath(home, kLegacyProfileName);
     if (FileUtil::DirectoryExists(old_dir).ok()) {
       return old_dir;
     }
 
     const std::string xdg_config_home = Environ::GetEnv("XDG_CONFIG_HOME");
     if (!xdg_config_home.empty()) {
-      return FileUtil::JoinPath(xdg_config_home, "mozc");
+      return FileUtil::JoinPath(xdg_config_home, kXdgProfileName);
     }
-    return FileUtil::JoinPath(home, ".config/mozc");
+    return FileUtil::JoinPath(
+        {home, ".config", std::string(kXdgProfileName)});
 
 #else  // Supported platforms
     LOG(ERROR) << "Undefined target platform.";

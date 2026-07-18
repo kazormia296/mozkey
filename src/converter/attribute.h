@@ -100,6 +100,9 @@ class Attribute {
     // User history is basically deletable, but decoder can set NO_DELETABLE
     // attribute not to allow the candidate to be deleted.
     NO_DELETABLE = 1 << 19,
+    // Contains a session-scoped project dictionary token.  Project terms must
+    // never leak into the global Mozc learning stores.
+    PROJECT_DICTIONARY = 1 << 20,
   };
 };
 }  // namespace converter

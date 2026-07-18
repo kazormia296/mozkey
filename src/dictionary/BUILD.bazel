@@ -44,6 +44,35 @@ load(
 package(default_visibility = ["//visibility:private"])
 
 mozc_cc_library(
+    name = "project_dictionary",
+    srcs = ["project_dictionary.cc"],
+    hdrs = ["project_dictionary.h"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":dictionary_interface",
+        ":dictionary_token",
+        "//base/strings:unicode",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+mozc_cc_test(
+    name = "project_dictionary_test",
+    size = "small",
+    srcs = ["project_dictionary_test.cc"],
+    deps = [
+        ":dictionary_interface",
+        ":dictionary_token",
+        ":project_dictionary",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_library(
     name = "dictionary_interface",
     hdrs = ["dictionary_interface.h"],
     visibility = [
@@ -75,6 +104,7 @@ mozc_cc_test(
         ":dictionary_interface",
         ":dictionary_token",
         ":pos_matcher",
+        ":project_dictionary",
         ":user_dictionary",
         ":user_pos",
         "//base:util",
@@ -103,6 +133,7 @@ mozc_cc_library(
         ":dictionary_interface",
         ":dictionary_token",
         ":pos_matcher",
+        ":project_dictionary",
         "//base:util",
         "//protocol:config_cc_proto",
         "//request:conversion_request",

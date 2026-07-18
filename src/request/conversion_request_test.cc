@@ -40,6 +40,7 @@
 #include "composer/table.h"
 #include "converter/candidate.h"
 #include "converter/inner_segment.h"
+#include "dictionary/project_dictionary.h"
 #include "prediction/result.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
@@ -154,6 +155,34 @@ TEST(ConversionRequestTest, IsZeroQuerySuggestionTest) {
   EXPECT_TRUE(ConversionRequestBuilder().Build().IsZeroQuerySuggestion());
   EXPECT_FALSE(
       ConversionRequestBuilder().SetKey("key").Build().IsZeroQuerySuggestion());
+}
+
+TEST(ConversionRequestTest, ProjectDictionaryIsPreservedByCopyAndViewBuilders) {
+  auto snapshot = dictionary::ProjectDictionarySnapshot::Create(
+      9, "project-a", "sha256:test",
+      {dictionary::ProjectDictionaryEntry{
+          .key = "こーでっくす",
+          .value = "Codex",
+          .cost = 3000,
+          .lid = 10,
+          .rid = 10,
+          .priority = 3,
+          .entry_id = "entry-1",
+      }});
+  ASSERT_TRUE(snapshot.ok()) << snapshot.status();
+
+  const ConversionRequest original =
+      ConversionRequestBuilder().SetProjectDictionary(*snapshot).Build();
+  const ConversionRequest copied = ConversionRequestBuilder()
+                                       .SetConversionRequest(original)
+                                       .Build();
+  const ConversionRequest viewed = ConversionRequestBuilder()
+                                       .SetConversionRequestView(original)
+                                       .Build();
+
+  EXPECT_EQ(original.project_dictionary(), *snapshot);
+  EXPECT_EQ(copied.project_dictionary(), *snapshot);
+  EXPECT_EQ(viewed.project_dictionary(), *snapshot);
 }
 
 TEST(ConversionRequestTest, IncognitoModeTest) {

@@ -64,9 +64,11 @@ Full customization is also available.
 
 ## Configuration path
 
-Mozc creates configuration files under `$XDG_CONFIG_HOME/mozc` (default:
-`~/.config/mozc`). If `~/.mozc` already exists, `~/.mozc` is used for backward
-compatibility.
+The OSS Linux Mozkey build creates configuration files under
+`$XDG_CONFIG_HOME/mozkey` (default: `~/.config/mozkey`). If `~/.mozkey`
+already exists, that product-specific legacy directory is used. A system Mozc
+profile is deliberately ignored. Windows, macOS, and official Google Japanese
+Input builds retain their platform-specific paths.
 
 ## Configuration files
 
@@ -95,9 +97,9 @@ bazelisk build @com_google_protobuf//:protoc
 ## IBus
 
 Starting from version 2.26.4220, IBus specific configurations are customizable
-in `~/.config/mozc/ibus_config.textproto`.
+in `~/.config/mozkey/ibus_config.textproto` for the OSS Linux Mozkey build.
 
-The file path may be `~/.mozc/ibus_config.textproto` if `~/.mozc` directory
+The file path may be `~/.mozkey/ibus_config.textproto` if `~/.mozkey` directory
 already exists.
 
 Here is the default configuration as of version 2.29.5205.

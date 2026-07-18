@@ -1,0 +1,128 @@
+#!/bin/sh
+
+# Shared path validation for the source-install, staging, and uninstall tools.
+# Mozkey's OSS Linux binary embeds /usr/lib/mozkey as its private libexec path,
+# so PREFIX is deliberately fixed while DESTDIR remains available to packagers.
+
+validate_mozkey_install_environment() {
+  case "${PREFIX:-/usr}" in
+    /usr) ;;
+    *)
+      echo "Mozkey Linux product supports PREFIX=/usr only" >&2
+      return 2
+      ;;
+  esac
+  case "${DESTDIR:-}" in
+    ""|/*) ;;
+    *)
+      echo "DESTDIR must be empty or absolute" >&2
+      return 2
+      ;;
+  esac
+}
+
+validate_fcitx5_addon_dir() {
+  addon_dir="$1"
+  case "${addon_dir}" in
+    *[!A-Za-z0-9_./+@-]*|*//*|*/./*|*/../*|*/.|*/..)
+      echo "unsafe Fcitx5 addon directory: ${addon_dir}" >&2
+      return 2
+      ;;
+  esac
+  case "${addon_dir}" in
+    /usr/lib/fcitx5|/usr/lib64/fcitx5) ;;
+    /usr/lib/*/fcitx5)
+      multiarch_component="${addon_dir#/usr/lib/}"
+      multiarch_component="${multiarch_component%/fcitx5}"
+      case "${multiarch_component}" in
+        ""|*/*)
+          echo "Fcitx5 multiarch libdir must contain one component" >&2
+          return 2
+          ;;
+      esac
+      ;;
+    *)
+      echo "Fcitx5 addon directory must be a /usr libdir/fcitx5 path: ${addon_dir}" >&2
+      return 2
+      ;;
+  esac
+}
+
+resolve_fcitx5_addon_dir() {
+  if [ -n "${FCITX5_ADDON_DIR:-}" ]; then
+    validate_fcitx5_addon_dir "${FCITX5_ADDON_DIR}" || return
+    printf '%s\n' "${FCITX5_ADDON_DIR}"
+    return
+  fi
+
+  pkg_config_path="$(command -v pkg-config 2>/dev/null || true)"
+  if [ -z "${pkg_config_path}" ]; then
+    echo "pkg-config is required; packagers may set FCITX5_ADDON_DIR explicitly" >&2
+    return 1
+  fi
+  fcitx5_libdir="$("${pkg_config_path}" --variable=libdir Fcitx5Core 2>/dev/null || true)"
+  if [ -z "${fcitx5_libdir}" ]; then
+    echo "Fcitx5Core pkg-config metadata is required" >&2
+    return 1
+  fi
+  resolved_addon_dir="${fcitx5_libdir%/}/fcitx5"
+  validate_fcitx5_addon_dir "${resolved_addon_dir}" || return
+  printf '%s\n' "${resolved_addon_dir}"
+}
+
+# Publish one product file without ever exposing a truncated destination.
+# All supported Linux targets provide same-filesystem rename(2) through GNU
+# mv.  The temporary is created in the destination directory deliberately.
+atomic_install_file() {
+  source_path="$1"
+  target_mode="$2"
+  destination_path="$3"
+  destination_directory="$(dirname -- "${destination_path}")"
+  install -d -m 755 "${destination_directory}"
+  install_temporary="$(mktemp "${destination_directory}/.mozkey-install.XXXXXX")"
+  if ! install -m "${target_mode}" "${source_path}" "${install_temporary}"; then
+    rm -f -- "${install_temporary}"
+    return 1
+  fi
+  if ! mv -fT -- "${install_temporary}" "${destination_path}"; then
+    rm -f -- "${install_temporary}"
+    return 1
+  fi
+}
+
+atomic_install_symlink() {
+  symlink_target="$1"
+  destination_path="$2"
+  destination_directory="$(dirname -- "${destination_path}")"
+  install -d -m 755 "${destination_directory}"
+  link_temporary_directory="$(mktemp -d "${destination_directory}/.mozkey-link.XXXXXX")"
+  link_temporary="${link_temporary_directory}/link"
+  if ! ln -s -- "${symlink_target}" "${link_temporary}"; then
+    rmdir -- "${link_temporary_directory}" 2>/dev/null || true
+    return 1
+  fi
+  if ! mv -fT -- "${link_temporary}" "${destination_path}"; then
+    rm -f -- "${link_temporary}"
+    rmdir -- "${link_temporary_directory}" 2>/dev/null || true
+    return 1
+  fi
+  rmdir -- "${link_temporary_directory}"
+}
+
+read_installed_fcitx5_addon_dir() {
+  addon_record_path="$1"
+  if [ ! -e "${addon_record_path}" ] && [ ! -L "${addon_record_path}" ]; then
+    return 1
+  fi
+  if [ ! -f "${addon_record_path}" ] || [ -L "${addon_record_path}" ]; then
+    echo "installed Fcitx5 addon path record is not a regular file" >&2
+    return 2
+  fi
+  if [ "$(wc -l < "${addon_record_path}")" -ne 1 ]; then
+    echo "installed Fcitx5 addon path record must contain exactly one line" >&2
+    return 2
+  fi
+  IFS= read -r installed_addon_dir < "${addon_record_path}"
+  validate_fcitx5_addon_dir "${installed_addon_dir}" || return
+  printf '%s\n' "${installed_addon_dir}"
+}

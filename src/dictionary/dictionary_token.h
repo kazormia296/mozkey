@@ -51,7 +51,8 @@ struct Token {
     // tightly integrated with the system dictionary codec.
 
     // The following attribute is not stored in the system dictionary but is
-    // added by dictionary modules when looking up from user dictionary.
+    // added by in-memory dictionary modules at lookup time.
+    PROJECT_DICTIONARY = 1 << 5,
     SUFFIX_DICTIONARY = 1 << 6,
     USER_DICTIONARY = 1 << 7,
   };

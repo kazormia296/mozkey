@@ -59,7 +59,7 @@ active_on_launch: False
   <rank>80</rank>
   <icon_prop_key>InputMode</icon_prop_key>
   <symbol>あ</symbol>
-  <setup>/usr/lib/mozc/mozc_tool --mode=config_dialog</setup>
+  <setup>/usr/lib/mozkey/mozc_tool --mode=config_dialog</setup>
   <name>mozc-jp</name>
   <longname>Mozc</longname>
   <layout>default</layout>

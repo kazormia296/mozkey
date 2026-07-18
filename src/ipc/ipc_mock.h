@@ -30,9 +30,11 @@
 #ifndef MOZC_IPC_IPC_MOCK_H_
 #define MOZC_IPC_IPC_MOCK_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
@@ -94,6 +96,11 @@ class IPCClientFactoryMock : public IPCClientFactoryInterface {
   // This function is for unit tests.
   absl::string_view GetGeneratedRequest() const;
 
+  // Transport-observable request history.  This lets client tests prove that
+  // a session-scoped command was not sent again after CREATE_SESSION.
+  size_t GetGeneratedRequestCount() const;
+  absl::string_view GetGeneratedRequest(size_t index) const;
+
   // This function is for IPCClientMock.
   void SetGeneratedRequest(absl::string_view request);
 
@@ -124,6 +131,7 @@ class IPCClientFactoryMock : public IPCClientFactoryInterface {
   std::string server_product_version_;
   uint32_t server_process_id_;
   std::string request_;
+  std::vector<std::string> requests_;
   std::string response_;
 };
 

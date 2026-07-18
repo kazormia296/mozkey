@@ -31,26 +31,46 @@ This fork uses local resources for normal IME operation:
 - local user dictionary
 - local user history
 - local settings
-- bundled local Zenz scorer, runtime, and model when Zenz support is included
+- a local Zenz scorer and GGUF model when Zenz support is included
+- a bundled Windows llama.cpp runtime or a verified Linux distribution runtime
 
 Input text is processed locally.
 
-For Zenz-bundled builds, local Zenz correction is performed through
-`mozc_zenz_scorer.exe`, the bundled `llama-server.exe`, and the bundled local
-GGUF model. The scorer-to-runtime transport is localhost-only and must be bound
-to `127.0.0.1`.
+### Windows Zenz path
+
+Windows Zenz builds use `mozc_zenz_scorer.exe`, the bundled
+`llama-server.exe`, and the bundled local GGUF model. The scorer communicates
+with the runtime through localhost only.
+
+### Linux Zenz path
+
+Linux Zenz builds use `mozc_zenz_scorer`, the bundled local GGUF model, and a
+compatible distribution `llama-server` reached through the product-private
+`/usr/lib/mozkey/llama-server` link. The Linux artifact does not claim to bundle
+the distribution runtime. Installation checks its CLI contract, while release
+dogfood must also load the model and complete an authenticated inference probe.
+The Linux GGUF is a deterministic metadata-only derivative of the pinned
+source model: build attestation verifies both complete-file digests and the
+unchanged tensor-data digest, so no patched llama.cpp fork is required.
+Consumer heartbeat capability reports install completeness, not endpoint or
+model readiness.
+
+### Shared localhost boundary
+
+On both platforms, the scorer-to-runtime transport is localhost-only and must
+be bound to `127.0.0.1`.
 
 The Zenz localhost transport must not rely on a fixed public-facing endpoint.
-The scorer chooses a random high port for `llama-server.exe` and protects
+The platform scorer chooses a random high port for `llama-server` and protects
 completion requests with a random API key. Generated port and API key values
-must not be written to DebugView logs.
+must not be written to release logs.
 
 The API key is a defense-in-depth measure for stale, accidental, or mismatched
-localhost endpoints. It is passed to `llama-server.exe` through the command line
-because that is the interface exposed by llama.cpp server. Therefore it should
-not be treated as a strong secret against same-user local malware. The primary
-boundary is that the server is bound to `127.0.0.1`, uses a random high port, and
-is launched and managed by `mozc_zenz_scorer.exe`.
+localhost endpoints. It is passed to the platform `llama-server` through the
+command line because that is the interface exposed by llama.cpp server.
+Therefore it should not be treated as a strong secret against same-user local
+malware. The primary boundary is that the server is bound to `127.0.0.1`, uses
+a random high port, and is launched and managed by the platform scorer.
 
 ## Usage statistics and crash reports
 

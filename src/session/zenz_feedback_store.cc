@@ -13,12 +13,20 @@
 #include <utility>
 #include <vector>
 
+#include "absl/log/log.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 
+#include "base/system_util.h"
+
 #if defined(_WIN32)
 #include <windows.h>
+#else
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace mozc {
@@ -250,11 +258,126 @@ bool EnsureDirectoryExists(const std::wstring& dir) {
   return false;
 }
 
-#else
+#else  // !defined(_WIN32)
 
-void StoreDebugOutput(absl::string_view) {}
+void StoreDebugOutput(absl::string_view message) {
+  LOG(INFO) << "[zenz-feedback-store] " << message;
+}
 
-#endif
+bool EnsureDirectoryExists(const std::string& path);
+bool IsWritableDirectory(const std::string& dir);
+
+std::string GetFeedbackDir() {
+  std::string dir = SystemUtil::GetUserProfileDirectory();
+  if (dir.empty()) {
+    StoreDebugOutput("GetUserProfileDirectory returned empty");
+    return "";
+  }
+
+  if (!EnsureDirectoryExists(dir)) {
+    StoreDebugOutput("directory cannot be created or is not a directory");
+    return "";
+  }
+
+  if (!IsWritableDirectory(dir)) {
+    StoreDebugOutput("directory not writable");
+    return "";
+  }
+
+  return dir;
+}
+
+std::string GetFeedbackPathFromDir(const std::string& dir) {
+  if (dir.empty()) {
+    return "";
+  }
+  return dir + "/zenz_feedback.tsv";
+}
+
+std::string GetFeedbackPath() {
+  return GetFeedbackPathFromDir(GetFeedbackDir());
+}
+
+bool EnsureDirectoryExists(const std::string& path) {
+  if (path.empty()) {
+    StoreDebugOutput("directory path is empty");
+    return false;
+  }
+
+  struct stat st;
+  if (stat(path.c_str(), &st) == 0) {
+    if (S_ISDIR(st.st_mode)) {
+      return true;
+    }
+    StoreDebugOutput("path exists but is not a directory");
+    return false;
+  }
+
+  if (mkdir(path.c_str(), 0700) == 0) {
+    return true;
+  }
+
+  if (errno == EEXIST) {
+    return true;
+  }
+
+  StoreDebugOutput("mkdir failed");
+  return false;
+}
+
+bool IsWritableDirectory(const std::string& dir) {
+  if (dir.empty()) {
+    return false;
+  }
+
+  struct stat st;
+  if (stat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
+    StoreDebugOutput("writable probe failed: not a directory");
+    return false;
+  }
+
+  const std::string probe_path =
+      dir + "/.mozc_zenz_feedback_probe_" + std::to_string(getpid()) + ".tmp";
+
+  int fd = open(probe_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+  if (fd < 0) {
+    StoreDebugOutput("writable probe failed: cannot create probe file");
+    return false;
+  }
+  close(fd);
+  unlink(probe_path.c_str());
+
+  return true;
+}
+
+std::string WideToUtf8(const std::wstring& w) {
+  if (w.empty()) {
+    return "";
+  }
+
+  std::string out;
+  out.reserve(w.size() * 3 + 1);
+  for (const wchar_t wc : w) {
+    if (wc < 0x80) {
+      out.push_back(static_cast<char>(wc));
+    } else if (wc < 0x800) {
+      out.push_back(0xC0 | (wc >> 6));
+      out.push_back(0x80 | (wc & 0x3F));
+    } else if (wc < 0x10000) {
+      out.push_back(0xE0 | (wc >> 12));
+      out.push_back(0x80 | ((wc >> 6) & 0x3F));
+      out.push_back(0x80 | (wc & 0x3F));
+    } else if (wc < 0x200000) {
+      out.push_back(0xF0 | (wc >> 18));
+      out.push_back(0x80 | ((wc >> 12) & 0x3F));
+      out.push_back(0x80 | ((wc >> 6) & 0x3F));
+      out.push_back(0x80 | (wc & 0x3F));
+    }
+  }
+  return out;
+}
+
+#endif  // !defined(_WIN32)
 
 std::string EscapeTsv(absl::string_view s) {
   std::string out;
@@ -887,8 +1010,28 @@ std::vector<ParsedFeedbackRecord> LoadFeedbackRecords() {
 
   return records;
 #else
-  StoreDebugOutput("load skipped: zenz feedback store is Windows-only");
-  return {};
+  const std::string path = GetFeedbackPath();
+  if (path.empty()) {
+    StoreDebugOutput("load skipped: empty path");
+    return {};
+  }
+
+  struct stat st;
+  if (stat(path.c_str(), &st) != 0) {
+    StoreDebugOutput("load skipped: file not found");
+    return {};
+  }
+
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {
+    StoreDebugOutput("load skipped: open failed");
+    return {};
+  }
+
+  std::vector<ParsedFeedbackRecord> records;
+  LoadRecordsFromStream(&file, false, &records);
+
+  return records;
 #endif
 }
 
@@ -988,9 +1131,50 @@ bool WriteFeedbackRecordsAtomically(
 }
 #else
 bool WriteFeedbackRecordsAtomically(
-    const std::vector<ParsedFeedbackRecord>&) {
-  StoreDebugOutput("atomic write failed: zenz feedback store is Windows-only");
-  return false;
+    const std::vector<ParsedFeedbackRecord>& records) {
+  const std::string dir = GetFeedbackDir();
+  const std::string path = GetFeedbackPathFromDir(dir);
+
+  if (dir.empty() || path.empty()) {
+    StoreDebugOutput("atomic write failed: empty path");
+    return false;
+  }
+
+  if (records.empty()) {
+    if (unlink(path.c_str()) == 0) {
+      StoreDebugOutput("clear ok: file removed");
+      return true;
+    }
+
+    if (errno == ENOENT) {
+      StoreDebugOutput("clear ok: file already absent");
+      return true;
+    }
+
+    StoreDebugOutput("clear failed: unlink error");
+    return false;
+  }
+
+  const std::string tmp_path =
+      path + ".tmp." + std::to_string(getpid());
+
+  {
+    std::ofstream file(tmp_path, std::ios::binary | std::ios::trunc);
+    if (!file || !WriteRecordsToStream(records, &file)) {
+      unlink(tmp_path.c_str());
+      StoreDebugOutput("atomic write failed: write to tmp file failed");
+      return false;
+    }
+  }
+
+  if (rename(tmp_path.c_str(), path.c_str()) != 0) {
+    StoreDebugOutput("atomic write failed: rename error");
+    unlink(tmp_path.c_str());
+    return false;
+  }
+
+  StoreDebugOutput("atomic write ok");
+  return true;
 }
 #endif
 
@@ -1044,7 +1228,24 @@ void AppendRecord(absl::string_view action,
 
   std::ofstream file(path_w, std::ios::binary | std::ios::app);
 #else
-  std::ofstream file;
+  const std::string dir = GetFeedbackDir();
+  const std::string path = GetFeedbackPathFromDir(dir);
+
+  if (dir.empty() || path.empty()) {
+    StoreDebugOutput("append failed: empty path");
+    return;
+  }
+
+  struct stat st;
+  if (stat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
+    if (!EnsureDirectoryExists(dir)) {
+      StoreDebugOutput(
+          "append failed: directory does not exist and cannot be created");
+      return;
+    }
+  }
+
+  std::ofstream file(path, std::ios::binary | std::ios::app);
 #endif
 
   if (!file) {
@@ -1290,8 +1491,20 @@ bool ZenzFeedbackStore::ExportToFile(const std::wstring& path) const {
   const std::vector<ParsedFeedbackRecord> records = LoadFeedbackRecords();
   return WriteRecordsToPath(path, records);
 #else
-  StoreDebugOutput("export failed: zenz feedback store is Windows-only");
-  return false;
+  const std::string utf8_path = WideToUtf8(path);
+  if (utf8_path.empty()) {
+    StoreDebugOutput("export failed: empty path");
+    return false;
+  }
+
+  const std::vector<ParsedFeedbackRecord> records = LoadFeedbackRecords();
+  std::ofstream file(utf8_path, std::ios::binary | std::ios::trunc);
+  if (!file) {
+    StoreDebugOutput("export failed: open failed");
+    return false;
+  }
+
+  return WriteRecordsToStream(records, &file);
 #endif
 }
 
@@ -1330,8 +1543,34 @@ bool ZenzFeedbackStore::ImportFromFile(
 
   return WriteFeedbackRecordsAtomically(new_records);
 #else
-  StoreDebugOutput("import failed: zenz feedback store is Windows-only");
-  return false;
+  const std::string utf8_path = WideToUtf8(path);
+  if (utf8_path.empty()) {
+    StoreDebugOutput("import failed: empty path");
+    return false;
+  }
+
+  std::ifstream file(utf8_path, std::ios::binary);
+  if (!file) {
+    StoreDebugOutput("import open failed");
+    return false;
+  }
+
+  std::vector<ParsedFeedbackRecord> imported_records;
+  if (!LoadRecordsFromStream(&file, true, &imported_records)) {
+    StoreDebugOutput("import parse failed");
+    return false;
+  }
+
+  std::vector<ParsedFeedbackRecord> new_records;
+  if (mode == ZenzFeedbackImportMode::kAppend) {
+    new_records = LoadFeedbackRecords();
+  }
+
+  new_records.insert(new_records.end(),
+                     imported_records.begin(),
+                     imported_records.end());
+
+  return WriteFeedbackRecordsAtomically(new_records);
 #endif
 }
 

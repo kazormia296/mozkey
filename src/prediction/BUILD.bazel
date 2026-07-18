@@ -278,6 +278,8 @@ mozc_cc_test(
     srcs = ["result_test.cc"],
     deps = [
         ":result",
+        "//converter:attribute",
+        "//dictionary:dictionary_token",
         "//testing:gunit_main",
     ],
 )
