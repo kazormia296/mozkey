@@ -36,12 +36,53 @@
 
 #include <utility>
 
+#include "absl/functional/function_ref.h"
+#include "base/win32/com.h"
 #include "base/win32/hresultor.h"
 #include "win32/tip/tip_compartment_util.h"
 
 namespace mozc {
 namespace win32 {
 namespace tsf {
+namespace {
+
+bool SetThreadCompartmentGuarded(ITfThreadMgr* thread_mgr,
+                                 const GUID& compartment_guid,
+                                 TfClientId client_id,
+                                 wil::unique_variant data,
+                                 absl::FunctionRef<bool()> is_current) {
+  if (thread_mgr == nullptr || !is_current()) {
+    return false;
+  }
+  const auto compartment_manager = ComQuery<ITfCompartmentMgr>(thread_mgr);
+  if (!compartment_manager || !is_current()) {
+    return false;
+  }
+  wil::com_ptr_nothrow<ITfCompartment> compartment;
+  if (FAILED(compartment_manager->GetCompartment(compartment_guid,
+                                                 &compartment)) ||
+      compartment == nullptr || !is_current()) {
+    return false;
+  }
+  wil::unique_variant existing_data;
+  const HRESULT get_result =
+      compartment->GetValue(existing_data.reset_and_addressof());
+  if (FAILED(get_result) || !is_current()) {
+    return false;
+  }
+  if (get_result == S_OK &&
+      VarCmp(data.addressof(), existing_data.addressof(),
+             LOCALE_USER_DEFAULT, 0) == VARCMP_EQ) {
+    return true;
+  }
+  if (!is_current()) {
+    return false;
+  }
+  return SUCCEEDED(compartment->SetValue(client_id, data.addressof())) &&
+         is_current();
+}
+
+}  // namespace
 
 bool TipStatus::IsOpen(ITfThreadMgr* thread_mgr) {
   // Retrieve the compartment manager from the thread manager, which contains
@@ -111,24 +152,35 @@ bool TipStatus::GetInputModeConversion(ITfThreadMgr* thread_mgr,
 
 bool TipStatus::SetIMEOpen(ITfThreadMgr* thread_mgr, TfClientId client_id,
                            bool open) {
+  return SetIMEOpen(thread_mgr, client_id, open, []() { return true; });
+}
+
+bool TipStatus::SetIMEOpen(ITfThreadMgr* thread_mgr, TfClientId client_id,
+                           bool open,
+                           absl::FunctionRef<bool()> is_current) {
   wil::unique_variant var;
   var.vt = VT_I4;
   var.lVal = open ? TRUE : FALSE;
-  return TipCompartmentUtil::Set(thread_mgr,
-                                 GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, client_id,
-                                 std::move(var))
-      .Succeeded();
+  return SetThreadCompartmentGuarded(
+      thread_mgr, GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, client_id,
+      std::move(var), is_current);
 }
 
 bool TipStatus::SetInputModeConversion(ITfThreadMgr* thread_mgr,
                                        DWORD client_id, DWORD native_mode) {
+  return SetInputModeConversion(thread_mgr, client_id, native_mode,
+                                []() { return true; });
+}
+
+bool TipStatus::SetInputModeConversion(
+    ITfThreadMgr* thread_mgr, DWORD client_id, DWORD native_mode,
+    absl::FunctionRef<bool()> is_current) {
   wil::unique_variant var;
   var.vt = VT_I4;
   var.lVal = native_mode;
-  return TipCompartmentUtil::Set(thread_mgr,
-                                 GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION,
-                                 client_id, std::move(var))
-      .Succeeded();
+  return SetThreadCompartmentGuarded(
+      thread_mgr, GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION, client_id,
+      std::move(var), is_current);
 }
 
 }  // namespace tsf

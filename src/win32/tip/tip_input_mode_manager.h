@@ -117,6 +117,10 @@ class TipInputModeManager : public TipInputModeManagerImpl {
                                    DWORD mozc_visible_mode);
   Action OnSetFocus(bool system_open_close_mode, DWORD system_conversion_mode,
                     absl::Span<const InputScope> input_scopes);
+  // Enters a fail-closed state while the newly focused field's InputScope is
+  // unresolved.  The next authoritative OnSetFocus or OnChangeInputScope call
+  // replaces this temporary password scope.
+  Action OnInputScopeUnresolved();
   Action OnChangeOpenClose(bool new_open_close_mode);
   Action OnChangeConversionMode(DWORD new_conversion_mode);
   Action OnChangeInputScope(absl::Span<const InputScope> input_scopes);
@@ -129,6 +133,9 @@ class TipInputModeManager : public TipInputModeManagerImpl {
   ConversionMode GetEffectiveConversionMode() const;
   // Returns IME conversion mode that is visible from TSF.
   ConversionMode GetTsfConversionMode() const;
+  // Returns whether the currently focused TSF input scope is a password
+  // field.  Callers must check this before requesting surrounding text.
+  bool IsPasswordInputScope() const;
 
  private:
   bool use_global_mode_ = false;

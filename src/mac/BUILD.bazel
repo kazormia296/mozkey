@@ -178,6 +178,7 @@ mozc_objc_library(
         "//base/mac:mac_util",
         "//client",
         "//client:client_interface",
+        "//grimodex:client_context",
         "//ipc",
         "//protocol:candidate_window_cc_proto",
         "//protocol:commands_cc_proto",
@@ -383,7 +384,13 @@ mozc_objc_library(
         "//base:url",
         "//base:version",
         "//base/mac:mac_util",
-    ],
+    ] + mozc_select(
+        oss_macos = [
+            "//grimodex:desktop_consumer_heartbeat",
+            "@com_google_absl//absl/status",
+        ],
+        prod_macos = [],
+    ),
 )
 
 mozc_macos_application(

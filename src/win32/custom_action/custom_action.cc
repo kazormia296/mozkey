@@ -58,6 +58,9 @@
 #include "client/client.h"
 #include "client/client_interface.h"
 #include "config/config_handler.h"
+#ifndef GOOGLE_JAPANESE_INPUT_BUILD
+#include "grimodex/desktop_consumer_heartbeat.h"
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
 #include "renderer/renderer_client.h"
 #include "win32/base/input_dll.h"
 #include "win32/base/omaha_util.h"
@@ -106,31 +109,33 @@ bool StringEqualsIgnoreCase(std::wstring_view lhs, std::wstring_view rhs) {
              TRUE) == CSTR_EQUAL;
 }
 
-std::wstring GetProcessImagePath(DWORD process_id) {
-  HANDLE process = ::OpenProcess(
-      PROCESS_QUERY_LIMITED_INFORMATION,
-      FALSE,
-      process_id);
-  if (process == nullptr) {
-    return L"";
-  }
-
+std::wstring GetProcessImagePath(HANDLE process) {
   wchar_t path[MAX_PATH] = {};
   DWORD size = std::size(path);
   if (!::QueryFullProcessImageNameW(process, 0, path, &size)) {
-    ::CloseHandle(process);
     return L"";
   }
-
-  ::CloseHandle(process);
   return std::wstring(path, size);
 }
 
-void TerminateMozcProcessByImageName(const wchar_t* image_name,
-                                     const char* mozc_filename) {
+std::wstring GetProcessImagePath(DWORD process_id) {
+  HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                 process_id);
+  if (process == nullptr) {
+    return L"";
+  }
+  const std::wstring path = GetProcessImagePath(process);
+  ::CloseHandle(process);
+  return path;
+}
+
+bool CollectMozcProcessIdsByImageName(const wchar_t* image_name,
+                                      const char* mozc_filename,
+                                      std::vector<DWORD>* process_ids) {
+  process_ids->clear();
   HANDLE snapshot = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snapshot == INVALID_HANDLE_VALUE) {
-    return;
+    return false;
   }
 
   const std::wstring expected_path = GetMozcComponentPath(mozc_filename);
@@ -139,44 +144,109 @@ void TerminateMozcProcessByImageName(const wchar_t* image_name,
   entry.dwSize = sizeof(entry);
 
   if (!::Process32FirstW(snapshot, &entry)) {
+    const DWORD error = ::GetLastError();
     ::CloseHandle(snapshot);
-    return;
+    return error == ERROR_NO_MORE_FILES;
   }
 
+  bool result = true;
   do {
     if (!StringEqualsIgnoreCase(entry.szExeFile, image_name)) {
       continue;
     }
 
     const std::wstring actual_path = GetProcessImagePath(entry.th32ProcessID);
-    if (actual_path.empty() ||
-        !StringEqualsIgnoreCase(actual_path, expected_path)) {
+    if (actual_path.empty()) {
+      // A process with the exact product image name could not be attributed.
+      // Fail closed instead of declaring the installed server absent.
+      result = false;
+      break;
+    }
+    if (!StringEqualsIgnoreCase(actual_path, expected_path)) {
       continue;
     }
-
-    HANDLE process = ::OpenProcess(
-        PROCESS_TERMINATE | SYNCHRONIZE,
-        FALSE,
-        entry.th32ProcessID);
-    if (process == nullptr) {
-      continue;
-    }
-
-    ::TerminateProcess(process, 0);
-    ::WaitForSingleObject(process, 3000);
-    ::CloseHandle(process);
+    process_ids->push_back(entry.th32ProcessID);
   } while (::Process32NextW(snapshot, &entry));
 
+  if (result && ::GetLastError() != ERROR_NO_MORE_FILES) {
+    result = false;
+  }
   ::CloseHandle(snapshot);
+  return result;
 }
 
-void ShutdownZenzRuntimeProcesses() {
-  TerminateMozcProcessByImageName(
-      L"mozc_zenz_scorer.exe",
-      "mozc_zenz_scorer.exe");
-  TerminateMozcProcessByImageName(
-      L"llama-server.exe",
-      "llama-server.exe");
+bool TerminateMozcProcessByImageName(const wchar_t* image_name,
+                                     const char* mozc_filename) {
+  // Repeat enumeration because one product process can be starting while an
+  // older instance is being stopped.  Success requires two consecutive exact
+  // snapshots with no installed-image process.
+  const std::wstring expected_path = GetMozcComponentPath(mozc_filename);
+  constexpr int kMaximumAttempts = 5;
+  for (int attempt = 0; attempt < kMaximumAttempts; ++attempt) {
+    std::vector<DWORD> process_ids;
+    if (!CollectMozcProcessIdsByImageName(image_name, mozc_filename,
+                                          &process_ids)) {
+      return false;
+    }
+    if (process_ids.empty()) {
+      ::Sleep(100);
+      if (!CollectMozcProcessIdsByImageName(image_name, mozc_filename,
+                                            &process_ids)) {
+        return false;
+      }
+      if (process_ids.empty()) {
+        return true;
+      }
+    }
+
+    for (const DWORD process_id : process_ids) {
+      HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION |
+                                         PROCESS_TERMINATE | SYNCHRONIZE,
+                                     FALSE, process_id);
+      if (process == nullptr) {
+        return false;
+      }
+      // Recheck the image through the same handle used for termination so PID
+      // reuse cannot redirect this uninstall action to another process.
+      const std::wstring actual_path = GetProcessImagePath(process);
+      if (actual_path.empty() &&
+          ::WaitForSingleObject(process, 0) == WAIT_OBJECT_0) {
+        ::CloseHandle(process);
+        continue;
+      }
+      if (actual_path.empty() ||
+          !StringEqualsIgnoreCase(actual_path, expected_path)) {
+        ::CloseHandle(process);
+        return false;
+      }
+      if (!::TerminateProcess(process, 0) &&
+          ::WaitForSingleObject(process, 0) != WAIT_OBJECT_0) {
+        ::CloseHandle(process);
+        return false;
+      }
+      const DWORD wait_result = ::WaitForSingleObject(process, 5000);
+      ::CloseHandle(process);
+      if (wait_result != WAIT_OBJECT_0) {
+        return false;
+      }
+    }
+  }
+  return false;
+}
+
+bool ShutdownZenzRuntimeProcesses() {
+  const bool scorer_stopped = TerminateMozcProcessByImageName(
+      L"mozc_zenz_scorer.exe", "mozc_zenz_scorer.exe");
+  const bool llama_stopped = TerminateMozcProcessByImageName(
+      L"llama-server.exe", "llama-server.exe");
+  return scorer_stopped && llama_stopped;
+}
+
+bool StopMozcServer() {
+  const std::wstring image_name =
+      mozc::win32::Utf8ToWide(mozc::kMozcServerName);
+  return TerminateMozcProcessByImageName(image_name.c_str(),
+                                         mozc::kMozcServerName);
 }
 
 // Retrieves the value for an installer property.
@@ -212,6 +282,15 @@ bool SetProperty(MSIHANDLE msi, const std::wstring_view name,
     return false;
   }
   return true;
+}
+
+void LogInstallerInfo(MSIHANDLE msi_handle, std::wstring_view message) {
+  PMSIHANDLE record = MsiCreateRecord(1);
+  if (!record) {
+    return;
+  }
+  MsiRecordSetStringW(record, 0, std::wstring(message).c_str());
+  MsiProcessMessage(msi_handle, INSTALLMESSAGE_INFO, record);
 }
 
 std::wstring FormatMessageByResourceId(int resourceID, ...) {
@@ -468,8 +547,17 @@ UINT __stdcall ShutdownServer(MSIHANDLE msi_handle) {
     LOG_ERROR_FOR_OMAHA();
   }
 
-  ShutdownZenzRuntimeProcesses();
+  const bool server_stopped = StopMozcServer();
+  // Stop helpers only after the exact server is absent, so it cannot launch a
+  // replacement scorer between the final helper scan and server termination.
+  const bool zenz_stopped = ShutdownZenzRuntimeProcesses();
 
+  if (!zenz_stopped || !server_stopped) {
+    LogInstallerInfo(
+        msi_handle,
+        L"Mozkey could not prove that all installed runtime processes stopped.");
+    return ERROR_INSTALL_FAILURE;
+  }
   return ERROR_SUCCESS;
 }
 
@@ -479,6 +567,42 @@ UINT __stdcall RestoreUserIMEEnvironment(MSIHANDLE msi_handle) {
   const bool result =
       mozc::win32::UninstallHelper::RestoreUserIMEEnvironmentMain();
   return result ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE;
+}
+
+UINT __stdcall UnregisterGrimodexConsumer(MSIHANDLE msi_handle) {
+  DEBUG_BREAK_FOR_DEBUGGER();
+#ifdef GOOGLE_JAPANESE_INPUT_BUILD
+  static_cast<void>(msi_handle);
+  return ERROR_SUCCESS;
+#else   // GOOGLE_JAPANESE_INPUT_BUILD
+  const std::wstring app_data = GetProperty(msi_handle, L"CustomActionData");
+  if (!StopMozcServer()) {
+    // The server owns the tsf-mozkey heartbeat refresh loop.  Never remove the
+    // record while an exact installed server may still republish it.
+    LogInstallerInfo(
+        msi_handle,
+        L"Mozkey kept its Grimodex consumer heartbeat because the installed "
+        L"mozc_server.exe could not be stopped and proven absent.");
+    return ERROR_INSTALL_FAILURE;
+  }
+  const absl::Status status =
+      app_data.empty()
+          ? absl::FailedPreconditionError(
+                "MSI AppDataFolder is unavailable for Grimodex cleanup")
+          : mozc::grimodex::UnregisterWindowsDesktopConsumerForAppData(
+                mozc::win32::WideToUtf8(app_data));
+  if (status.ok()) {
+    return ERROR_SUCCESS;
+  }
+
+  // A secure registrar failure must never fall back to broad recursive
+  // removal. The checked MSI action reports the failure to the user.
+  LogInstallerInfo(msi_handle, mozc::win32::Utf8ToWide(absl::StrCat(
+                                   "Mozkey could not remove its Grimodex "
+                                   "consumer heartbeat: ",
+                                   status.ToString())));
+  return ERROR_INSTALL_FAILURE;
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
 }
 
 // [Return='ignore']

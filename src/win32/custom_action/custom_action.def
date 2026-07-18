@@ -7,6 +7,7 @@ EXPORTS
     OpenUninstallSurveyPage
     ShutdownServer
     RestoreUserIMEEnvironment
+    UnregisterGrimodexConsumer
     HideCancelButton
     SaveCustomActionData
     RestoreServiceState

@@ -29,6 +29,8 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <cstdint>
+
 #include "protocol/candidate_window.pb.h"
 #include "protocol/renderer_command.pb.h"
 
@@ -64,6 +66,9 @@ enum ColumnType {
 // It will be used when mouse clicks.  It doesn't take ownerships of
 // |controller|.
 - (void)setSendCommandInterface:(mozc::client::SendCommandInterface *)command_sender;
+
+// Binds mouse callbacks to the RendererCommand that populated this view.
+- (void)setRendererCallbackToken:(uint64_t)token;
 
 // Checks the |candidates_| and recalculates the layout using |tableLayout_|.
 // It also returns the size which is necessary to draw all GUI elements.

@@ -49,7 +49,9 @@ TipInputModeManager::Config GetConfig() {
 
 }  // namespace
 
-TipThreadContext::TipThreadContext() : input_mode_manager_(GetConfig()) {}
+TipThreadContext::TipThreadContext(uint64_t initial_focus_epoch)
+    : input_mode_manager_(GetConfig()),
+      grimodex_domain_tracker_(initial_focus_epoch) {}
 
 void TipThreadContext::IncrementFocusRevision() {
   if (focus_revision_ < std::numeric_limits<int32_t>::max()) {
@@ -57,6 +59,7 @@ void TipThreadContext::IncrementFocusRevision() {
   } else {
     focus_revision_ = 0;
   }
+  grimodex_domain_tracker_.OnFocusChanged();
 }
 
 }  // namespace tsf

@@ -145,10 +145,14 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
   TipUiElementDelegateImpl& operator=(const TipUiElementDelegateImpl&) = delete;
   TipUiElementDelegateImpl(wil::com_ptr_nothrow<TipTextService> text_service,
                            wil::com_ptr_nothrow<ITfContext> context,
-                           TipUiElementDelegateFactory::ElementType type)
+                           TipUiElementDelegateFactory::ElementType type,
+                           TsfFocusSnapshot element_domain,
+                           uint64_t output_generation)
       : text_service_(std::move(text_service)),
         context_(std::move(context)),
-        type_(type) {}
+        type_(type),
+        element_domain_(element_domain),
+        output_generation_(output_generation) {}
 
  private:
   bool IsObservable() const override {
@@ -211,6 +215,10 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
   }
 
   HRESULT Show(BOOL show) override {
+    if (show && !GetCurrentPrivateContext()) {
+      shown_ = false;
+      return E_FAIL;
+    }
     const bool old_shown = shown_;
     shown_ = !!show;
     if (old_shown != shown_ && IsObservable()) {
@@ -230,6 +238,14 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       }
       // TODO(yukawa): Update UI.
     }
+    if (show && !GetCurrentPrivateContext()) {
+      // Compensate a stale TRUE notification as well as the local flag.  The
+      // FALSE path is intentionally allowed after revocation so EndAll can
+      // always close application-visible candidate state.
+      shown_ = true;
+      Show(FALSE);
+      return E_FAIL;
+    }
     return S_OK;
   }
 
@@ -237,7 +253,7 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
     if (show == nullptr) {
       return E_INVALIDARG;
     }
-    *show = (shown_ ? TRUE : FALSE);
+    *show = (shown_ && GetCurrentPrivateContext()) ? TRUE : FALSE;
     return S_OK;
   }
 
@@ -249,11 +265,16 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_INVALIDARG;
     }
     *flags = 0;
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
+      return E_FAIL;
+    }
     // If TF_CLUIE_STRING is included into |flags|, TSF calls back
     // ITfCandidateListUIElement::GetString for all the candidates,
     // which might be a huge bottleneck. So do not include this flag
     // whenever possible.
-    if (TestModifiedAndUpdateLastCandidate()) {
+    if (TestModifiedAndUpdateLastCandidate(private_context)) {
       *flags |= (TF_CLUIE_STRING | TF_CLUIE_COUNT);
     }
     *flags |= (TF_CLUIE_SELECTION | TF_CLUIE_CURRENTPAGE | TF_CLUIE_PAGEINDEX);
@@ -266,7 +287,19 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
     if (document_manager == nullptr) {
       return E_INVALIDARG;
     }
-    return context_->GetDocumentMgr(document_manager);
+    *document_manager = nullptr;
+    if (!GetCurrentPrivateContext()) {
+      return E_FAIL;
+    }
+    const HRESULT result = context_->GetDocumentMgr(document_manager);
+    if (FAILED(result) || GetCurrentPrivateContext()) {
+      return result;
+    }
+    if (*document_manager != nullptr) {
+      (*document_manager)->Release();
+      *document_manager = nullptr;
+    }
+    return E_FAIL;
   }
 
   HRESULT GetCount(UINT* count) override {
@@ -276,9 +309,9 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_INVALIDARG;
     }
     *count = 0;
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
       return E_FAIL;
     }
     const Output& output = private_context->last_output();
@@ -296,16 +329,20 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_INVALIDARG;
     }
     *index = 0;
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
       return E_FAIL;
     }
     const Output& output = private_context->last_output();
     if (!output.has_all_candidate_words()) {
       return S_OK;
     }
-    *index = output.all_candidate_words().focused_index();
+    const CandidateList& list = output.all_candidate_words();
+    const int focused_index = list.focused_index();
+    if (focused_index >= 0 && focused_index < list.candidates_size()) {
+      *index = static_cast<UINT>(focused_index);
+    }
     return S_OK;
   }
 
@@ -316,9 +353,9 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_INVALIDARG;
     }
     *text = nullptr;
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
       return E_FAIL;
     }
     const Output& output = private_context->last_output();
@@ -326,11 +363,11 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_FAIL;
     }
     const CandidateList& list = output.all_candidate_words();
-    // Convert |index| to the index within output_->candidates().
-    const int visible_index = index;
-    if (visible_index >= list.candidates_size()) {
+    if (index >= static_cast<UINT>(list.candidates_size())) {
       return E_FAIL;
     }
+    // Convert |index| only after the unsigned bounds check.
+    const int visible_index = static_cast<int>(index);
     std::wstring wide_text = Utf8ToWide(list.candidates(visible_index).value());
     *text = MakeUniqueBSTR(wide_text).release();
     return S_OK;
@@ -342,9 +379,9 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
     if (page_count == nullptr) {
       return E_INVALIDARG;
     }
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
       return E_FAIL;
     }
     const Output& output = private_context->last_output();
@@ -372,6 +409,9 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
   HRESULT SetPageIndex(UINT* index, UINT page_count) override {
     DCHECK(IsCandidateWindowLike());
 
+    if (!GetCurrentPrivateContext()) {
+      return E_FAIL;
+    }
     return E_NOTIMPL;
   }
 
@@ -382,16 +422,19 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_INVALIDARG;
     }
     *current_page = 0;
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
       return E_FAIL;
     }
     const Output& output = private_context->last_output();
     if (!output.has_all_candidate_words()) {
       return S_OK;
     }
-    *current_page = output.all_candidate_words().focused_index() / kPageSize;
+    const int focused_index = output.all_candidate_words().focused_index();
+    if (focused_index >= 0) {
+      *current_page = static_cast<UINT>(focused_index) / kPageSize;
+    }
     return S_OK;
   }
 
@@ -399,9 +442,9 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
   HRESULT SetSelection(UINT index) override {
     DCHECK(IsCandidateWindowLike());
 
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
       return E_FAIL;
     }
     const Output& output = private_context->last_output();
@@ -409,12 +452,15 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_FAIL;
     }
     const CandidateList& list = output.all_candidate_words();
-    if (list.candidates_size() <= index) {
+    if (index >= static_cast<UINT>(list.candidates_size())) {
       return E_INVALIDARG;
     }
     const int id = list.candidates(index).id();
-    if (!TipEditSession::SelectCandidateAsync(text_service_.get(),
-                                              context_.get(), id)) {
+    if (!TipEditSession::OnUiElementCallbackAsync(
+            text_service_.get(), context_.get(),
+            commands::SessionCommand::SELECT_CANDIDATE, id,
+            element_domain_.focus_epoch, element_domain_.focus_revision,
+            output_generation_)) {
       return E_FAIL;
     }
     return S_OK;
@@ -422,8 +468,16 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
 
   HRESULT Finalize() override {
     DCHECK(IsCandidateWindowLike());
+    if (!GetCurrentPrivateContext()) {
+      return E_FAIL;
+    }
 
-    if (!TipEditSession::SubmitAsync(text_service_.get(), context_.get())) {
+    commands::SessionCommand command;
+    command.set_type(commands::SessionCommand::SUBMIT);
+    if (!TipEditSession::SendUiElementSessionCommandAsync(
+            text_service_.get(), context_.get(), command,
+            element_domain_.focus_epoch, element_domain_.focus_revision,
+            output_generation_)) {
       return E_FAIL;
     }
     return S_OK;
@@ -431,9 +485,17 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
 
   HRESULT Abort() override {
     DCHECK(IsCandidateWindowLike());
+    if (!GetCurrentPrivateContext()) {
+      return E_FAIL;
+    }
 
     // Currently equals to Finalize().
-    if (!TipEditSession::SubmitAsync(text_service_.get(), context_.get())) {
+    commands::SessionCommand command;
+    command.set_type(commands::SessionCommand::SUBMIT);
+    if (!TipEditSession::SendUiElementSessionCommandAsync(
+            text_service_.get(), context_.get(), command,
+            element_domain_.focus_epoch, element_domain_.focus_revision,
+            output_generation_)) {
       return E_FAIL;
     }
     return S_OK;
@@ -446,9 +508,9 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
       return E_INVALIDARG;
     }
 
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetCurrentPrivateContext();
+    if (!private_context) {
       *text = MakeUniqueBSTR(L"").release();
       return S_OK;
     }
@@ -497,12 +559,8 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
   // Returns true if the candidate list is updated. When this function returns
   // false, you need not update the list of candidate strings at this time.
   // Note that this function updates |last_candidate_list_| internally.
-  bool TestModifiedAndUpdateLastCandidate() {
-    TipPrivateContext* private_context =
-        text_service_->GetPrivateContext(context_.get());
-    if (private_context == nullptr) {
-      return true;
-    }
+  bool TestModifiedAndUpdateLastCandidate(
+      const std::shared_ptr<TipPrivateContext>& private_context) {
     const Output& output = private_context->last_output();
     if (!output.has_all_candidate_words()) {
       return true;
@@ -552,20 +610,48 @@ class TipUiElementDelegateImpl final : public TipUiElementDelegate {
     }
   }
 
+  std::shared_ptr<TipPrivateContext> GetCurrentPrivateContext() const {
+    if (!IsTsfContextFocusedForSnapshot(
+            text_service_.get(), context_.get(), element_domain_,
+            /*require_nonsecure=*/true)) {
+      return nullptr;
+    }
+    std::shared_ptr<TipPrivateContext> private_context =
+        text_service_->GetPrivateContext(context_.get());
+    if (!private_context ||
+        !private_context->IsLastOutputForFocusDomain(
+            element_domain_.focus_epoch, element_domain_.focus_revision) ||
+        private_context->last_output_generation() != output_generation_ ||
+        !IsTsfContextFocusedForSnapshot(
+            text_service_.get(), context_.get(), element_domain_,
+            /*require_nonsecure=*/true) ||
+        !private_context->IsLastOutputForFocusDomainAndGeneration(
+            element_domain_.focus_epoch, element_domain_.focus_revision,
+            output_generation_)) {
+      return nullptr;
+    }
+    return private_context;
+  }
+
   wil::com_ptr_nothrow<TipTextService> text_service_;
   wil::com_ptr_nothrow<ITfContext> context_;
   const TipUiElementDelegateFactory::ElementType type_;
+  const TsfFocusSnapshot element_domain_;
+  const uint64_t output_generation_;
   CandidateList last_candidate_list_;
-  bool shown_;
+  bool shown_ = false;
 };
 
 }  // namespace
 
 std::unique_ptr<TipUiElementDelegate> TipUiElementDelegateFactory::Create(
     wil::com_ptr_nothrow<TipTextService> text_service,
-    wil::com_ptr_nothrow<ITfContext> context, ElementType type) {
+    wil::com_ptr_nothrow<ITfContext> context, ElementType type,
+    TsfFocusSnapshot element_domain, uint64_t output_generation) {
   return std::make_unique<TipUiElementDelegateImpl>(std::move(text_service),
-                                                    std::move(context), type);
+                                                    std::move(context), type,
+                                                    element_domain,
+                                                    output_generation);
 }
 
 }  // namespace tsf

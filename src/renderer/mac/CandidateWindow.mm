@@ -41,7 +41,8 @@ namespace mozc {
 namespace renderer {
 namespace mac {
 
-CandidateWindow::CandidateWindow() : command_sender_(nullptr) {}
+CandidateWindow::CandidateWindow()
+    : command_sender_(nullptr), renderer_callback_token_(0) {}
 
 CandidateWindow::~CandidateWindow() {}
 
@@ -54,10 +55,19 @@ void CandidateWindow::SetSendCommandInterface(
   [candidate_view setSendCommandInterface:send_command_interface];
 }
 
+void CandidateWindow::SetRendererCallbackToken(uint64_t token) {
+  renderer_callback_token_ = token;
+  if (view_ != nil) {
+    CandidateView *candidate_view = (CandidateView *)view_;
+    [candidate_view setRendererCallbackToken:token];
+  }
+}
+
 void CandidateWindow::InitWindow() {
   RendererBaseWindow::InitWindow();
   const CandidateView* candidate_view = (CandidateView*)view_;
   [candidate_view setSendCommandInterface:command_sender_];
+  [candidate_view setRendererCallbackToken:renderer_callback_token_];
 }
 const mozc::renderer::TableLayout* CandidateWindow::GetTableLayout() const {
   const CandidateView* candidate_view = (CandidateView*)view_;

@@ -173,14 +173,13 @@
 
       <ComponentRef Id="ZenzScorer" />
       <ComponentRef Id="ZenzLlamaServer" />
-      <ComponentRef Id="ZenzGgmlDll" />
-      <ComponentRef Id="ZenzGgmlBaseDll" />
-      <ComponentRef Id="ZenzGgmlCpuDll" />
-      <ComponentRef Id="ZenzLlamaDll" />
       <ComponentRef Id="ZenzModel" />
+      <ComponentRef Id="ZenzRuntimeManifest" />
       <ComponentRef Id="ZenzThirdPartyNotices" />
       <ComponentRef Id="ZenzApacheLicense" />
+      <ComponentRef Id="ZenzCppHttplibMitLicense" />
       <ComponentRef Id="ZenzLlamaCppMitLicense" />
+      <ComponentRef Id="ZenzNlohmannJsonMitLicense" />
       <ComponentRef Id="ZenzModelNotice" />
     </Feature>
 
@@ -193,6 +192,7 @@
     <CustomAction Id="EnsureAllApplicationPackagesPermisssions" DllEntry="EnsureAllApplicationPackagesPermisssions" Execute="deferred" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="ShutdownServer" DllEntry="ShutdownServer" Impersonate="yes" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="RestoreUserIMEEnvironment" DllEntry="RestoreUserIMEEnvironment" Impersonate="yes" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
+    <CustomAction Id="UnregisterGrimodexConsumer" DllEntry="UnregisterGrimodexConsumer" Execute="commit" Impersonate="yes" Return="check" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="InitialInstallation" DllEntry="InitialInstallation" Execute="deferred" Impersonate="no" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="InitialInstallationCommit" DllEntry="InitialInstallationCommit" Execute="commit" Impersonate="no" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="EnableTipProfile" DllEntry="EnableTipProfile" Execute="commit" Impersonate="yes" BinaryRef="mozc_installer_helper.dll" />
@@ -205,6 +205,8 @@
     <CustomAction Id="InstallMozcFirewallRulesRollback" DllEntry="RemoveMozcFirewallRules" Execute="rollback" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="RemoveMozcFirewallRules" DllEntry="RemoveMozcFirewallRules" Execute="deferred" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="NewerVersionError" Error="4000" />
+    <!-- Deferred/commit actions cannot trust the host process environment for the impersonated user's profile. -->
+    <SetProperty Id="UnregisterGrimodexConsumer" Value="[AppDataFolder]" Before="UnregisterGrimodexConsumer" Sequence="execute" Condition="(REMOVE=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE)" />
 
     <InstallExecuteSequence>
       <Custom Action="InitialInstallation" After="InstallInitialize" Condition="(NOT (REMOVE=&quot;ALL&quot;)) AND (NOT UPGRADING)" />
@@ -216,7 +218,9 @@
       <!-- This action invoked only when removal of the old product failed. -->
       <Custom Action="UnregisterTIPRollback64" After="RestoreUserIMEEnvironment" Condition="(REMOVE=&quot;ALL&quot;) AND UPGRADINGPRODUCTCODE AND (VersionNT64)" />
       <Custom Action="UnregisterTIP64" After="UnregisterTIPRollback64" Condition="(REMOVE=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE) AND (VersionNT64)" />
-      <Custom Action="RemoveMozcFirewallRules" After="UnregisterTIP64" Condition="(REMOVE=&quot;ALL&quot;)" />
+      <!-- Keep consumer discovery across upgrades and failed/rolled-back removals. The checked commit action stops and proves the exact installed server absent before removing tsf-mozkey. -->
+      <Custom Action="UnregisterGrimodexConsumer" After="UnregisterTIP64" Condition="(REMOVE=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE)" />
+      <Custom Action="RemoveMozcFirewallRules" After="UnregisterGrimodexConsumer" Condition="(REMOVE=&quot;ALL&quot;)" />
       <!--
         The InstallValidate action notifies the user
         if mozc_server.exe and mozc_renderer.exe
@@ -319,17 +323,8 @@
         <Component Id="ZenzLlamaServer">
           <File Id="llama_server_exe" Name="llama-server.exe" DiskId="1" Checksum="yes" Source="$(var.ZenzLlamaServerPath)" Vital="yes" KeyPath="yes" />
         </Component>
-        <Component Id="ZenzGgmlDll">
-          <File Id="ggml_dll" Name="ggml.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzGgmlDllPath)" Vital="yes" KeyPath="yes" />
-        </Component>
-        <Component Id="ZenzGgmlBaseDll">
-          <File Id="ggml_base_dll" Name="ggml-base.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzGgmlBaseDllPath)" Vital="yes" KeyPath="yes" />
-        </Component>
-        <Component Id="ZenzGgmlCpuDll">
-          <File Id="ggml_cpu_dll" Name="ggml-cpu.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzGgmlCpuDllPath)" Vital="yes" KeyPath="yes" />
-        </Component>
-        <Component Id="ZenzLlamaDll">
-          <File Id="llama_dll" Name="llama.dll" DiskId="1" Checksum="yes" Source="$(var.ZenzLlamaDllPath)" Vital="yes" KeyPath="yes" />
+        <Component Id="ZenzRuntimeManifest">
+          <File Id="zenz_runtime_manifest_json" Name="runtime-manifest.json" DiskId="1" Checksum="yes" Source="$(var.ZenzRuntimeManifestPath)" Vital="yes" KeyPath="yes" />
         </Component>
 
         <Directory Id="ZenzModelsDir" Name="models">
@@ -345,8 +340,14 @@
           <Component Id="ZenzApacheLicense">
             <File Id="zenz_apache_2_0_txt" Name="Apache-2.0.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\Apache-2.0.txt" Vital="yes" KeyPath="yes" />
           </Component>
+          <Component Id="ZenzCppHttplibMitLicense">
+            <File Id="zenz_cpp_httplib_mit_txt" Name="cpp-httplib-MIT.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\cpp-httplib-MIT.txt" Vital="yes" KeyPath="yes" />
+          </Component>
           <Component Id="ZenzLlamaCppMitLicense">
             <File Id="zenz_llama_cpp_mit_txt" Name="llama.cpp-MIT.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\llama.cpp-MIT.txt" Vital="yes" KeyPath="yes" />
+          </Component>
+          <Component Id="ZenzNlohmannJsonMitLicense">
+            <File Id="zenz_nlohmann_json_mit_txt" Name="nlohmann-json-MIT.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\nlohmann-json-MIT.txt" Vital="yes" KeyPath="yes" />
           </Component>
           <Component Id="ZenzModelNotice">
             <File Id="zenz_model_notice_txt" Name="zenz-v3.2-small-gguf.txt" DiskId="1" Checksum="yes" Source="$(sys.SOURCEFILEDIR)zenz_runtime\licenses\zenz-v3.2-small-gguf.txt" Vital="yes" KeyPath="yes" />

@@ -323,6 +323,28 @@ TEST(TipInputModeManagerTest, InputScopeOnSetFocus_GitHubIssue826) {
             TipInputModeManager::kHiragana);
 }
 
+TEST(TipInputModeManagerTest, TracksPasswordInputScope) {
+  TipInputModeManager input_mode_manager(GetThreadLocalMode());
+  input_mode_manager.OnInitialize(false, kNativeHiragana);
+
+  EXPECT_FALSE(input_mode_manager.IsPasswordInputScope());
+
+  input_mode_manager.OnInputScopeUnresolved();
+  EXPECT_TRUE(input_mode_manager.IsPasswordInputScope());
+
+  const std::vector<InputScope> password_scope = {IS_PASSWORD};
+  input_mode_manager.OnSetFocus(false, kNativeHiragana, password_scope);
+  EXPECT_TRUE(input_mode_manager.IsPasswordInputScope());
+
+  const std::vector<InputScope> mixed_scope = {IS_EMAIL_USERNAME, IS_PASSWORD};
+  input_mode_manager.OnChangeInputScope(mixed_scope);
+  EXPECT_TRUE(input_mode_manager.IsPasswordInputScope());
+
+  const std::vector<InputScope> normal_scope = {IS_EMAIL_USERNAME};
+  input_mode_manager.OnChangeInputScope(normal_scope);
+  EXPECT_FALSE(input_mode_manager.IsPasswordInputScope());
+}
+
 }  // namespace
 }  // namespace tsf
 }  // namespace win32

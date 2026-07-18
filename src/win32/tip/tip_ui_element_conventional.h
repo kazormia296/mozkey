@@ -33,6 +33,7 @@
 #include <msctf.h>
 #include <wil/com.h>
 
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_text_service.h"
 
 namespace mozc {
@@ -66,7 +67,8 @@ class TipUiElementConventional {
   // Returns a ITfUIElement object based of the given parameters.
   static wil::com_ptr_nothrow<ITfUIElement> New(
       UIType type, wil::com_ptr_nothrow<TipTextService> text_service,
-      wil::com_ptr_nothrow<ITfContext> context);
+      wil::com_ptr_nothrow<ITfContext> context,
+      TsfFocusSnapshot element_domain, uint64_t output_generation);
 };
 
 }  // namespace tsf

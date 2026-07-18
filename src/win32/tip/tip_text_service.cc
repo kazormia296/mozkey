@@ -44,6 +44,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/base/casts.h"
 #include "absl/container/flat_hash_map.h"
@@ -57,13 +58,16 @@
 #include "base/win32/hresult.h"
 #include "base/win32/hresultor.h"
 #include "base/win32/win_util.h"
+#include "grimodex/client_context.h"
 #include "protocol/commands.pb.h"
+#include "protocol/renderer_callback_provenance.h"
 #include "win32/base/win32_window_util.h"
 #include "win32/tip/tip_display_attributes.h"
 #include "win32/tip/tip_dll_module.h"
 #include "win32/tip/tip_edit_session.h"
 #include "win32/tip/tip_edit_session_impl.h"
 #include "win32/tip/tip_enum_display_attributes.h"
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_input_mode_manager.h"
 #include "win32/tip/tip_keyevent_handler.h"
 #include "win32/tip/tip_lang_bar.h"
@@ -75,6 +79,7 @@
 #include "win32/tip/tip_status.h"
 #include "win32/tip/tip_thread_context.h"
 #include "win32/tip/tip_ui_handler.h"
+#include "win32/tip/tip_ui_element_manager.h"
 
 namespace mozc {
 namespace win32 {
@@ -99,6 +104,27 @@ bool IsIIDOf<tsf::TipLangBarCallback>(REFIID riid) {
 namespace tsf {
 namespace {
 
+class ScopedCallbackSuspension final {
+ public:
+  explicit ScopedCallbackSuspension(int* depth) : depth_(depth) {
+    ++*depth_;
+  }
+  ScopedCallbackSuspension(const ScopedCallbackSuspension&) = delete;
+  ScopedCallbackSuspension& operator=(const ScopedCallbackSuspension&) =
+      delete;
+  ~ScopedCallbackSuspension() { Resume(); }
+
+  void Resume() {
+    if (depth_ != nullptr) {
+      --*depth_;
+      depth_ = nullptr;
+    }
+  }
+
+ private:
+  int* depth_;
+};
+
 // Represents the module handle of this module.
 volatile HMODULE g_module = nullptr;
 
@@ -119,9 +145,28 @@ bool NeedsRendererUpdateOnLayoutChange(TipTextService* text_service,
     return false;
   }
 
-  TipPrivateContext* private_context = text_service->GetPrivateContext(context);
+  const std::shared_ptr<TipPrivateContext> private_context =
+      text_service->GetPrivateContext(context);
   if (private_context == nullptr) {
     return false;
+  }
+
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_context) {
+    return false;
+  }
+  const TsfFocusSnapshot renderer_domain =
+      CaptureTsfFocusSnapshot(thread_context.get());
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, renderer_domain,
+                                      /*require_nonsecure=*/true)) {
+    return false;
+  }
+  if (!private_context->IsLastOutputForFocusDomain(
+          renderer_domain.focus_epoch, renderer_domain.focus_revision)) {
+    // Give the renderer a chance to hide any retained view, but never inspect
+    // stale output to decide its geometry.
+    return true;
   }
 
   const commands::Output& output = private_context->last_output();
@@ -133,11 +178,6 @@ bool NeedsRendererUpdateOnLayoutChange(TipTextService* text_service,
   if (output.has_candidate_window() &&
       output.candidate_window().has_category()) {
     return true;
-  }
-
-  TipThreadContext* thread_context = text_service->GetThreadContext();
-  if (thread_context == nullptr) {
-    return false;
   }
 
   const TipInputModeManager* input_mode_manager =
@@ -307,19 +347,37 @@ struct GuidHash {
 // Wraps |TipPrivateContext| with a sink cleanup callback.
 class PrivateContextWrapper final {
  public:
-  PrivateContextWrapper() = delete;
+  PrivateContextWrapper() = default;
   PrivateContextWrapper(const PrivateContextWrapper&) = delete;
   PrivateContextWrapper& operator=(const PrivateContextWrapper&) = delete;
 
-  explicit PrivateContextWrapper(absl::AnyInvocable<void() &&> sink_cleaner)
-      : sink_cleaner_(std::move(sink_cleaner)) {}
-
-  ~PrivateContextWrapper() { std::move(sink_cleaner_)(); }
+  ~PrivateContextWrapper() { Retire(); }
 
   TipPrivateContext* get() { return &private_context_; }
 
+  void AddSinkCleaner(absl::AnyInvocable<void() &&> sink_cleaner) {
+    if (retired_) {
+      std::move(sink_cleaner)();
+      return;
+    }
+    sink_cleaners_.push_back(std::move(sink_cleaner));
+  }
+
+  void Retire() {
+    if (retired_) {
+      return;
+    }
+    retired_ = true;
+    std::vector<absl::AnyInvocable<void() &&>> sink_cleaners =
+        std::move(sink_cleaners_);
+    for (auto& sink_cleaner : sink_cleaners) {
+      std::move(sink_cleaner)();
+    }
+  }
+
  private:
-  absl::AnyInvocable<void() &&> sink_cleaner_;
+  bool retired_ = false;
+  std::vector<absl::AnyInvocable<void() &&>> sink_cleaners_;
   TipPrivateContext private_context_;
 };
 
@@ -328,8 +386,13 @@ class PrivateContextWrapper final {
 class CompositionSinkImpl final : public TipComImplements<ITfCompositionSink> {
  public:
   CompositionSinkImpl(wil::com_ptr_nothrow<TipTextService> text_service,
-                      wil::com_ptr_nothrow<ITfContext> context)
-      : text_service_(std::move(text_service)), context_(std::move(context)) {}
+                      wil::com_ptr_nothrow<ITfContext> context,
+                      TsfFocusSnapshot composition_domain,
+                      uint64_t composition_generation)
+      : text_service_(std::move(text_service)),
+        context_(std::move(context)),
+        composition_domain_(composition_domain),
+        composition_generation_(composition_generation) {}
 
   // Implements the ITfCompositionSink::OnCompositionTerminated() function.
   // This function is called by Windows when an ongoing composition is
@@ -337,12 +400,16 @@ class CompositionSinkImpl final : public TipComImplements<ITfCompositionSink> {
   STDMETHODIMP OnCompositionTerminated(TfEditCookie write_cookie,
                                        ITfComposition* composition) override {
     return TipEditSessionImpl::OnCompositionTerminated(
-        text_service_.get(), context_.get(), composition, write_cookie);
+        text_service_.get(), context_.get(), composition, write_cookie,
+        composition_domain_.focus_epoch,
+        composition_domain_.focus_revision, composition_generation_);
   }
 
  private:
   wil::com_ptr_nothrow<TipTextService> text_service_;
   wil::com_ptr_nothrow<ITfContext> context_;
+  const TsfFocusSnapshot composition_domain_;
+  const uint64_t composition_generation_;
 };
 
 // Represents preserved keys used by this class.
@@ -398,7 +465,14 @@ class UpdateUiEditSessionImpl final : public TipComImplements<ITfEditSession> {
   // This function is called back by the TSF thread manager when an edit
   // request is granted.
   STDMETHODIMP DoEditSession(TfEditCookie edit_cookie) override {
-    TipUiHandler::Update(text_service_.get(), context_.get(), edit_cookie);
+    if (!IsTsfContextFocusedForSnapshot(text_service_.get(), context_.get(),
+                                        renderer_domain_,
+                                        /*require_nonsecure=*/true)) {
+      return S_OK;
+    }
+    TipUiHandler::Update(text_service_.get(), context_.get(), edit_cookie,
+                         renderer_domain_.focus_epoch,
+                         renderer_domain_.focus_revision);
     return S_OK;
   }
 
@@ -406,23 +480,34 @@ class UpdateUiEditSessionImpl final : public TipComImplements<ITfEditSession> {
     // When RequestEditSession fails, it does not maintain the reference count.
     // So we need to ensure that AddRef/Release should be called at least once
     // per object.
+    const TsfFocusSnapshot renderer_domain =
+        CaptureTsfFocusSnapshot(text_service->GetThreadContext());
+    if (!IsTsfContextFocusedForSnapshot(text_service, context,
+                                        renderer_domain,
+                                        /*require_nonsecure=*/true)) {
+      return false;
+    }
     wil::com_ptr_nothrow<ITfEditSession> edit_session(
-        new UpdateUiEditSessionImpl(text_service, context));
+        new UpdateUiEditSessionImpl(text_service, context, renderer_domain));
 
     HRESULT edit_session_result = S_OK;
     const HRESULT result = context->RequestEditSession(
         text_service->GetClientID(), edit_session.get(),
         TF_ES_ASYNCDONTCARE | TF_ES_READ, &edit_session_result);
-    return SUCCEEDED(result);
+    return SUCCEEDED(result) && SUCCEEDED(edit_session_result);
   }
 
  private:
   UpdateUiEditSessionImpl(wil::com_ptr_nothrow<TipTextService> text_service,
-                          wil::com_ptr_nothrow<ITfContext> context)
-      : text_service_(std::move(text_service)), context_(std::move(context)) {}
+                          wil::com_ptr_nothrow<ITfContext> context,
+                          TsfFocusSnapshot renderer_domain)
+      : text_service_(std::move(text_service)),
+        context_(std::move(context)),
+        renderer_domain_(renderer_domain) {}
 
   wil::com_ptr_nothrow<TipTextService> text_service_;
   wil::com_ptr_nothrow<ITfContext> context_;
+  TsfFocusSnapshot renderer_domain_;
 };
 
 bool RegisterWindowClass(HINSTANCE module_handle, const wchar_t* class_name,
@@ -489,6 +574,35 @@ class TipTextServiceImpl
       // unloaded. In such case, we can do nothing safely.
       return S_OK;
     }
+    if (activating_) {
+      // Initialization calls into TSF repeatedly.  A nested Deactivate must not
+      // tear down a resource whose cookie/handle has not yet been published by
+      // the returning Init* call.  Defer teardown until the outer transaction
+      // has either published every resource or failed.
+      activation_cancel_requested_ = true;
+      activation_active_ = false;
+      private_contexts_accepting_ = false;
+      renderer_callback_token_ = 0;
+      renderer_callback_focus_epoch_ = 0;
+      renderer_callback_focus_revision_ = 0;
+      renderer_callback_output_generation_ = 0;
+      if (thread_context_) {
+        thread_context_->GetInputModeManager()->OnInputScopeUnresolved();
+      }
+      return S_OK;
+    }
+    if (deactivating_) {
+      return S_OK;
+    }
+    deactivating_ = true;
+
+    activation_active_ = false;
+    private_contexts_accepting_ = false;
+    active_private_context_.reset();
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
+    EndAllUiElements();
 
     // Stop advising the ITfThreadFocusSink events.
     UninitThreadFocusSink();
@@ -528,8 +642,13 @@ class TipTextServiceImpl
 
     TipUiHandler::OnDeactivate(this);
 
+    if (thread_context_ != nullptr) {
+      next_activation_focus_epoch_ = grimodex::AdvanceFocusEpoch(
+          thread_context_->GetGrimodexFocusEpoch());
+    }
     thread_context_.reset();
     StorePointerForCurrentThread(nullptr);
+    deactivating_ = false;
 
     return S_OK;
   }
@@ -540,9 +659,9 @@ class TipTextServiceImpl
       // unloaded. In such case, we can do nothing safely. b/7915484.
       return S_OK;  // the returned value will be ignored according to the MSDN.
     }
-    thread_context_ = std::make_unique<TipThreadContext>();
-    StorePointerForCurrentThread(this);
-
+    if (deactivating_) {
+      return E_UNEXPECTED;
+    }
     HRESULT result = E_UNEXPECTED;
 
     EnsureKanaLockUnlocked();
@@ -558,13 +677,25 @@ class TipTextServiceImpl
       LOG(ERROR) << "Recursive Activation found.";
       return E_UNEXPECTED;
     }
-
     // Copy the given thread manager.
     thread_mgr_ = thread_mgr;
     if (!thread_mgr_) {
       LOG(ERROR) << "Failed to retrieve ITfThreadMgr interface.";
       return E_UNEXPECTED;
     }
+    thread_context_ =
+        std::make_shared<TipThreadContext>(next_activation_focus_epoch_);
+    thread_has_focus_ = false;
+    thread_focus_callback_generation_ = 0;
+    active_private_context_.reset();
+    pending_context_resync_ = false;
+    // Fail closed before publishing the activation or advising any callback.
+    // The initial field's InputScope has not been resolved yet, so it must be
+    // treated as password input until OnDocumentMgrChanged proves otherwise.
+    thread_context_->GetInputModeManager()->OnInputScopeUnresolved();
+    StorePointerForCurrentThread(this);
+    activation_active_ = false;
+    private_contexts_accepting_ = false;
 
     // Copy the given client ID.
     // An IME can identify an application with this ID.
@@ -573,76 +704,122 @@ class TipTextServiceImpl
     // Copy the given activation flags.
     activate_flags_ = flags;
 
-    result = InitTaskWindow();
-    if (FAILED(result)) {
-      LOG(ERROR) << "InitTaskWindow failed: " << result;
+    activating_ = true;
+    activation_cancel_requested_ = false;
+    const auto abort_activation = [&]() -> HRESULT {
+      activating_ = false;
+      activation_cancel_requested_ = false;
       return Deactivate();
+    };
+    const auto init_failed_or_cancelled = [&](HRESULT init_result) {
+      return FAILED(init_result) || activation_cancel_requested_;
+    };
+
+    result = InitTaskWindow();
+    if (init_failed_or_cancelled(result)) {
+      LOG(ERROR) << "InitTaskWindow failed: " << result;
+      return abort_activation();
     }
 
     // Do nothing even when we fail to initialize the renderer callback
     // because 1), it is not so critical, and 2) it actually fails in
     // Internet Explorer 10 on Windows 8.
     InitRendererCallbackWindow();
+    if (activation_cancel_requested_) {
+      return abort_activation();
+    }
 
     // Start advising thread events to this object.
     result = InitThreadManagerEventSink();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitThreadManagerEventSink failed: " << result;
-      return Deactivate();
+      return abort_activation();
     }
 
     // Start advising function provider events to this object.
     result = InitFunctionProvider();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitFunctionProvider failed: " << result;
-      return Deactivate();
+      return abort_activation();
     }
 
     category_ = GetCategoryMgr();
-    if (!category_) {
+    if (!category_ || activation_cancel_requested_) {
       LOG(ERROR) << "GetCategoryMgr failed";
-      return Deactivate();
+      return abort_activation();
     }
 
     result = InitLanguageBar();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitLanguageBar failed: " << result;
-      return result;
+      return abort_activation();
     }
 
     // Start advising the keyboard events (ITfKeyEvent) to this object.
     result = InitKeyEventSink();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitKeyEventSink failed: " << result;
-      return result;
+      return abort_activation();
     }
 
     // Start advising ITfCompartmentEventSink to this object.
     result = InitCompartmentEventSink();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitCompartmentEventSink failed: " << result;
-      return Deactivate();
+      return abort_activation();
     }
 
     // Register the hot-keys used by this object to Windows.
     result = InitPreservedKey();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitPreservedKey failed: " << result;
-      return Deactivate();
+      return abort_activation();
     }
 
     // Start advising ITfThreadFocusSink to this object.
     result = InitThreadFocusSink();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitThreadFocusSink failed: " << result;
-      return Deactivate();
+      return abort_activation();
+    }
+    // ITfSource::AdviseSink does not replay the current thread-focus state.
+    // Query it after the sink is installed so an activation on an already
+    // focused thread is not left permanently fail-closed.  A callback that
+    // reenters this query is newer and therefore wins over the returned value.
+    {
+      const uint64_t callback_generation =
+          thread_focus_callback_generation_;
+      BOOL initial_thread_focus = FALSE;
+      result = thread_mgr_->IsThreadFocus(&initial_thread_focus);
+      if (init_failed_or_cancelled(result)) {
+        LOG(ERROR) << "IsThreadFocus failed: " << result;
+        return abort_activation();
+      }
+      if (thread_focus_callback_generation_ == callback_generation) {
+        thread_has_focus_ = initial_thread_focus != FALSE;
+      }
     }
 
     // Initialize text attributes used by this object.
     result = InitDisplayAttributes();
-    if (FAILED(result)) {
+    if (init_failed_or_cancelled(result)) {
       LOG(ERROR) << "InitDisplayAttributes failed: " << result;
+      return abort_activation();
+    }
+
+    activating_ = false;
+    if (activation_cancel_requested_) {
+      activation_cancel_requested_ = false;
       return Deactivate();
+    }
+    activation_active_ = true;
+    private_contexts_accepting_ = true;
+
+    const std::shared_ptr<TipThreadContext> activation_thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> activation_thread_manager = thread_mgr_;
+    if (!activation_thread_context || !activation_thread_manager) {
+      return S_OK;
     }
 
     // Write a registry value for usage tracking by Omaha.
@@ -651,33 +828,52 @@ class TipTextServiceImpl
     if (!mozc::UpdateUtil::WriteActiveUsageInfo()) {
       LOG(WARNING) << "WriteActiveUsageInfo failed";
     }
+    if (!IsCurrentActivation(activation_thread_context)) {
+      return S_OK;
+    }
 
     // Copy the initial mode.
     DWORD native_mode = 0;
-    if (TipStatus::GetInputModeConversion(thread_mgr, client_id,
+    if (TipStatus::GetInputModeConversion(activation_thread_manager.get(),
+                                          client_id,
                                           &native_mode)) {
-      GetThreadContext()->GetInputModeManager()->OnInitialize(
-          TipStatus::IsOpen(thread_mgr), native_mode);
+      if (!IsCurrentActivation(activation_thread_context)) {
+        return S_OK;
+      }
+      const bool open = TipStatus::IsOpen(activation_thread_manager.get());
+      if (!IsCurrentActivation(activation_thread_context)) {
+        return S_OK;
+      }
+      activation_thread_context->GetInputModeManager()->OnInitialize(open,
+                                                                     native_mode);
     }
 
     // Emulate document changed event against the current document manager.
     {
       wil::com_ptr_nothrow<ITfDocumentMgr> document_mgr;
-      result = thread_mgr_->GetFocus(&document_mgr);
+      result = activation_thread_manager->GetFocus(&document_mgr);
       if (FAILED(result)) {
-        return Deactivate();
+        return IsCurrentActivation(activation_thread_context) ? Deactivate()
+                                                              : S_OK;
+      }
+      if (!IsCurrentActivation(activation_thread_context)) {
+        return S_OK;
       }
       if (document_mgr != nullptr) {
         wil::com_ptr_nothrow<ITfContext> context;
         result = document_mgr->GetBase(&context);
-        if (SUCCEEDED(result)) {
+        if (SUCCEEDED(result) &&
+            IsCurrentActivation(activation_thread_context)) {
           EnsurePrivateContextExists(context.get());
         }
       }
+      if (!IsCurrentActivation(activation_thread_context)) {
+        return S_OK;
+      }
 
-      TipUiHandler::OnActivate(this);
-
-      result = OnDocumentMgrChanged(document_mgr.get());
+      const TsfFocusSnapshot bootstrap_domain =
+          CaptureTsfFocusSnapshot(activation_thread_context.get());
+      result = OnDocumentMgrChanged(document_mgr.get(), bootstrap_domain);
       if (FAILED(result)) {
         return Deactivate();
       }
@@ -732,9 +928,17 @@ class TipTextServiceImpl
     if (!document) {
       return E_INVALIDARG;
     }
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    if (!thread_context) {
+      return S_OK;
+    }
 
     wil::com_ptr_nothrow<IEnumTfContexts> enum_context;
     RETURN_IF_FAILED_HRESULT(document->EnumContexts(&enum_context));
+    if (!IsCurrentActivation(thread_context)) {
+      return S_OK;
+    }
     while (true) {
       wil::com_ptr_nothrow<ITfContext> context;
       ULONG fetched = 0;
@@ -745,37 +949,304 @@ class TipTextServiceImpl
       if (hr == S_FALSE || fetched == 0) {
         break;
       }
+      if (!IsCurrentActivation(thread_context)) {
+        return S_OK;
+      }
       RemovePrivateContextIfExists(context.get());
+      if (!IsCurrentActivation(thread_context)) {
+        return S_OK;
+      }
     }
 
     return S_OK;
   }
   STDMETHODIMP OnSetFocus(ITfDocumentMgr* focused,
-                          ITfDocumentMgr* previous) override {
-    GetThreadContext()->IncrementFocusRevision();
-    OnDocumentMgrChanged(focused);
-    return S_OK;
+                          ITfDocumentMgr* /*previous*/) override {
+    if (callback_suspension_depth_ > 0) {
+      RecordSuspendedContextTransition();
+      return S_OK;
+    }
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return S_OK;
+    }
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
+    thread_context->IncrementFocusRevision();
+    const TsfFocusSnapshot transition_domain =
+        CaptureTsfFocusSnapshot(thread_context.get());
+    const bool expected_thread_focus = thread_has_focus_;
+    // This must precede the previous-domain IPC below because that call can
+    // pump messages and expose the newly focused context reentrantly.
+    thread_context->GetInputModeManager()->OnInputScopeUnresolved();
+    TipUiHandler::OnFocusChange(this, nullptr, transition_domain.focus_epoch,
+                                transition_domain.focus_revision);
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    if (!expected_thread_focus) {
+      return S_OK;
+    }
+
+    // Detach the retained active client before the reentrant IPC.  The
+    // inactive-client RESET deliberately leaves the shared domain tracker
+    // unchanged; the new focused context will install its own domain below.
+    const std::shared_ptr<TipPrivateContext> previous_private_context =
+        std::exchange(active_private_context_, nullptr);
+    if (previous_private_context != nullptr &&
+        !SendTsfResetContextForInactiveClient(
+            this, previous_private_context->GetClient())) {
+      LOG(WARNING) << "Failed to revoke the previous TSF input domain";
+    }
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    return OnDocumentMgrChanged(focused, transition_domain);
   }
   STDMETHODIMP OnPushContext(ITfContext* context) override {
+    if (callback_suspension_depth_ > 0) {
+      QueueSuspendedContextLifecycleEvent(/*is_push=*/true, context);
+      return S_OK;
+    }
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return S_OK;
+    }
+    ScopedCallbackSuspension callback_suspension(
+        &callback_suspension_depth_);
     EnsurePrivateContextExists(context);
-    return S_OK;
+    if (!IsCurrentActivation(thread_context)) {
+      return S_OK;
+    }
+    const bool focused_stack = ShouldTreatContextStackAsFocused(
+        context, thread_manager.get(), thread_context);
+    if (!IsCurrentActivation(thread_context)) {
+      return S_OK;
+    }
+    if (!focused_stack) {
+      // TSF reports stack changes for background document managers too.  They
+      // must not revoke the renderer or advance the active input domain.
+      callback_suspension.Resume();
+      DrainPendingContextLifecycleEvents();
+      ResyncCurrentFocusAfterSuspension(thread_context, thread_manager.get());
+      return S_OK;
+    }
+    if (pending_context_resync_) {
+      callback_suspension.Resume();
+      DrainPendingContextLifecycleEvents();
+      ResyncCurrentFocusAfterSuspension(thread_context, thread_manager.get());
+      return S_OK;
+    }
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
+    thread_context->IncrementFocusRevision();
+    const TsfFocusSnapshot transition_domain =
+        CaptureTsfFocusSnapshot(thread_context.get());
+    const bool expected_thread_focus = thread_has_focus_;
+    thread_context->GetInputModeManager()->OnInputScopeUnresolved();
+    callback_suspension.Resume();
+    DrainPendingContextLifecycleEvents();
+    if (pending_context_resync_ ||
+        !IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      ResyncCurrentFocusAfterSuspension(thread_context, thread_manager.get());
+      return S_OK;
+    }
+    TipUiHandler::OnFocusChange(this, nullptr, transition_domain.focus_epoch,
+                                transition_domain.focus_revision);
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    const std::shared_ptr<TipPrivateContext> previous_private_context =
+        std::exchange(active_private_context_, nullptr);
+    if (previous_private_context != nullptr &&
+        !SendTsfResetContextForInactiveClient(
+            this, previous_private_context->GetClient())) {
+      LOG(WARNING) << "Failed to revoke pushed TSF context";
+    }
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    if (!expected_thread_focus) {
+      return S_OK;
+    }
+    wil::com_ptr_nothrow<ITfDocumentMgr> focused_document;
+    if (FAILED(thread_manager->GetFocus(&focused_document)) ||
+        !IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    return OnDocumentMgrChanged(focused_document.get(), transition_domain);
   }
   STDMETHODIMP OnPopContext(ITfContext* context) override {
-    RemovePrivateContextIfExists(context);
-    return S_OK;
+    if (callback_suspension_depth_ > 0) {
+      QueueSuspendedContextLifecycleEvent(/*is_push=*/false, context);
+      return S_OK;
+    }
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return S_OK;
+    }
+    ScopedCallbackSuspension callback_suspension(
+        &callback_suspension_depth_);
+    const bool focused_stack = ShouldTreatContextStackAsFocused(
+        context, thread_manager.get(), thread_context);
+    if (!IsCurrentActivation(thread_context)) {
+      return S_OK;
+    }
+    if (!focused_stack) {
+      // Retire only the popped background client's state.  The focused
+      // document's epoch, secure-input state, and candidate view are unrelated
+      // to this stack event.
+      const std::shared_ptr<PrivateContextWrapper> retired_wrapper =
+          ExtractPrivateContextIfExists(context);
+      const std::shared_ptr<TipPrivateContext> private_context =
+          retired_wrapper
+              ? std::shared_ptr<TipPrivateContext>(retired_wrapper,
+                                                   retired_wrapper->get())
+              : nullptr;
+      callback_suspension.Resume();
+      DrainPendingContextLifecycleEvents();
+      if (private_context != nullptr &&
+          !SendTsfResetContextForInactiveClient(
+              this, private_context->GetClient())) {
+        LOG(WARNING) << "Failed to revoke popped background TSF context";
+      }
+      if (!IsCurrentActivation(thread_context)) {
+        return S_OK;
+      }
+      ResyncCurrentFocusAfterSuspension(thread_context, thread_manager.get());
+      return S_OK;
+    }
+    if (pending_context_resync_) {
+      ExtractPrivateContextIfExists(context);
+      callback_suspension.Resume();
+      DrainPendingContextLifecycleEvents();
+      ResyncCurrentFocusAfterSuspension(thread_context, thread_manager.get());
+      return S_OK;
+    }
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
+    thread_context->IncrementFocusRevision();
+    const TsfFocusSnapshot transition_domain =
+        CaptureTsfFocusSnapshot(thread_context.get());
+    const bool expected_thread_focus = thread_has_focus_;
+    thread_context->GetInputModeManager()->OnInputScopeUnresolved();
+    const std::shared_ptr<PrivateContextWrapper> retired_wrapper =
+        ExtractPrivateContextIfExists(context);
+    const std::shared_ptr<TipPrivateContext> private_context =
+        retired_wrapper
+            ? std::shared_ptr<TipPrivateContext>(retired_wrapper,
+                                                 retired_wrapper->get())
+            : nullptr;
+    callback_suspension.Resume();
+    DrainPendingContextLifecycleEvents();
+    if (pending_context_resync_ ||
+        !IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      ResyncCurrentFocusAfterSuspension(thread_context, thread_manager.get());
+      return S_OK;
+    }
+    TipUiHandler::OnFocusChange(this, nullptr, transition_domain.focus_epoch,
+                                transition_domain.focus_revision);
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    const std::shared_ptr<TipPrivateContext> previous_private_context =
+        std::exchange(active_private_context_, nullptr);
+    const std::shared_ptr<TipPrivateContext> context_to_revoke =
+        previous_private_context != nullptr ? previous_private_context
+                                            : private_context;
+    if (context_to_revoke != nullptr &&
+        !SendTsfResetContextForInactiveClient(
+            this, context_to_revoke->GetClient())) {
+      LOG(WARNING) << "Failed to revoke popped TSF context";
+    }
+    if (previous_private_context != nullptr && private_context != nullptr &&
+        previous_private_context.get() != private_context.get() &&
+        !SendTsfResetContextForInactiveClient(
+            this, private_context->GetClient())) {
+      LOG(WARNING) << "Failed to revoke the distinct popped TSF context";
+    }
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    if (!expected_thread_focus) {
+      return S_OK;
+    }
+    wil::com_ptr_nothrow<ITfDocumentMgr> focused_document;
+    if (FAILED(thread_manager->GetFocus(&focused_document)) ||
+        !IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    return OnDocumentMgrChanged(focused_document.get(), transition_domain);
   }
 
   // ITfThreadFocusSink
   STDMETHODIMP OnSetThreadFocus() override {
+    ++thread_focus_callback_generation_;
+    thread_has_focus_ = true;
+    if (callback_suspension_depth_ > 0) {
+      RecordSuspendedContextTransition();
+      return S_OK;
+    }
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return S_OK;
+    }
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
+    thread_context->IncrementFocusRevision();
+    const TsfFocusSnapshot transition_domain =
+        CaptureTsfFocusSnapshot(thread_context.get());
+    thread_context->GetInputModeManager()->OnInputScopeUnresolved();
+    TipUiHandler::OnFocusChange(this, nullptr, transition_domain.focus_epoch,
+                                transition_domain.focus_revision);
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  /*expected_thread_focus=*/true)) {
+      return S_OK;
+    }
     EnsureKanaLockUnlocked();
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  /*expected_thread_focus=*/true)) {
+      return S_OK;
+    }
 
     // A temporary workaround for b/24793812.  When previous attempt to
     // establish conection failed, retry again as if this was the first attempt.
     // TODO(yukawa): We should give up if this fails a number of times.
     if (WinUtil::IsProcessSandboxed()) {
-      auto* private_context = GetFocusedPrivateContext();
+      const std::shared_ptr<TipPrivateContext> private_context =
+          GetFocusedPrivateContext(thread_manager.get(), thread_context);
+      if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                    /*expected_thread_focus=*/true)) {
+        return S_OK;
+      }
       if (private_context != nullptr) {
         private_context->EnsureInitialized();
+      }
+      if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                    /*expected_thread_focus=*/true)) {
+        return S_OK;
       }
     }
 
@@ -783,18 +1254,50 @@ class TipTextServiceImpl
     // the application, ITfThreadFocusSink notifies the OS-level keyboard focus
     // events. In both cases, Mozc's UI visibility should be updated.
     wil::com_ptr_nothrow<ITfDocumentMgr> document_manager;
-    if (FAILED(thread_mgr_->GetFocus(&document_manager))) {
+    if (FAILED(thread_manager->GetFocus(&document_manager)) ||
+        !IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  /*expected_thread_focus=*/true)) {
       return S_OK;
     }
     if (!document_manager) {
       return S_OK;
     }
-    TipUiHandler::OnFocusChange(this, document_manager.get());
-    return S_OK;
+    return OnDocumentMgrChanged(document_manager.get(), transition_domain);
   }
   STDMETHODIMP OnKillThreadFocus() override {
+    ++thread_focus_callback_generation_;
+    thread_has_focus_ = false;
+    if (callback_suspension_depth_ > 0) {
+      RecordSuspendedContextTransition();
+      return S_OK;
+    }
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return S_OK;
+    }
     // See the comment in OnSetThreadFocus().
-    TipUiHandler::OnFocusChange(this, nullptr);
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
+    thread_context->IncrementFocusRevision();
+    const TsfFocusSnapshot transition_domain =
+        CaptureTsfFocusSnapshot(thread_context.get());
+    thread_context->GetInputModeManager()->OnInputScopeUnresolved();
+    TipUiHandler::OnFocusChange(this, nullptr, transition_domain.focus_epoch,
+                                transition_domain.focus_revision);
+    if (!IsFocusTransitionCurrent(thread_context, transition_domain,
+                                  /*expected_thread_focus=*/false)) {
+      return S_OK;
+    }
+    const std::shared_ptr<TipPrivateContext> private_context =
+        std::exchange(active_private_context_, nullptr);
+    if (private_context != nullptr &&
+        !SendTsfResetContextForInactiveClient(this,
+                                              private_context->GetClient())) {
+      LOG(WARNING) << "Failed to revoke TSF context after focus loss";
+    }
     return S_OK;
   }
 
@@ -935,15 +1438,20 @@ class TipTextServiceImpl
     }
 
     if (::IsEqualGUID(guid, GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION)) {
-      TipEditSession::OnModeChangedAsync(this);
+      TipEditSession::OnModeChangedAsync(
+          this, ReserveModeCallback(TipModeCallbackKind::kConversion));
     } else if (::IsEqualGUID(guid, GUID_COMPARTMENT_KEYBOARD_OPENCLOSE)) {
-      TipEditSession::OnOpenCloseChangedAsync(this);
+      TipEditSession::OnOpenCloseChangedAsync(
+          this, ReserveModeCallback(TipModeCallbackKind::kOpenClose));
     }
     return S_OK;
   }
 
   // TipLangBarCallback
   STDMETHODIMP OnMenuSelect(ItemId menu_id) override {
+    if (!GetThreadContextLease()) {
+      return E_FAIL;
+    }
     switch (menu_id) {
       case TipLangBarCallback::kDirect:
       case TipLangBarCallback::kHiragana:
@@ -967,11 +1475,17 @@ class TipTextServiceImpl
     }
   }
   STDMETHODIMP OnItemClick(const wchar_t* description) override {
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return E_FAIL;
+    }
     // Change input mode to be consistent with MSIME 2012 on Windows 8.
     const bool open =
-        thread_context_->GetInputModeManager()->GetEffectiveOpenClose();
+        thread_context->GetInputModeManager()->GetEffectiveOpenClose();
     if (open) {
-      return TipStatus::SetIMEOpen(thread_mgr_.get(), client_id_, false)
+      return TipStatus::SetIMEOpen(thread_manager.get(), client_id_, false)
                  ? S_OK
                  : E_FAIL;
     }
@@ -991,12 +1505,39 @@ class TipTextServiceImpl
   HWND renderer_callback_window_handle() const override {
     return renderer_callback_window_handle_;
   }
+  void SetRendererCallbackProvenance(uint64_t token, uint64_t focus_epoch,
+                                     int32_t focus_revision,
+                                     uint64_t output_generation) override {
+    renderer_callback_token_ = token;
+    renderer_callback_focus_epoch_ = token == 0 ? 0 : focus_epoch;
+    renderer_callback_focus_revision_ = token == 0 ? 0 : focus_revision;
+    renderer_callback_output_generation_ =
+        token == 0 ? 0 : output_generation;
+  }
+  void EndAllUiElements() override {
+    std::vector<std::shared_ptr<TipPrivateContext>> private_contexts;
+    private_contexts.reserve(private_context_map_.size());
+    for (const auto& entry : private_context_map_) {
+      private_contexts.emplace_back(entry.second, entry.second->get());
+    }
+    for (const std::shared_ptr<TipPrivateContext>& private_context :
+         private_contexts) {
+      private_context->GetUiElementManager()->EndAll(this);
+    }
+  }
 
   wil::com_ptr_nothrow<ITfCompositionSink> CreateCompositionSink(
-      ITfContext* context) override {
-    return MakeComPtr<CompositionSinkImpl>(this, context);
+      ITfContext* context, uint64_t composition_focus_epoch,
+      int32_t composition_focus_revision,
+      uint64_t composition_generation) override {
+    return MakeComPtr<CompositionSinkImpl>(
+        this, context,
+        TsfFocusSnapshot{.focus_epoch = composition_focus_epoch,
+                         .focus_revision = composition_focus_revision},
+        composition_generation);
   }
-  TipPrivateContext* GetPrivateContext(ITfContext* context) override {
+  std::shared_ptr<TipPrivateContext> GetPrivateContext(
+      ITfContext* context) override {
     if (context == nullptr) {
       return nullptr;
     }
@@ -1004,10 +1545,52 @@ class TipTextServiceImpl
     if (it == private_context_map_.end()) {
       return nullptr;
     }
-    return it->second->get();
+    return std::shared_ptr<TipPrivateContext>(it->second, it->second->get());
   }
   TipThreadContext* GetThreadContext() override {
     return thread_context_.get();
+  }
+  std::shared_ptr<TipThreadContext> GetThreadContextLease() override {
+    return activation_active_ && !activating_ &&
+                   callback_suspension_depth_ == 0
+               ? thread_context_
+               : nullptr;
+  }
+  bool HasThreadFocus() const override {
+    return activation_active_ && thread_has_focus_;
+  }
+  uint64_t ReserveActiveOutputApplication(
+      uint64_t focus_epoch, int32_t focus_revision) override {
+    if (!activation_active_ || !thread_has_focus_ ||
+        active_private_context_ == nullptr || thread_context_ == nullptr ||
+        !IsTsfFocusSnapshotCurrent(
+            thread_context_.get(),
+            {.focus_epoch = focus_epoch,
+             .focus_revision = focus_revision})) {
+      return 0;
+    }
+    return active_private_context_->ReserveOutputApplicationForFocusDomain(
+        focus_epoch, focus_revision);
+  }
+  uint64_t ReserveModeCallback(TipModeCallbackKind kind) override {
+    uint64_t& generation =
+        kind == TipModeCallbackKind::kConversion
+            ? conversion_mode_callback_generation_
+            : open_close_mode_callback_generation_;
+    ++generation;
+    if (generation == 0) {
+      ++generation;
+    }
+    return generation;
+  }
+  bool IsModeCallbackCurrent(TipModeCallbackKind kind,
+                             uint64_t generation) const override {
+    const uint64_t current_generation =
+        kind == TipModeCallbackKind::kConversion
+            ? conversion_mode_callback_generation_
+            : open_close_mode_callback_generation_;
+    return activation_active_ && generation != 0 &&
+           current_generation == generation;
   }
   void PostUIUpdateMessage() override {
     if (!::IsWindow(task_window_handle_)) {
@@ -1019,20 +1602,45 @@ class TipTextServiceImpl
   void PostDelayedSessionCommand(
       ITfContext* context,
       const commands::SessionCommand& command,
-      uint32_t delay_millisec) override {
-    if (!::IsWindow(task_window_handle_) || context == nullptr) {
+      uint32_t delay_millisec,
+      uint64_t output_application_generation) override {
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    const HWND task_window = task_window_handle_;
+    if (!thread_context || context == nullptr ||
+        output_application_generation == 0 || !::IsWindow(task_window) ||
+        !IsCurrentActivation(thread_context)) {
+      return;
+    }
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetPrivateContext(context);
+    const TsfFocusSnapshot delayed_domain =
+        CaptureTsfFocusSnapshot(thread_context.get());
+    if (!private_context ||
+        !private_context->IsOutputApplicationForFocusDomain(
+            delayed_domain.focus_epoch, delayed_domain.focus_revision,
+            output_application_generation)) {
       return;
     }
 
     pending_delayed_session_context_ = context;
     pending_delayed_session_command_ = command;
+    pending_delayed_session_focus_epoch_ =
+        thread_context->GetGrimodexFocusEpoch();
+    pending_delayed_session_focus_revision_ =
+        thread_context->GetFocusRevision();
+    pending_delayed_session_output_application_generation_ =
+        output_application_generation;
     has_pending_delayed_session_command_ = true;
 
-    ::KillTimer(task_window_handle_, kDelayedSessionCommandTimerId);
+    ::KillTimer(task_window, kDelayedSessionCommandTimerId);
+    if (!IsCurrentActivation(thread_context)) {
+      return;
+    }
 
     const UINT delay =
         delay_millisec == 0 ? 1 : static_cast<UINT>(delay_millisec);
-    ::SetTimer(task_window_handle_,
+    ::SetTimer(task_window,
               kDelayedSessionCommandTimerId,
               delay,
               nullptr);
@@ -1067,20 +1675,242 @@ class TipTextServiceImpl
     return static_cast<TipTextServiceImpl*>(::TlsGetValue(g_tls_index));
   }
 
-  HRESULT OnDocumentMgrChanged(ITfDocumentMgr* document_mgr) {
-    // nullptr document is not an error.
-    if (document_mgr != nullptr) {
-      wil::com_ptr_nothrow<ITfContext> context;
-      RETURN_IF_FAILED_HRESULT(document_mgr->GetTop(&context));
-      EnsurePrivateContextExists(context.get());
+  HRESULT OnDocumentMgrChanged(ITfDocumentMgr* document_mgr,
+                               TsfFocusSnapshot expected_domain) {
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    const auto is_expected_domain_current = [&]() {
+      return thread_has_focus_ && IsCurrentActivation(thread_context) &&
+             IsTsfFocusSnapshotCurrent(thread_context.get(), expected_domain);
+    };
+    if (!thread_context || !thread_manager ||
+        !is_expected_domain_current() ||
+        !IsDocumentManagerCurrentlyFocused(document_mgr, thread_manager.get(),
+                                           thread_context)) {
+      return S_OK;
     }
-    TipUiHandler::OnDocumentMgrChanged(this, document_mgr);
-    TipEditSession::OnSetFocusAsync(this, document_mgr);
+
+    wil::com_ptr_nothrow<ITfContext> context;
+    if (document_mgr != nullptr) {
+      RETURN_IF_FAILED_HRESULT(document_mgr->GetTop(&context));
+      if (!is_expected_domain_current() || context == nullptr ||
+          !IsContextTopOfFocusedDocument(
+              document_mgr, context.get(), thread_manager.get(),
+              thread_context)) {
+        return S_OK;
+      }
+      EnsurePrivateContextExists(context.get());
+      if (!is_expected_domain_current() ||
+          !IsContextTopOfFocusedDocument(
+              document_mgr, context.get(), thread_manager.get(),
+              thread_context)) {
+        return S_OK;
+      }
+      // Retain the authoritative active client before any provider or server
+      // boundary.  Focus loss can then revoke it without relying on a later
+      // GetFocus/GetTop query that may already return no logical focus.
+      active_private_context_ = GetPrivateContext(context.get());
+    }
+
+    // Scope discovery needs an asynchronous read edit session.  Enter the
+    // password policy synchronously so no key, renderer callback, or timer can
+    // observe the newly focused domain as non-secure in that gap.
+    thread_context->GetInputModeManager()->OnInputScopeUnresolved();
+    if (!is_expected_domain_current() ||
+        !IsDocumentManagerCurrentlyFocused(document_mgr, thread_manager.get(),
+                                           thread_context) ||
+        (context != nullptr &&
+         !IsContextTopOfFocusedDocument(
+             document_mgr, context.get(), thread_manager.get(),
+             thread_context))) {
+      return S_OK;
+    }
+
+    TsfFocusSnapshot document_domain = expected_domain;
+
+    // nullptr document is not an error.
+    if (context != nullptr) {
+      // Publish the fail-closed domain transition immediately.  The async
+      // scope resolver will publish a newer non-secure epoch only after an
+      // authoritative InputScope read succeeds.
+      const std::shared_ptr<TipPrivateContext> private_context =
+          GetPrivateContext(context.get());
+      TsfFocusSnapshot installed_domain;
+      if (private_context != nullptr &&
+          !SendTsfResetContext(this, context.get(),
+                               private_context->GetClient(),
+                               /*force_secure_input=*/true,
+                               &installed_domain)) {
+        LOG(WARNING)
+            << "Failed to publish the newly focused secure TSF domain";
+        return S_OK;
+      }
+      if (private_context == nullptr) {
+        return S_OK;
+      }
+      document_domain = installed_domain;
+      expected_domain = installed_domain;
+      if (!IsTsfContextFocusedForSnapshot(
+              this, context.get(), document_domain,
+              /*require_nonsecure=*/false)) {
+        return S_OK;
+      }
+    }
+    TipUiHandler::OnDocumentMgrChanged(
+        this, document_mgr, document_domain.focus_epoch,
+        document_domain.focus_revision);
+    const bool document_current =
+        context != nullptr
+            ? IsTsfContextFocusedForSnapshot(
+                  this, context.get(), document_domain,
+                  /*require_nonsecure=*/false)
+            : IsDocumentManagerCurrentlyFocused(
+                  nullptr, thread_manager.get(), thread_context) &&
+                  IsTsfFocusSnapshotCurrent(thread_context.get(),
+                                            document_domain);
+    if (!document_current) {
+      return S_OK;
+    }
+    if (thread_has_focus_ && IsCurrentActivation(thread_context)) {
+      TipEditSession::OnSetFocusAsync(
+          this, document_mgr, document_domain.focus_epoch,
+          document_domain.focus_revision);
+    }
     return S_OK;
   }
 
+  bool IsCurrentActivation(
+      const std::shared_ptr<TipThreadContext>& thread_context) const {
+    return activation_active_ && thread_context && thread_context_ &&
+           thread_context.get() == thread_context_.get();
+  }
+
+  bool IsFocusTransitionCurrent(
+      const std::shared_ptr<TipThreadContext>& thread_context,
+      TsfFocusSnapshot transition_domain,
+      bool expected_thread_focus) const {
+    return IsCurrentActivation(thread_context) &&
+           thread_has_focus_ == expected_thread_focus &&
+           IsTsfFocusSnapshotCurrent(thread_context.get(), transition_domain);
+  }
+
+  void RecordSuspendedContextTransition() {
+    pending_context_resync_ = true;
+    if (!activation_active_ || !thread_context_) {
+      return;
+    }
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
+    thread_context_->IncrementFocusRevision();
+    thread_context_->GetInputModeManager()->OnInputScopeUnresolved();
+  }
+
+  void QueueSuspendedContextLifecycleEvent(bool is_push, ITfContext* context) {
+    pending_context_lifecycle_events_.emplace_back(is_push, context);
+    RecordSuspendedContextTransition();
+  }
+
+  void DrainPendingContextLifecycleEvents() {
+    if (callback_suspension_depth_ > 0) {
+      return;
+    }
+    while (!pending_context_lifecycle_events_.empty()) {
+      auto events = std::move(pending_context_lifecycle_events_);
+      pending_context_lifecycle_events_.clear();
+      for (auto& [is_push, context] : events) {
+        if (is_push) {
+          OnPushContext(context.get());
+        } else {
+          OnPopContext(context.get());
+        }
+      }
+    }
+  }
+
+  HRESULT ResyncCurrentFocusAfterSuspension(
+      const std::shared_ptr<TipThreadContext>& thread_context,
+      ITfThreadMgr* thread_manager) {
+    if (!std::exchange(pending_context_resync_, false) ||
+        !IsCurrentActivation(thread_context) || thread_manager == nullptr) {
+      return S_FALSE;
+    }
+    const TsfFocusSnapshot resync_domain =
+        CaptureTsfFocusSnapshot(thread_context.get());
+    const bool expected_thread_focus = thread_has_focus_;
+    const std::shared_ptr<TipPrivateContext> previous_private_context =
+        std::exchange(active_private_context_, nullptr);
+    if (previous_private_context != nullptr &&
+        !SendTsfResetContextForInactiveClient(
+            this, previous_private_context->GetClient())) {
+      LOG(WARNING) << "Failed to revoke TSF context during focus resync";
+    }
+    if (!IsFocusTransitionCurrent(thread_context, resync_domain,
+                                  expected_thread_focus)) {
+      return S_OK;
+    }
+    TipUiHandler::OnFocusChange(this, nullptr, resync_domain.focus_epoch,
+                                resync_domain.focus_revision);
+    if (!IsFocusTransitionCurrent(thread_context, resync_domain,
+                                  expected_thread_focus) ||
+        !expected_thread_focus) {
+      return S_OK;
+    }
+    wil::com_ptr_nothrow<ITfDocumentMgr> focused_document;
+    if (FAILED(thread_manager->GetFocus(&focused_document)) ||
+        !IsFocusTransitionCurrent(thread_context, resync_domain,
+                                  /*expected_thread_focus=*/true)) {
+      return S_OK;
+    }
+    return OnDocumentMgrChanged(focused_document.get(), resync_domain);
+  }
+
+  bool IsDocumentManagerCurrentlyFocused(
+      ITfDocumentMgr* document_mgr, ITfThreadMgr* thread_manager,
+      const std::shared_ptr<TipThreadContext>& thread_context) {
+    if (thread_manager == nullptr || !IsCurrentActivation(thread_context)) {
+      return false;
+    }
+    wil::com_ptr_nothrow<ITfDocumentMgr> focused_document;
+    if (FAILED(thread_manager->GetFocus(&focused_document)) ||
+        !IsCurrentActivation(thread_context)) {
+      return false;
+    }
+    if (document_mgr == nullptr || focused_document == nullptr) {
+      return document_mgr == nullptr && focused_document == nullptr;
+    }
+    const auto expected_identity = ComQuery<IUnknown>(document_mgr);
+    const auto focused_identity = ComQuery<IUnknown>(focused_document.get());
+    return expected_identity && focused_identity &&
+           expected_identity.get() == focused_identity.get() &&
+           IsCurrentActivation(thread_context);
+  }
+
+  bool IsContextTopOfFocusedDocument(
+      ITfDocumentMgr* document_mgr, ITfContext* expected_context,
+      ITfThreadMgr* thread_manager,
+      const std::shared_ptr<TipThreadContext>& thread_context) {
+    if (document_mgr == nullptr || expected_context == nullptr ||
+        !IsDocumentManagerCurrentlyFocused(document_mgr, thread_manager,
+                                           thread_context)) {
+      return false;
+    }
+    wil::com_ptr_nothrow<ITfContext> top_context;
+    if (FAILED(document_mgr->GetTop(&top_context)) || top_context == nullptr ||
+        !IsCurrentActivation(thread_context)) {
+      return false;
+    }
+    const auto expected_identity = ComQuery<IUnknown>(expected_context);
+    const auto top_identity = ComQuery<IUnknown>(top_context.get());
+    return expected_identity && top_identity &&
+           expected_identity.get() == top_identity.get() &&
+           IsDocumentManagerCurrentlyFocused(document_mgr, thread_manager,
+                                             thread_context);
+  }
+
   void EnsurePrivateContextExists(ITfContext* context) {
-    if (context == nullptr) {
+    if (!private_contexts_accepting_ || context == nullptr) {
       // Do not care about nullptr context.
       return;
     }
@@ -1088,61 +1918,135 @@ class TipTextServiceImpl
       return;
     }
 
-    // If this |context| has not been registered, create our own private data
-    // then associate it with |context|.
+    // Publish the wrapper before crossing any COM boundary. A nested TSF
+    // callback will then observe the same registry entry instead of advising
+    // duplicate sinks or resurrecting an entry that was popped reentrantly.
+    const std::shared_ptr<PrivateContextWrapper> wrapper =
+        std::make_shared<PrivateContextWrapper>();
+    const auto [inserted_it, inserted] =
+        private_context_map_.emplace(context, wrapper);
+    if (!inserted || inserted_it->second != wrapper) {
+      return;
+    }
+
     auto source = ComQuery<ITfSource>(context);
+    const auto wrapper_is_registered = [&]() {
+      const auto it = private_context_map_.find(context);
+      return it != private_context_map_.end() && it->second == wrapper;
+    };
+    if (!wrapper_is_registered()) {
+      return;
+    }
     if (!source) {
-      // In general this should not happen.
-      // Register private context without sink-cleanup callback.
-      private_context_map_.emplace(
-          context, std::make_unique<PrivateContextWrapper>([]() {}));
+      // In general this should not happen. Keep the already-published private
+      // context without sink-cleanup callbacks.
       return;
     }
 
     DWORD text_edit_sink_cookie = TF_INVALID_COOKIE;
     DWORD text_layout_sink_cookie = TF_INVALID_COOKIE;
-    if (FAILED(source->AdviseSink(IID_ITfTextEditSink,
-                                  absl::implicit_cast<ITfTextEditSink*>(this),
-                                  &text_edit_sink_cookie))) {
-      // In general this should not happen.
-      text_edit_sink_cookie = TF_INVALID_COOKIE;
+    if (SUCCEEDED(source->AdviseSink(
+            IID_ITfTextEditSink,
+            absl::implicit_cast<ITfTextEditSink*>(this),
+            &text_edit_sink_cookie)) &&
+        text_edit_sink_cookie != TF_INVALID_COOKIE) {
+      wrapper->AddSinkCleaner(
+          [source, text_edit_sink_cookie]() mutable {
+            source->UnadviseSink(text_edit_sink_cookie);
+          });
     }
-    if (FAILED(source->AdviseSink(IID_ITfTextLayoutSink,
-                                  absl::implicit_cast<ITfTextLayoutSink*>(this),
-                                  &text_layout_sink_cookie))) {
-      // In general this should not happen.
-      text_layout_sink_cookie = TF_INVALID_COOKIE;
+    if (!wrapper_is_registered()) {
+      return;
     }
+    if (SUCCEEDED(source->AdviseSink(
+            IID_ITfTextLayoutSink,
+            absl::implicit_cast<ITfTextLayoutSink*>(this),
+            &text_layout_sink_cookie)) &&
+        text_layout_sink_cookie != TF_INVALID_COOKIE) {
+      wrapper->AddSinkCleaner(
+          [source, text_layout_sink_cookie]() mutable {
+            source->UnadviseSink(text_layout_sink_cookie);
+          });
+    }
+  }
 
-    // Register private context with sink-cleanup callback.
-    private_context_map_.emplace(
-        context, std::make_unique<PrivateContextWrapper>(
-                     [=, source = std::move(source)]() {
-                       if (text_edit_sink_cookie != TF_INVALID_COOKIE) {
-                         source->UnadviseSink(text_edit_sink_cookie);
-                       }
-                       if (text_layout_sink_cookie != TF_INVALID_COOKIE) {
-                         source->UnadviseSink(text_layout_sink_cookie);
-                       }
-                     }));
+  std::shared_ptr<PrivateContextWrapper> ExtractPrivateContextIfExists(
+      ITfContext* context) {
+    const auto it = private_context_map_.find(context);
+    if (it == private_context_map_.end()) {
+      return nullptr;
+    }
+    auto retired_node = private_context_map_.extract(it);
+    const std::shared_ptr<PrivateContextWrapper> wrapper =
+        retired_node.mapped();
+    wrapper->get()->GetUiElementManager()->EndAll(this);
+    wrapper->Retire();
+    return wrapper;
   }
 
   void RemovePrivateContextIfExists(ITfContext* context) {
-    private_context_map_.erase(context);
+    ExtractPrivateContextIfExists(context);
   }
 
-  void UninitPrivateContexts() { private_context_map_.clear(); }
+  void UninitPrivateContexts() {
+    PrivateContextMap retired_contexts;
+    retired_contexts.swap(private_context_map_);
+    for (const auto& entry : retired_contexts) {
+      entry.second->Retire();
+    }
+  }
 
-  TipPrivateContext* GetFocusedPrivateContext() {
+  bool ShouldTreatContextStackAsFocused(
+      ITfContext* context, ITfThreadMgr* thread_manager,
+      const std::shared_ptr<TipThreadContext>& thread_context) {
+    if (thread_manager == nullptr || !IsCurrentActivation(thread_context)) {
+      return true;
+    }
+    if (!thread_has_focus_) {
+      return false;
+    }
+    if (context == nullptr) {
+      // An unresolved stack event is treated as active so the security state
+      // fails closed.  Only an authoritative identity mismatch may be ignored.
+      return true;
+    }
+    wil::com_ptr_nothrow<ITfDocumentMgr> context_document;
     wil::com_ptr_nothrow<ITfDocumentMgr> focused_document;
-    if (FAILED(thread_mgr_->GetFocus(&focused_document))) {
+    if (FAILED(context->GetDocumentMgr(&context_document)) ||
+        context_document == nullptr ||
+        !IsCurrentActivation(thread_context) ||
+        FAILED(thread_manager->GetFocus(&focused_document)) ||
+        focused_document == nullptr) {
+      return true;
+    }
+    const auto context_identity =
+        ComQuery<IUnknown>(context_document.get());
+    const auto focused_identity =
+        ComQuery<IUnknown>(focused_document.get());
+    if (!context_identity || !focused_identity) {
+      return true;
+    }
+    return IsCurrentActivation(thread_context) &&
+           context_identity.get() == focused_identity.get();
+  }
+
+  std::shared_ptr<TipPrivateContext> GetFocusedPrivateContext(
+      ITfThreadMgr* thread_manager,
+      const std::shared_ptr<TipThreadContext>& thread_context) {
+    if (thread_manager == nullptr || !IsCurrentActivation(thread_context)) {
+      return nullptr;
+    }
+    wil::com_ptr_nothrow<ITfDocumentMgr> focused_document;
+    if (FAILED(thread_manager->GetFocus(&focused_document)) ||
+        !IsCurrentActivation(thread_context)) {
       return nullptr;
     }
     if (!focused_document) {
       return nullptr;
     }
     wil::com_ptr_nothrow<ITfContext> current_context;
-    if (FAILED(focused_document->GetTop(&current_context))) {
+    if (FAILED(focused_document->GetTop(&current_context)) ||
+        !IsCurrentActivation(thread_context)) {
       return nullptr;
     }
     return GetPrivateContext(current_context.get());
@@ -1368,16 +2272,17 @@ class TipTextServiceImpl
   }
 
   HRESULT InitDisplayAttributes() {
-    if (!category_) {
+    wil::com_ptr_nothrow<ITfCategoryMgr> category = category_;
+    if (!category) {
       return E_UNEXPECTED;
     }
 
     // register the display attribute for input strings and the one for
     // converted strings.
-    RETURN_IF_FAILED_HRESULT(category_->RegisterGUID(
+    RETURN_IF_FAILED_HRESULT(category->RegisterGUID(
         TipDisplayAttributeInput::guid(), &input_attribute_));
-    return category_->RegisterGUID(TipDisplayAttributeConverted::guid(),
-                                   &converted_attribute_);
+    return category->RegisterGUID(TipDisplayAttributeConverted::guid(),
+                                  &converted_attribute_);
   }
 
   HRESULT InitTaskWindow() {
@@ -1402,6 +2307,9 @@ class TipTextServiceImpl
     has_pending_delayed_session_command_ = false;
     pending_delayed_session_command_.Clear();
     pending_delayed_session_context_.reset();
+    pending_delayed_session_focus_epoch_ = 0;
+    pending_delayed_session_focus_revision_ = 0;
+    pending_delayed_session_output_application_generation_ = 0;
 
     ::DestroyWindow(task_window_handle_);
     task_window_handle_ = nullptr;
@@ -1434,11 +2342,18 @@ class TipTextServiceImpl
   }
 
   void OnDelayedSessionCommandTimer() {
-    if (!::IsWindow(task_window_handle_)) {
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    const HWND task_window = task_window_handle_;
+    if (!thread_context || !::IsWindow(task_window) ||
+        !IsCurrentActivation(thread_context)) {
       return;
     }
 
-    ::KillTimer(task_window_handle_, kDelayedSessionCommandTimerId);
+    ::KillTimer(task_window, kDelayedSessionCommandTimerId);
+    if (!IsCurrentActivation(thread_context)) {
+      return;
+    }
 
     if (!has_pending_delayed_session_command_) {
       return;
@@ -1447,28 +2362,57 @@ class TipTextServiceImpl
     commands::SessionCommand command = pending_delayed_session_command_;
     wil::com_ptr_nothrow<ITfContext> context =
         pending_delayed_session_context_;
+    const uint64_t scheduled_focus_epoch =
+        pending_delayed_session_focus_epoch_;
+    const int32_t scheduled_focus_revision =
+        pending_delayed_session_focus_revision_;
+    const uint64_t scheduled_output_application_generation =
+        pending_delayed_session_output_application_generation_;
 
     has_pending_delayed_session_command_ = false;
     pending_delayed_session_command_.Clear();
     pending_delayed_session_context_.reset();
+    pending_delayed_session_focus_epoch_ = 0;
+    pending_delayed_session_focus_revision_ = 0;
+    pending_delayed_session_output_application_generation_ = 0;
 
-    if (!context) {
+    const std::shared_ptr<TipPrivateContext> private_context =
+        context ? GetPrivateContext(context.get()) : nullptr;
+    if (!context || !private_context || scheduled_focus_epoch == 0 ||
+        scheduled_output_application_generation == 0 ||
+        scheduled_focus_epoch != thread_context->GetGrimodexFocusEpoch() ||
+        scheduled_focus_revision != thread_context->GetFocusRevision() ||
+        !private_context->IsOutputApplicationForFocusDomain(
+            scheduled_focus_epoch, scheduled_focus_revision,
+            scheduled_output_application_generation) ||
+        !IsCurrentActivation(thread_context)) {
       return;
     }
 
-    TipEditSession::SendSessionCommandAsync(this, context.get(), command);
+    TipEditSession::SendDelayedSessionCommandAsync(
+        this, context.get(), command, scheduled_focus_epoch,
+        scheduled_focus_revision,
+        scheduled_output_application_generation);
   }
 
   void OnUpdateUI() {
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return;
+    }
     wil::com_ptr_nothrow<ITfDocumentMgr> document_manager;
-    if (FAILED(thread_mgr_->GetFocus(&document_manager))) {
+    if (FAILED(thread_manager->GetFocus(&document_manager)) ||
+        !IsCurrentActivation(thread_context)) {
       return;
     }
     if (!document_manager) {
       return;
     }
     wil::com_ptr_nothrow<ITfContext> context;
-    if (FAILED(document_manager->GetBase(&context))) {
+    if (FAILED(document_manager->GetTop(&context)) ||
+        !IsCurrentActivation(thread_context)) {
       return;
     }
     if (!context) {
@@ -1491,9 +2435,14 @@ class TipTextServiceImpl
     // Do not care about thread safety.
     static UINT renderer_callback_message =
         ::RegisterWindowMessage(mozc::kMessageReceiverMessageName);
+    static UINT renderer_highlight_callback_message =
+        ::RegisterWindowMessage(mozc::kMessageReceiverHighlightMessageName);
 
     if (!WindowUtil::ChangeMessageFilter(renderer_callback_window_handle_,
-                                         renderer_callback_message)) {
+                                         renderer_callback_message) ||
+        !WindowUtil::ChangeMessageFilter(
+            renderer_callback_window_handle_,
+            renderer_highlight_callback_message)) {
       ::DestroyWindow(renderer_callback_window_handle_);
       renderer_callback_window_handle_ = nullptr;
       return E_FAIL;
@@ -1502,6 +2451,9 @@ class TipTextServiceImpl
   }
 
   HRESULT UninitRendererCallbackWindow() {
+    SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                  /*focus_revision=*/0,
+                                  /*output_generation=*/0);
     if (!::IsWindow(renderer_callback_window_handle_)) {
       return S_FALSE;
     }
@@ -1521,32 +2473,99 @@ class TipTextServiceImpl
     // Do not care about thread safety.
     static UINT renderer_callback_message =
         ::RegisterWindowMessage(mozc::kMessageReceiverMessageName);
+    static UINT renderer_highlight_callback_message =
+        ::RegisterWindowMessage(mozc::kMessageReceiverHighlightMessageName);
     if (window_handle == self->renderer_callback_window_handle_) {
-      if (message == renderer_callback_message) {
-        self->OnRendererCallback(wparam, lparam);
-        return 0;
+      switch (commands::GetRendererCallbackKindForMessage(
+          message, renderer_callback_message,
+          renderer_highlight_callback_message)) {
+        case commands::RendererCallbackKind::kSelect:
+          self->OnRendererCallback(commands::SessionCommand::SELECT_CANDIDATE,
+                                   wparam, lparam);
+          return 0;
+        case commands::RendererCallbackKind::kHighlight:
+          self->OnRendererCallback(
+              commands::SessionCommand::HIGHLIGHT_CANDIDATE, wparam, lparam);
+          return 0;
+        case commands::RendererCallbackKind::kUnsupported:
+          break;
       }
     }
     return ::DefWindowProcW(window_handle, message, wparam, lparam);
   }
 
-  void OnRendererCallback(WPARAM wparam, LPARAM lparam) {
+  void OnRendererCallback(commands::SessionCommand::CommandType type,
+                          WPARAM wparam, LPARAM lparam) {
+    const uint64_t callback_token = static_cast<uint64_t>(wparam);
+    const std::shared_ptr<TipThreadContext> thread_context =
+        GetThreadContextLease();
+    wil::com_ptr_nothrow<ITfThreadMgr> thread_manager = thread_mgr_;
+    if (!thread_context || !thread_manager) {
+      return;
+    }
+    const commands::RendererCallbackProvenance expected_provenance = {
+        .token = renderer_callback_token_,
+        .focus_epoch = renderer_callback_focus_epoch_,
+        .focus_revision = renderer_callback_focus_revision_,
+        .output_generation = renderer_callback_output_generation_,
+    };
+    const auto is_current = [this, callback_token, &thread_context]() {
+      const commands::RendererCallbackProvenance current_provenance = {
+          .token = renderer_callback_token_,
+          .focus_epoch = renderer_callback_focus_epoch_,
+          .focus_revision = renderer_callback_focus_revision_,
+          .output_generation = renderer_callback_output_generation_,
+      };
+      return IsCurrentActivation(thread_context) &&
+             commands::IsRendererCallbackProvenanceCurrent(
+                 current_provenance, callback_token,
+                 thread_context->GetGrimodexFocusEpoch(),
+                 thread_context->GetFocusRevision(),
+                 thread_context->GetInputModeManager()
+                     ->IsPasswordInputScope(),
+                 renderer_callback_output_generation_);
+    };
+    if (!is_current()) {
+      return;
+    }
+    const TsfFocusSnapshot renderer_domain = {
+        .focus_epoch = expected_provenance.focus_epoch,
+        .focus_revision = expected_provenance.focus_revision,
+    };
     wil::com_ptr_nothrow<ITfDocumentMgr> document_manager;
-    if (FAILED(thread_mgr_->GetFocus(&document_manager))) {
+    if (FAILED(thread_manager->GetFocus(&document_manager))) {
       return;
     }
     if (!document_manager) {
       return;
     }
     wil::com_ptr_nothrow<ITfContext> context;
-    if (FAILED(document_manager->GetBase(&context))) {
+    if (FAILED(document_manager->GetTop(&context))) {
       return;
     }
     if (!context) {
       return;
     }
-    TipEditSession::OnRendererCallbackAsync(this, context.get(), wparam,
-                                            lparam);
+    if (!is_current()) {
+      return;
+    }
+    const std::shared_ptr<TipPrivateContext> private_context =
+        GetPrivateContext(context.get());
+    if (!private_context ||
+        !private_context->IsLastOutputForFocusDomainAndGeneration(
+            renderer_domain.focus_epoch, renderer_domain.focus_revision,
+            expected_provenance.output_generation)) {
+      return;
+    }
+    if (type == commands::SessionCommand::SELECT_CANDIDATE) {
+      SetRendererCallbackProvenance(/*token=*/0, /*focus_epoch=*/0,
+                                    /*focus_revision=*/0,
+                                    /*output_generation=*/0);
+    }
+    TipEditSession::OnRendererCallbackAsync(
+        this, context.get(), type, static_cast<int32_t>(lparam),
+        renderer_domain.focus_epoch, renderer_domain.focus_revision,
+        expected_provenance.output_generation);
   }
 
   // Represents the status of the thread manager which owns this IME object.
@@ -1581,17 +2600,39 @@ class TipTextServiceImpl
   using PreservedKeyMap = absl::flat_hash_map<GUID, UINT, GuidHash>;
   using PrivateContextMap =
       absl::flat_hash_map<wil::com_ptr_nothrow<ITfContext>,
-                          std::unique_ptr<PrivateContextWrapper>,
+                          std::shared_ptr<PrivateContextWrapper>,
                           ComPtrHash<ITfContext>>;
   PrivateContextMap private_context_map_;
+  bool private_contexts_accepting_ = false;
+  std::shared_ptr<TipPrivateContext> active_private_context_;
   PreservedKeyMap preserved_key_map_;
-  std::unique_ptr<TipThreadContext> thread_context_;
+  std::shared_ptr<TipThreadContext> thread_context_;
+  uint64_t next_activation_focus_epoch_ = 1;
+  bool activation_active_ = false;
+  bool thread_has_focus_ = false;
+  uint64_t thread_focus_callback_generation_ = 0;
+  uint64_t conversion_mode_callback_generation_ = 0;
+  uint64_t open_close_mode_callback_generation_ = 0;
+  bool activating_ = false;
+  bool activation_cancel_requested_ = false;
+  bool deactivating_ = false;
+  int callback_suspension_depth_ = 0;
+  bool pending_context_resync_ = false;
+  std::vector<std::pair<bool, wil::com_ptr_nothrow<ITfContext>>>
+      pending_context_lifecycle_events_;
   HWND task_window_handle_;
   HWND renderer_callback_window_handle_;
+  uint64_t renderer_callback_token_ = 0;
+  uint64_t renderer_callback_focus_epoch_ = 0;
+  int32_t renderer_callback_focus_revision_ = 0;
+  uint64_t renderer_callback_output_generation_ = 0;
 
   bool has_pending_delayed_session_command_;
   commands::SessionCommand pending_delayed_session_command_;
   wil::com_ptr_nothrow<ITfContext> pending_delayed_session_context_;
+  uint64_t pending_delayed_session_focus_epoch_ = 0;
+  int32_t pending_delayed_session_focus_revision_ = 0;
+  uint64_t pending_delayed_session_output_application_generation_ = 0;
 };
 
 }  // namespace

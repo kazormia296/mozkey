@@ -15,13 +15,10 @@
 #ifndef MOZC_UNIX_FCITX5_GRIMODEX_CONTEXT_H_
 #define MOZC_UNIX_FCITX5_GRIMODEX_CONTEXT_H_
 
-#include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <optional>
-#include <string>
 #include <string_view>
 
+#include "grimodex/client_context.h"
 #include "protocol/commands.pb.h"
 #include "unix/fcitx5/mozc_client_interface.h"
 
@@ -29,16 +26,14 @@ namespace fcitx {
 
 // Fcitx metadata is untrusted input from a frontend.  Keep the command wire
 // bounded even when a broken or hostile frontend reports a huge identifier.
-inline constexpr size_t kMaxGrimodexProgramBytes = 256;
-inline constexpr size_t kMaxGrimodexFrontendBytes = 128;
+inline constexpr size_t kMaxGrimodexProgramBytes =
+    mozc::grimodex::kMaxClientProgramBytes;
+inline constexpr size_t kMaxGrimodexFrontendBytes =
+    mozc::grimodex::kMaxClientFrontendBytes;
 
-struct GrimodexSurroundingText {
-  std::string preceding_text;
-  std::string following_text;
-};
-
+using GrimodexSurroundingText = mozc::grimodex::SurroundingText;
 using GrimodexSurroundingTextProvider =
-    std::function<std::optional<GrimodexSurroundingText>()>;
+    mozc::grimodex::SurroundingTextProvider;
 
 // Returns a nonzero epoch.  The counter is per InputContext and is advanced on
 // every focus-in and input-domain transition.

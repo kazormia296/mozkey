@@ -234,6 +234,11 @@ TipInputModeManager::Action TipInputModeManager::OnSetFocus(
   return kDoNothing;
 }
 
+TipInputModeManager::Action TipInputModeManager::OnInputScopeUnresolved() {
+  constexpr InputScope kFailClosedScope[] = {IS_PASSWORD};
+  return OnChangeInputScope(kFailClosedScope);
+}
+
 TipInputModeManager::Action TipInputModeManager::OnChangeOpenClose(
     bool new_open_close_mode) {
   const bool prev_open = mozc_state_.open_close;  // effective on/off
@@ -307,6 +312,11 @@ TipInputModeManager::GetEffectiveConversionMode() const {
 TipInputModeManagerImpl::ConversionMode
 TipInputModeManager::GetTsfConversionMode() const {
   return tsf_state_.conversion_mode;
+}
+
+bool TipInputModeManager::IsPasswordInputScope() const {
+  return std::find(input_scope_.begin(), input_scope_.end(), IS_PASSWORD) !=
+         input_scope_.end();
 }
 
 bool TipInputModeManager::IsIndicatorVisible() const {

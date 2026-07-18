@@ -33,6 +33,7 @@ load(
     "mozc_cc_test",
     "mozc_macos_application",
     "mozc_objc_library",
+    "mozc_objc_test",
     "mozc_select",
 )
 load(
@@ -125,6 +126,7 @@ mozc_cc_library(
         "//ipc:process_watch_dog",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
+        "//protocol:renderer_callback_provenance",
         "//protocol:renderer_cc_proto",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
@@ -349,6 +351,19 @@ mozc_objc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
+    ],
+)
+
+mozc_objc_test(
+    name = "candidate_view_callback_test",
+    size = "small",
+    srcs = ["mac/CandidateView_test.mm"],
+    deps = [
+        ":mozc_renderer_lib_macos",
+        "//client:client_interface",
+        "//protocol:candidate_window_cc_proto",
+        "//protocol:commands_cc_proto",
+        "//testing:gunit_main_objc",
     ],
 )
 

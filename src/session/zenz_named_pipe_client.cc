@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -17,9 +19,13 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 namespace mozc {
@@ -30,6 +36,7 @@ constexpr uint32_t kZenzWireMagic = 0x315A4E5A;  // "ZNZ1"
 constexpr uint16_t kZenzWireVersion = 2;
 constexpr uint16_t kZenzWireKindRequest = 1;
 constexpr uint16_t kZenzWireKindResponse = 2;
+constexpr uint32_t kMaxWirePayloadBytes = 64 * 1024;
 constexpr uint32_t kMaxBackendDeviceBytes = 128;
 
 #pragma pack(push, 1)
@@ -354,6 +361,29 @@ ZenzSocketHandle TryOpenPipeOnce(const std::string& pipe_name) {
   if (sock < 0) {
     return kInvalidZenzSocket;
   }
+#if defined(__APPLE__)
+  const int no_sigpipe = 1;
+  if (::setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe,
+                   sizeof(no_sigpipe)) != 0) {
+    ::close(sock);
+    return kInvalidZenzSocket;
+  }
+#endif
+
+  struct stat socket_info = {};
+  if (::lstat(pipe_name.c_str(), &socket_info) != 0) {
+    const int error = errno;
+    ::close(sock);
+    errno = error;
+    return kInvalidZenzSocket;
+  }
+  if (!S_ISSOCK(socket_info.st_mode) ||
+      socket_info.st_uid != ::geteuid() ||
+      (socket_info.st_mode & 0077) != 0) {
+    ::close(sock);
+    errno = EACCES;
+    return kInvalidZenzSocket;
+  }
 
   struct sockaddr_un addr = {};
   addr.sun_family = AF_UNIX;
@@ -362,10 +392,17 @@ ZenzSocketHandle TryOpenPipeOnce(const std::string& pipe_name) {
     return kInvalidZenzSocket;
   }
   std::strncpy(addr.sun_path, pipe_name.c_str(), sizeof(addr.sun_path) - 1);
+  const socklen_t addr_size = static_cast<socklen_t>(
+      offsetof(struct sockaddr_un, sun_path) + pipe_name.size() + 1);
+#if defined(__APPLE__)
+  addr.sun_len = static_cast<unsigned char>(addr_size);
+#endif
 
   if (::connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
-                sizeof(addr)) < 0) {
+                addr_size) < 0) {
+    const int error = errno;
     ::close(sock);
+    errno = error;
     return kInvalidZenzSocket;
   }
 
@@ -389,8 +426,17 @@ bool LaunchZenzScorerIfNeeded() {
     }
   }
 
-  char exe_path[4096];
-  ssize_t len = ::readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+  char exe_path[4096] = {};
+#if defined(__APPLE__)
+  uint32_t executable_path_size = sizeof(exe_path);
+  const ssize_t len =
+      ::_NSGetExecutablePath(exe_path, &executable_path_size) == 0
+          ? static_cast<ssize_t>(std::strlen(exe_path))
+          : -1;
+#else
+  const ssize_t len =
+      ::readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+#endif
   std::string dir = ".";
   if (len > 0) {
     exe_path[len] = '\0';
@@ -401,7 +447,11 @@ bool LaunchZenzScorerIfNeeded() {
     }
   }
 
+#if defined(__APPLE__)
+  std::string scorer_path = dir + "/../Resources/mozc_zenz_scorer";
+#else
   std::string scorer_path = dir + "/mozc_zenz_scorer";
+#endif
   if (::access(scorer_path.c_str(), X_OK) != 0) {
     return false;
   }
@@ -411,7 +461,9 @@ bool LaunchZenzScorerIfNeeded() {
     // Child process: double fork to avoid zombies
     pid_t pid2 = ::fork();
     if (pid2 == 0) {
-      ::setsid(); // Detach from session
+      if (::setsid() < 0) {
+        ::_exit(127);
+      }
 
       // Redirect stdio to /dev/null
       int fd = ::open("/dev/null", O_RDWR);
@@ -620,6 +672,18 @@ ZenzLiveResponse ZenzNamedPipeClient::Convert(
     CloseZenzSocket(pipe);
     response.ok = false;
     response.debug = "pipe_response_header_invalid";
+    return response;
+  }
+
+  const uint64_t response_payload_size =
+      static_cast<uint64_t>(response_header.value_size) +
+      static_cast<uint64_t>(response_header.debug_size);
+  if (response_header.value_size > kMaxWirePayloadBytes ||
+      response_header.debug_size > kMaxWirePayloadBytes ||
+      response_payload_size > kMaxWirePayloadBytes) {
+    CloseZenzSocket(pipe);
+    response.ok = false;
+    response.debug = "pipe_response_payload_too_large";
     return response;
   }
 

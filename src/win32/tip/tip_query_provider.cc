@@ -39,6 +39,7 @@
 #include "base/win32/wide_char.h"
 #include "client/client.h"
 #include "client/client_interface.h"
+#include "grimodex/client_context.h"
 #include "protocol/candidate_window.pb.h"
 #include "protocol/commands.pb.h"
 
@@ -56,7 +57,10 @@ using ::mozc::commands::SessionCommand;
 class TipQueryProviderImpl : public TipQueryProvider {
  public:
   explicit TipQueryProviderImpl(std::unique_ptr<ClientInterface> client)
-      : client_(std::move(client)) {}
+      : client_(std::move(client)),
+        secure_context_(grimodex::BuildClientContext(
+            /*program=*/"", /*frontend=*/"tsf", /*secure_input=*/true,
+            /*focus_epoch=*/1)) {}
   TipQueryProviderImpl(const TipQueryProviderImpl&) = delete;
   TipQueryProviderImpl& operator=(const TipQueryProviderImpl&) = delete;
 
@@ -80,7 +84,7 @@ class TipQueryProviderImpl : public TipQueryProvider {
       // TODO(yukawa): Consider to introduce a new command that does 1) real
       // time conversion and 2) some suggestions, regardless of the current
       // user settings.
-      if (!client_->SendKey(key_event, &output)) {
+      if (!client_->SendKeyWithContext(key_event, secure_context_, &output)) {
         return false;
       }
       if (output.error_code() != Output::SESSION_SUCCESS) {
@@ -95,7 +99,7 @@ class TipQueryProviderImpl : public TipQueryProvider {
       SessionCommand command;
       command.set_type(SessionCommand::REVERT);
       Output output;
-      client_->SendCommand(command, &output);
+      client_->SendCommandWithContext(command, secure_context_, &output);
     }
     return true;
   }
@@ -107,7 +111,8 @@ class TipQueryProviderImpl : public TipQueryProvider {
       command.set_type(SessionCommand::CONVERT_REVERSE);
       command.set_text(WideToUtf8(query));
       Output output;
-      if (!client_->SendCommand(command, &output)) {
+      if (!client_->SendCommandWithContext(command, secure_context_,
+                                           &output)) {
         return false;
       }
       const auto& candidates = output.all_candidate_words();
@@ -119,12 +124,13 @@ class TipQueryProviderImpl : public TipQueryProvider {
       SessionCommand command;
       command.set_type(SessionCommand::REVERT);
       Output output;
-      client_->SendCommand(command, &output);
+      client_->SendCommandWithContext(command, secure_context_, &output);
     }
     return true;
   }
 
   std::unique_ptr<client::ClientInterface> client_;
+  commands::Context secure_context_;
 };
 
 }  // namespace

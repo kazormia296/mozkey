@@ -45,7 +45,9 @@
 #include "base/win32/com_implements.h"
 #include "win32/tip/tip_candidate_list.h"
 #include "win32/tip/tip_edit_session.h"
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_query_provider.h"
+#include "win32/tip/tip_thread_context.h"
 #include "win32/tip/tip_text_service.h"
 
 namespace mozc {
@@ -94,13 +96,26 @@ TipLinguisticAlternates::GetAlternates(
     return E_INVALIDARG;
   }
   *candidate_list = nullptr;
+  const TsfFocusSnapshot text_domain =
+      CaptureTsfFocusSnapshot(text_service_->GetThreadContext());
+  wil::com_ptr_nothrow<ITfContext> context;
+  if (FAILED(range->GetContext(&context)) || context == nullptr ||
+      !IsTsfContextFocusedForSnapshot(text_service_.get(), context.get(),
+                                      text_domain,
+                                      /*require_nonsecure=*/true)) {
+    return E_FAIL;
+  }
   std::wstring query;
   if (!TipEditSession::GetTextSync(text_service_.get(), range, &query,
-                                   nullptr)) {
+                                   nullptr, text_domain.focus_epoch,
+                                   text_domain.focus_revision)) {
     return E_FAIL;
   }
   std::vector<std::wstring> candidates;
-  if (!provider_->Query(query, TipQueryProvider::kDefault, &candidates)) {
+  if (!provider_->Query(query, TipQueryProvider::kDefault, &candidates) ||
+      !IsTsfContextFocusedForSnapshot(text_service_.get(), context.get(),
+                                      text_domain,
+                                      /*require_nonsecure=*/true)) {
     return E_FAIL;
   }
   return SaveToOutParam(

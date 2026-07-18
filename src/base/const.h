@@ -70,6 +70,8 @@ inline constexpr char kMozcCacheServiceExeName[] =
 inline constexpr wchar_t kMozcCacheServiceName[] = L"GoogleIMEJaCacheService";
 inline constexpr wchar_t kMessageReceiverMessageName[] =
     L"googlejapaneseinput.renderer.message";
+inline constexpr wchar_t kMessageReceiverHighlightMessageName[] =
+    L"googlejapaneseinput.renderer.highlight.message";
 inline constexpr wchar_t kMessageReceiverClassName[] =
     L"googlejapaneseinput.renderer.window";
 inline constexpr wchar_t kCandidateWindowClassName[] =
@@ -114,6 +116,8 @@ inline constexpr char kMozcCacheServiceExeName[] = "mozc_cache_service.exe";
 inline constexpr wchar_t kMozcCacheServiceName[] = L"MozcCacheService";
 inline constexpr wchar_t kMessageReceiverMessageName[] =
     L"mozc.renderer.message";
+inline constexpr wchar_t kMessageReceiverHighlightMessageName[] =
+    L"mozc.renderer.highlight.message";
 inline constexpr wchar_t kMessageReceiverClassName[] = L"mozc.renderer.window";
 inline constexpr wchar_t kCandidateWindowClassName[] = L"MozcCandidateWindow";
 inline constexpr wchar_t kCompositionWindowClassName[] =

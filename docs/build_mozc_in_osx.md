@@ -2,7 +2,7 @@
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 
-[![macOS](https://github.com/google/mozc/actions/workflows/macos.yaml/badge.svg)](https://github.com/google/mozc/actions/workflows/macos.yaml)
+[![macOS](https://github.com/koyasi777/mozkey/actions/workflows/macos.yaml/badge.svg)](https://github.com/koyasi777/mozkey/actions/workflows/macos.yaml)
 
 ## Summary
 
@@ -10,24 +10,21 @@ If you are not sure what the following commands do, please check the
 descriptions below and make sure the operations before running them.
 
 ```
-git clone https://github.com/google/mozc.git
-cd mozc/src
+git clone https://github.com/koyasi777/mozkey.git
+cd mozkey/src
 
 python3 build_tools/update_deps.py
 
-# CMake is also required to build Qt.
-python3 build_tools/build_qt.py --release --confirm_license
+# CMake is required to build both Qt and the bundled Zenz runtime.
+python3 build_tools/build_qt.py --release --confirm_license --macos_cpus=arm64
 
-bazelisk build package --config release_build
+python3 ../tools/release/prepare_macos_zenz_runtime.py
+bazelisk build package --config release_build --macos_cpus=arm64
 open bazel-bin/mac/Mozc.pkg
 ```
 
-💡 With the above build steps, the target CPU architecture of the binaries in
-`Mozc.pkg` is the same as the CPU architecture of the build environment. That
-is, if you build Mozc on arm64 environment, `Mozc.pkg` contains arm64 binaries.
-See the
-["how to specify target CPU architectures"](#how-to-specify-target-cpu-architectures)
-section below about how to do cross build.
+💡 Mozkey for macOS is distributed for Apple Silicon only. The application,
+installer, Zenz scorer, and `llama-server` runtime are all arm64-only.
 
 💡 You can also download `Mozc.pkg` from GitHub Actions. Check
 [Build with GitHub Actions](#build-with-github-actions) for details.
@@ -36,7 +33,7 @@ section below about how to do cross build.
 
 ### System Requirements
 
-64-bit macOS 12 and later versions are supported.
+Apple Silicon Macs running macOS 12 or later are supported.
 
 ### Software Requirements
 
@@ -51,15 +48,15 @@ Building on Mac requires the following software.
     *   [src/.bazeliskrc](../src/.bazeliskrc) controls which version of Bazel is
         used.
 *   Python 3.12 or later.
-*   CMake 3.18.4 or later (to build Qt6)
+*   CMake 3.18.4 or later (to build Qt6 and the pinned Zenz runtime)
 
 ## Get the Code
 
 You can download Mozc source code as follows:
 
 ```
-git clone https://github.com/google/mozc.git
-cd mozc/src
+git clone https://github.com/koyasi777/mozkey.git
+cd mozkey/src
 ```
 
 Hereafter you can do all the operations without changing directory.
@@ -80,7 +77,7 @@ You can specify `--noqt` option if you would like to use your own Qt binaries.
 ### Build Qt
 
 ```
-python3 build_tools/build_qt.py --release --confirm_license
+python3 build_tools/build_qt.py --release --confirm_license --macos_cpus=arm64
 ```
 
 Drop `--confirm_license` option if you would like to manually confirm the Qt
@@ -89,25 +86,15 @@ license.
 You can also specify `--debug` option to build debug version of Mozc.
 
 ```
-python3 build_tools/build_qt.py --release --debug --confirm_license
+python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=arm64
 ```
 
-You can also specify `--macos_cpus` option, which has the same semantics as the
-[same name option in Bazel](https://bazel.build/reference/command-line-reference#flag--macos_cpus),
-for cross-build including building a Universal macOS Binary.
-
-```
-# Building x86_64 binaries regardless of the host CPU architecture.
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x86_64
-
-# Building Universal macOS Binary for both x86_64 and arm64.
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x86_64,arm64
-```
+The explicit `--macos_cpus=arm64` option matches the Mozkey release contract.
 
 You can skip this process if you have already installed Qt prebuilt binaries.
 
-CMake is also required to build Qt. If you use `brew`, you can install `cmake`
-as follows.
+CMake is required by the Zenz runtime preparation step even when you use
+prebuilt Qt binaries. If you use `brew`, you can install `cmake` as follows.
 
 ```
 brew install cmake
@@ -119,28 +106,19 @@ brew install cmake
 
 ### Build installer
 
+First stage the pinned arm64 Zenz runtime. This command downloads the
+official pinned llama.cpp archive when it is not already cached, verifies its
+SHA-256, and builds the arm64 runtime.
+
 ```
-bazelisk build package --config release_build
+python3 ../tools/release/prepare_macos_zenz_runtime.py
+bazelisk build package --config release_build --macos_cpus=arm64
 open bazel-bin/mac/Mozc.pkg
 ```
 
-#### How to specify target CPU architectures
-
-To build an Intel64 macOS binary regardless of the host CPU architecture.
-
-```
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x64_64
-bazelisk build package --config release_build --macos_cpus=x64_64
-open bazel-bin/mac/Mozc.pkg
-```
-
-To build a Universal macOS Binary both x86_64 and arm64.
-
-```
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x86_64,arm64
-bazelisk build package --config release_build --macos_cpus=x86_64,arm64
-open bazel-bin/mac/Mozc.pkg
-```
+The runtime preparation command has no architecture option because its output
+is intentionally fixed to arm64 with a macOS 12 deployment target. The package
+build uses the matching explicit `--macos_cpus=arm64` contract.
 
 ### Unit tests
 
@@ -149,6 +127,14 @@ bazelisk test ... --build_tests_only -c dbg
 ```
 
 See [build Mozc in Docker](build_mozc_in_docker.md#unittests) for details.
+
+### Mozkey Grimodex desktop contract tests
+
+The macOS workflow also runs the portable Protocol v1 fixtures, the secure
+POSIX reader/registrar tests, IMKit context and renderer callback tests, and the
+packaged Zenz runtime probes. See
+[Grimodex Protocol v1 on Windows and macOS](grimodex_desktop_integration.md)
+for the focused command and the security/lifecycle contract.
 
 ### Edit src/config.bzl
 
@@ -176,7 +162,7 @@ GitHub Actions steps are already set up in
 [macos.yaml](../.github/workflows/macos.yaml). With that, you can build and
 install Mozc with your own commit as follows.
 
-1.  Fork https://github.com/google/mozc to your GitHub repository.
+1.  Fork https://github.com/koyasi777/mozkey to your GitHub repository.
 2.  Push a new commit to your own fork.
 3.  Click "Actions" tab on your fork.
 4.  Wait until the action triggered with your commit succeeds.
@@ -185,14 +171,14 @@ install Mozc with your own commit as follows.
 
 Files in the GitHub Actions page remain available up to 90 days.
 
-You can also find Mozc Installers for macOS in google/mozc repository. Please
+You can also find Mozkey installers for macOS in the Mozkey repository. Please
 keep in mind that Mozc is not an officially supported Google product, even if
-downloaded from https://github.com/google/mozc/.
+downloaded from https://github.com/koyasi777/mozkey/.
 
 1.  Sign in GitHub.
 2.  Check
-    [recent successful macOS runs](https://github.com/google/mozc/actions/workflows/macos.yaml?query=is%3Asuccess)
-    in google/mozc repository.
+    [recent successful macOS runs](https://github.com/koyasi777/mozkey/actions/workflows/macos.yaml?query=is%3Asuccess)
+    in the Mozkey repository.
 3.  Find action in last 90 days and click it.
 4.  Download `Mozc.pkg` from the action result page.
 

@@ -33,6 +33,8 @@
 #include <msctf.h>
 #include <windows.h>
 
+#include <cstdint>
+
 #include "protocol/commands.pb.h"
 #include "win32/tip/tip_text_service.h"
 
@@ -53,7 +55,10 @@ class TipEditSessionImpl {
   static HRESULT OnCompositionTerminated(TipTextService* text_service,
                                          ITfContext* context,
                                          ITfComposition* composition,
-                                         TfEditCookie write_cookie);
+                                         TfEditCookie write_cookie,
+                                         uint64_t composition_focus_epoch,
+                                         int32_t composition_focus_revision,
+                                         uint64_t composition_generation);
 
   // Does post-edit status checking for composition (if exists). For example,
   // when the composition is canceled by the application, this method sends
@@ -69,12 +74,16 @@ class TipEditSessionImpl {
   // - Invokes UI update. (by calling UpdateUI)
   static HRESULT UpdateContext(TipTextService* text_service,
                                ITfContext* context, TfEditCookie write_cookie,
-                               const commands::Output& output);
+                               const commands::Output& output,
+                               uint64_t output_focus_epoch,
+                               int32_t output_focus_revision,
+                               uint64_t output_application_generation);
 
   // A core logic of UI handler. This function does
   // - Invokes UI update.
   static void UpdateUI(TipTextService* text_service, ITfContext* context,
-                       TfEditCookie read_cookie);
+                       TfEditCookie read_cookie, uint64_t output_focus_epoch,
+                       int32_t output_focus_revision);
 };
 
 }  // namespace tsf

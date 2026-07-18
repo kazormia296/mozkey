@@ -36,6 +36,7 @@
 
 #include <memory>
 
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_text_service.h"
 
 namespace mozc {
@@ -87,7 +88,8 @@ class TipUiElementDelegateFactory {
 
   static std::unique_ptr<TipUiElementDelegate> Create(
       wil::com_ptr_nothrow<TipTextService> text_service,
-      wil::com_ptr_nothrow<ITfContext> context, ElementType type);
+      wil::com_ptr_nothrow<ITfContext> context, ElementType type,
+      TsfFocusSnapshot element_domain, uint64_t output_generation);
 
   TipUiElementDelegateFactory() = delete;
   TipUiElementDelegateFactory(const TipUiElementDelegateFactory&) = delete;

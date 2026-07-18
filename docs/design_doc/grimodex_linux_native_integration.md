@@ -62,6 +62,11 @@ Linux 内部は既存 Mozc protobuf IPC、macOS と Windows は各 OS の adapte
 よい。辞書 entry 自体を Mozc IPC に載せず、`mozc_server` が同一 user の immutable
 JSON snapshot を直接読む。
 
+Windows TSF と macOS IMKit の native adapter、secure context、consumer lifecycle は
+実装済みである。現在の desktop contract と CI gate は
+[Grimodex Protocol v1 on Windows and macOS](../grimodex_desktop_integration.md)
+にまとめる。
+
 ## Project dictionary
 
 project dictionary は Mozc の永続 user dictionary に import しない。immutable な

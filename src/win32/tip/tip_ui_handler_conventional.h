@@ -35,6 +35,8 @@
 
 #include "win32/tip/tip_text_service.h"
 
+#include <cstdint>
+
 namespace mozc {
 namespace win32 {
 namespace tsf {
@@ -48,9 +50,12 @@ class TipUiHandlerConventional {
   static void OnActivate(TipTextService* text_service);
   static void OnDeactivate();
   static void OnFocusChange(TipTextService* text_service,
-                            ITfDocumentMgr* focused_document_manager);
+                            ITfDocumentMgr* focused_document_manager,
+                            uint64_t focus_epoch,
+                            int32_t focus_revision);
   static bool Update(TipTextService* text_service, ITfContext* context,
-                     TfEditCookie read_cookie);
+                     TfEditCookie read_cookie, uint64_t output_focus_epoch,
+                     int32_t output_focus_revision);
   static bool OnDllProcessAttach(HINSTANCE module_handle, bool static_loading);
   static void OnDllProcessDetach(HINSTANCE module_handle,
                                  bool process_shutdown);

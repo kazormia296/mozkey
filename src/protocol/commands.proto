@@ -510,9 +510,14 @@ message SessionCommand {
 
   // Reading at the time when the delayed live conversion was scheduled.
   optional string live_conversion_key = 13;
+
+  // Opaque provenance token echoed by out-of-process renderer callbacks.
+  // Platform clients must reject callbacks whose token does not match the
+  // RendererCommand that produced the currently visible UI.
+  optional uint64 renderer_callback_token = 14;
 }
 
-// Linux Grimodex metadata carried on every key and session command.  Project
+// Desktop Grimodex metadata carried on every key and session command.  Project
 // dictionary payloads are deliberately not part of this wire message; the
 // server loads them from the verified Protocol v1 snapshot store.
 message GrimodexClientContext {

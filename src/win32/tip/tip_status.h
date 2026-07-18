@@ -33,6 +33,8 @@
 #include <msctf.h>
 #include <windef.h>
 
+#include "absl/functional/function_ref.h"
+
 namespace mozc {
 namespace win32 {
 namespace tsf {
@@ -61,10 +63,15 @@ class TipStatus {
   // Returns true if TSF keyboard open/closed mode is updated.
   static bool SetIMEOpen(ITfThreadMgr* thread_mgr, TfClientId client_id,
                          bool open);
+  static bool SetIMEOpen(ITfThreadMgr* thread_mgr, TfClientId client_id,
+                         bool open, absl::FunctionRef<bool()> is_current);
 
   // Returns true if TSF conversion mode is updated.
   static bool SetInputModeConversion(ITfThreadMgr* thread_mgr, DWORD client_id,
                                      DWORD native_mode);
+  static bool SetInputModeConversion(ITfThreadMgr* thread_mgr, DWORD client_id,
+                                     DWORD native_mode,
+                                     absl::FunctionRef<bool()> is_current);
 };
 
 }  // namespace tsf

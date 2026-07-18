@@ -42,6 +42,7 @@
 #include "base/run_level.h"
 #include "base/system_util.h"
 #include "base/vlog.h"
+#include "grimodex/desktop_consumer_heartbeat.h"
 #include "session/session_server.h"
 
 #ifdef _WIN32
@@ -98,6 +99,13 @@ int MozcServer::Run() {
     LOG(INFO) << "Mozc Server is already running";
     return -1;
   }
+
+  // The process mutex makes this the only heartbeat owner in mozc_server.
+  // Its destructor stops the timer without unregistering, preserving the
+  // Protocol v1 freshness window across ordinary server restarts.
+  std::unique_ptr<grimodex::DesktopConsumerHeartbeat>
+      grimodex_consumer_heartbeat =
+          grimodex::StartDesktopConsumerHeartbeat();
 
   {
     std::unique_ptr<mozc::SessionServer> session_server =

@@ -35,6 +35,7 @@
 #include <windows.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -45,7 +46,10 @@
 #include "base/win32/com.h"
 #include "win32/tip/tip_candidate_list.h"
 #include "win32/tip/tip_edit_session.h"
+#include "win32/tip/tip_grimodex_context_util.h"
+#include "win32/tip/tip_private_context.h"
 #include "win32/tip/tip_query_provider.h"
+#include "win32/tip/tip_thread_context.h"
 
 namespace mozc {
 namespace win32 {
@@ -76,6 +80,8 @@ STDMETHODIMP TipReconvertFunction::QueryRange(
     return E_INVALIDARG;
   }
   *new_range = nullptr;
+  const TsfFocusSnapshot text_domain =
+      CaptureTsfFocusSnapshot(text_service_->GetThreadContext());
 
   wil::com_ptr_nothrow<ITfContext> context;
   if (FAILED(range->GetContext(&context))) {
@@ -85,7 +91,8 @@ STDMETHODIMP TipReconvertFunction::QueryRange(
   std::wstring selected_text;
   bool is_composing = false;
   if (!TipEditSession::GetTextSync(text_service_.get(), range, &selected_text,
-                                   &is_composing)) {
+                                   &is_composing, text_domain.focus_epoch,
+                                   text_domain.focus_revision)) {
     return E_FAIL;
   }
 
@@ -102,9 +109,14 @@ STDMETHODIMP TipReconvertFunction::QueryRange(
     return S_OK;
   }
 
-  if (FAILED(range->Clone(new_range))) {
+  wil::com_ptr_nothrow<ITfRange> cloned_range;
+  if (FAILED(range->Clone(&cloned_range)) ||
+      !IsTsfContextFocusedForSnapshot(text_service_.get(), context.get(),
+                                      text_domain,
+                                      /*require_nonsecure=*/true)) {
     return E_FAIL;
   }
+  *new_range = cloned_range.detach();
   SaveToOptionalOutParam(TRUE, opt_convertible);
   return S_OK;
 }
@@ -116,29 +128,74 @@ TipReconvertFunction::GetReconversion(
   if (range == nullptr) {
     return E_INVALIDARG;
   }
+  if (candidate_list == nullptr) {
+    return E_INVALIDARG;
+  }
+  *candidate_list = nullptr;
+  const TsfFocusSnapshot text_domain =
+      CaptureTsfFocusSnapshot(text_service_->GetThreadContext());
+  wil::com_ptr_nothrow<ITfContext> context;
+  if (FAILED(range->GetContext(&context)) || context == nullptr ||
+      !IsTsfContextFocusedForSnapshot(text_service_.get(), context.get(),
+                                      text_domain,
+                                      /*require_nonsecure=*/true)) {
+    return E_FAIL;
+  }
+  const std::shared_ptr<TipPrivateContext> private_context =
+      text_service_->GetPrivateContext(context.get());
+  if (private_context == nullptr) {
+    return E_FAIL;
+  }
+  const uint64_t output_application_generation =
+      private_context->ReserveOutputApplicationForFocusDomain(
+          text_domain.focus_epoch, text_domain.focus_revision);
+  const auto is_reconversion_current = [&]() {
+    return IsTsfContextFocusedForSnapshot(text_service_.get(), context.get(),
+                                          text_domain,
+                                          /*require_nonsecure=*/true) &&
+           private_context->IsOutputApplicationForFocusDomain(
+               text_domain.focus_epoch, text_domain.focus_revision,
+               output_application_generation);
+  };
+  if (!is_reconversion_current()) {
+    return E_FAIL;
+  }
   std::unique_ptr<TipQueryProvider> provider(TipQueryProvider::Create());
   if (!provider) {
     return E_FAIL;
   }
   std::wstring query;
   if (!TipEditSession::GetTextSync(text_service_.get(), range, &query,
-                                   nullptr)) {
+                                   nullptr, text_domain.focus_epoch,
+                                   text_domain.focus_revision) ||
+      !is_reconversion_current()) {
     return E_FAIL;
   }
   std::vector<std::wstring> candidates;
-  if (!provider->Query(query, TipQueryProvider::kReconversion, &candidates)) {
+  if (!provider->Query(query, TipQueryProvider::kReconversion, &candidates) ||
+      !is_reconversion_current()) {
     return E_FAIL;
   }
   return SaveToOutParam(MakeComPtr<TipCandidateList>(
-                            std::move(candidates), OnCandidateFinalize(range)),
+                            std::move(candidates),
+                            OnCandidateFinalize(range, text_domain.focus_epoch,
+                                                text_domain.focus_revision,
+                                                output_application_generation)),
                         candidate_list);
 }
 
 TipCandidateOnFinalize TipReconvertFunction::OnCandidateFinalize(
-    wil::com_ptr_nothrow<ITfRange> range) const {
-  return [this, range = std::move(range)](size_t index,
-                                          std::wstring_view candidate) {
-    TipEditSession::SetTextAsync(text_service_.get(), candidate, range.get());
+    wil::com_ptr_nothrow<ITfRange> range, uint64_t focus_epoch,
+    int32_t focus_revision,
+    uint64_t output_application_generation) const {
+  wil::com_ptr_nothrow<TipTextService> text_service = text_service_;
+  return [text_service = std::move(text_service), range = std::move(range),
+          focus_epoch, focus_revision,
+          output_application_generation](size_t /*index*/,
+                                         std::wstring_view candidate) {
+    TipEditSession::SetTextAsync(text_service.get(), candidate, range.get(),
+                                 focus_epoch, focus_revision,
+                                 output_application_generation);
   };
 }
 

@@ -32,6 +32,7 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <memory>
 
 #include "client/client_interface.h"
@@ -62,9 +63,48 @@ class TipPrivateContext {
   SurrogatePairObserver* GetSurrogatePairObserver();
   TipUiElementManager* GetUiElementManager();
   VKBackBasedDeleter* GetDeleter();
+  void SetPendingOutputFocusDomain(uint64_t focus_epoch,
+                                   int32_t focus_revision,
+                                   uint64_t output_application_generation);
+  void ClearPendingOutputFocusDomain();
+  uint64_t pending_output_focus_epoch() const;
+  int32_t pending_output_focus_revision() const;
+  uint64_t pending_output_application_generation() const;
 
   const commands::Output& last_output() const;
-  commands::Output* mutable_last_output();
+  uint64_t last_output_generation() const;
+  void SetLastOutputForFocusDomain(const commands::Output& output,
+                                   uint64_t focus_epoch,
+                                   int32_t focus_revision);
+  bool IsLastOutputForFocusDomain(uint64_t focus_epoch,
+                                  int32_t focus_revision) const;
+  bool IsLastOutputForFocusDomainAndGeneration(
+      uint64_t focus_epoch, int32_t focus_revision,
+      uint64_t output_generation) const;
+  uint64_t ReserveOutputApplicationForFocusDomain(uint64_t focus_epoch,
+                                                   int32_t focus_revision);
+  bool IsOutputApplicationForFocusDomain(
+      uint64_t focus_epoch, int32_t focus_revision,
+      uint64_t output_application_generation) const;
+  uint64_t ReserveKeyTransactionForFocusDomain(uint64_t focus_epoch,
+                                                int32_t focus_revision);
+  bool IsKeyTransactionForFocusDomain(
+      uint64_t focus_epoch, int32_t focus_revision,
+      uint64_t key_transaction_generation) const;
+  uint64_t BeginCompositionForFocusDomain(uint64_t focus_epoch,
+                                          int32_t focus_revision);
+  void ClearCompositionFocusDomain();
+  bool IsCompositionForFocusDomain(uint64_t focus_epoch,
+                                   int32_t focus_revision) const;
+  bool IsCompositionForFocusDomainAndGeneration(
+      uint64_t focus_epoch, int32_t focus_revision,
+      uint64_t composition_generation) const;
+  bool ClearCompositionForFocusDomainAndGeneration(
+      uint64_t focus_epoch, int32_t focus_revision,
+      uint64_t composition_generation);
+  uint64_t composition_generation() const;
+  bool IsLatestCompositionGenerationInactive(
+      uint64_t composition_generation) const;
   const VirtualKey& last_down_key() const;
   VirtualKey* mutable_last_down_key();
 

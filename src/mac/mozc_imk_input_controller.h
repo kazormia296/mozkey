@@ -82,6 +82,15 @@
    * with. */
   std::string clientBundle_;
 
+  /** Stable identity for the current Grimodex input domain.  Zero is never emitted. */
+  uint64_t grimodexFocusEpoch_;
+  bool grimodexSecureInput_;
+  bool grimodexSecureInputInitialized_;
+  bool grimodexActive_;
+
+  /** Test-only override: -1 uses Carbon, 0 means non-secure, and 1 means secure. */
+  NSInteger secureInputOverrideForTest_;
+
   NSRange replacementRange_;
 
   /** |lastKeyDownTime_| and |lastKeyCode_| are used to handle double tapping. */
@@ -108,6 +117,12 @@
   std::unique_ptr<mozc::commands::SessionCommand> delayedSessionCommand_;
   __weak id delayedSessionCommandClient_;
   NSTimer *delayedSessionCommandTimer_;
+  uint64_t delayedSessionCommandFocusEpoch_;
+
+  /** Domain that produced the output pending candidate-window positioning. */
+  uint64_t rendererCommandFocusEpoch_;
+  /** One-shot provenance for the candidate UI currently owned by this controller. */
+  uint64_t rendererCallbackToken_;
 
   /** |mozcClient_| manages connection to the mozc server. */
   std::unique_ptr<mozc::client::ClientInterface> mozcClient_;
@@ -130,6 +145,8 @@
 @property(readwrite, retain) id imkClientForTest;
 @property(readwrite, assign) bool useLiveConversionForTest;
 @property(readwrite, assign) bool allowCandidateWindowForLiveConversionForTest;
+@property(readwrite, assign) NSInteger secureInputOverrideForTest;
+@property(readonly) uint64_t grimodexFocusEpochForTest;
 
 /** Sets the RendererReceiver used by all instances of the controller.
  * the RendererReceiver is a singleton object used as a proxy to receive messages from

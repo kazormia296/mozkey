@@ -11,17 +11,27 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <signal.h>
+#if defined(__linux__)
 #include <sys/prctl.h>
+#endif
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <crt_externs.h>
+#include <mach-o/dyld.h>
+#include <spawn.h>
+#endif
 #include <cstring>
 #endif
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -32,6 +42,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "session/zenz_named_pipe_endpoint.h"
 
 #if defined(_WIN32)
 #pragma comment(lib, "Advapi32.lib")
@@ -45,6 +57,9 @@ std::atomic<bool> g_llama_launch_started{false};
 std::atomic<bool> g_llama_ready_probe_started{false};
 std::atomic<bool> g_llama_server_ready{false};
 std::atomic<bool> g_shutdown_requested{false};
+#if !defined(_WIN32)
+volatile sig_atomic_t g_posix_shutdown_requested = 0;
+#endif
 std::atomic<uint64_t> g_llama_runtime_generation{0};
 
 std::mutex g_llama_process_mutex;
@@ -55,9 +70,8 @@ std::string g_effective_backend_device;
 HANDLE g_llama_process = nullptr;
 HANDLE g_llama_job = nullptr;
 
-constexpr wchar_t kDefaultPipeName[] = L"\\.\pipe\mozc_zenz_scorer";
 constexpr wchar_t kSingleInstanceMutexName[] =
-    L"Local\MozcZenzScorerSingleInstance";
+    LR"(Local\MozcZenzScorerSingleInstance)";
 #else
 pid_t g_llama_process = -1;
 #if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
@@ -93,6 +107,11 @@ constexpr uint32_t kMinLlamaReadyWaitMsec = 1500;
 constexpr uint32_t kMaxPromptBytes = 8192;
 constexpr uint32_t kMaxOutputChars = 256;
 constexpr uint32_t kMaxRequestTimeoutMsec = 5000;
+// The readiness probe performs the same small completion used to prove that
+// llama-server is usable.  Give it the full request budget: a shorter probe
+// can permanently keep the scorer in server_loading when inference succeeds
+// within the client SLA but takes longer than the probe-only timeout.
+constexpr uint32_t kLlamaReadyProbeTimeoutMsec = kMaxRequestTimeoutMsec;
 constexpr size_t kMaxHttpResponseBytes = 65536;
 constexpr uint32_t kMaxBackendDeviceBytes = 128;
 
@@ -127,7 +146,7 @@ struct ZenzWireResponseHeader {
 
 #if defined(_WIN32)
 struct Options {
-  std::wstring pipe_name = kDefaultPipeName;
+  std::wstring pipe_name;
   std::wstring host = kDefaultHost;
   int port = 0;
   std::string api_key;
@@ -345,6 +364,8 @@ bool FileExists(const std::wstring& path) {
 
 Options LoadOptions() {
   Options options;
+  options.pipe_name =
+      Utf8ToWide(mozc::session::kDefaultZenzNamedPipeName);
 
   const std::wstring exe_dir = GetExeDirectory();
 
@@ -462,7 +483,16 @@ std::string GenerateApiKey() {
 
 std::string GetExeDirectory() {
   char path[4096] = {};
-  ssize_t size = ::readlink("/proc/self/exe", path, sizeof(path) - 1);
+#if defined(__APPLE__)
+  uint32_t executable_path_size = sizeof(path);
+  const ssize_t size =
+      ::_NSGetExecutablePath(path, &executable_path_size) == 0
+          ? static_cast<ssize_t>(std::strlen(path))
+          : -1;
+#else
+  const ssize_t size =
+      ::readlink("/proc/self/exe", path, sizeof(path) - 1);
+#endif
   if (size <= 0) return ".";
   path[size] = '\0';
   std::string full(path);
@@ -1319,7 +1349,7 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
       if (HttpPostCompletion(
               options,
               "\xEE\xB8\x82\xEE\xB8\x80テスト\xEE\xB8\x81",
-              1500,
+              kLlamaReadyProbeTimeoutMsec,
               8,
               &value,
               &local_debug)) {
@@ -1728,9 +1758,11 @@ bool LlamaServerExited() {
   return false;
 }
 
-void HandleSignal(int sig) {
-  g_shutdown_requested = true;
-  StopLlamaServer();
+void HandleSignal(int) {
+  // Async signal handlers may only perform signal-safe operations. The accept
+  // loop observes this flag after EINTR and performs process shutdown, waits,
+  // mutex operations, and cleanup on normal control flow.
+  g_posix_shutdown_requested = 1;
 }
 
 bool LaunchLlamaServer(const Options& options, std::string* error) {
@@ -1743,8 +1775,75 @@ bool LaunchLlamaServer(const Options& options, std::string* error) {
     return false;
   }
 
-  Debug("launch llama-server port=random api_key_bytes=" + std::to_string(options.api_key.size()));
+  Debug("launch llama-server port=random api_key_bytes=" +
+        std::to_string(options.api_key.size()));
 
+  std::vector<std::string> args = {
+      options.llama_server_path,
+      "-m",
+      options.model_path,
+      "-c",
+      std::to_string(options.ctx),
+      "-t",
+      std::to_string(options.threads),
+      "--host",
+      "127.0.0.1",
+      "--port",
+      std::to_string(options.port),
+      "--api-key",
+      options.api_key,
+  };
+  if (!options.backend_device.empty()) {
+    args.push_back("--device");
+    args.push_back(options.backend_device);
+  }
+  std::vector<char*> c_args;
+  c_args.reserve(args.size() + 1);
+  for (auto& arg : args) {
+    c_args.push_back(arg.data());
+  }
+  c_args.push_back(nullptr);
+
+#if defined(__APPLE__)
+  // fork() is unsafe once the scorer has started background threads.  Build
+  // the complete argv and descriptor actions in the parent, then let Darwin's
+  // posix_spawn implementation create and exec the child without running our
+  // C++ code in a post-fork process.
+  posix_spawn_file_actions_t file_actions;
+  int spawn_result = ::posix_spawn_file_actions_init(&file_actions);
+  if (spawn_result != 0) {
+    *error = "posix_spawn_file_actions_failed";
+    return false;
+  }
+
+  const struct {
+    int descriptor;
+    int flags;
+  } redirects[] = {
+      {STDIN_FILENO, O_RDONLY},
+      {STDOUT_FILENO, O_WRONLY},
+      {STDERR_FILENO, O_WRONLY},
+  };
+  for (const auto& redirect : redirects) {
+    spawn_result = ::posix_spawn_file_actions_addopen(
+        &file_actions, redirect.descriptor, "/dev/null", redirect.flags, 0);
+    if (spawn_result != 0) {
+      break;
+    }
+  }
+
+  pid_t pid = -1;
+  if (spawn_result == 0) {
+    spawn_result = ::posix_spawn(
+        &pid, options.llama_server_path.c_str(), &file_actions, nullptr,
+        c_args.data(), *_NSGetEnviron());
+  }
+  ::posix_spawn_file_actions_destroy(&file_actions);
+  if (spawn_result != 0 || pid <= 0) {
+    *error = "posix_spawn_failed";
+    return false;
+  }
+#else
   pid_t pid = ::fork();
   if (pid < 0) {
     *error = "fork_failed";
@@ -1752,7 +1851,9 @@ bool LaunchLlamaServer(const Options& options, std::string* error) {
   }
 
   if (pid == 0) {
+#if defined(__linux__)
     ::prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
     int fd = ::open("/dev/null", O_RDWR);
     if (fd >= 0) {
       ::dup2(fd, STDIN_FILENO);
@@ -1761,27 +1862,10 @@ bool LaunchLlamaServer(const Options& options, std::string* error) {
       if (fd > 2) ::close(fd);
     }
 
-    std::vector<std::string> args = {
-        options.llama_server_path,
-        "-m", options.model_path,
-        "-c", std::to_string(options.ctx),
-        "-t", std::to_string(options.threads),
-        "--host", "127.0.0.1",
-        "--port", std::to_string(options.port),
-        "--api-key", options.api_key
-    };
-    if (!options.backend_device.empty()) {
-      args.push_back("--device");
-      args.push_back(options.backend_device);
-    }
-
-    std::vector<char*> c_args;
-    for (auto& a : args) c_args.push_back(const_cast<char*>(a.c_str()));
-    c_args.push_back(nullptr);
-
     ::execv(options.llama_server_path.c_str(), c_args.data());
     ::_exit(127);
   }
+#endif
 
   std::lock_guard<std::mutex> lock(g_llama_process_mutex);
   g_llama_process = pid;
@@ -1981,7 +2065,7 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
       if (HttpPostCompletion(
               options,
               "\xEE\xB8\x82\xEE\xB8\x80テスト\xEE\xB8\x81",
-              1500,
+              kLlamaReadyProbeTimeoutMsec,
               8,
               &value,
               &local_debug)) {
@@ -2182,6 +2266,81 @@ void HandleClient(ZenzSocketHandle pipe, const Options& options) {
   SendResponse(pipe, request_header.generation, kStatusOk, latency, value, debug);
 }
 
+bool RemoveOwnedSocketIfPresent(const std::string& socket_path) {
+  struct stat socket_info = {};
+  if (::lstat(socket_path.c_str(), &socket_info) != 0) {
+    return errno == ENOENT;
+  }
+  if (!S_ISSOCK(socket_info.st_mode) ||
+      socket_info.st_uid != ::geteuid()) {
+    return false;
+  }
+  return ::unlink(socket_path.c_str()) == 0;
+}
+
+int CreatePrivateUnixSocket(const std::string& socket_path) {
+  struct sockaddr_un addr = {};
+  if (socket_path.empty() || socket_path.front() != '/' ||
+      socket_path.size() >= sizeof(addr.sun_path) ||
+      !RemoveOwnedSocketIfPresent(socket_path)) {
+    return -1;
+  }
+
+  const int server_sock = ::socket(AF_UNIX, SOCK_STREAM, 0);
+  if (server_sock < 0) {
+    return -1;
+  }
+  if (::fcntl(server_sock, F_SETFD, FD_CLOEXEC) != 0) {
+    ::close(server_sock);
+    return -1;
+  }
+
+  addr.sun_family = AF_UNIX;
+  std::memcpy(addr.sun_path, socket_path.c_str(), socket_path.size() + 1);
+  const socklen_t addr_size = static_cast<socklen_t>(
+      offsetof(struct sockaddr_un, sun_path) + socket_path.size() + 1);
+#if defined(__APPLE__)
+  addr.sun_len = static_cast<unsigned char>(addr_size);
+#endif
+
+  const mode_t old_umask = ::umask(0077);
+  const int bind_result =
+      ::bind(server_sock, reinterpret_cast<struct sockaddr*>(&addr), addr_size);
+  ::umask(old_umask);
+  if (bind_result != 0) {
+    const int error = errno;
+    ::close(server_sock);
+    errno = error;
+    return -1;
+  }
+  if (::chmod(socket_path.c_str(), 0600) != 0) {
+    const int error = errno;
+    ::close(server_sock);
+    ::unlink(socket_path.c_str());
+    errno = error;
+    return -1;
+  }
+
+  return server_sock;
+}
+
+int OpenPrivateLockFile(const std::string& lock_path) {
+  const int lock_fd =
+      ::open(lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
+             0600);
+  if (lock_fd < 0) {
+    return -1;
+  }
+
+  struct stat lock_info = {};
+  if (::fstat(lock_fd, &lock_info) != 0 || !S_ISREG(lock_info.st_mode) ||
+      lock_info.st_uid != ::geteuid() || ::fchmod(lock_fd, 0600) != 0) {
+    ::close(lock_fd);
+    return -1;
+  }
+  return lock_fd;
+}
+
 int RunServer(const Options& options) {
   Debug("server start " + RedactedWideChars("pipe_name", options.pipe_name) +
         " " + RedactedWideChars("llama_server_path", options.llama_server_path) +
@@ -2199,30 +2358,20 @@ int RunServer(const Options& options) {
   std::string socket_path = options.pipe_name.empty() ?
       (std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + kDefaultPipeNameSuffix) : options.pipe_name;
 
-  int server_sock = ::socket(AF_UNIX, SOCK_STREAM, 0);
+  const int server_sock = CreatePrivateUnixSocket(socket_path);
   if (server_sock < 0) {
-    Debug("Failed to create UNIX domain socket");
-    return 1;
-  }
-
-  struct sockaddr_un addr = {};
-  addr.sun_family = AF_UNIX;
-  std::strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
-  ::unlink(socket_path.c_str());
-
-  if (::bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    Debug("Failed to bind UNIX domain socket");
-    ::close(server_sock);
+    Debug("Failed to create private UNIX domain socket");
     return 1;
   }
 
   if (::listen(server_sock, 128) < 0) {
     Debug("Failed to listen on UNIX domain socket");
     ::close(server_sock);
+    ::unlink(socket_path.c_str());
     return 1;
   }
 
-  while (!g_shutdown_requested.load()) {
+  while (!g_shutdown_requested.load() && !g_posix_shutdown_requested) {
     struct sockaddr_un client_addr;
     socklen_t client_len = sizeof(client_addr);
     int client_sock = ::accept(server_sock, (struct sockaddr*)&client_addr, &client_len);
@@ -2273,9 +2422,13 @@ int wmain() {
 }
 #else
 int main() {
+  // Darwin does not provide MSG_NOSIGNAL. Ignore SIGPIPE so a client that
+  // disconnects mid-response cannot terminate the scorer process.
+  ::signal(SIGPIPE, SIG_IGN);
+
   struct sigaction sa = {};
   sa.sa_handler = HandleSignal;
-  ::sigfillset(&sa.sa_mask);
+  sigfillset(&sa.sa_mask);
   ::sigaction(SIGINT, &sa, nullptr);
   ::sigaction(SIGTERM, &sa, nullptr);
   ::sigaction(SIGHUP, &sa, nullptr);
@@ -2287,26 +2440,26 @@ int main() {
 #else
       "/.mozc_zenz_scorer.lock";
 #endif
-  int lock_fd = ::open(lock_path.c_str(), O_RDWR | O_CREAT, 0600);
-  if (lock_fd >= 0) {
-    struct flock fl = {};
-    fl.l_type = F_WRLCK;
-    fl.l_whence = SEEK_SET;
-    if (::fcntl(lock_fd, F_SETLK, &fl) < 0) {
-      Debug("another scorer instance already exists");
-      ::close(lock_fd);
-      return 0;
-    }
+  int lock_fd = OpenPrivateLockFile(lock_path);
+  if (lock_fd < 0) {
+    Debug("failed to open private scorer lock");
+    return 1;
+  }
+  struct flock fl = {};
+  fl.l_type = F_WRLCK;
+  fl.l_whence = SEEK_SET;
+  if (::fcntl(lock_fd, F_SETLK, &fl) < 0) {
+    Debug("another scorer instance already exists");
+    ::close(lock_fd);
+    return 0;
   }
 
   const Options options = LoadOptions();
   const int result = RunServer(options);
 
   StopLlamaServer();
-  if (lock_fd >= 0) {
-    ::close(lock_fd);
-    ::unlink(lock_path.c_str());
-  }
+  ::close(lock_fd);
+  ::unlink(lock_path.c_str());
 
   return result;
 }

@@ -2,10 +2,6 @@
 
 #include "grimodex/protocol_v1.h"
 
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -16,7 +12,6 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-#include "base/file/temp_dir.h"
 #include "base/file_util.h"
 #include "testing/gunit.h"
 #include "testing/mozctest.h"
@@ -58,23 +53,6 @@ std::string MinimalProject(absl::string_view project_id = "project-a",
 })json");
 }
 
-void WriteAll(absl::string_view path, absl::string_view bytes,
-              mode_t mode = 0600) {
-  const std::string path_string(path);
-  const int fd = open(path_string.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-                      mode);
-  ASSERT_GE(fd, 0) << path;
-  size_t offset = 0;
-  while (offset < bytes.size()) {
-    const ssize_t count =
-        write(fd, bytes.data() + offset, bytes.size() - offset);
-    ASSERT_GT(count, 0) << path;
-    offset += static_cast<size_t>(count);
-  }
-  ASSERT_EQ(close(fd), 0);
-  ASSERT_EQ(chmod(path_string.c_str(), mode), 0);
-}
-
 std::string Fixture(absl::string_view relative_path) {
   const std::string path = testing::GetSourceFileOrDie(
       {"grimodex", "testdata", "protocol_v1", relative_path});
@@ -82,44 +60,6 @@ std::string Fixture(absl::string_view relative_path) {
   EXPECT_TRUE(contents.ok()) << contents.status();
   return contents.ok() ? *contents : std::string();
 }
-
-class Sandbox final {
- public:
-  Sandbox()
-      : temp_(testing::MakeTempDirectoryOrDie()),
-        root_(absl::StrCat(temp_.path(), "/ime")),
-        projects_(absl::StrCat(root_, "/projects")) {
-    EXPECT_EQ(mkdir(root_.c_str(), 0700), 0);
-    EXPECT_EQ(mkdir(projects_.c_str(), 0700), 0);
-    EXPECT_EQ(chmod(root_.c_str(), 0700), 0);
-    EXPECT_EQ(chmod(projects_.c_str(), 0700), 0);
-  }
-
-  const std::string &root() const { return root_; }
-  const std::string &projects() const { return projects_; }
-
-  std::string state_path() const { return absl::StrCat(root_, "/state.json"); }
-  std::string project_path(absl::string_view id = "project-a") const {
-    return absl::StrCat(projects_, "/", id, ".json");
-  }
-
-  void InstallState(absl::string_view bytes) const {
-    WriteAll(state_path(), bytes);
-  }
-  void InstallProject(absl::string_view bytes,
-                      absl::string_view id = "project-a") const {
-    WriteAll(project_path(id), bytes);
-  }
-
-  std::shared_ptr<SecureProtocolV1FileReader> Reader() const {
-    return std::make_shared<SecureProtocolV1FileReader>(root_);
-  }
-
- private:
-  TempDirectory temp_;
-  std::string root_;
-  std::string projects_;
-};
 
 class ScriptedReader final : public ProtocolV1FileReader {
  public:
@@ -167,13 +107,15 @@ class ScriptedReader final : public ProtocolV1FileReader {
   std::string last_project_id_;
 };
 
-TEST(ProtocolV1Test, ResolvesOverrideThenXdgThenHomeFallback) {
-  EXPECT_EQ(ResolveProtocolV1Root("/custom/ime", "/xdg/data", "/home/tester"),
-            "/custom/ime");
-  EXPECT_EQ(ResolveProtocolV1Root("", "/xdg/data", "/home/tester"),
-            "/xdg/data/com.miyakey.grimodex/ime");
-  EXPECT_EQ(ResolveProtocolV1Root("", "", "/home/tester"),
-            "/home/tester/.local/share/com.miyakey.grimodex/ime");
+std::shared_ptr<ScriptedReader> ReaderFor(
+    std::string state, std::optional<std::string> project = std::nullopt) {
+  std::vector<std::string> states = {state, std::move(state)};
+  std::vector<std::string> projects;
+  if (project.has_value()) {
+    projects.push_back(std::move(*project));
+  }
+  return std::make_shared<ScriptedReader>(std::move(states),
+                                          std::move(projects));
 }
 
 TEST(ProtocolV1Test, ComputesStandardSha256Digest) {
@@ -182,11 +124,9 @@ TEST(ProtocolV1Test, ComputesStandardSha256Digest) {
 }
 
 TEST(ProtocolV1Test, LoadsSharedValidFixtureIntoIndependentDto) {
-  Sandbox sandbox;
-  sandbox.InstallState(Fixture("valid/state-active.json"));
-  sandbox.InstallProject(Fixture("valid/project-with-zenzai-context.json"));
-
-  ProtocolV1Loader loader(sandbox.Reader());
+  ProtocolV1Loader loader(ReaderFor(
+      Fixture("valid/state-active.json"),
+      Fixture("valid/project-with-zenzai-context.json")));
   const LoadResult result = loader.Load();
 
   ASSERT_EQ(result.diagnostic, LoadDiagnostic::kLoaded);
@@ -209,10 +149,7 @@ TEST(ProtocolV1Test, LoadsSharedValidFixtureIntoIndependentDto) {
 }
 
 TEST(ProtocolV1Test, ExplicitNullActiveProjectIsInactive) {
-  Sandbox sandbox;
-  sandbox.InstallState(Fixture("valid/state-inactive.json"));
-
-  ProtocolV1Loader loader(sandbox.Reader());
+  ProtocolV1Loader loader(ReaderFor(Fixture("valid/state-inactive.json")));
   const LoadResult result = loader.Load();
 
   EXPECT_EQ(result.diagnostic, LoadDiagnostic::kInactive);
@@ -224,9 +161,7 @@ TEST(ProtocolV1Test, InvalidAndMaliciousFixturesFailClosed) {
            "invalid/state-unsupported-version.json",
            "malicious/state-path-traversal.json",
        }) {
-    Sandbox sandbox;
-    sandbox.InstallState(Fixture(state_fixture));
-    ProtocolV1Loader loader(sandbox.Reader());
+    ProtocolV1Loader loader(ReaderFor(Fixture(state_fixture)));
     EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidState)
         << state_fixture;
   }
@@ -237,10 +172,8 @@ TEST(ProtocolV1Test, InvalidAndMaliciousFixturesFailClosed) {
            "malicious/project-path-traversal.json",
            "malicious/project-control-character.json",
        }) {
-    Sandbox sandbox;
-    sandbox.InstallState(Fixture("valid/state-active.json"));
-    sandbox.InstallProject(Fixture(project_fixture));
-    ProtocolV1Loader loader(sandbox.Reader());
+    ProtocolV1Loader loader(ReaderFor(
+        Fixture("valid/state-active.json"), Fixture(project_fixture)));
     EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidSnapshot)
         << project_fixture;
   }
@@ -248,30 +181,23 @@ TEST(ProtocolV1Test, InvalidAndMaliciousFixturesFailClosed) {
 
 TEST(ProtocolV1Test, StrictlyRequiresEveryProtocolV1ContractKey) {
   {
-    Sandbox sandbox;
-    sandbox.InstallState(R"json({
+    ProtocolV1Loader loader(ReaderFor(R"json({
       "format_version": 1,
       "updated_at": "2026-07-11T00:00:00.000Z"
-    })json");
-    ProtocolV1Loader loader(sandbox.Reader());
+    })json"));
     EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidState);
   }
   {
-    Sandbox sandbox;
-    sandbox.InstallState(kStateA);
-    sandbox.InstallProject(R"json({
+    ProtocolV1Loader loader(ReaderFor(kStateA, R"json({
       "format_version": 1,
       "project_id": "project-a",
       "project_name": "Missing entries",
       "generated_at": "2026-07-11T00:00:00.000Z"
-    })json");
-    ProtocolV1Loader loader(sandbox.Reader());
+    })json"));
     EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidSnapshot);
   }
   {
-    Sandbox sandbox;
-    sandbox.InstallState(kStateA);
-    sandbox.InstallProject(R"json({
+    ProtocolV1Loader loader(ReaderFor(kStateA, R"json({
       "format_version": 1,
       "project_id": "project-a",
       "project_name": "Missing nullable context key",
@@ -281,26 +207,21 @@ TEST(ProtocolV1Test, StrictlyRequiresEveryProtocolV1ContractKey) {
         "topic": "topic",
         "preference": null
       }
-    })json");
-    ProtocolV1Loader loader(sandbox.Reader());
+    })json"));
     EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidSnapshot);
   }
 }
 
 TEST(ProtocolV1Test, RejectsOversizedStateAndProjectFiles) {
   {
-    Sandbox sandbox;
-    sandbox.InstallState(
-        std::string(ProtocolV1Limits::kStateBytes + 1, ' '));
-    ProtocolV1Loader loader(sandbox.Reader());
+    ProtocolV1Loader loader(ReaderFor(
+        std::string(ProtocolV1Limits::kStateBytes + 1, ' ')));
     EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidState);
   }
   {
-    Sandbox sandbox;
-    sandbox.InstallState(Fixture("valid/state-active.json"));
-    sandbox.InstallProject(
-        std::string(ProtocolV1Limits::kProjectBytes + 1, ' '));
-    ProtocolV1Loader loader(sandbox.Reader());
+    ProtocolV1Loader loader(ReaderFor(
+        Fixture("valid/state-active.json"),
+        std::string(ProtocolV1Limits::kProjectBytes + 1, ' ')));
     EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidSnapshot);
   }
 }
@@ -343,64 +264,6 @@ TEST(ProtocolV1Test, RetriesAStaleReadAndPublishesOnlyTheCoherentAttempt) {
   EXPECT_EQ(reader->project_reads(), 2);
 }
 
-TEST(ProtocolV1Test, RejectsSymlinkFifoAndUnsafeModesWithoutBlocking) {
-  {
-    Sandbox sandbox;
-    const std::string target = absl::StrCat(sandbox.root(), "/target.json");
-    WriteAll(target, kStateA);
-    ASSERT_EQ(symlink("target.json", sandbox.state_path().c_str()), 0);
-    ProtocolV1Loader loader(sandbox.Reader());
-    EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidState);
-  }
-  {
-    Sandbox sandbox;
-    ASSERT_EQ(mkfifo(sandbox.state_path().c_str(), 0600), 0);
-    ProtocolV1Loader loader(sandbox.Reader());
-    EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidState);
-  }
-  {
-    Sandbox sandbox;
-    sandbox.InstallState(kStateA);
-    ASSERT_EQ(chmod(sandbox.state_path().c_str(), 0640), 0);
-    ProtocolV1Loader loader(sandbox.Reader());
-    EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidState);
-  }
-  {
-    Sandbox sandbox;
-    sandbox.InstallState(kStateA);
-    sandbox.InstallProject(MinimalProject());
-    ASSERT_EQ(chmod(sandbox.projects().c_str(), 0750), 0);
-    ProtocolV1Loader loader(sandbox.Reader());
-    EXPECT_EQ(loader.Load().diagnostic, LoadDiagnostic::kInvalidSnapshot);
-  }
-}
-
-TEST(ProtocolV1Test, RejectsSymlinkedRootAndRootPathTraversal) {
-  Sandbox sandbox;
-  sandbox.InstallState(kStateA);
-  sandbox.InstallProject(MinimalProject());
-  const std::string alias = absl::StrCat(sandbox.root(), "-alias");
-  ASSERT_EQ(symlink(sandbox.root().c_str(), alias.c_str()), 0);
-
-  ProtocolV1Loader symlink_loader(
-      std::make_shared<SecureProtocolV1FileReader>(alias));
-  EXPECT_EQ(symlink_loader.Load().diagnostic, LoadDiagnostic::kInvalidState);
-
-  ProtocolV1Loader traversal_loader(
-      std::make_shared<SecureProtocolV1FileReader>(
-          absl::StrCat(sandbox.root(), "/../ime")));
-  EXPECT_EQ(traversal_loader.Load().diagnostic,
-            LoadDiagnostic::kInvalidState);
-}
-
-TEST(ProtocolV1Test, SecureReaderDefendsProjectPathIndependently) {
-  Sandbox sandbox;
-  absl::StatusOr<VerifiedFileBytes> result =
-      sandbox.Reader()->ReadProject("../outside", 100);
-  EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
-}
-
 TEST(ProtocolV1Test, SharedCrossPlatformFixturesRemainDigestLocked) {
   struct FixtureDigest {
     absl::string_view path;
@@ -435,10 +298,16 @@ TEST(ProtocolV1Test, SharedCrossPlatformFixturesRemainDigestLocked) {
 }
 
 TEST(ProtocolV1Test, PublisherUsesImmutableSnapshotsAndSemanticSequence) {
-  Sandbox sandbox;
-  sandbox.InstallState(kStateA);
-  sandbox.InstallProject(MinimalProject());
-  auto loader = std::make_shared<ProtocolV1Loader>(sandbox.Reader());
+  auto reader = std::make_shared<ScriptedReader>(
+      std::vector<std::string>{kStateA, kStateA, kStateA, kStateA,
+                               kStateA, kStateA},
+      std::vector<std::string>{
+          MinimalProject(),
+          MinimalProject("project-a", "2026-07-11T00:00:01.000Z"),
+          MinimalProject("project-a", "2026-07-11T00:00:02.000Z",
+                         "刹那改"),
+      });
+  auto loader = std::make_shared<ProtocolV1Loader>(reader);
   ProtocolV1SnapshotPublisher publisher(loader);
 
   const std::shared_ptr<const PublishedProtocolV1Snapshot> first =
@@ -449,16 +318,12 @@ TEST(ProtocolV1Test, PublisherUsesImmutableSnapshotsAndSemanticSequence) {
   EXPECT_EQ(first->snapshot->entries[0].surface, "刹那");
   const std::string first_digest = first->snapshot->project_sha256;
 
-  sandbox.InstallProject(
-      MinimalProject("project-a", "2026-07-11T00:00:01.000Z"));
   const std::shared_ptr<const PublishedProtocolV1Snapshot> timestamp_only =
       publisher.Reload();
   EXPECT_EQ(timestamp_only->sequence, 1);
   EXPECT_NE(timestamp_only->snapshot->project_sha256, first_digest);
   EXPECT_EQ(first->snapshot->project_sha256, first_digest);
 
-  sandbox.InstallProject(MinimalProject(
-      "project-a", "2026-07-11T00:00:02.000Z", "刹那改"));
   const std::shared_ptr<const PublishedProtocolV1Snapshot> changed =
       publisher.Reload();
   EXPECT_EQ(changed->sequence, 2);

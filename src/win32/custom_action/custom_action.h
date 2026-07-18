@@ -63,6 +63,11 @@ UINT __stdcall ShutdownServer(MSIHANDLE msi_handle);
 // uninstall_helper.h for details.
 UINT __stdcall RestoreUserIMEEnvironment(MSIHANDLE msi_handle);
 
+// Stops and proves the exact installed server absent, then removes only
+// Mozkey's per-user Grimodex consumer heartbeat. This checked action is
+// reserved for an explicit uninstall and must not run during an upgrade.
+UINT __stdcall UnregisterGrimodexConsumer(MSIHANDLE msi_handle);
+
 // Hides the cancel button on a progress dialog shown by the installer.
 UINT __stdcall HideCancelButton(MSIHANDLE msi_handle);
 

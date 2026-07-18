@@ -1,6 +1,12 @@
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
-load("//:build_defs.bzl", "MOZC_TAGS", "mozc_cc_library", "mozc_cc_test")
+load(
+    "//:build_defs.bzl",
+    "MOZC_TAGS",
+    "mozc_cc_library",
+    "mozc_cc_test",
+    "mozc_select",
+)
 
 package(default_visibility = ["//:__subpackages__"])
 
@@ -16,16 +22,137 @@ cc_proto_library(
 )
 
 mozc_cc_library(
+    name = "client_context",
+    srcs = ["client_context.cc"],
+    hdrs = ["client_context.h"],
+    deps = ["//protocol:commands_cc_proto"],
+)
+
+mozc_cc_library(
+    name = "consumer_handshake",
+    srcs = ["consumer_handshake.cc"],
+    hdrs = ["consumer_handshake.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_library(
+    name = "consumer_file_registrar",
+    hdrs = ["consumer_file_registrar.h"],
+    deps = [
+        ":consumer_handshake",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "consumer_heartbeat",
+    srcs = ["consumer_heartbeat.cc"],
+    hdrs = ["consumer_heartbeat.h"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_library(
+    name = "consumer_runtime_capability",
+    srcs = ["consumer_runtime_capability.cc"],
+    hdrs = ["consumer_runtime_capability.h"],
+    deps = ["@com_google_absl//absl/strings:string_view"],
+)
+
+mozc_cc_library(
+    name = "consumer_file_registrar_posix",
+    srcs = ["consumer_file_registrar_posix.cc"],
+    hdrs = ["consumer_file_registrar_posix.h"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "consumer_file_registrar_windows",
+    srcs = ["consumer_file_registrar_windows.cc"],
+    hdrs = ["consumer_file_registrar_windows.h"],
+    linkopts = select({
+        "@platforms//os:windows": ["Advapi32.lib"],
+        "//conditions:default": [],
+    }),
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        ":protocol_v1_windows_secure_reader",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "desktop_consumer_heartbeat",
+    srcs = ["desktop_consumer_heartbeat.cc"],
+    hdrs = ["desktop_consumer_heartbeat.h"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        ":consumer_heartbeat",
+        "//base:environ",
+        "//base:thread",
+        "//base:version",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+    ] + mozc_select(
+        macos = [
+            ":consumer_file_registrar_posix",
+            ":consumer_runtime_capability",
+            ":protocol_v1_secure_reader",
+            "//base:file_util",
+            "//base:system_util",
+        ],
+        windows = [
+            ":consumer_file_registrar_windows",
+            ":consumer_runtime_capability",
+            ":protocol_v1_windows_secure_reader",
+            "//base:file_util",
+            "//base:system_util",
+            "//base/win32:wide_char",
+        ],
+    ),
+)
+
+mozc_cc_library(
     name = "protocol_v1",
     srcs = ["protocol_v1.cc"],
     hdrs = ["protocol_v1.h"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":protocol_v1_cc_proto",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_protobuf//:json_util",
         "@com_google_protobuf//:protobuf",
@@ -33,11 +160,45 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "protocol_v1_secure_reader",
+    srcs = ["protocol_v1_secure_reader.cc"],
+    hdrs = ["protocol_v1_secure_reader.h"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
+    deps = [
+        ":protocol_v1",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "protocol_v1_windows_secure_reader",
+    srcs = ["protocol_v1_windows_secure_reader.cc"],
+    hdrs = ["protocol_v1_windows_secure_reader.h"],
+    linkopts = select({
+        "@platforms//os:windows": ["Advapi32.lib"],
+        "//conditions:default": [],
+    }),
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":protocol_v1",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
     name = "project_dictionary_bridge",
     srcs = ["project_dictionary_bridge.cc"],
     hdrs = ["project_dictionary_bridge.h"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":protocol_v1",
         "//dictionary:project_dictionary",
@@ -50,8 +211,6 @@ mozc_cc_library(
     name = "project_dictionary_provider",
     srcs = ["project_dictionary_provider.cc"],
     hdrs = ["project_dictionary_provider.h"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":project_dictionary_bridge",
         ":protocol_v1",
@@ -60,13 +219,23 @@ mozc_cc_library(
     ],
 )
 
+mozc_cc_library(
+    name = "project_dictionary_provider_factory",
+    srcs = ["project_dictionary_provider_factory.cc"],
+    hdrs = ["project_dictionary_provider_factory.h"],
+    deps = [
+        ":project_dictionary_bridge",
+        ":project_dictionary_provider",
+        ":protocol_v1",
+        "//dictionary:project_dictionary",
+    ],
+)
+
 mozc_cc_test(
     name = "protocol_v1_test",
     size = "small",
     srcs = ["protocol_v1_test.cc"],
     data = glob(["testdata/protocol_v1/**/*.json"]),
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":protocol_v1",
         "//base:file_util",
@@ -79,11 +248,146 @@ mozc_cc_test(
 )
 
 mozc_cc_test(
+    name = "client_context_test",
+    size = "small",
+    srcs = ["client_context_test.cc"],
+    deps = [
+        ":client_context",
+        "//protocol:commands_cc_proto",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_handshake_test",
+    size = "small",
+    srcs = ["consumer_handshake_test.cc"],
+    deps = [
+        ":consumer_handshake",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+        "@com_google_protobuf//:json_util",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_heartbeat_test",
+    size = "small",
+    srcs = ["consumer_heartbeat_test.cc"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        ":consumer_heartbeat",
+        ":desktop_consumer_heartbeat",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_runtime_capability_test",
+    size = "small",
+    srcs = ["consumer_runtime_capability_test.cc"],
+    deps = [
+        ":consumer_runtime_capability",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_file_registrar_posix_test",
+    size = "small",
+    srcs = ["consumer_file_registrar_posix_test.cc"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
+    deps = [
+        ":consumer_file_registrar_posix",
+        ":consumer_handshake",
+        "//base:file_util",
+        "//base/file:temp_dir",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_file_registrar_windows_test",
+    size = "small",
+    srcs = ["consumer_file_registrar_windows_test.cc"],
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":consumer_file_registrar_windows",
+        ":consumer_handshake",
+        ":desktop_consumer_heartbeat",
+        ":protocol_v1_windows_secure_reader",
+        "//base:file_util",
+        "//base/file:temp_dir",
+        "//base/win32:wide_char",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "protocol_v1_secure_reader_test",
+    size = "small",
+    srcs = ["protocol_v1_secure_reader_test.cc"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
+    deps = [
+        ":protocol_v1",
+        ":protocol_v1_secure_reader",
+        "//base:file_util",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "protocol_v1_windows_secure_reader_test",
+    size = "small",
+    srcs = ["protocol_v1_windows_secure_reader_test.cc"],
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":protocol_v1",
+        ":protocol_v1_windows_secure_reader",
+        "//base:file_util",
+        "//base/win32:wide_char",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
     name = "project_dictionary_bridge_test",
     size = "small",
     srcs = ["project_dictionary_bridge_test.cc"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":project_dictionary_bridge",
         ":protocol_v1",
@@ -98,8 +402,6 @@ mozc_cc_test(
     name = "project_dictionary_provider_test",
     size = "small",
     srcs = ["project_dictionary_provider_test.cc"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":project_dictionary_bridge",
         ":project_dictionary_provider",
@@ -110,5 +412,18 @@ mozc_cc_test(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+test_suite(
+    name = "portable_protocol_v1_tests",
+    tests = [
+        ":client_context_test",
+        ":consumer_handshake_test",
+        ":consumer_heartbeat_test",
+        ":consumer_runtime_capability_test",
+        ":project_dictionary_bridge_test",
+        ":project_dictionary_provider_test",
+        ":protocol_v1_test",
     ],
 )

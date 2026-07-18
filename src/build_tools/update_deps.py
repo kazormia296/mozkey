@@ -350,6 +350,16 @@ def extract_llvm(archive: ArchiveInfo, dryrun: bool = False) -> None:
           f.extractall(path=dest, filter=filter)
       else:
         f.extractall(path=dest, members=llvm_extract_filter(f))
+    # The pinned llama.cpp Windows ARM64 toolchain invokes the GNU-style
+    # clang/clang++ driver names.  Clang selects its driver mode from argv[0],
+    # so expose the checksum-verified clang-cl binary under those names too.
+    clang_driver = dest.joinpath('bin', 'clang-cl.exe')
+    if not clang_driver.is_file():
+      raise FileNotFoundError(
+          f'Could not find extracted compiler: {clang_driver}'
+      )
+    for name in ('clang.exe', 'clang++.exe'):
+      shutil.copyfile(clang_driver, dest.joinpath('bin', name))
 
 
 def msys2_extract_filter(

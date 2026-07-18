@@ -147,6 +147,8 @@ void WindowManager::Initialize() {
 }
 
 void WindowManager::AsyncHideAllWindows() {
+  main_window_->SetRendererCallbackToken(0);
+  cascading_window_->SetRendererCallbackToken(0);
   last_live_conversion_passive_suggestion_visible_ = false;
   has_last_live_conversion_passive_suggestion_rect_ = false;
   cascading_window_->ShowWindowAsync(SW_HIDE);
@@ -156,6 +158,8 @@ void WindowManager::AsyncHideAllWindows() {
 }
 
 void WindowManager::AsyncQuitAllWindows() {
+  main_window_->SetRendererCallbackToken(0);
+  cascading_window_->SetRendererCallbackToken(0);
   last_live_conversion_passive_suggestion_visible_ = false;
   has_last_live_conversion_passive_suggestion_rect_ = false;
   cascading_window_->PostMessage(WM_CLOSE, 0, 0);
@@ -165,6 +169,8 @@ void WindowManager::AsyncQuitAllWindows() {
 }
 
 void WindowManager::DestroyAllWindows() {
+  main_window_->SetRendererCallbackToken(0);
+  cascading_window_->SetRendererCallbackToken(0);
   last_live_conversion_passive_suggestion_visible_ = false;
   has_last_live_conversion_passive_suggestion_rect_ = false;
   if (main_window_->IsWindow()) {
@@ -181,6 +187,8 @@ void WindowManager::DestroyAllWindows() {
 }
 
 void WindowManager::HideAllWindows() {
+  main_window_->SetRendererCallbackToken(0);
+  cascading_window_->SetRendererCallbackToken(0);
   last_live_conversion_passive_suggestion_visible_ = false;
   has_last_live_conversion_passive_suggestion_rect_ = false;
   main_window_->HideWithEffects();
@@ -195,6 +203,14 @@ void WindowManager::HideAllWindows() {
 //   and candidate windows.
 void WindowManager::UpdateLayout(const commands::RendererCommand& command) {
   typedef mozc::commands::RendererCommand::ApplicationInfo ApplicationInfo;
+
+  const uint64_t renderer_callback_token =
+      command.visible() && command.has_application_info() &&
+              command.application_info().has_renderer_callback_token()
+          ? command.application_info().renderer_callback_token()
+          : 0;
+  main_window_->SetRendererCallbackToken(renderer_callback_token);
+  cascading_window_->SetRendererCallbackToken(renderer_callback_token);
 
   // Hide all UI elements if |command.visible()| is false.
   if (!command.visible()) {

@@ -66,10 +66,14 @@ class TipCandidateListImpl final
  public:
   TipCandidateListImpl(TipUiElementConventional::UIType type,
                        wil::com_ptr_nothrow<TipTextService> text_service,
-                       wil::com_ptr_nothrow<ITfContext> context)
+                       wil::com_ptr_nothrow<ITfContext> context,
+                       TsfFocusSnapshot element_domain,
+                       uint64_t output_generation)
       : delegate_(TipUiElementDelegateFactory::Create(std::move(text_service),
                                                       std::move(context),
-                                                      ToDelegateType(type))) {}
+                                                      ToDelegateType(type),
+                                                      element_domain,
+                                                      output_generation)) {}
 
  private:
   // The IUnknown interface methods.
@@ -156,10 +160,13 @@ class TipCandidateListImpl final
 class TipIndicatorImpl final : public TipComImplements<ITfToolTipUIElement> {
  public:
   TipIndicatorImpl(wil::com_ptr_nothrow<TipTextService> text_service,
-                   wil::com_ptr_nothrow<ITfContext> context)
+                   wil::com_ptr_nothrow<ITfContext> context,
+                   TsfFocusSnapshot element_domain,
+                   uint64_t output_generation)
       : delegate_(TipUiElementDelegateFactory::Create(
             std::move(text_service), std::move(context),
-            TipUiElementDelegateFactory::kConventionalIndicatorWindow)) {}
+            TipUiElementDelegateFactory::kConventionalIndicatorWindow,
+            element_domain, output_generation)) {}
 
   // The ITfUIElement interface methods
   STDMETHODIMP GetDescription(BSTR* description) override {
@@ -183,7 +190,8 @@ class TipIndicatorImpl final : public TipComImplements<ITfToolTipUIElement> {
 wil::com_ptr_nothrow<ITfUIElement> TipUiElementConventional::New(
     TipUiElementConventional::UIType type,
     wil::com_ptr_nothrow<TipTextService> text_service,
-    wil::com_ptr_nothrow<ITfContext> context) {
+    wil::com_ptr_nothrow<ITfContext> context,
+    TsfFocusSnapshot element_domain, uint64_t output_generation) {
   if (!text_service || !context) return nullptr;
   switch (type) {
     case TipUiElementConventional::kUnobservableSuggestWindow:
@@ -192,10 +200,13 @@ wil::com_ptr_nothrow<ITfUIElement> TipUiElementConventional::New(
       [[fallthrough]];
     case TipUiElementConventional::kCandidateWindow:
       return MakeComPtr<TipCandidateListImpl>(type, std::move(text_service),
-                                              std::move(context));
+                                              std::move(context),
+                                              element_domain,
+                                              output_generation);
     case TipUiElementConventional::KIndicatorWindow:
       return MakeComPtr<TipIndicatorImpl>(std::move(text_service),
-                                          std::move(context));
+                                          std::move(context), element_domain,
+                                          output_generation);
     default:
       return nullptr;
   }

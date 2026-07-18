@@ -34,7 +34,10 @@
 #include <wil/com.h>
 #include <windows.h>
 
+#include <cstdint>
+
 #include "absl/container/flat_hash_map.h"
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_text_service.h"
 
 namespace mozc {
@@ -56,7 +59,10 @@ class TipUiElementManager {
 
   ITfUIElement* GetElement(UIElementFlags element) const;
   DWORD GetElementId(UIElementFlags element) const;
-  HRESULT OnUpdate(TipTextService* text_service, ITfContext* context);
+  HRESULT OnUpdate(TipTextService* text_service, ITfContext* context,
+                   TsfFocusSnapshot element_domain,
+                   uint64_t output_generation);
+  void EndAll(TipTextService* text_service);
   bool IsVisible(ITfUIElementMgr* ui_element_manager,
                  UIElementFlags element) const;
 
@@ -64,6 +70,7 @@ class TipUiElementManager {
   struct UIElementInfo {
     UIElementInfo() : id(TF_INVALID_UIELEMENTID) {}
     DWORD id;
+    uint64_t output_generation = 0;
     wil::com_ptr_nothrow<ITfUIElement> element;
   };
 

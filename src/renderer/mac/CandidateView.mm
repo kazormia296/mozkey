@@ -73,6 +73,9 @@ using mozc::renderer::mac::MacViewUtil;
 
 // Draw scroll bar
 - (void)drawVScrollBar;
+- (void)updateFocusedRowForEvent:(NSEvent *)event;
+- (BOOL)sendCandidateCommandForRow:(int)row
+                    mouseDownToken:(uint64_t)mouseDownToken;
 @end
 
 @implementation CandidateView {
@@ -91,6 +94,9 @@ using mozc::renderer::mac::MacViewUtil;
 
   // |command_sender_| holds a callback for mouse clicks.
   mozc::client::SendCommandInterface *command_sender_;
+
+  uint64_t rendererCallbackToken_;
+  uint64_t mouseDownRendererCallbackToken_;
 }
 
 #pragma mark initialization
@@ -100,6 +106,8 @@ using mozc::renderer::mac::MacViewUtil;
   if (self) {
     [self initializeDefaultStyle];
     focusedRow_ = -1;
+    rendererCallbackToken_ = 0;
+    mouseDownRendererCallbackToken_ = 0;
   }
   return self;
 }
@@ -138,6 +146,10 @@ using mozc::renderer::mac::MacViewUtil;
 
 - (void)setSendCommandInterface:(SendCommandInterface *)command_sender {
   command_sender_ = command_sender;
+}
+
+- (void)setRendererCallbackToken:(uint64_t)token {
+  rendererCallbackToken_ = token;
 }
 
 // Override of NSView.
@@ -452,6 +464,11 @@ using mozc::renderer::mac::MacViewUtil;
 #pragma mark event handling callbacks
 
 - (void)mouseDown:(NSEvent *)event {
+  mouseDownRendererCallbackToken_ = rendererCallbackToken_;
+  [self updateFocusedRowForEvent:event];
+}
+
+- (void)updateFocusedRowForEvent:(NSEvent *)event {
   const mozc::Point localPos = MacViewUtil::ToPoint([self convertPoint:[event locationInWindow]
                                                               fromView:nil]);
   int clickedRow = -1;
@@ -472,26 +489,36 @@ using mozc::renderer::mac::MacViewUtil;
 - (void)mouseUp:(NSEvent *)event {
   const mozc::Point localPos = MacViewUtil::ToPoint([self convertPoint:[event locationInWindow]
                                                               fromView:nil]);
-  if (command_sender_ == nullptr) {
-    return;
-  }
+  const uint64_t mouse_down_token = mouseDownRendererCallbackToken_;
+  mouseDownRendererCallbackToken_ = 0;
   if (candidate_window_.candidate_size() < tableLayout_.number_of_rows()) {
     return;
   }
   for (int i = 0; i < tableLayout_.number_of_rows(); ++i) {
     const mozc::Rect rowRect = tableLayout_.GetRowRect(i);
     if (rowRect.PtrInRect(localPos)) {
-      SessionCommand command;
-      command.set_type(SessionCommand::SELECT_CANDIDATE);
-      command.set_id(candidate_window_.candidate(i).id());
-      Output dummy_output;
-      command_sender_->SendCommand(command, &dummy_output);
+      [self sendCandidateCommandForRow:i mouseDownToken:mouse_down_token];
       break;
     }
   }
 }
 
+- (BOOL)sendCandidateCommandForRow:(int)row
+                    mouseDownToken:(uint64_t)mouseDownToken {
+  if (command_sender_ == nullptr || rendererCallbackToken_ == 0 ||
+      mouseDownToken != rendererCallbackToken_ || row < 0 ||
+      row >= candidate_window_.candidate_size()) {
+    return NO;
+  }
+  SessionCommand command;
+  command.set_type(SessionCommand::SELECT_CANDIDATE);
+  command.set_id(candidate_window_.candidate(row).id());
+  command.set_renderer_callback_token(rendererCallbackToken_);
+  Output dummy_output;
+  return command_sender_->SendCommand(command, &dummy_output);
+}
+
 - (void)mouseDragged:(NSEvent *)event {
-  [self mouseDown:event];
+  [self updateFocusedRowForEvent:event];
 }
 @end

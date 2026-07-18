@@ -34,6 +34,7 @@
 #include <msctf.h>
 #include <wil/com.h>
 
+#include <cstdint>
 #include <utility>
 
 #include "absl/base/nullability.h"
@@ -74,7 +75,9 @@ class TipReconvertFunction : public TipComImplements<ITfFnReconversion> {
 
  private:
   TipCandidateOnFinalize OnCandidateFinalize(
-      wil::com_ptr_nothrow<ITfRange> range) const;
+      wil::com_ptr_nothrow<ITfRange> range, uint64_t focus_epoch,
+      int32_t focus_revision,
+      uint64_t output_application_generation) const;
 
   wil::com_ptr_nothrow<TipTextService> text_service_;
 };

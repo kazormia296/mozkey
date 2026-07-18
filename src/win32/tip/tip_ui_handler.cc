@@ -33,9 +33,11 @@
 #include <wil/com.h>
 
 #include <cstdint>
+#include <memory>
 
 #include "protocol/commands.pb.h"
 #include "win32/tip/tip_input_mode_manager.h"
+#include "win32/tip/tip_grimodex_context_util.h"
 #include "win32/tip/tip_status.h"
 #include "win32/tip/tip_text_service.h"
 #include "win32/tip/tip_thread_context.h"
@@ -49,20 +51,69 @@ namespace {
 using ::mozc::commands::CompositionMode;
 
 void UpdateLanguageBarOnFocusChange(TipTextService* text_service,
-                                    ITfDocumentMgr* document_manager) {
+                                    ITfDocumentMgr* document_manager,
+                                    TsfFocusSnapshot focus_domain);
+
+void ResyncLanguageBarForCurrentFocus(TipTextService* text_service) {
+  if (text_service == nullptr) {
+    return;
+  }
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  wil::com_ptr_nothrow<ITfThreadMgr> thread_manager =
+      text_service->GetThreadManager();
+  if (!thread_context || !thread_manager) {
+    return;
+  }
+  const TsfFocusSnapshot focus_domain =
+      CaptureTsfFocusSnapshot(thread_context.get());
+  if (!text_service->HasThreadFocus()) {
+    UpdateLanguageBarOnFocusChange(text_service, nullptr, focus_domain);
+    return;
+  }
+  wil::com_ptr_nothrow<ITfDocumentMgr> document_manager;
+  if (FAILED(thread_manager->GetFocus(&document_manager)) ||
+      text_service->GetThreadContextLease().get() != thread_context.get() ||
+      !IsTsfFocusSnapshotCurrent(thread_context.get(), focus_domain)) {
+    return;
+  }
+  if (!text_service->HasThreadFocus()) {
+    const std::shared_ptr<TipThreadContext> current =
+        text_service->GetThreadContextLease();
+    if (current) {
+      UpdateLanguageBarOnFocusChange(
+          text_service, nullptr, CaptureTsfFocusSnapshot(current.get()));
+    }
+    return;
+  }
+  UpdateLanguageBarOnFocusChange(text_service, document_manager.get(),
+                                 focus_domain);
+}
+
+void UpdateLanguageBarOnFocusChange(TipTextService* text_service,
+                                    ITfDocumentMgr* document_manager,
+                                    TsfFocusSnapshot focus_domain) {
   if (!text_service) {
     return;
   }
 
-  if (!text_service->IsLangbarInitialized()) {
+  const auto is_focus_event_current = [&]() {
+    const std::shared_ptr<TipThreadContext> current =
+        text_service->GetThreadContextLease();
+    return current &&
+           IsTsfFocusSnapshotCurrent(current.get(), focus_domain);
+  };
+  if (!is_focus_event_current() || !text_service->IsLangbarInitialized()) {
     // If language bar is not initialized, there is nothing to do here.
     return;
   }
 
   HRESULT result = S_OK;
-  ITfThreadMgr* thread_manager = text_service->GetThreadManager();
-
-  if (thread_manager == nullptr) {
+  wil::com_ptr_nothrow<ITfThreadMgr> thread_manager =
+      text_service->GetThreadManager();
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_manager || !thread_context) {
     return;
   }
 
@@ -75,25 +126,56 @@ void UpdateLanguageBarOnFocusChange(TipTextService* text_service,
     } else {
       wil::com_ptr_nothrow<ITfContext> context;
       result = document_manager->GetTop(&context);
+      if (!is_focus_event_current()) {
+        return;
+      }
       if (SUCCEEDED(result)) {
         disabled = TipStatus::IsDisabledContext(context.get());
+        if (!is_focus_event_current()) {
+          return;
+        }
       }
     }
   }
 
+  if (text_service->GetThreadContextLease().get() != thread_context.get() ||
+      !is_focus_event_current()) {
+    return;
+  }
+
   const TipInputModeManager* input_mode_manager =
-      text_service->GetThreadContext()->GetInputModeManager();
+      thread_context->GetInputModeManager();
   const bool open = input_mode_manager->GetEffectiveOpenClose();
   const CompositionMode mozc_mode =
       open ? static_cast<CompositionMode>(
                  input_mode_manager->GetEffectiveConversionMode())
            : commands::DIRECT;
+  if (text_service->GetThreadContextLease().get() != thread_context.get() ||
+      !is_focus_event_current()) {
+    return;
+  }
   text_service->UpdateLangbar(!disabled, static_cast<uint32_t>(mozc_mode));
+  if (!is_focus_event_current()) {
+    ResyncLanguageBarForCurrentFocus(text_service);
+    return;
+  }
+  const bool current_open = input_mode_manager->GetEffectiveOpenClose();
+  const CompositionMode current_mode =
+      current_open
+          ? static_cast<CompositionMode>(
+                input_mode_manager->GetEffectiveConversionMode())
+          : commands::DIRECT;
+  if (current_open != open || current_mode != mozc_mode) {
+    ResyncLanguageBarForCurrentFocus(text_service);
+  }
 }
 
 bool UpdateInternal(TipTextService* text_service, ITfContext* context,
-                    TfEditCookie read_cookie) {
-  return TipUiHandlerConventional::Update(text_service, context, read_cookie);
+                    TfEditCookie read_cookie, uint64_t output_focus_epoch,
+                    int32_t output_focus_revision) {
+  return TipUiHandlerConventional::Update(
+      text_service, context, read_cookie, output_focus_epoch,
+      output_focus_revision);
 }
 
 }  // namespace
@@ -107,29 +189,88 @@ void TipUiHandler::OnDeactivate(TipTextService* text_service) {
 }
 
 void TipUiHandler::OnDocumentMgrChanged(TipTextService* text_service,
-                                        ITfDocumentMgr* document_manager) {
-  UpdateLanguageBarOnFocusChange(text_service, document_manager);
+                                        ITfDocumentMgr* document_manager,
+                                        uint64_t focus_epoch,
+                                        int32_t focus_revision) {
+  UpdateLanguageBarOnFocusChange(
+      text_service, document_manager,
+      {.focus_epoch = focus_epoch, .focus_revision = focus_revision});
 }
 
 void TipUiHandler::OnFocusChange(TipTextService* text_service,
-                                 ITfDocumentMgr* focused_document_manager) {
+                                 ITfDocumentMgr* focused_document_manager,
+                                 uint64_t focus_epoch,
+                                 int32_t focus_revision) {
+  const TsfFocusSnapshot focus_domain = {
+      .focus_epoch = focus_epoch,
+      .focus_revision = focus_revision,
+  };
+  const auto is_focus_event_current = [&]() {
+    const std::shared_ptr<TipThreadContext> current =
+        text_service->GetThreadContextLease();
+    return current && IsTsfFocusSnapshotCurrent(current.get(), focus_domain);
+  };
+  if (!is_focus_event_current()) {
+    return;
+  }
+  text_service->EndAllUiElements();
+  if (!is_focus_event_current()) {
+    return;
+  }
   TipUiHandlerConventional::OnFocusChange(text_service,
-                                          focused_document_manager);
-  UpdateLanguageBarOnFocusChange(text_service, focused_document_manager);
+                                          focused_document_manager,
+                                          focus_epoch, focus_revision);
+  if (!is_focus_event_current()) {
+    return;
+  }
+  UpdateLanguageBarOnFocusChange(text_service, focused_document_manager,
+                                 focus_domain);
 }
 
 bool TipUiHandler::Update(TipTextService* text_service, ITfContext* context,
-                          TfEditCookie read_cookie) {
+                          TfEditCookie read_cookie,
+                          uint64_t output_focus_epoch,
+                          int32_t output_focus_revision) {
+  const TsfFocusSnapshot output_domain = {
+      .focus_epoch = output_focus_epoch,
+      .focus_revision = output_focus_revision,
+  };
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, output_domain,
+                                      /*require_nonsecure=*/false)) {
+    return false;
+  }
+  const std::shared_ptr<TipThreadContext> thread_context =
+      text_service->GetThreadContextLease();
+  if (!thread_context) {
+    return false;
+  }
+  const bool result = UpdateInternal(text_service, context, read_cookie,
+                                     output_focus_epoch,
+                                     output_focus_revision);
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, output_domain,
+                                      /*require_nonsecure=*/false)) {
+    return false;
+  }
   const TipInputModeManager* input_mode_manager =
-      text_service->GetThreadContext()->GetInputModeManager();
+      thread_context->GetInputModeManager();
   const bool open = input_mode_manager->GetEffectiveOpenClose();
   const CompositionMode mozc_mode = static_cast<CompositionMode>(
       input_mode_manager->GetEffectiveConversionMode());
-  const bool result = UpdateInternal(text_service, context, read_cookie);
   if (open) {
     text_service->UpdateLangbar(true, mozc_mode);
   } else {
     text_service->UpdateLangbar(true, commands::DIRECT);
+  }
+  if (!IsTsfContextFocusedForSnapshot(text_service, context, output_domain,
+                                      /*require_nonsecure=*/false)) {
+    ResyncLanguageBarForCurrentFocus(text_service);
+    return false;
+  }
+  const bool current_open = input_mode_manager->GetEffectiveOpenClose();
+  const CompositionMode current_mode = static_cast<CompositionMode>(
+      input_mode_manager->GetEffectiveConversionMode());
+  if (current_open != open || (current_open && current_mode != mozc_mode)) {
+    ResyncLanguageBarForCurrentFocus(text_service);
   }
   return result;
 }

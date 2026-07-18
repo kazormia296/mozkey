@@ -32,7 +32,7 @@ jobs:
           PYTHONIOENCODING: "utf-8"
         run: |
           $ErrorActionPreference = "Stop"
-          .\tools\dictionary\prepare_daily_dictionary.ps1
+          .\tools\dictionary\prepare_daily_dictionary.ps1 -ReleaseApprovedOnly
 
       - name: upload daily dictionary
         uses: actions/upload-artifact@v6
@@ -75,6 +75,18 @@ jobs:
         run: |
           python build_tools/update_deps.py
 
+      - name: Prepare pinned x64 Zenz runtime
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build Qt
         shell: cmd
         working-directory: .\src
@@ -149,14 +161,22 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build --config release_build package
+          bazelisk build --config release_build --define=mozkey_dictionary_profile=release-approved-only package
+
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          .\tools\release\verify_windows_msi.ps1 `
+            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ExpectedRuntimeArchitecture x64
 
       - name: upload Mozc64_x64.msi
         uses: actions/upload-artifact@v6
         with:
           name: Mozc64_x64.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: warn
+          if-no-files-found: error
 
   build_universal:
     needs: prepare_daily_dictionary
@@ -190,6 +210,18 @@ jobs:
         run: |
           python build_tools/update_deps.py
 
+      - name: Prepare pinned x64 Zenz runtime
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build Qt
         shell: cmd
         working-directory: .\src
@@ -264,14 +296,22 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build --config release_build --config win_universal_installer package
+          bazelisk build --config release_build --config win_universal_installer --define=mozkey_dictionary_profile=release-approved-only package
+
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          .\tools\release\verify_windows_msi.ps1 `
+            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ExpectedRuntimeArchitecture x64
 
       - name: upload Mozc64_universal.msi
         uses: actions/upload-artifact@v6
         with:
           name: Mozc64_universal.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: warn
+          if-no-files-found: error
 
   build_arm64:
     needs: prepare_daily_dictionary
@@ -305,6 +345,18 @@ jobs:
         run: |
           python build_tools/update_deps.py
 
+      - name: Prepare pinned ARM64 Zenz runtime
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch arm64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch arm64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build Qt (arm64)
         shell: cmd
         working-directory: .\src
@@ -321,7 +373,7 @@ jobs:
       - name: Prepare CRT redist directory expected by WiX
         shell: pwsh
         run: |
-          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
+          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\arm64\Microsoft.VC145.CRT"
 
           $requiredDlls = @(
             "msvcp140.dll",
@@ -350,14 +402,14 @@ jobs:
 
           foreach ($dll in $requiredDlls) {
             $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT\\" } |
+              Where-Object { $_.FullName -match "\\arm64\\Microsoft\.VC[0-9]+\.CRT\\" } |
               Sort-Object FullName -Descending |
               Select-Object -First 1
 
             if (-not $source) {
               Write-Host "Available CRT directories:"
               Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT$" } |
+                Where-Object { $_.FullName -match "\\arm64\\Microsoft\.VC[0-9]+\.CRT$" } |
                 Select-Object FullName
 
               throw "Required CRT DLL was not found: $dll"
@@ -379,14 +431,22 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build package --config release_build --platforms=//:windows-arm64
+          bazelisk build package --config release_build --platforms=//:windows-arm64 --define=mozkey_dictionary_profile=release-approved-only
+
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          .\tools\release\verify_windows_msi.ps1 `
+            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\arm64\llama-server.exe `
+            -ExpectedRuntimeArchitecture arm64
 
       - name: upload Mozc64_arm64.msi
         uses: actions/upload-artifact@v6
         with:
           name: Mozc64_arm64.msi
           path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: warn
+          if-no-files-found: error
 
   test:
     needs: prepare_daily_dictionary
@@ -407,6 +467,17 @@ jobs:
           name: daily-dictionary
           path: .
 
+      - name: Test Windows release and uninstall contracts
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m unittest -v `
+            tools.release.prepare_windows_zenz_runtime_test `
+            tools.release.windows_uninstall_contract_test
+
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
         with:
@@ -426,7 +497,15 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test ... -c dbg --build_tests_only
+          bazelisk test ... -c dbg --build_tests_only --test_output=errors --define=mozkey_dictionary_profile=release-approved-only
+
+      - name: Run portable Grimodex and Windows runtime contract tests
+        shell: cmd
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: |
+          bazelisk test //grimodex:portable_protocol_v1_tests //grimodex:protocol_v1_windows_secure_reader_test //grimodex:consumer_file_registrar_windows_test //protocol:renderer_callback_provenance_test //win32/tip:tip_edit_session_test //win32/tip:tip_grimodex_client_context_test //win32/tip:tip_grimodex_context_util_test //win32/tip:tip_input_mode_manager_test //session:zenz_named_pipe_client_test //session:zenz_named_pipe_availability_test -c dbg --test_output=errors --define=mozkey_dictionary_profile=release-approved-only
 
   # actions/cache works without this job, but having this would increase the likelihood of cache hit
   # in other jobs. Another approach would be to use "needs:".

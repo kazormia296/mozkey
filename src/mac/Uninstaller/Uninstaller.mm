@@ -33,11 +33,21 @@
 
 #import "DialogsController.h"
 
+#include <libproc.h>
+#include <signal.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <set>
 #include <string>
+#include <vector>
 
 #include "base/mac/mac_util.h"
 #include "base/url.h"
 #include "base/version.h"
+#ifndef GOOGLE_JAPANESE_INPUT_BUILD
+#include "grimodex/desktop_consumer_heartbeat.h"
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
 namespace {
 
@@ -45,16 +55,15 @@ NSURL *kUninstallSurveyUrl = nil;
 NSString *kUninstallerScriptPath = nil;
 
 bool GetPrevilegeRights(AuthorizationRef *auth) {
+  if (auth == nullptr) {
+    return false;
+  }
+  *auth = nullptr;
   OSStatus status;
   AuthorizationFlags authFlags = kAuthorizationFlagDefaults;
 
   status = AuthorizationCreate(nullptr, kAuthorizationEmptyEnvironment, authFlags, auth);
   if (status != errAuthorizationSuccess) {
-    return status;
-  }
-
-  AuthorizationItem *newItem = new AuthorizationItem();
-  if (!newItem) {
     return false;
   }
 
@@ -98,6 +107,277 @@ bool DeleteFiles(const AuthorizationRef &auth) {
   return true;
 }
 
+#ifndef GOOGLE_JAPANESE_INPUT_BUILD
+int RunTask(NSString *launch_path, NSArray<NSString *> *arguments) {
+  @try {
+    NSTask *task =
+        [NSTask launchedTaskWithLaunchPath:launch_path arguments:arguments];
+    [task waitUntilExit];
+    return [task terminationStatus];
+  } @catch (NSException *exception) {
+    NSLog(@"Failed to run %@: %@", launch_path, exception);
+    return -1;
+  }
+}
+
+bool RunTaskWithOutput(NSString *launch_path, NSArray<NSString *> *arguments,
+                       int *status, std::string *output) {
+  if (status == nullptr || output == nullptr) {
+    return false;
+  }
+  @try {
+    NSPipe *pipe = [NSPipe pipe];
+    NSTask *task = [[NSTask alloc] init];
+    [task setLaunchPath:launch_path];
+    [task setArguments:arguments];
+    [task setStandardOutput:pipe];
+    [task setStandardError:pipe];
+    [task launch];
+    NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
+    [task waitUntilExit];
+    *status = [task terminationStatus];
+    output->assign(static_cast<const char *>([data bytes]), [data length]);
+    return true;
+  } @catch (NSException *exception) {
+    NSLog(@"Failed to run %@: %@", launch_path, exception);
+    return false;
+  }
+}
+
+bool ListUserPids(uid_t uid, std::vector<pid_t> *pids) {
+  if (pids == nullptr) {
+    return false;
+  }
+  pids->clear();
+  const int required_bytes = proc_listpids(PROC_UID_ONLY, uid, nullptr, 0);
+  if (required_bytes <= 0) {
+    NSLog(@"Failed to enumerate the current user's processes");
+    return false;
+  }
+  pids->resize(static_cast<size_t>(required_bytes) / sizeof(pid_t) + 32);
+  const int populated_bytes =
+      proc_listpids(PROC_UID_ONLY, uid, pids->data(),
+                    static_cast<int>(pids->size() * sizeof(pid_t)));
+  if (populated_bytes <= 0) {
+    pids->clear();
+    NSLog(@"Failed to read the current user's process list");
+    return false;
+  }
+  pids->resize(static_cast<size_t>(populated_bytes) / sizeof(pid_t));
+  return true;
+}
+
+bool FindMozcConverterProcesses(uid_t uid, std::vector<pid_t> *converter_pids) {
+  if (converter_pids == nullptr) {
+    return false;
+  }
+  converter_pids->clear();
+  std::vector<pid_t> pids;
+  if (!ListUserPids(uid, &pids)) {
+    return false;
+  }
+  constexpr char kConverterPath[] =
+      "/Library/Input Methods/Mozc.app/Contents/Resources/"
+      "MozcConverter.app/Contents/MacOS/MozcConverter";
+  for (const pid_t pid : pids) {
+    if (pid <= 0) {
+      continue;
+    }
+    char path[PROC_PIDPATHINFO_MAXSIZE] = {};
+    if (proc_pidpath(pid, path, sizeof(path)) > 0 &&
+        std::string(path) == kConverterPath) {
+      converter_pids->push_back(pid);
+    }
+  }
+  return true;
+}
+
+bool WaitForMozcConverterExit(uid_t uid, int attempts) {
+  for (int attempt = 0; attempt < attempts; ++attempt) {
+    std::vector<pid_t> converter_pids;
+    if (!FindMozcConverterProcesses(uid, &converter_pids)) {
+      return false;
+    }
+    if (converter_pids.empty()) {
+      return true;
+    }
+    usleep(100 * 1000);
+  }
+  std::vector<pid_t> converter_pids;
+  return FindMozcConverterProcesses(uid, &converter_pids) &&
+         converter_pids.empty();
+}
+
+bool SignalMozcConverter(uid_t uid, int signal_number) {
+  std::vector<pid_t> converter_pids;
+  if (!FindMozcConverterProcesses(uid, &converter_pids)) {
+    return false;
+  }
+  for (const pid_t pid : converter_pids) {
+    if (kill(pid, signal_number) != 0 && errno != ESRCH) {
+      NSLog(@"Failed to signal MozcConverter pid %d", pid);
+      return false;
+    }
+  }
+  return true;
+}
+
+bool IsConverterLaunchAgentAbsent(NSString *domain) {
+  constexpr char kNotFound[] = "Could not find service";
+  NSString *service = [NSString
+      stringWithFormat:@"%@/%@", domain,
+                       @"org.mozc.inputmethod.Japanese.Converter"];
+  int status = 0;
+  std::string output;
+  if (!RunTaskWithOutput(@"/bin/launchctl", @[@"print", service], &status,
+                         &output)) {
+    return false;
+  }
+  // launchctl uses 113 for a missing service.  Require its specific diagnostic
+  // too so an unrelated query failure cannot be mistaken for absence.
+  return status == 113 && output.find(kNotFound) != std::string::npos;
+}
+
+bool StopMozcConverter() {
+  const uid_t uid = getuid();
+  NSString *domain = [NSString stringWithFormat:@"gui/%u", uid];
+  NSString *plist =
+      @"/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist";
+
+  // Remove the job before terminating the process so launchd cannot respawn
+  // MozcConverter between the process-exit check and heartbeat removal.
+  const int bootout_status =
+      RunTask(@"/bin/launchctl", @[@"bootout", domain, plist]);
+  if (!IsConverterLaunchAgentAbsent(domain)) {
+    NSLog(@"MozcConverter LaunchAgent remains loaded after bootout (status %d)",
+          bootout_status);
+    return false;
+  }
+
+  if (!SignalMozcConverter(uid, SIGTERM)) {
+    return false;
+  }
+  if (WaitForMozcConverterExit(uid, /*attempts=*/50)) {
+    return true;
+  }
+
+  if (!SignalMozcConverter(uid, SIGKILL)) {
+    return false;
+  }
+  if (WaitForMozcConverterExit(uid, /*attempts=*/20)) {
+    return true;
+  }
+
+  NSLog(@"MozcConverter is still running; refusing heartbeat removal");
+  return false;
+}
+
+bool FindMozkeyZenzRuntimeProcessGroups(uid_t uid,
+                                       std::set<pid_t> *process_groups) {
+  if (process_groups == nullptr) {
+    return false;
+  }
+  process_groups->clear();
+
+  std::vector<pid_t> pids;
+  if (!ListUserPids(uid, &pids)) {
+    return false;
+  }
+
+  constexpr char kScorerPath[] =
+      "/Library/Input Methods/Mozc.app/Contents/Resources/"
+      "MozcConverter.app/Contents/Resources/mozc_zenz_scorer";
+  constexpr char kLlamaServerPath[] =
+      "/Library/Input Methods/Mozc.app/Contents/Resources/"
+      "MozcConverter.app/Contents/Resources/llama-server";
+  const pid_t uninstaller_process_group = getpgrp();
+  for (const pid_t pid : pids) {
+    if (pid <= 0) {
+      continue;
+    }
+    char path[PROC_PIDPATHINFO_MAXSIZE] = {};
+    if (proc_pidpath(pid, path, sizeof(path)) <= 0 ||
+        (std::string(path) != kScorerPath &&
+         std::string(path) != kLlamaServerPath)) {
+      continue;
+    }
+    const pid_t process_group = getpgid(pid);
+    if (process_group <= 0) {
+      if (errno == ESRCH) {
+        continue;
+      }
+      NSLog(@"Failed to resolve Mozkey Zenz process group for pid %d", pid);
+      return false;
+    }
+    if (process_group == uninstaller_process_group) {
+      NSLog(@"Refusing to signal the uninstaller process group");
+      return false;
+    }
+    process_groups->insert(process_group);
+  }
+  return true;
+}
+
+bool WaitForMozkeyZenzRuntimeExit(uid_t uid, int attempts) {
+  for (int attempt = 0; attempt < attempts; ++attempt) {
+    std::set<pid_t> process_groups;
+    if (!FindMozkeyZenzRuntimeProcessGroups(uid, &process_groups)) {
+      return false;
+    }
+    if (process_groups.empty()) {
+      return true;
+    }
+    usleep(100 * 1000);
+  }
+  std::set<pid_t> process_groups;
+  return FindMozkeyZenzRuntimeProcessGroups(uid, &process_groups) &&
+         process_groups.empty();
+}
+
+bool SignalMozkeyZenzRuntime(uid_t uid, int signal) {
+  std::set<pid_t> process_groups;
+  if (!FindMozkeyZenzRuntimeProcessGroups(uid, &process_groups)) {
+    return false;
+  }
+  for (const pid_t process_group : process_groups) {
+    if (kill(-process_group, signal) != 0 && errno != ESRCH) {
+      NSLog(@"Failed to signal Mozkey Zenz process group %d", process_group);
+      return false;
+    }
+  }
+  return true;
+}
+
+bool StopMozkeyZenzRuntime() {
+  const uid_t uid = getuid();
+  if (!SignalMozkeyZenzRuntime(uid, SIGTERM)) {
+    return false;
+  }
+  if (WaitForMozkeyZenzRuntimeExit(uid, /*attempts=*/50)) {
+    return true;
+  }
+  if (!SignalMozkeyZenzRuntime(uid, SIGKILL)) {
+    return false;
+  }
+  if (WaitForMozkeyZenzRuntimeExit(uid, /*attempts=*/20)) {
+    return true;
+  }
+  NSLog(@"Mozkey Zenz runtime is still running; refusing bundle removal");
+  return false;
+}
+
+void UnregisterGrimodexConsumer() {
+  const absl::Status status = mozc::grimodex::UnregisterDesktopConsumer();
+  if (!status.ok()) {
+    // Do not weaken the secure registrar by falling back to a recursive
+    // delete.  Log the incomplete cleanup instead of failing the rest of the
+    // user-requested uninstall.
+    NSLog(@"Failed to remove the Mozkey Grimodex consumer heartbeat: %s",
+          status.ToString().c_str());
+  }
+}
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
+
 bool UnregisterKeystoneTicket(const AuthorizationRef &auth) {
   const char *kKsadminPath = "/Library/Google/GoogleSoftwareUpdate/"
                              "GoogleSoftwareUpdate.bundle/Contents/MacOS/ksadmin";
@@ -123,17 +403,28 @@ bool RunReboot(const AuthorizationRef &auth) {
 + (void)doUninstall:(DialogsController *)dialogs {
   mozc::MacUtil::RemovePrelauncherLoginItem();
 
-  AuthorizationRef auth;
+  AuthorizationRef auth = nullptr;
 
   if (!GetPrevilegeRights(&auth)) {
     [dialogs reportAuthError];
-    AuthorizationFree(auth, kAuthorizationFlagDefaults);
+    if (auth != nullptr) {
+      AuthorizationFree(auth, kAuthorizationFlagDefaults);
+    }
     return;
   }
 #ifdef GOOGLE_JAPANESE_INPUT_BUILD
   if (OpenUninstallSurvey() && DeleteFiles(auth) && UnregisterKeystoneTicket(auth)) {
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
-  if (DeleteFiles(auth)) {
+  // Ordinary shutdown and package replacement intentionally leave this
+  // heartbeat.  Only the user-facing uninstaller removes imkit-mozkey.  Stop
+  // the launchd job and process first so they cannot republish the heartbeat
+  // after the registrar removes it.
+  const bool stopped = StopMozcConverter() && StopMozkeyZenzRuntime();
+  const bool deleted = stopped && DeleteFiles(auth);
+  if (deleted) {
+    UnregisterGrimodexConsumer();
+  }
+  if (deleted) {
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
     if ([dialogs reportUninstallSuccess]) {
       RunReboot(auth);
@@ -142,7 +433,9 @@ bool RunReboot(const AuthorizationRef &auth) {
     [dialogs reportUninstallError];
   }
 
-  AuthorizationFree(auth, kAuthorizationFlagDefaults);
+  if (auth != nullptr) {
+    AuthorizationFree(auth, kAuthorizationFlagDefaults);
+  }
 }
 
 + (void)initializeUninstaller {
