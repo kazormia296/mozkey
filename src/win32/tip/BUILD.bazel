@@ -946,6 +946,7 @@ mozc_cc_test(
     deps = [
         ":tip_grimodex_context_util",
         ":tip_input_mode_manager",
+        ":tip_private_context",
         ":tip_thread_context",
         "//grimodex:client_context",
         "//protocol:commands_cc_proto",
