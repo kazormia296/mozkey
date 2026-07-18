@@ -36,6 +36,55 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "consumer_file_registrar",
+    hdrs = ["consumer_file_registrar.h"],
+    deps = [
+        ":consumer_handshake",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "consumer_file_registrar_posix",
+    srcs = ["consumer_file_registrar_posix.cc"],
+    hdrs = ["consumer_file_registrar_posix.h"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "consumer_file_registrar_windows",
+    srcs = ["consumer_file_registrar_windows.cc"],
+    hdrs = ["consumer_file_registrar_windows.h"],
+    linkopts = select({
+        "@platforms//os:windows": ["Advapi32.lib"],
+        "//conditions:default": [],
+    }),
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":consumer_file_registrar",
+        ":consumer_handshake",
+        ":protocol_v1_windows_secure_reader",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
     name = "protocol_v1",
     srcs = ["protocol_v1.cc"],
     hdrs = ["protocol_v1.h"],
@@ -161,6 +210,49 @@ mozc_cc_test(
         "@com_google_absl//absl/time",
         "@com_google_protobuf//:json_util",
         "@com_google_protobuf//:protobuf",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_file_registrar_posix_test",
+    size = "small",
+    srcs = ["consumer_file_registrar_posix_test.cc"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
+    deps = [
+        ":consumer_file_registrar_posix",
+        ":consumer_handshake",
+        "//base:file_util",
+        "//base/file:temp_dir",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "consumer_file_registrar_windows_test",
+    size = "small",
+    srcs = ["consumer_file_registrar_windows_test.cc"],
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":consumer_file_registrar_windows",
+        ":consumer_handshake",
+        ":protocol_v1_windows_secure_reader",
+        "//base:file_util",
+        "//base/file:temp_dir",
+        "//base/win32:wide_char",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
