@@ -395,8 +395,10 @@ ConfigDialog::ConfigDialog()
 
 #if defined(__linux__)
   // The last "misc" tab has no valid configs on Linux
-  constexpr int kMiscTabIndex = 6;
-  configDialogTabWidget->removeTab(kMiscTabIndex);
+  const int misc_tab_index = configDialogTabWidget->indexOf(miscTab);
+  if (misc_tab_index >= 0) {
+    configDialogTabWidget->removeTab(misc_tab_index);
+  }
 #endif  // __linux__
 #endif  // NDEBUG
 
