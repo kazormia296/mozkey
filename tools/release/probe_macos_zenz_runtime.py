@@ -394,6 +394,8 @@ def _classify_wire_failure(
 def _wire_completion_timeout_code(
     observations: dict[WireFailureClass, int],
 ) -> str:
+    if not any(observations.values()):
+        return "wire_completion_timeout_no_response"
     dominant = WireFailureClass.NON_OK
     dominant_count = 0
     for failure_class in _WIRE_FAILURE_REPORT_PRIORITY:

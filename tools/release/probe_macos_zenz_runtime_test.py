@@ -503,6 +503,10 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
 
     def test_wire_completion_timeout_uses_dominant_fixed_class(self):
         observations = {failure_class: 0 for failure_class in target.WireFailureClass}
+        self.assertEqual(
+            target._wire_completion_timeout_code(observations),
+            "wire_completion_timeout_no_response",
+        )
         observations[target.WireFailureClass.SERVER_LOADING] = 4
         observations[target.WireFailureClass.IO_FAILED] = 1
         code = target._wire_completion_timeout_code(observations)
