@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import shutil
 import stat
@@ -10,6 +11,72 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tools.release import probe_macos_zenz_runtime as target
+
+
+def _create_probe_layout(root: Path) -> target.RuntimeLayout:
+    resources = root / "MozcConverter.app/Contents/Resources"
+    model_directory = resources / "models"
+    license_directory = resources / "licenses"
+    model_directory.mkdir(parents=True)
+    license_directory.mkdir()
+
+    scorer = resources / target.SCORER_NAME
+    server = resources / "llama-server"
+    model = model_directory / target.MODEL_NAME
+    manifest = resources / "zenz-runtime-manifest.json"
+    for executable in (scorer, server):
+        executable.write_bytes(b"Mach-O fixture")
+        executable.chmod(0o755)
+    model.write_bytes(b"GGUF fixture")
+    model.chmod(0o644)
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "mozkey.macos_zenz_runtime.v1",
+                "llama_cpp": {
+                    "tag": "b9637",
+                    "archive_sha256": target.LLAMA_ARCHIVE_SHA256,
+                    "built_targets": ["llama-server"],
+                },
+                "model": {"sha256": target.MODEL_SHA256},
+                "architectures": target.ARCHITECTURE_MANIFEST,
+                "scorer": {
+                    "architectures": target.ARCHITECTURE_MANIFEST,
+                    "filename": target.SCORER_NAME,
+                },
+                "backend": {
+                    "accelerate": True,
+                    "cpu": True,
+                    "curl": False,
+                    "llama_build_app": False,
+                    "llama_build_tools": True,
+                    "metal": False,
+                    "multimodal_video": False,
+                    "rpc": False,
+                    "shared_libraries": False,
+                    "web_ui": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest.chmod(0o644)
+
+    license_source = (
+        Path(__file__).resolve().parents[2]
+        / "src/win32/installer/zenz_runtime/licenses"
+    )
+    for name in target.REQUIRED_LICENSES:
+        shutil.copyfile(license_source / name, license_directory / name)
+        (license_directory / name).chmod(0o644)
+
+    return target.RuntimeLayout(
+        converter_app=resources.parents[1],
+        resources=resources,
+        scorer=scorer,
+        server=server,
+        model=model,
+    )
 
 
 class ProbeMacosZenzRuntimeTest(unittest.TestCase):
@@ -131,18 +198,103 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
                 target.run_probe(package, live=False, timeout_seconds=120.0)
 
             run.assert_called_once()
-            target._require_regular(package, executable=True)
+            target._require_regular(
+                package,
+                executable=True,
+                failure_code="package_layout_invalid",
+            )
             with self.assertRaisesRegex(
-                target.ProbeFailure, "runtime_layout_invalid"
+                target.ProbeFailure, "package_layout_invalid"
             ):
-                target._require_regular(package, executable=False)
+                target._require_regular(
+                    package,
+                    executable=False,
+                    failure_code="package_layout_invalid",
+                )
 
             package.chmod(0o764)
             with mock.patch.object(target.sys, "platform", "darwin"):
                 with self.assertRaisesRegex(
-                    target.ProbeFailure, "runtime_layout_invalid"
+                    target.ProbeFailure, "package_layout_invalid"
                 ):
                     target.run_probe(package, live=False, timeout_seconds=120.0)
+
+    def test_layout_failures_are_field_specific_and_redacted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            expanded = Path(temporary) / "expanded"
+            expanded.mkdir()
+            with self.assertRaises(target.ProbeFailure) as raised:
+                target._find_layout(expanded)
+            self.assertEqual(raised.exception.code, "runtime_scorer_count_invalid")
+            self.assertNotIn(str(expanded), str(raised.exception))
+
+        cases = (
+            ("scorer", "runtime_scorer_layout_invalid"),
+            ("server", "runtime_server_layout_invalid"),
+            ("model", "runtime_model_layout_invalid"),
+            ("manifest", "runtime_manifest_layout_invalid"),
+            ("license", "runtime_license_layout_invalid"),
+        )
+        for field, expected_code in cases:
+            with (
+                self.subTest(field=field),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                expanded = Path(temporary) / "expanded"
+                layout = _create_probe_layout(expanded)
+                paths = {
+                    "scorer": layout.scorer,
+                    "server": layout.server,
+                    "model": layout.model,
+                    "manifest": layout.resources
+                    / "zenz-runtime-manifest.json",
+                    "license": layout.resources
+                    / "licenses"
+                    / target.REQUIRED_LICENSES[0],
+                }
+                invalid_mode = (
+                    0o755 if field not in ("scorer", "server") else 0o644
+                )
+                paths[field].chmod(invalid_mode)
+
+                original_sha256_file = target.sha256_file
+
+                def sha256_file(path):
+                    if path == layout.model:
+                        return target.MODEL_SHA256
+                    return original_sha256_file(path)
+
+                with mock.patch.object(
+                    target, "sha256_file", side_effect=sha256_file
+                ):
+                    with self.assertRaises(target.ProbeFailure) as raised:
+                        target._find_layout(expanded)
+
+                self.assertEqual(raised.exception.code, expected_code)
+                self.assertNotIn(str(expanded), str(raised.exception))
+
+    def test_empty_package_has_package_specific_layout_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary) / "Mozc.pkg"
+            package.touch(mode=0o644)
+            with mock.patch.object(target.sys, "platform", "darwin"):
+                with self.assertRaises(target.ProbeFailure) as raised:
+                    target.run_probe(
+                        package, live=False, timeout_seconds=120.0
+                    )
+            self.assertEqual(raised.exception.code, "package_layout_invalid")
+            self.assertNotIn(str(package), str(raised.exception))
+
+    def test_regular_file_failure_code_is_allowlisted(self):
+        with self.assertRaisesRegex(
+            ValueError, "unsafe regular-file failure code"
+        ) as raised:
+            target._require_regular(
+                Path("/private/runtime"),
+                executable=True,
+                failure_code="/private/runtime",
+            )
+        self.assertNotIn("/private/runtime", str(raised.exception))
 
     def test_dependency_license_allowlist_and_checksums_are_exact(self):
         source = (
@@ -161,7 +313,7 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
                 "unexpected\n", encoding="utf-8"
             )
             with self.assertRaisesRegex(
-                target.ProbeFailure, "runtime_licenses_invalid"
+                target.ProbeFailure, "runtime_license_layout_invalid"
             ):
                 target._verify_license_allowlist(licenses)
             (licenses / "unexpected.txt").unlink()

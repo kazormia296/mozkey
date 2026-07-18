@@ -36,6 +36,7 @@ tweak_installfer_files.py --input installer.zip --output tweaked_installer.zip
 import argparse
 import os
 import shutil
+import stat
 import tempfile
 
 from build_tools import util
@@ -43,6 +44,15 @@ from build_tools import util
 
 _NESTED_EXECUTABLE_NAMES = frozenset(
     ('libqcocoa.dylib', 'llama-server', 'mozc_zenz_scorer')
+)
+_ZENZ_MODEL_NAME = 'zenz-v3.2-small-Q5_K_M.gguf'
+_ZENZ_RUNTIME_LICENSE_NAMES = (
+    'Apache-2.0.txt',
+    'THIRD_PARTY_NOTICES.md',
+    'cpp-httplib-MIT.txt',
+    'llama.cpp-MIT.txt',
+    'nlohmann-json-MIT.txt',
+    'zenz-v3.2-small-gguf.txt',
 )
 
 
@@ -210,6 +220,77 @@ def TweakForProductbuild(
   os.chdir(orig_dir)
 
 
+def NormalizeAndValidateZenzRuntime(top_dir: str, oss: bool) -> None:
+  """Validates and normalizes the canonical packaged Zenz runtime."""
+  name = 'Mozc' if oss else 'GoogleJapaneseInput'
+  relative_resources = os.path.join(
+      'root',
+      'Library',
+      'Input Methods',
+      f'{name}.app',
+      'Contents',
+      'Resources',
+      f'{name}Converter.app',
+      'Contents',
+      'Resources',
+  )
+  resources = os.path.join(top_dir, relative_resources)
+
+  # Reject symlinked or missing directory components so the canonical paths
+  # cannot escape the extracted installer tree.
+  current = top_dir
+  directories = [current]
+  for component in relative_resources.split(os.sep):
+    current = os.path.join(current, component)
+    directories.append(current)
+  directories.extend(
+      (os.path.join(resources, 'models'), os.path.join(resources, 'licenses'))
+  )
+  for directory in directories:
+    try:
+      info = os.lstat(directory)
+    except OSError as error:
+      raise ValueError('invalid Zenz runtime directory') from error
+    if not stat.S_ISDIR(info.st_mode):
+      raise ValueError('invalid Zenz runtime directory')
+
+  expected_files = [
+      (os.path.join(resources, 'llama-server'), 0o755),
+      (os.path.join(resources, 'mozc_zenz_scorer'), 0o755),
+      (os.path.join(resources, 'models', _ZENZ_MODEL_NAME), 0o644),
+      (os.path.join(resources, 'zenz-runtime-manifest.json'), 0o644),
+  ]
+  expected_files.extend(
+      (os.path.join(resources, 'licenses', name), 0o644)
+      for name in _ZENZ_RUNTIME_LICENSE_NAMES
+  )
+
+  # Open every file without following its final component, validate the whole
+  # set, and only then mutate modes. This keeps a failed validation from
+  # producing a partially normalized package tree.
+  opened_files = []
+  try:
+    for path, expected_mode in expected_files:
+      try:
+        descriptor = os.open(
+            path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+        )
+      except OSError as error:
+        raise ValueError('invalid Zenz runtime file') from error
+      opened_files.append((descriptor, expected_mode))
+      info = os.fstat(descriptor)
+      if not stat.S_ISREG(info.st_mode) or info.st_size <= 0:
+        raise ValueError('invalid Zenz runtime file')
+
+    for descriptor, expected_mode in opened_files:
+      os.fchmod(descriptor, expected_mode)
+      if stat.S_IMODE(os.fstat(descriptor).st_mode) != expected_mode:
+        raise ValueError('invalid Zenz runtime file mode')
+  finally:
+    for descriptor, _ in opened_files:
+      os.close(descriptor)
+
+
 def Codesign(top_dir: str, identity: str) -> None:
   """Codesign the installer files."""
   # remove existing _CodeSignature before overwriting the codesigns.
@@ -278,6 +359,7 @@ def TweakInstallerFiles(args: argparse.Namespace, work_dir: str) -> None:
 
   if args.productbuild:
     TweakForProductbuild(top_dir, tweak_qt, args.oss, args.channel)
+    NormalizeAndValidateZenzRuntime(top_dir, args.oss)
     Codesign(top_dir, args.codesign_identity)
 
   # Create a zip file with the zip command.

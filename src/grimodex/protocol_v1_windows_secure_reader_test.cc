@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -72,10 +73,111 @@ class ScopedLocalMemory final {
   HLOCAL memory_;
 };
 
+class PrivateSecurityAttributes final {
+ public:
+  explicit PrivateSecurityAttributes(bool directory)
+      : valid_(Initialize(directory)) {}
+  ~PrivateSecurityAttributes() {
+    if (acl_ != nullptr) {
+      ::LocalFree(acl_);
+    }
+  }
+  PrivateSecurityAttributes(const PrivateSecurityAttributes &) = delete;
+  PrivateSecurityAttributes &operator=(const PrivateSecurityAttributes &) =
+      delete;
+
+  bool valid() const { return valid_; }
+  SECURITY_ATTRIBUTES *get() { return valid_ ? &attributes_ : nullptr; }
+
+ private:
+  bool Initialize(bool directory) {
+    HANDLE raw_token = nullptr;
+    if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &raw_token)) {
+      ADD_FAILURE() << "OpenProcessToken failed: " << ::GetLastError();
+      return false;
+    }
+    ScopedHandle token(raw_token);
+    DWORD token_size = 0;
+    ::GetTokenInformation(token.get(), TokenUser, nullptr, 0, &token_size);
+    if (token_size == 0) {
+      ADD_FAILURE() << "GetTokenInformation size query failed: "
+                    << ::GetLastError();
+      return false;
+    }
+    token_buffer_.resize(token_size);
+    if (!::GetTokenInformation(token.get(), TokenUser, token_buffer_.data(),
+                               token_size, &token_size)) {
+      ADD_FAILURE() << "GetTokenInformation failed: " << ::GetLastError();
+      return false;
+    }
+    PSID current_user =
+        reinterpret_cast<TOKEN_USER *>(token_buffer_.data())->User.Sid;
+
+    DWORD system_size = sizeof(system_sid_);
+    if (!::CreateWellKnownSid(WinLocalSystemSid, nullptr, system_sid_.data(),
+                              &system_size)) {
+      ADD_FAILURE() << "CreateWellKnownSid(LocalSystem) failed: "
+                    << ::GetLastError();
+      return false;
+    }
+    DWORD administrators_size = sizeof(administrators_sid_);
+    if (!::CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr,
+                              administrators_sid_.data(),
+                              &administrators_size)) {
+      ADD_FAILURE() << "CreateWellKnownSid(Administrators) failed: "
+                    << ::GetLastError();
+      return false;
+    }
+
+    std::array<EXPLICIT_ACCESSW, 3> entries = {};
+    const DWORD inheritance =
+        directory ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+    const std::array<PSID, 3> trustees = {
+        current_user, system_sid_.data(), administrators_sid_.data()};
+    for (size_t index = 0; index < entries.size(); ++index) {
+      entries[index].grfAccessPermissions = FILE_ALL_ACCESS;
+      entries[index].grfAccessMode = SET_ACCESS;
+      entries[index].grfInheritance = inheritance;
+      ::BuildTrusteeWithSidW(&entries[index].Trustee, trustees[index]);
+    }
+    const DWORD acl_error = ::SetEntriesInAclW(
+        static_cast<ULONG>(entries.size()), entries.data(), nullptr, &acl_);
+    if (acl_error != ERROR_SUCCESS) {
+      ADD_FAILURE() << "SetEntriesInAclW failed: " << acl_error;
+      return false;
+    }
+    if (!::InitializeSecurityDescriptor(&descriptor_,
+                                        SECURITY_DESCRIPTOR_REVISION) ||
+        !::SetSecurityDescriptorOwner(&descriptor_, current_user, FALSE) ||
+        !::SetSecurityDescriptorDacl(&descriptor_, TRUE, acl_, FALSE) ||
+        !::SetSecurityDescriptorControl(&descriptor_, SE_DACL_PROTECTED,
+                                        SE_DACL_PROTECTED)) {
+      ADD_FAILURE() << "Security descriptor initialization failed: "
+                    << ::GetLastError();
+      return false;
+    }
+    attributes_.nLength = sizeof(attributes_);
+    attributes_.lpSecurityDescriptor = &descriptor_;
+    attributes_.bInheritHandle = FALSE;
+    return true;
+  }
+
+  std::vector<uint8_t> token_buffer_;
+  std::array<DWORD, SECURITY_MAX_SID_SIZE / sizeof(DWORD)> system_sid_ = {};
+  std::array<DWORD, SECURITY_MAX_SID_SIZE / sizeof(DWORD)>
+      administrators_sid_ = {};
+  PACL acl_ = nullptr;
+  SECURITY_DESCRIPTOR descriptor_ = {};
+  SECURITY_ATTRIBUTES attributes_ = {};
+  bool valid_ = false;
+};
+
 void WriteAll(const std::wstring &path, absl::string_view bytes) {
+  PrivateSecurityAttributes security(/*directory=*/false);
+  ASSERT_TRUE(security.valid());
   ScopedHandle file(::CreateFileW(
       path.c_str(), GENERIC_WRITE,
-      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, security.get(),
       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
   ASSERT_NE(file.get(), INVALID_HANDLE_VALUE) << ::GetLastError();
   size_t offset = 0;
@@ -99,9 +201,17 @@ class Sandbox final {
       : temp_(testing::MakeTempDirectoryOrDie()),
         root_(win32::Utf8ToWide(temp_.path()) + L"\\ime"),
         projects_(root_ + L"\\projects") {
-    EXPECT_TRUE(::CreateDirectoryW(root_.c_str(), nullptr))
+    PrivateSecurityAttributes root_security(/*directory=*/true);
+    if (!root_security.valid()) {
+      return;
+    }
+    EXPECT_TRUE(::CreateDirectoryW(root_.c_str(), root_security.get()))
         << ::GetLastError();
-    EXPECT_TRUE(::CreateDirectoryW(projects_.c_str(), nullptr))
+    PrivateSecurityAttributes projects_security(/*directory=*/true);
+    if (!projects_security.valid()) {
+      return;
+    }
+    EXPECT_TRUE(::CreateDirectoryW(projects_.c_str(), projects_security.get()))
         << ::GetLastError();
   }
 

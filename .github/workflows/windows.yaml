@@ -497,7 +497,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test ... -c dbg --build_tests_only
+          bazelisk test ... -c dbg --build_tests_only --test_output=errors
 
       - name: Run portable Grimodex and Windows runtime contract tests
         shell: cmd

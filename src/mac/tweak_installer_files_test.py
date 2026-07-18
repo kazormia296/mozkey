@@ -2,9 +2,149 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from mac import tweak_installer_files as target
+
+
+def _create_runtime(top_dir: Path, *, oss: bool):
+    name = "Mozc" if oss else "GoogleJapaneseInput"
+    resources = (
+        top_dir
+        / "root/Library/Input Methods"
+        / f"{name}.app/Contents/Resources"
+        / f"{name}Converter.app/Contents/Resources"
+    )
+    models = resources / "models"
+    licenses = resources / "licenses"
+    models.mkdir(parents=True)
+    licenses.mkdir()
+
+    expected = {
+        resources / "llama-server": 0o755,
+        resources / "mozc_zenz_scorer": 0o755,
+        models / target._ZENZ_MODEL_NAME: 0o644,
+        resources / "zenz-runtime-manifest.json": 0o644,
+    }
+    expected.update(
+        {
+            licenses / license_name: 0o644
+            for license_name in target._ZENZ_RUNTIME_LICENSE_NAMES
+        }
+    )
+    for path, expected_mode in expected.items():
+        path.write_bytes(b"runtime fixture")
+        path.chmod(0o644 if expected_mode == 0o755 else 0o755)
+    return resources, expected
+
+
+class TweakInstallerFilesRuntimeLayoutTest(unittest.TestCase):
+    def test_normalizes_exact_modes_at_canonical_brand_paths(self):
+        for oss in (True, False):
+            with self.subTest(oss=oss), tempfile.TemporaryDirectory() as temporary:
+                top_dir = Path(temporary) / "installer"
+                resources, expected = _create_runtime(top_dir, oss=oss)
+
+                target.NormalizeAndValidateZenzRuntime(str(top_dir), oss)
+
+                expected_brand = "Mozc" if oss else "GoogleJapaneseInput"
+                self.assertEqual(
+                    resources,
+                    top_dir
+                    / "root/Library/Input Methods"
+                    / f"{expected_brand}.app/Contents/Resources"
+                    / f"{expected_brand}Converter.app/Contents/Resources",
+                )
+                for path, expected_mode in expected.items():
+                    self.assertEqual(path.stat().st_mode & 0o777, expected_mode)
+
+    def test_rejects_missing_empty_and_symlinked_runtime_files(self):
+        mutations = ("missing", "empty", "symlink")
+        for mutation in mutations:
+            with (
+                self.subTest(mutation=mutation),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                top_dir = Path(temporary) / "installer"
+                resources, _ = _create_runtime(top_dir, oss=True)
+                server = resources / "llama-server"
+                if mutation == "missing":
+                    server.unlink()
+                elif mutation == "empty":
+                    server.write_bytes(b"")
+                else:
+                    server.unlink()
+                    symlink_target = Path(temporary) / "outside-runtime"
+                    symlink_target.write_bytes(b"runtime fixture")
+                    os.symlink(symlink_target, server)
+
+                with self.assertRaisesRegex(
+                    ValueError, "invalid Zenz runtime file"
+                ):
+                    target.NormalizeAndValidateZenzRuntime(str(top_dir), True)
+
+    def test_validation_runs_after_productbuild_and_before_codesign(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            events = []
+            args = SimpleNamespace(
+                input="input.zip",
+                output=str(Path(temporary) / "output.zip"),
+                noqt=True,
+                productbuild=True,
+                oss=True,
+                channel="dev",
+                codesign_identity="-",
+            )
+            with (
+                mock.patch.object(target.util, "RunOrDie"),
+                mock.patch.object(
+                    target,
+                    "TweakForProductbuild",
+                    side_effect=lambda *unused: events.append("productbuild"),
+                ),
+                mock.patch.object(
+                    target,
+                    "NormalizeAndValidateZenzRuntime",
+                    side_effect=lambda *unused: events.append("validate"),
+                ),
+                mock.patch.object(
+                    target,
+                    "Codesign",
+                    side_effect=lambda *unused: events.append("codesign"),
+                ),
+            ):
+                target.TweakInstallerFiles(args, temporary)
+
+            self.assertEqual(events, ["productbuild", "validate", "codesign"])
+
+    def test_validation_failure_aborts_codesign(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = SimpleNamespace(
+                input="input.zip",
+                output=str(Path(temporary) / "output.zip"),
+                noqt=True,
+                productbuild=True,
+                oss=True,
+                channel="dev",
+                codesign_identity="-",
+            )
+            with (
+                mock.patch.object(target.util, "RunOrDie"),
+                mock.patch.object(target, "TweakForProductbuild"),
+                mock.patch.object(
+                    target,
+                    "NormalizeAndValidateZenzRuntime",
+                    side_effect=ValueError("invalid Zenz runtime file"),
+                ),
+                mock.patch.object(target, "Codesign") as codesign,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid Zenz runtime file"
+                ):
+                    target.TweakInstallerFiles(args, temporary)
+
+            codesign.assert_not_called()
 
 
 class TweakInstallerFilesCodesignTest(unittest.TestCase):

@@ -289,7 +289,9 @@ absl::StatusOr<ParsedRootPath> ParseRootPath(absl::string_view utf8_path) {
     if (absl::Status status = ValidatePathComponent(component); !status.ok()) {
       return status;
     }
-    prefix.append(L"\\");
+    if (prefix.back() != L'\\') {
+      prefix.append(L"\\");
+    }
     prefix.append(component);
     result.prefixes.push_back(prefix);
     ++component_count;
@@ -357,10 +359,10 @@ bool SameFileIdentity(const FileVersion &first, const FileVersion &second) {
 }
 
 absl::StatusOr<UniqueHandle> OpenPath(const std::wstring &path, DWORD access,
-                                      bool directory,
+                                      bool allow_directory,
                                       absl::string_view label) {
   DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT;
-  if (directory) {
+  if (allow_directory) {
     flags |= FILE_FLAG_BACKUP_SEMANTICS;
   }
   HANDLE raw = ::CreateFileW(
@@ -537,7 +539,8 @@ absl::StatusOr<VerifiedFileBytes> ReadSecureFile(
   path.append(L"\\");
   path.append(filename);
   absl::StatusOr<UniqueHandle> file =
-      OpenPath(path, GENERIC_READ | READ_CONTROL, false, label);
+      OpenPath(path, GENERIC_READ | READ_CONTROL,
+               /*allow_directory=*/true, label);
   if (!file.ok()) {
     return file.status();
   }

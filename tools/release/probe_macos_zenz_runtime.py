@@ -57,6 +57,16 @@ ARCHITECTURE_MANIFEST = {
     architecture: {"deployment_target": deployment_target}
     for architecture, deployment_target in ARCHITECTURES
 }
+_REGULAR_FILE_FAILURE_CODES = frozenset(
+    {
+        "package_layout_invalid",
+        "runtime_license_layout_invalid",
+        "runtime_manifest_layout_invalid",
+        "runtime_model_layout_invalid",
+        "runtime_scorer_layout_invalid",
+        "runtime_server_layout_invalid",
+    }
+)
 
 
 class ProbeFailure(RuntimeError):
@@ -109,11 +119,15 @@ def _run(
         raise ProbeFailure("runtime_command_output_invalid") from error
 
 
-def _require_regular(path: Path, *, executable: bool | None) -> None:
+def _require_regular(
+    path: Path, *, executable: bool | None, failure_code: str
+) -> None:
+    if failure_code not in _REGULAR_FILE_FAILURE_CODES:
+        raise ValueError("unsafe regular-file failure code")
     try:
         info = path.lstat()
     except OSError as error:
-        raise ProbeFailure("runtime_layout_invalid") from error
+        raise ProbeFailure(failure_code) from error
     if (
         not stat.S_ISREG(info.st_mode)
         or info.st_size <= 0
@@ -123,7 +137,7 @@ def _require_regular(path: Path, *, executable: bool | None) -> None:
         )
         or info.st_mode & 0o022
     ):
-        raise ProbeFailure("runtime_layout_invalid")
+        raise ProbeFailure(failure_code)
 
 
 def _find_layout(expanded: Path) -> RuntimeLayout:
@@ -133,7 +147,7 @@ def _find_layout(expanded: Path) -> RuntimeLayout:
         )
     )
     if len(scorers) != 1:
-        raise ProbeFailure("runtime_layout_invalid")
+        raise ProbeFailure("runtime_scorer_count_invalid")
     scorer = scorers[0]
     resources = scorer.parent
     contents = resources.parent
@@ -141,14 +155,30 @@ def _find_layout(expanded: Path) -> RuntimeLayout:
     server = resources / "llama-server"
     model = resources / "models" / MODEL_NAME
 
-    _require_regular(scorer, executable=True)
-    _require_regular(server, executable=True)
-    _require_regular(model, executable=False)
+    _require_regular(
+        scorer,
+        executable=True,
+        failure_code="runtime_scorer_layout_invalid",
+    )
+    _require_regular(
+        server,
+        executable=True,
+        failure_code="runtime_server_layout_invalid",
+    )
+    _require_regular(
+        model,
+        executable=False,
+        failure_code="runtime_model_layout_invalid",
+    )
     if sha256_file(model) != MODEL_SHA256:
         raise ProbeFailure("model_checksum_mismatch")
 
     manifest_path = resources / "zenz-runtime-manifest.json"
-    _require_regular(manifest_path, executable=False)
+    _require_regular(
+        manifest_path,
+        executable=False,
+        failure_code="runtime_manifest_layout_invalid",
+    )
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -204,11 +234,15 @@ def _verify_license_allowlist(licenses: Path) -> None:
         info = licenses.lstat()
         entries = tuple(sorted(path.name for path in licenses.iterdir()))
     except OSError as error:
-        raise ProbeFailure("runtime_licenses_invalid") from error
+        raise ProbeFailure("runtime_license_layout_invalid") from error
     if not stat.S_ISDIR(info.st_mode) or entries != tuple(sorted(REQUIRED_LICENSES)):
-        raise ProbeFailure("runtime_licenses_invalid")
+        raise ProbeFailure("runtime_license_layout_invalid")
     for name in REQUIRED_LICENSES:
-        _require_regular(licenses / name, executable=False)
+        _require_regular(
+            licenses / name,
+            executable=False,
+            failure_code="runtime_license_layout_invalid",
+        )
     for name, expected_sha256 in PINNED_DEPENDENCY_LICENSE_SHA256.items():
         if sha256_file(licenses / name) != expected_sha256:
             raise ProbeFailure("runtime_license_checksum_mismatch")
@@ -478,7 +512,11 @@ def run_probe(package: Path, *, live: bool, timeout_seconds: float) -> None:
     # generated artifact is a package.  The package itself only needs to be a
     # nonempty, non-writable regular file; extracted runtime files retain exact
     # executable-mode validation in _find_layout().
-    _require_regular(package, executable=None)
+    _require_regular(
+        package,
+        executable=None,
+        failure_code="package_layout_invalid",
+    )
 
     with tempfile.TemporaryDirectory(prefix="mozkey-pkg-probe-") as temporary:
         expanded = Path(temporary) / "expanded"
