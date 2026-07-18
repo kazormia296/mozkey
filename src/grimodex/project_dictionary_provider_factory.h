@@ -4,21 +4,22 @@
 #define MOZC_GRIMODEX_PROJECT_DICTIONARY_PROVIDER_FACTORY_H_
 
 #include <memory>
-#include <string>
 
 #include "dictionary/project_dictionary.h"
 #include "grimodex/project_dictionary_bridge.h"
 #include "grimodex/project_dictionary_provider.h"
+#include "grimodex/protocol_v1.h"
 
 namespace mozc::grimodex {
 
-// Constructs the Linux filesystem-backed Protocol v1 provider.  Non-Linux
-// engines intentionally leave the provider disabled until their runtime
-// filesystem contract is designed and implemented.
+// Constructs a Protocol v1 provider around a platform-owned reader.  Keeping
+// filesystem selection outside this portable factory lets each desktop OS
+// enforce its native path and handle-security contract without duplicating the
+// parser, publisher, bridge, or provider state machine.
 std::shared_ptr<dictionary::ProjectDictionaryProviderInterface>
-CreateProtocolV1ProjectDictionaryProvider(std::string root_path,
-                                          ProjectDictionaryPosIds pos_ids,
-                                          ApplicationScopeMode scope_mode);
+CreateProtocolV1ProjectDictionaryProvider(
+    std::shared_ptr<ProtocolV1FileReader> reader,
+    ProjectDictionaryPosIds pos_ids, ApplicationScopeMode scope_mode);
 
 }  // namespace mozc::grimodex
 

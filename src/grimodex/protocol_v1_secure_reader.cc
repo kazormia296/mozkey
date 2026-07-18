@@ -180,12 +180,23 @@ absl::StatusOr<UniqueFd> OpenSecureProjects(int root_fd) {
 }
 
 bool SameFileVersion(const struct stat &first, const struct stat &second) {
+#if defined(__APPLE__)
+  const struct timespec &first_mtime = first.st_mtimespec;
+  const struct timespec &second_mtime = second.st_mtimespec;
+  const struct timespec &first_ctime = first.st_ctimespec;
+  const struct timespec &second_ctime = second.st_ctimespec;
+#else   // __APPLE__
+  const struct timespec &first_mtime = first.st_mtim;
+  const struct timespec &second_mtime = second.st_mtim;
+  const struct timespec &first_ctime = first.st_ctim;
+  const struct timespec &second_ctime = second.st_ctim;
+#endif  // __APPLE__
   return first.st_dev == second.st_dev && first.st_ino == second.st_ino &&
          first.st_size == second.st_size &&
-         first.st_mtim.tv_sec == second.st_mtim.tv_sec &&
-         first.st_mtim.tv_nsec == second.st_mtim.tv_nsec &&
-         first.st_ctim.tv_sec == second.st_ctim.tv_sec &&
-         first.st_ctim.tv_nsec == second.st_ctim.tv_nsec;
+         first_mtime.tv_sec == second_mtime.tv_sec &&
+         first_mtime.tv_nsec == second_mtime.tv_nsec &&
+         first_ctime.tv_sec == second_ctime.tv_sec &&
+         first_ctime.tv_nsec == second_ctime.tv_nsec;
 }
 
 absl::Status ValidateFile(const struct stat &metadata,
@@ -302,11 +313,18 @@ std::string ResolveProtocolV1Root(absl::string_view override_root,
   if (!override_root.empty()) {
     return std::string(override_root);
   }
+#if defined(__APPLE__)
+  static_cast<void>(xdg_data_home);
+  return absl::StrCat(
+      home_directory,
+      "/Library/Application Support/com.miyakey.grimodex/ime");
+#else   // __APPLE__
   if (!xdg_data_home.empty()) {
     return absl::StrCat(xdg_data_home, "/com.miyakey.grimodex/ime");
   }
   return absl::StrCat(home_directory,
                       "/.local/share/com.miyakey.grimodex/ime");
+#endif  // __APPLE__
 }
 
 }  // namespace mozc::grimodex

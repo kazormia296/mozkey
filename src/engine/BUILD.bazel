@@ -235,6 +235,22 @@ mozc_cc_library(
             "//grimodex:project_dictionary_provider_factory",
             "//grimodex:protocol_v1_secure_reader",
         ],
+        oss_macos = [
+            "//base:environ",
+            "//dictionary:pos_matcher",
+            "//grimodex:project_dictionary_bridge",
+            "//grimodex:project_dictionary_provider",
+            "//grimodex:project_dictionary_provider_factory",
+            "//grimodex:protocol_v1_secure_reader",
+        ],
+        oss_windows = [
+            "//base:environ",
+            "//dictionary:pos_matcher",
+            "//grimodex:project_dictionary_bridge",
+            "//grimodex:project_dictionary_provider",
+            "//grimodex:project_dictionary_provider_factory",
+            "//grimodex:protocol_v1_windows_secure_reader",
+        ],
     ),
 )
 

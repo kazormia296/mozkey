@@ -89,13 +89,22 @@ class Sandbox final {
   std::string projects_;
 };
 
-TEST(ProtocolV1SecureReaderTest, ResolvesOverrideThenXdgThenHomeFallback) {
+TEST(ProtocolV1SecureReaderTest, ResolvesOverrideThenPlatformDefault) {
   EXPECT_EQ(ResolveProtocolV1Root("/custom/ime", "/xdg/data", "/home/tester"),
             "/custom/ime");
+#if defined(__APPLE__)
+  EXPECT_EQ(ResolveProtocolV1Root("", "/xdg/data", "/Users/tester"),
+            "/Users/tester/Library/Application Support/"
+            "com.miyakey.grimodex/ime");
+  EXPECT_EQ(ResolveProtocolV1Root("", "", "/Users/tester"),
+            "/Users/tester/Library/Application Support/"
+            "com.miyakey.grimodex/ime");
+#else   // __APPLE__
   EXPECT_EQ(ResolveProtocolV1Root("", "/xdg/data", "/home/tester"),
             "/xdg/data/com.miyakey.grimodex/ime");
   EXPECT_EQ(ResolveProtocolV1Root("", "", "/home/tester"),
             "/home/tester/.local/share/com.miyakey.grimodex/ime");
+#endif  // __APPLE__
 }
 
 TEST(ProtocolV1SecureReaderTest,
@@ -155,6 +164,27 @@ TEST(ProtocolV1SecureReaderTest, DefendsProjectPathIndependently) {
       sandbox.Reader()->ReadProject("../outside", 100);
   EXPECT_FALSE(result.ok());
   EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+}
+
+TEST(ProtocolV1SecureReaderTest, RejectsOversizedAndHardLinkedFiles) {
+  {
+    Sandbox sandbox;
+    sandbox.InstallState(kState);
+    absl::StatusOr<VerifiedFileBytes> result =
+        sandbox.Reader()->ReadState(sizeof(kState) - 2);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.status().code(), absl::StatusCode::kResourceExhausted);
+  }
+  {
+    Sandbox sandbox;
+    sandbox.InstallState(kState);
+    const std::string alias = absl::StrCat(sandbox.root(), "/state-alias.json");
+    ASSERT_EQ(link(sandbox.state_path().c_str(), alias.c_str()), 0);
+    absl::StatusOr<VerifiedFileBytes> result =
+        sandbox.Reader()->ReadState(sizeof(kState));
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.status().code(), absl::StatusCode::kPermissionDenied);
+  }
 }
 
 }  // namespace

@@ -53,13 +53,18 @@
 #include "rewriter/rewriter.h"
 #include "rewriter/rewriter_interface.h"
 
-#if defined(MOZC_BUILD) && defined(__linux__)
+#if defined(MOZC_BUILD) && \
+    (defined(__linux__) || defined(__APPLE__) || defined(_WIN32))
 #include "base/environ.h"
 #include "dictionary/pos_matcher.h"
 #include "grimodex/project_dictionary_bridge.h"
 #include "grimodex/project_dictionary_provider.h"
 #include "grimodex/project_dictionary_provider_factory.h"
+#if defined(_WIN32)
+#include "grimodex/protocol_v1_windows_secure_reader.h"
+#else
 #include "grimodex/protocol_v1_secure_reader.h"
+#endif
 #endif
 
 namespace mozc {
@@ -96,7 +101,8 @@ absl::Status Engine::ReloadModules(std::unique_ptr<engine::Modules> modules) {
 }
 
 absl::Status Engine::Init(std::unique_ptr<engine::Modules> modules) {
-#if defined(MOZC_BUILD) && defined(__linux__)
+#if defined(MOZC_BUILD) && \
+    (defined(__linux__) || defined(__APPLE__) || defined(_WIN32))
   const dictionary::PosMatcher& pos_matcher = modules->GetPosMatcher();
   const uint16_t person_id = pos_matcher.GetFirstNameId();
   const uint16_t place_id = pos_matcher.GetUniqueNounId();
@@ -106,9 +112,6 @@ absl::Status Engine::Init(std::unique_ptr<engine::Modules> modules) {
       .place = {.lid = place_id, .rid = place_id},
       .noun = {.lid = noun_id, .rid = noun_id},
   };
-  const std::string project_root = grimodex::ResolveProtocolV1Root(
-      Environ::GetEnv("GRIMODEX_IME_ROOT"),
-      Environ::GetEnv("XDG_DATA_HOME"), Environ::GetEnv("HOME"));
   const grimodex::ApplicationScopeMode project_scope =
       grimodex::ParseApplicationScopeMode(
           Environ::GetEnv("MOZKEY_GRIMODEX_SCOPE"));
@@ -143,9 +146,28 @@ absl::Status Engine::Init(std::unique_ptr<engine::Modules> modules) {
 
   converter_ = std::move(converter);
 
-#if defined(MOZC_BUILD) && defined(__linux__)
+#if defined(MOZC_BUILD) && \
+    (defined(__linux__) || defined(__APPLE__) || defined(_WIN32))
+#if defined(_WIN32)
+  const absl::StatusOr<std::string> project_root =
+      grimodex::ResolveWindowsProtocolV1Root(
+          Environ::GetEnv("GRIMODEX_IME_ROOT"));
+  if (!project_root.ok()) {
+    project_dictionary_provider_.reset();
+    return absl::OkStatus();
+  }
+  auto project_reader =
+      std::make_shared<grimodex::WindowsSecureProtocolV1FileReader>(
+          *project_root);
+#else
+  const std::string project_root = grimodex::ResolveProtocolV1Root(
+      Environ::GetEnv("GRIMODEX_IME_ROOT"),
+      Environ::GetEnv("XDG_DATA_HOME"), Environ::GetEnv("HOME"));
+  auto project_reader =
+      std::make_shared<grimodex::SecureProtocolV1FileReader>(project_root);
+#endif
   project_dictionary_provider_ =
-      grimodex::CreateProtocolV1ProjectDictionaryProvider(project_root,
+      grimodex::CreateProtocolV1ProjectDictionaryProvider(project_reader,
                                                           project_pos_ids,
                                                           project_scope);
 #else

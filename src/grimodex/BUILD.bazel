@@ -33,8 +33,29 @@ mozc_cc_library(
     name = "protocol_v1_secure_reader",
     srcs = ["protocol_v1_secure_reader.cc"],
     hdrs = ["protocol_v1_secure_reader.h"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
+    deps = [
+        ":protocol_v1",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "protocol_v1_windows_secure_reader",
+    srcs = ["protocol_v1_windows_secure_reader.cc"],
+    hdrs = ["protocol_v1_windows_secure_reader.h"],
+    linkopts = select({
+        "@platforms//os:windows": ["Advapi32.lib"],
+        "//conditions:default": [],
+    }),
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":protocol_v1",
         "@com_google_absl//absl/status",
@@ -72,13 +93,10 @@ mozc_cc_library(
     name = "project_dictionary_provider_factory",
     srcs = ["project_dictionary_provider_factory.cc"],
     hdrs = ["project_dictionary_provider_factory.h"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":project_dictionary_bridge",
         ":project_dictionary_provider",
         ":protocol_v1",
-        ":protocol_v1_secure_reader",
         "//dictionary:project_dictionary",
     ],
 )
@@ -103,14 +121,36 @@ mozc_cc_test(
     name = "protocol_v1_secure_reader_test",
     size = "small",
     srcs = ["protocol_v1_secure_reader_test.cc"],
-    tags = MOZC_TAGS.LINUX_ONLY,
-    target_compatible_with = ["@platforms//os:linux"],
+    tags = [
+        "noandroid",
+        "nowin",
+    ],
     deps = [
         ":protocol_v1",
         ":protocol_v1_secure_reader",
         "//base:file_util",
         "//testing:gunit_main",
         "//testing:mozctest",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "protocol_v1_windows_secure_reader_test",
+    size = "small",
+    srcs = ["protocol_v1_windows_secure_reader_test.cc"],
+    tags = MOZC_TAGS.WIN_ONLY,
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [
+        ":protocol_v1",
+        ":protocol_v1_windows_secure_reader",
+        "//base:file_util",
+        "//base/win32:wide_char",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",

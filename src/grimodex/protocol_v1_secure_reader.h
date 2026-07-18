@@ -12,9 +12,10 @@
 
 namespace mozc::grimodex {
 
-// Linux production reader for the Protocol v1 filesystem contract.  The
-// portable parser and publication logic depend only on ProtocolV1FileReader
-// and deliberately do not imply filesystem runtime support on other systems.
+// Secure POSIX production reader for the Protocol v1 filesystem contract.
+// The portable parser and publication logic depend only on
+// ProtocolV1FileReader and deliberately do not imply filesystem runtime
+// support on non-POSIX systems.
 class SecureProtocolV1FileReader final : public ProtocolV1FileReader {
  public:
   explicit SecureProtocolV1FileReader(std::string root_path);
@@ -29,8 +30,10 @@ class SecureProtocolV1FileReader final : public ProtocolV1FileReader {
   std::string root_path_;
 };
 
-// Linux XDG path selection helper.  Supplying override_root makes integration
-// and tests independent of the ambient process environment.
+// POSIX platform path selection helper.  Linux uses XDG_DATA_HOME with a
+// ~/.local/share fallback.  macOS uses ~/Library/Application Support.
+// Supplying override_root makes integration and tests independent of the
+// ambient process environment.
 std::string ResolveProtocolV1Root(absl::string_view override_root,
                                   absl::string_view xdg_data_home,
                                   absl::string_view home_directory);
