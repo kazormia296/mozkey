@@ -17,7 +17,7 @@ PIPE_NAME_DEFAULT = r"\\.\pipe\mozc_zenz_scorer"
 LLAMA_URL_DEFAULT = "http://127.0.0.1:18080/completion"
 
 MAGIC = 0x315A4E5A  # "ZNZ1"
-VERSION = 1
+VERSION = 2
 KIND_REQUEST = 1
 KIND_RESPONSE = 2
 
@@ -25,7 +25,7 @@ STATUS_OK = 0
 STATUS_ERROR = 1
 STATUS_TIMEOUT = 2
 
-REQ_HDR = struct.Struct("<IHHIIII")
+REQ_HDR = struct.Struct("<IHHIIIII")
 RESP_HDR = struct.Struct("<IHHIIIII")
 
 
@@ -180,6 +180,7 @@ def handle_one_connection(handle, args) -> None:
         timeout_msec,
         max_output_chars,
         prompt_size,
+        backend_device_size,
     ) = REQ_HDR.unpack(header_bytes)
 
     if magic != MAGIC or version != VERSION or kind != KIND_REQUEST:
@@ -188,7 +189,9 @@ def handle_one_connection(handle, args) -> None:
         return
 
     prompt_bytes = read_exact(handle, prompt_size)
+    backend_device_bytes = read_exact(handle, backend_device_size)
     prompt = prompt_bytes.decode("utf-8", errors="replace")
+    backend_device = backend_device_bytes.decode("ascii", errors="replace")
 
     effective_n_predict = args.n_predict
     if max_output_chars > 0:
@@ -206,7 +209,8 @@ def handle_one_connection(handle, args) -> None:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         print(
             f"[zenz-bridge] gen={generation} status={status} "
-            f"latency={elapsed_ms}ms value={value!r} debug={debug}",
+            f"latency={elapsed_ms}ms device={backend_device or 'automatic'} "
+            f"value={value!r} debug={debug}",
             flush=True,
         )
 

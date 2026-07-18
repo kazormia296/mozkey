@@ -32,6 +32,7 @@ jobs:
           python -m unittest \
             tools.dictionary.daily_source_lock_test \
             tools.dictionary.prepare_daily_dictionary_linux_test \
+            tools.dictionary.prepare_release_dictionary_native_test \
             tools.dictionary.verify_release_dictionary_artifact_test \
             tools.dictionary.fixed_corpus_quality_gate_test
           python tools/dictionary/prepare_daily_dictionary_linux.py --source-mode sample
@@ -43,7 +44,8 @@ jobs:
         run: |
           python tools/dictionary/prepare_daily_dictionary_linux.py \
             --source-mode download \
-            --profile release-approved-only
+            --profile release-approved-only \
+            --backend native
 
       - name: Upload dictionary and quality diagnostics
         if: ${{ !cancelled() }}
@@ -260,6 +262,7 @@ jobs:
             scripts.verify_llama_server_compatibility_test \
             tools.dictionary.daily_source_lock_test \
             tools.dictionary.prepare_daily_dictionary_linux_test \
+            tools.dictionary.prepare_release_dictionary_native_test \
             tools.dictionary.verify_release_dictionary_artifact_test \
             tools.release.generate_linux_spdx_sbom_test \
             tools.release.linux_build_attestation_test \

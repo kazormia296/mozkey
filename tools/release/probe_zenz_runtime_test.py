@@ -17,27 +17,35 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
     def test_accepts_exact_release_llama_arguments(self):
         link = Path("/private/stage/usr/lib/mozkey/llama-server")
         model = Path("/private/stage/usr/lib/mozkey/models") / probe.MODEL_NAME
+        arguments = [
+            str(link),
+            "-m",
+            str(model),
+            "-c",
+            "256",
+            "-t",
+            "4",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "57321",
+            "--api-key",
+            "a" * 64,
+        ]
         port, key = probe._inspect_llama_argv(
-            [
-                str(link),
-                "-m",
-                str(model),
-                "-c",
-                "256",
-                "-t",
-                "4",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                "57321",
-                "--api-key",
-                "a" * 64,
-            ],
+            arguments,
             expected_link=link,
             expected_model=model,
         )
         self.assertEqual(port, 57321)
         self.assertEqual(len(key), 64)
+        device_port, device_key = probe._inspect_llama_argv(
+            arguments + ["--device", "Vulkan0"],
+            expected_link=link,
+            expected_model=model,
+        )
+        self.assertEqual(device_port, port)
+        self.assertEqual(device_key, key)
 
     def test_rejects_non_loopback_or_malformed_llama_arguments(self):
         link = Path("/private/stage/usr/lib/mozkey/llama-server")
@@ -74,6 +82,11 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
             probe._inspect_llama_argv(
                 weak_key, expected_link=link, expected_model=model
             )
+        unsafe_device = list(base) + ["--device", "CUDA0 --host 0.0.0.0"]
+        with self.assertRaisesRegex(probe.ProbeFailure, "llama_arguments_invalid"):
+            probe._inspect_llama_argv(
+                unsafe_device, expected_link=link, expected_model=model
+            )
 
     def test_parses_only_listening_proc_tcp_entries(self):
         table = """\
@@ -93,7 +106,7 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
         ) as temporary:
             socket_path = Path(temporary) / "wire.sock"
             ready = threading.Event()
-            captured: list[bytes] = []
+            captured: list[tuple[bytes, bytes]] = []
 
             def receive_exact(connection: socket.socket, size: int) -> bytes:
                 output = b""
@@ -113,8 +126,14 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
                             connection, probe.WIRE_REQUEST_HEADER.size
                         )
                         fields = probe.WIRE_REQUEST_HEADER.unpack(header)
-                        prompt_size = fields[-1]
-                        captured.append(receive_exact(connection, prompt_size))
+                        prompt_size = fields[-2]
+                        backend_device_size = fields[-1]
+                        captured.append(
+                            (
+                                receive_exact(connection, prompt_size),
+                                receive_exact(connection, backend_device_size),
+                            )
+                        )
                         value = "成功".encode("utf-8")
                         response = probe.WIRE_RESPONSE_HEADER.pack(
                             probe.WIRE_MAGIC,
@@ -139,11 +158,12 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
                     generation=41,
                     timeout=2,
                     prompt="private probe",
+                    backend_device="Vulkan0",
                 )
             )
             server.join(2)
             self.assertFalse(server.is_alive())
-            self.assertEqual(captured, [b"private probe"])
+            self.assertEqual(captured, [(b"private probe", b"Vulkan0")])
 
     def test_authenticated_completion_uses_bearer_and_bounded_json(self):
         key = "c" * 64

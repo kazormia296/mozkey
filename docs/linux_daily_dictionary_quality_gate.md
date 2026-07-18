@@ -1,9 +1,10 @@
 # Linux daily dictionary and fixed-corpus quality gate
 
 This is the reproducible Linux entry point for Mozkey's existing daily
-dictionary innovations. Production modes invoke
-`tools/dictionary/prepare_daily_dictionary.ps1`; source revisions and payload
-SHA-256 values are locked in `tools/dictionary/daily_sources.lock.json`.
+dictionary innovations. Public release generation is Linux-native; the broader
+local-evaluation mode retains the existing PowerShell workflow. Source
+revisions and payload SHA-256 values are locked in
+`tools/dictionary/daily_sources.lock.json`.
 
 ## Daily dictionary source modes
 
@@ -36,7 +37,8 @@ Generate the public Linux dictionary allowlist:
 ```bash
 python tools/dictionary/prepare_daily_dictionary_linux.py \
   --source-mode download \
-  --profile release-approved-only
+  --profile release-approved-only \
+  --backend native
 ```
 
 `local-evaluation` retains the pinned Nico/Pixiv delta for quality experiments.
@@ -44,18 +46,26 @@ python tools/dictionary/prepare_daily_dictionary_linux.py \
 pinned personal names, and the Mozkey syntax guard. It excludes Nico/Pixiv from
 generation, CI transfer, the Bazel release target, and the installed product.
 
-`download` and `cached` require `pwsh` in `PATH`.  An explicit executable and
-bash can be supplied when needed:
+`release-approved-only` defaults to the Linux-native backend and does not
+require PowerShell. It checks out the exact merge-ut/place-name/SudachiDict
+revisions, downloads the dated jawiki index whose SHA-256 is in the source
+lock, uses this checkout's tracked Mozc base dictionaries, and rejects any raw
+merge output that differs from the locked derived SHA-256.
+
+`local-evaluation` still uses the broader PowerShell pipeline. An explicit
+PowerShell executable and bash can be supplied when needed:
 
 ```bash
 python tools/dictionary/prepare_daily_dictionary_linux.py \
-  --source-mode cached --profile release-approved-only \
+  --source-mode cached --profile local-evaluation \
   --pwsh /usr/bin/pwsh \
   --bash-path /bin/bash
 ```
 
-Cached mode forwards `-SkipDownload`, verifies locked direct-download digests,
-and fails before running the pipeline if a profile-required input is absent.
+Cached mode never falls back to the network, verifies locked direct-download
+digests, and fails before running the pipeline if a profile-required input is
+absent. The PowerShell backend forwards `-SkipDownload`; the native backend
+profiles the already-verified raw inputs directly.
 The local-evaluation inputs are:
 
 ```text
@@ -70,13 +80,32 @@ tooling smoke test, not a daily release artifact.
 
 The release profile does not require or inspect the Nico/Pixiv path.
 
+## Fresh-clone release build
+
+The release build wrapper is self-bootstrapping. From a fresh clone, run:
+
+```bash
+scripts/build_mozkey_linux_bazel archlinux-x86_64
+```
+
+If the exact three-file release manifest is absent or invalid, the wrapper
+runs the native `release-approved-only` preparation, verifies the resulting
+manifest and SHA-256 values, and only then starts Bazel. A valid CI transfer or
+previous local generation remains a no-download fast path. For a network-free
+retry after the raw inputs have already been generated, use:
+
+```bash
+MOZKEY_LINUX_DICTIONARY_SOURCE_MODE=cached \
+  scripts/build_mozkey_linux_bazel archlinux-x86_64
+```
+
 Production modes write
 `dist/dictionary/linux-daily-source-manifest.json`.  Its schema is
 `mozkey.daily_dictionary_sources.v2` and records the profile, source-lock
 digest, `source_mode`, pipeline `status`, and the repository-relative path,
 presence, byte size, and SHA-256 of each required input. Cached mode
-fingerprints its inputs before and after the PowerShell pipeline and fails if
-any digest changes during the run. On pipeline failure, the manifest is
+fingerprints its inputs before and after the selected pipeline and fails if any
+digest changes during the run. On pipeline failure, the manifest is
 rewritten with `status: failed` for CI diagnostics.
 
 Release generation additionally writes
@@ -87,9 +116,10 @@ builds select the release target with
 `--define=mozkey_dictionary_profile=release-approved-only`.
 
 Daily files under `src/data/dictionary_koyasi/generated/` and `dist/` are
-ignored and must not be committed.  Daily preparation intentionally selects a
-local target in `src/data/dictionary_oss/BUILD.bazel`.  Restore the committed
-sample target before committing unrelated work:
+ignored and must not be committed. Local-evaluation preparation can select a
+local target in `src/data/dictionary_oss/BUILD.bazel`; the public release target
+is selected explicitly by its Bazel define. Restore the committed sample target
+before committing unrelated local-evaluation work:
 
 ```bash
 pwsh -NoProfile -File tools/dictionary/use_merge_ut_profile.ps1 -Profile sample

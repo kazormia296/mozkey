@@ -1,5 +1,5 @@
 {
-  "schema_version": "mozkey.daily_dictionary_source_lock.v1",
+  "schema_version": "mozkey.daily_dictionary_source_lock.v2",
   "profiles": {
     "local-evaluation": {
       "description": "Pinned evaluation inputs, including data that is not approved for redistribution.",
@@ -8,6 +8,7 @@
         "mozcdic-ut-place-names",
         "mozcdic-ut-sudachidict",
         "mozcdic-ut-personal-names",
+        "jawiki-dump-index",
         "dic-nico-intersection-pixiv"
       ]
     },
@@ -17,12 +18,14 @@
         "merge-ut-dictionaries",
         "mozcdic-ut-place-names",
         "mozcdic-ut-sudachidict",
-        "mozcdic-ut-personal-names"
+        "mozcdic-ut-personal-names",
+        "jawiki-dump-index"
       ]
     }
   },
   "sources": {
     "dic-nico-intersection-pixiv": {
+      "kind": "git",
       "license_expression": "LicenseRef-Review-Required",
       "local_evaluation_only": true,
       "payloads": {
@@ -36,7 +39,23 @@
       "repository": "https://github.com/ncaq/dic-nico-intersection-pixiv.git",
       "revision": "db8953c31d30528515d9d1ccf103cd337f4a108d"
     },
+    "jawiki-dump-index": {
+      "kind": "url",
+      "license_expression": "LicenseRef-Wikimedia-Jawiki-Build-Statistics",
+      "local_evaluation_only": false,
+      "payloads": {
+        "multistream_index": {
+          "path": "jawiki-20260701-pages-articles-multistream-index.txt.bz2",
+          "sha256": "158d671e1bb5eaa87e405c452f22d5f79dd8c7dd3aec618c07a079a471d440ac",
+          "url": "https://dumps.wikimedia.org/jawiki/20260701/jawiki-20260701-pages-articles-multistream-index.txt.bz2"
+        }
+      },
+      "release_approved": true,
+      "repository": "https://dumps.wikimedia.org/jawiki/",
+      "version": "20260701"
+    },
     "merge-ut-dictionaries": {
+      "kind": "git",
       "license_expression": "Apache-2.0",
       "local_evaluation_only": false,
       "payloads": {
@@ -47,6 +66,10 @@
         "merge_script": {
           "path": "src/merge/merge_dictionaries.py",
           "sha256": "00b0f3d8ab504797b970ad108df82df93b1ea9228829cc6ccf5c2afadb2c3789"
+        },
+        "release_safe_output": {
+          "path": "src/data/dictionary_koyasi/generated/mozcdic-ut-safe.txt",
+          "sha256": "45054f8eb1a961dce414eb8109743b21088a6ce2d2db119d34b77a12e7eed2f0"
         }
       },
       "release_approved": true,
@@ -55,6 +78,7 @@
       "tree": "34d4db2cedd095fec527599822743fc56be23935"
     },
     "mozcdic-ut-personal-names": {
+      "kind": "git",
       "license_expression": "Apache-2.0",
       "local_evaluation_only": false,
       "payloads": {
@@ -73,6 +97,7 @@
       "revision": "159e01bf4af61a3fa9367ae2578fd42c464a0ea7"
     },
     "mozcdic-ut-place-names": {
+      "kind": "git",
       "license_expression": "LicenseRef-Public-Domain-Japan-Post-Zip-Data",
       "local_evaluation_only": false,
       "payloads": {
@@ -87,6 +112,7 @@
       "tree": "98e5c7e2c7ff0ce977e35a43ac5444975d3ac248"
     },
     "mozcdic-ut-sudachidict": {
+      "kind": "git",
       "license_expression": "Apache-2.0",
       "local_evaluation_only": false,
       "payloads": {

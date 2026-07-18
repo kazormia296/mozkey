@@ -11,6 +11,8 @@ repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
 source_root="${repository_root}/src"
 attestation_tool="${repository_root}/tools/release/linux_build_attestation.py"
 zenz_normalizer="${repository_root}/tools/release/normalize_zenz_gguf.py"
+dictionary_preparer="${repository_root}/tools/dictionary/prepare_daily_dictionary_linux.py"
+dictionary_verifier="${repository_root}/tools/dictionary/verify_release_dictionary_artifact.py"
 
 if [ "$#" -ne 1 ]; then
   echo "usage: $0 ubuntu-layout|archlinux-x86_64" >&2
@@ -58,7 +60,11 @@ do
     exit 1
   fi
 done
-for release_tool in "${attestation_tool}" "${zenz_normalizer}"
+for release_tool in \
+  "${attestation_tool}" \
+  "${zenz_normalizer}" \
+  "${dictionary_preparer}" \
+  "${dictionary_verifier}"
 do
   if [ ! -f "${release_tool}" ] || [ -L "${release_tool}" ]; then
     echo "Linux release tool is missing or unsafe: ${release_tool}" >&2
@@ -78,19 +84,48 @@ cleanup_failed_attestation() {
 }
 trap cleanup_failed_attestation EXIT HUP INT TERM
 
-if ! git_status="$(
-  git -C "${repository_root}" status \
-    --porcelain=v1 \
-    --untracked-files=all \
-    --ignore-submodules
-)"; then
-  echo "failed to inspect the Mozkey release worktree" >&2
-  exit 1
+require_clean_worktree() {
+  if ! git_status="$(
+    git -C "${repository_root}" status \
+      --porcelain=v1 \
+      --untracked-files=all \
+      --ignore-submodules
+  )"; then
+    echo "failed to inspect the Mozkey release worktree" >&2
+    exit 1
+  fi
+  if [ -n "${git_status}" ]; then
+    echo "refusing to build from tracked changes or non-ignored untracked files" >&2
+    exit 1
+  fi
+}
+require_clean_worktree
+
+# CI transfers an already-generated allowlist, while a fresh clone has no
+# ignored dictionary outputs.  Bootstrap only when the exact manifest cannot
+# be verified; a valid transferred artifact remains a zero-download fast path.
+if ! python3 "${dictionary_verifier}" \
+  --root "${repository_root}" \
+  --generation-workspace >/dev/null 2>&1; then
+  dictionary_source_mode="${MOZKEY_LINUX_DICTIONARY_SOURCE_MODE:-download}"
+  case "${dictionary_source_mode}" in
+    download|cached) ;;
+    *)
+      echo "MOZKEY_LINUX_DICTIONARY_SOURCE_MODE must be download or cached" >&2
+      exit 2
+      ;;
+  esac
+  printf 'Preparing missing Mozkey release dictionary (%s, native backend)...\n' \
+    "${dictionary_source_mode}"
+  python3 "${dictionary_preparer}" \
+    --source-mode "${dictionary_source_mode}" \
+    --profile release-approved-only \
+    --backend native
 fi
-if [ -n "${git_status}" ]; then
-  echo "refusing to build from tracked changes or non-ignored untracked files" >&2
-  exit 1
-fi
+python3 "${dictionary_verifier}" \
+  --root "${repository_root}" \
+  --generation-workspace
+require_clean_worktree
 
 # The upstream Zenz GGUF carries private tokenizer metadata which an
 # unmodified llama.cpp correctly rejects.  Materialize and verify the pinned,

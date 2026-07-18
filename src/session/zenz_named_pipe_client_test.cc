@@ -26,7 +26,7 @@ namespace {
 
 #if !defined(_WIN32)
 constexpr uint32_t kTestZenzWireMagic = 0x315A4E5A;
-constexpr uint16_t kTestZenzWireVersion = 1;
+constexpr uint16_t kTestZenzWireVersion = 2;
 constexpr uint16_t kTestZenzWireKindResponse = 2;
 constexpr uint32_t kTestMaxWirePayloadBytes = 64 * 1024;
 
@@ -112,6 +112,17 @@ TEST(ZenzNamedPipeClientTest, DefaultPipeMatchesConfigContract) {
   config::Config config;
   EXPECT_STREQ(kDefaultZenzNamedPipeName, kExpectedPipeName);
   EXPECT_EQ(config.zenz_live_correction_pipe_name(), kExpectedPipeName);
+}
+
+TEST(ZenzNamedPipeClientTest, RejectsOversizedBackendDeviceBeforeConnecting) {
+  ZenzNamedPipeClient client;
+  ZenzLiveRequest request;
+  request.backend_device = std::string(129, 'x');
+
+  const ZenzLiveResponse response = client.Convert(request);
+
+  EXPECT_FALSE(response.ok);
+  EXPECT_EQ(response.debug, "backend_device_too_large");
 }
 
 TEST(ZenzNamedPipeClientTest, UnixFallback) {

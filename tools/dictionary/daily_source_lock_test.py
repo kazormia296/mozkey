@@ -22,12 +22,28 @@ class DailySourceLockTest(unittest.TestCase):
                 "mozcdic-ut-place-names",
                 "mozcdic-ut-sudachidict",
                 "mozcdic-ut-personal-names",
+                "jawiki-dump-index",
             },
         )
         self.assertEqual(local_ids - release_ids, {"dic-nico-intersection-pixiv"})
         nico = lock["sources"]["dic-nico-intersection-pixiv"]
         self.assertFalse(nico["release_approved"])
         self.assertTrue(nico["local_evaluation_only"])
+        jawiki = lock["sources"]["jawiki-dump-index"]
+        self.assertEqual(jawiki["kind"], "url")
+        self.assertIn(
+            jawiki["version"],
+            jawiki["payloads"]["multistream_index"]["url"],
+        )
+
+    def test_url_source_must_be_version_pinned(self) -> None:
+        lock = target.load_lock()
+        malformed = copy.deepcopy(lock)
+        malformed["sources"]["jawiki-dump-index"]["payloads"][
+            "multistream_index"
+        ]["url"] = "https://dumps.wikimedia.org/jawiki/latest/index.txt.bz2"
+        with self.assertRaisesRegex(target.SourceLockError, "not revision-pinned"):
+            target.validate_lock(malformed)
 
     def test_unapproved_source_cannot_enter_release_profile(self) -> None:
         lock = target.load_lock()

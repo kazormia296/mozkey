@@ -72,6 +72,7 @@ class ConfigHandlerTest : public testing::TestWithTempUserProfile {
 
 void SetMozkeyInputDefaultsForTesting(Config* config) {
   config->set_use_live_conversion(true);
+  config->set_use_zenz_live_correction(true);
   config->set_show_candidate_window_on_initial_conversion(true);
   config->set_use_direct_commit(true);
   config->set_direct_commit_key(
@@ -142,6 +143,8 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaults) {
   const Config output = ConfigHandler::GetCopiedConfig();
 
   EXPECT_TRUE(output.use_live_conversion());
+  EXPECT_TRUE(output.use_zenz_live_correction());
+  EXPECT_TRUE(output.zenz_live_correction_device().empty());
   EXPECT_EQ(output.live_conversion_min_key_length(), 2);
   EXPECT_TRUE(output.show_candidate_window_on_initial_conversion());
   EXPECT_TRUE(output.use_direct_commit());
@@ -166,6 +169,7 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaultsPreservesExplicitFalse) {
   Config input;
   ConfigHandler::GetDefaultConfig(&input);
   input.set_use_live_conversion(false);
+  input.set_use_zenz_live_correction(false);
   input.set_show_candidate_window_on_initial_conversion(false);
   input.set_use_direct_commit(false);
 
@@ -173,6 +177,7 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaultsPreservesExplicitFalse) {
   const Config output = ConfigHandler::GetCopiedConfig();
 
   EXPECT_FALSE(output.use_live_conversion());
+  EXPECT_FALSE(output.use_zenz_live_correction());
   EXPECT_FALSE(output.show_candidate_window_on_initial_conversion());
   EXPECT_FALSE(output.use_direct_commit());
 }
@@ -310,6 +315,8 @@ TEST_F(ConfigHandlerTest, GetDefaultConfig) {
 #endif  // __APPLE__ || OS_CHROMEOS
 
   EXPECT_EQ(output.live_conversion_min_key_length(), 2);
+  EXPECT_TRUE(output.use_zenz_live_correction());
+  EXPECT_TRUE(output.zenz_live_correction_device().empty());
   EXPECT_EQ(output.character_form_rules_size(), 13);
 
   struct TestCase {
