@@ -178,6 +178,10 @@ jobs:
 
       - name: Build the Arch Linux product
         run: |
+          # The container runs as root while checkout files retain the
+          # runner's ownership.  Trust this exact ephemeral workspace so the
+          # attestation-producing scripts can inspect its Git metadata.
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
           scripts/build_mozkey_linux_bazel archlinux-x86_64
 
       - name: Validate llama CLI, real GGUF inference, and staged product
