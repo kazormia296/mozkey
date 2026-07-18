@@ -57,6 +57,7 @@ mozc_cc_library(
     ],
     deps = [
         ":mozc_client_interface",
+        "//grimodex:client_context",
         "//protocol:commands_cc_proto",
     ],
 )
