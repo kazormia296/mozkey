@@ -346,6 +346,11 @@ class PrepareWindowsZenzRuntimeTest(unittest.TestCase):
         self.assertIn('\\\\arm64\\\\Microsoft\\.VC[0-9]+\\.CRT\\\\', arm64_job)
         self.assertNotIn("\\x64\\Microsoft.VC145.CRT", arm64_job)
         self.assertEqual(workflow.count("if ($LASTEXITCODE -ne 0)"), 6)
+        self.assertIn(
+            ".\\tools\\dictionary\\prepare_daily_dictionary.ps1 "
+            "-ReleaseApprovedOnly",
+            workflow,
+        )
 
     def test_release_build_uses_only_generated_runtime(self) -> None:
         build = (

@@ -32,7 +32,7 @@ jobs:
           PYTHONIOENCODING: "utf-8"
         run: |
           $ErrorActionPreference = "Stop"
-          ./tools/dictionary/prepare_daily_dictionary.ps1
+          ./tools/dictionary/prepare_daily_dictionary.ps1 -ReleaseApprovedOnly
 
       - name: upload daily dictionary
         uses: actions/upload-artifact@v6

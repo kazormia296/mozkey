@@ -205,6 +205,11 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         self.assertIn('out = "mozc_zenz_scorer"', runtime_build)
         self.assertIn("is_executable = True", runtime_build)
         self.assertIn("runtime._verify_universal_scorer", workflow)
+        self.assertIn(
+            "./tools/dictionary/prepare_daily_dictionary.ps1 "
+            "-ReleaseApprovedOnly",
+            workflow,
+        )
 
     def test_dependency_licenses_are_packaged_on_macos_and_windows(self):
         server_build = (
