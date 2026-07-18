@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -49,6 +50,8 @@ WIRE_VERSION = 2
 WIRE_REQUEST = 1
 WIRE_RESPONSE = 2
 WIRE_STATUS_OK = 0
+WIRE_STATUS_ERROR = 1
+WIRE_STATUS_TIMEOUT = 2
 WIRE_REQUEST_HEADER = struct.Struct("<IHHIIIII")
 WIRE_RESPONSE_HEADER = struct.Struct("<IHHIIIII")
 PROBE_PROMPT = "\uee02彼の動きは\uee00セイサイヲカイタ\uee01"
@@ -73,6 +76,34 @@ class ProbeFailure(RuntimeError):
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
+
+
+class WireFailureClass(Enum):
+    """Fixed diagnostic classes for retryable wire probe failures."""
+
+    SERVER_LOADING = "server_loading"
+    TIMEOUT = "timeout"
+    EMPTY_CONTENT = "empty_content"
+    NON_OK = "non_ok"
+    IO_FAILED = "io_failed"
+
+
+_WIRE_FAILURE_REPORT_PRIORITY = (
+    WireFailureClass.SERVER_LOADING,
+    WireFailureClass.TIMEOUT,
+    WireFailureClass.EMPTY_CONTENT,
+    WireFailureClass.IO_FAILED,
+    WireFailureClass.NON_OK,
+)
+_WIRE_IO_FAILURE_DEBUG = frozenset(
+    {
+        b"connect_failed",
+        b"inet_pton_failed",
+        b"recv_failed",
+        b"send_failed",
+        b"socket_failed",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -340,7 +371,42 @@ def _recv_exact(connection: socket.socket, size: int) -> bytes:
     return b"".join(output)
 
 
-def _send_wire_request(socket_path: Path, generation: int, timeout: float) -> bool:
+def _classify_wire_failure(
+    status_code: int, debug: bytes
+) -> WireFailureClass:
+    """Maps scorer-owned wire diagnostics to a fixed, non-sensitive class."""
+    if (
+        status_code == WIRE_STATUS_TIMEOUT
+        and debug == b"server_loading"
+    ):
+        return WireFailureClass.SERVER_LOADING
+    if status_code == WIRE_STATUS_TIMEOUT or (
+        status_code == WIRE_STATUS_ERROR and debug == b"timeout"
+    ):
+        return WireFailureClass.TIMEOUT
+    if status_code == WIRE_STATUS_ERROR and debug == b"empty_content":
+        return WireFailureClass.EMPTY_CONTENT
+    if status_code == WIRE_STATUS_ERROR and debug in _WIRE_IO_FAILURE_DEBUG:
+        return WireFailureClass.IO_FAILED
+    return WireFailureClass.NON_OK
+
+
+def _wire_completion_timeout_code(
+    observations: dict[WireFailureClass, int],
+) -> str:
+    dominant = WireFailureClass.NON_OK
+    dominant_count = 0
+    for failure_class in _WIRE_FAILURE_REPORT_PRIORITY:
+        count = observations.get(failure_class, 0)
+        if count > dominant_count:
+            dominant = failure_class
+            dominant_count = count
+    return f"wire_completion_timeout_{dominant.value}"
+
+
+def _send_wire_request(
+    socket_path: Path, generation: int, timeout: float
+) -> WireFailureClass | None:
     prompt = PROBE_PROMPT.encode("utf-8")
     request = WIRE_REQUEST_HEADER.pack(
         WIRE_MAGIC,
@@ -352,9 +418,10 @@ def _send_wire_request(socket_path: Path, generation: int, timeout: float) -> bo
         len(prompt),
         0,
     )
-    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    connection.settimeout(max(0.1, min(timeout, 7.0)))
+    connection: socket.socket | None = None
     try:
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.settimeout(max(0.1, min(timeout, 7.0)))
         connection.connect(str(socket_path))
         connection.sendall(request + prompt)
         response = WIRE_RESPONSE_HEADER.unpack(
@@ -373,17 +440,23 @@ def _send_wire_request(socket_path: Path, generation: int, timeout: float) -> bo
         ):
             raise ProbeFailure("wire_response_invalid")
         value = _recv_exact(connection, value_size)
-        _recv_exact(connection, debug_size)
+        debug = _recv_exact(connection, debug_size)
         if status_code != WIRE_STATUS_OK:
-            return False
+            return _classify_wire_failure(status_code, debug)
         try:
-            return bool(value.decode("utf-8", errors="strict").strip())
+            if value.decode("utf-8", errors="strict").strip():
+                return None
+            return WireFailureClass.EMPTY_CONTENT
         except UnicodeError as error:
             raise ProbeFailure("wire_response_invalid") from error
-    except (OSError, TimeoutError) as error:
-        raise ProbeFailure("wire_io_failed") from error
+    except (OSError, TimeoutError):
+        return WireFailureClass.IO_FAILED
     finally:
-        connection.close()
+        if connection is not None:
+            try:
+                connection.close()
+            except OSError:
+                pass
 
 
 def _validate_private_path(path: Path, *, socket_path: bool) -> None:
@@ -463,6 +536,7 @@ def _probe_live_runtime(layout: RuntimeLayout, timeout_seconds: float) -> None:
         lock_path = home / ".mozc_zenz_scorer.lock"
         deadline = time.monotonic() + timeout_seconds
         failure: BaseException | None = None
+        wire_failures = {failure_class: 0 for failure_class in WireFailureClass}
         try:
             while not socket_path.exists() and time.monotonic() < deadline:
                 if scorer.poll() is not None:
@@ -475,18 +549,18 @@ def _probe_live_runtime(layout: RuntimeLayout, timeout_seconds: float) -> None:
             while time.monotonic() < deadline:
                 if scorer.poll() is not None:
                     raise ProbeFailure("scorer_exited_early")
-                try:
-                    if _send_wire_request(
-                        socket_path, generation, deadline - time.monotonic()
-                    ):
-                        break
-                except ProbeFailure as error:
-                    if error.code != "wire_io_failed":
-                        raise
+                wire_failure = _send_wire_request(
+                    socket_path, generation, deadline - time.monotonic()
+                )
+                if wire_failure is None:
+                    break
+                wire_failures[wire_failure] += 1
                 generation += 1
                 time.sleep(0.1)
             else:
-                raise ProbeFailure("wire_completion_timeout")
+                raise ProbeFailure(
+                    _wire_completion_timeout_code(wire_failures)
+                )
         except BaseException as error:
             failure = error
         try:

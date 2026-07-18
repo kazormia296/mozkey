@@ -80,6 +80,53 @@ def _create_probe_layout(root: Path) -> target.RuntimeLayout:
     )
 
 
+def _send_fake_wire_response(
+    *,
+    status: int,
+    value: bytes = b"",
+    debug: bytes = b"",
+):
+    response = bytearray(
+        target.WIRE_RESPONSE_HEADER.pack(
+            target.WIRE_MAGIC,
+            target.WIRE_VERSION,
+            target.WIRE_RESPONSE,
+            7,
+            status,
+            1,
+            len(value),
+            len(debug),
+        )
+        + value
+        + debug
+    )
+
+    class FakeConnection:
+        def settimeout(self, timeout):
+            self.timeout = timeout
+
+        def connect(self, path):
+            self.path = path
+
+        def sendall(self, payload):
+            self.payload = payload
+
+        def recv(self, size):
+            chunk = bytes(response[:size])
+            del response[:size]
+            return chunk
+
+        def close(self):
+            pass
+
+    connection = FakeConnection()
+    with mock.patch.object(target.socket, "socket", return_value=connection):
+        result = target._send_wire_request(
+            Path("/private/runtime.sock"), 7, 2.0
+        )
+    return result, connection
+
+
 class ProbeMacosZenzRuntimeTest(unittest.TestCase):
     def test_runtime_architecture_contract_is_arm64_only(self):
         self.assertEqual(target.ARCHITECTURES, (("arm64", "12.0"),))
@@ -107,6 +154,21 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
         self.assertEqual(
             target.WIRE_RESPONSE_HEADER.format,
             portable_probe.WIRE_RESPONSE_HEADER.format,
+        )
+
+    def test_scorer_ready_probe_uses_full_client_timeout(self):
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "src/zenz_scorer/main.cc"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "constexpr uint32_t kLlamaReadyProbeTimeoutMsec = "
+            "kMaxRequestTimeoutMsec;",
+            source,
+        )
+        self.assertEqual(
+            source.count("kLlamaReadyProbeTimeoutMsec,\n              8,"),
+            2,
         )
 
     def test_bazel_packaging_stages_canonical_runtime_resource_paths(self):
@@ -357,43 +419,11 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
 
     def test_wire_probe_requires_success_and_nonempty_value(self):
         value = "候補".encode("utf-8")
-        response = bytearray(
-            target.WIRE_RESPONSE_HEADER.pack(
-                target.WIRE_MAGIC,
-                target.WIRE_VERSION,
-                target.WIRE_RESPONSE,
-                7,
-                target.WIRE_STATUS_OK,
-                1,
-                len(value),
-                0,
-            )
-            + value
+        result, connection = _send_fake_wire_response(
+            status=target.WIRE_STATUS_OK,
+            value=value,
         )
-
-        class FakeConnection:
-            def settimeout(self, timeout):
-                self.timeout = timeout
-
-            def connect(self, path):
-                self.path = path
-
-            def sendall(self, payload):
-                self.payload = payload
-
-            def recv(self, size):
-                chunk = bytes(response[:size])
-                del response[:size]
-                return chunk
-
-            def close(self):
-                pass
-
-        connection = FakeConnection()
-        with mock.patch.object(target.socket, "socket", return_value=connection):
-            self.assertTrue(
-                target._send_wire_request(Path("/private/runtime.sock"), 7, 2.0)
-            )
+        self.assertIsNone(result)
         prompt = target.PROBE_PROMPT.encode("utf-8")
         self.assertEqual(
             connection.payload,
@@ -408,6 +438,133 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
                 0,
             )
             + prompt,
+        )
+
+    def test_wire_failure_debug_is_mapped_to_fixed_allowlisted_classes(self):
+        cases = (
+            (
+                target.WIRE_STATUS_TIMEOUT,
+                b"server_loading",
+                target.WireFailureClass.SERVER_LOADING,
+            ),
+            (
+                target.WIRE_STATUS_ERROR,
+                b"timeout",
+                target.WireFailureClass.TIMEOUT,
+            ),
+            (
+                target.WIRE_STATUS_ERROR,
+                b"empty_content",
+                target.WireFailureClass.EMPTY_CONTENT,
+            ),
+            (
+                target.WIRE_STATUS_ERROR,
+                b"connect_failed",
+                target.WireFailureClass.IO_FAILED,
+            ),
+            (
+                target.WIRE_STATUS_ERROR,
+                b"content_field_not_found",
+                target.WireFailureClass.NON_OK,
+            ),
+            (
+                target.WIRE_STATUS_ERROR,
+                b"/private/runner/model-and-prompt",
+                target.WireFailureClass.NON_OK,
+            ),
+        )
+        for status, debug, expected in cases:
+            with self.subTest(status=status, debug=debug):
+                result, _ = _send_fake_wire_response(
+                    status=status,
+                    debug=debug,
+                )
+                self.assertEqual(result, expected)
+                self.assertNotIn("private", result.value)
+
+        result, _ = _send_fake_wire_response(
+            status=target.WIRE_STATUS_OK,
+            value=b" \n",
+            debug=b"arbitrary-success-debug",
+        )
+        self.assertEqual(result, target.WireFailureClass.EMPTY_CONTENT)
+
+        with mock.patch.object(
+            target.socket,
+            "socket",
+            side_effect=OSError("/private/socket/details"),
+        ):
+            self.assertEqual(
+                target._send_wire_request(
+                    Path("/private/runtime.sock"), 7, 2.0
+                ),
+                target.WireFailureClass.IO_FAILED,
+            )
+
+    def test_wire_completion_timeout_uses_dominant_fixed_class(self):
+        observations = {failure_class: 0 for failure_class in target.WireFailureClass}
+        observations[target.WireFailureClass.SERVER_LOADING] = 4
+        observations[target.WireFailureClass.IO_FAILED] = 1
+        code = target._wire_completion_timeout_code(observations)
+        self.assertEqual(code, "wire_completion_timeout_server_loading")
+        self.assertNotIn("/private", code)
+
+    def test_live_probe_reports_only_dominant_fixed_failure_class(self):
+        layout = target.RuntimeLayout(
+            converter_app=Path("/runtime/Converter.app"),
+            resources=Path("/runtime/Resources"),
+            scorer=Path("/runtime/mozc_zenz_scorer"),
+            server=Path("/runtime/llama-server"),
+            model=Path("/runtime/model.gguf"),
+        )
+
+        class FakeScorer:
+            stopped = False
+
+            def poll(self):
+                return 0 if self.stopped else None
+
+        scorer = FakeScorer()
+
+        def stop_scorer(process):
+            process.stopped = True
+
+        with mock.patch.object(
+            target.subprocess, "Popen", return_value=scorer
+        ) as popen, mock.patch.object(
+            Path, "exists", return_value=True
+        ), mock.patch.object(
+            target, "_validate_private_path"
+        ), mock.patch.object(
+            target,
+            "_send_wire_request",
+            side_effect=(
+                target.WireFailureClass.SERVER_LOADING,
+                target.WireFailureClass.SERVER_LOADING,
+                target.WireFailureClass.IO_FAILED,
+            ),
+        ), mock.patch.object(
+            target.time,
+            "monotonic",
+            side_effect=(0.0, 1.0, 2.0, 3.0, 4.0, 31.0),
+        ), mock.patch.object(
+            target.time, "sleep"
+        ), mock.patch.object(
+            target, "_stop_scorer", side_effect=stop_scorer
+        ):
+            with self.assertRaises(target.ProbeFailure) as raised:
+                target._probe_live_runtime(layout, 30.0)
+
+        self.assertEqual(
+            raised.exception.code,
+            "wire_completion_timeout_server_loading",
+        )
+        self.assertNotIn("private", str(raised.exception))
+        self.assertEqual(
+            popen.call_args.kwargs["stdout"], target.subprocess.DEVNULL
+        )
+        self.assertEqual(
+            popen.call_args.kwargs["stderr"], target.subprocess.DEVNULL
         )
 
     def test_macho_contract_rejects_dynamic_llama_dependency(self):
@@ -508,6 +665,27 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
             stderr.getvalue(),
             "macOS Zenz runtime probe failed: unexpected_runtime_error\n",
         )
+
+    def test_main_prints_only_fixed_wire_failure_code(self):
+        stderr = io.StringIO()
+        with mock.patch.object(
+            target,
+            "run_probe",
+            side_effect=target.ProbeFailure(
+                "wire_completion_timeout_server_loading"
+            ),
+        ):
+            with redirect_stderr(stderr):
+                self.assertEqual(
+                    target.main(["--package", "/private/pkg"]),
+                    1,
+                )
+        self.assertEqual(
+            stderr.getvalue(),
+            "macOS Zenz runtime probe failed: "
+            "wire_completion_timeout_server_loading\n",
+        )
+        self.assertNotIn("/private", stderr.getvalue())
 
 
 if __name__ == "__main__":

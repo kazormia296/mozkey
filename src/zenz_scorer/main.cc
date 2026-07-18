@@ -107,6 +107,11 @@ constexpr uint32_t kMinLlamaReadyWaitMsec = 1500;
 constexpr uint32_t kMaxPromptBytes = 8192;
 constexpr uint32_t kMaxOutputChars = 256;
 constexpr uint32_t kMaxRequestTimeoutMsec = 5000;
+// The readiness probe performs the same small completion used to prove that
+// llama-server is usable.  Give it the full request budget: a shorter probe
+// can permanently keep the scorer in server_loading when inference succeeds
+// within the client SLA but takes longer than the probe-only timeout.
+constexpr uint32_t kLlamaReadyProbeTimeoutMsec = kMaxRequestTimeoutMsec;
 constexpr size_t kMaxHttpResponseBytes = 65536;
 constexpr uint32_t kMaxBackendDeviceBytes = 128;
 
@@ -1344,7 +1349,7 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
       if (HttpPostCompletion(
               options,
               "\xEE\xB8\x82\xEE\xB8\x80テスト\xEE\xB8\x81",
-              1500,
+              kLlamaReadyProbeTimeoutMsec,
               8,
               &value,
               &local_debug)) {
@@ -2060,7 +2065,7 @@ void StartLlamaReadyProbeInBackground(const Options& options) {
       if (HttpPostCompletion(
               options,
               "\xEE\xB8\x82\xEE\xB8\x80テスト\xEE\xB8\x81",
-              1500,
+              kLlamaReadyProbeTimeoutMsec,
               8,
               &value,
               &local_debug)) {
