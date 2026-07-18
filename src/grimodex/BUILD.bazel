@@ -23,6 +23,19 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "consumer_handshake",
+    srcs = ["consumer_handshake.cc"],
+    hdrs = ["consumer_handshake.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_library(
     name = "protocol_v1",
     srcs = ["protocol_v1.cc"],
     hdrs = ["protocol_v1.h"],
@@ -136,6 +149,22 @@ mozc_cc_test(
 )
 
 mozc_cc_test(
+    name = "consumer_handshake_test",
+    size = "small",
+    srcs = ["consumer_handshake_test.cc"],
+    deps = [
+        ":consumer_handshake",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+        "@com_google_protobuf//:json_util",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+mozc_cc_test(
     name = "protocol_v1_secure_reader_test",
     size = "small",
     srcs = ["protocol_v1_secure_reader_test.cc"],
@@ -210,6 +239,7 @@ test_suite(
     name = "portable_protocol_v1_tests",
     tests = [
         ":client_context_test",
+        ":consumer_handshake_test",
         ":project_dictionary_bridge_test",
         ":project_dictionary_provider_test",
         ":protocol_v1_test",
