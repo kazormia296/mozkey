@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and stage the pinned universal macOS Zenz runtime.
+"""Build and stage the pinned arm64 macOS Zenz runtime.
 
 The generated files are intentionally not checked in.  A macOS package build
 must run this tool first; Bazel then fails closed if any staged input is absent.
@@ -43,7 +43,7 @@ MODEL_NAME = "zenz-v3.2-small-Q5_K_M.gguf"
 SCORER_NAME = "mozc_zenz_scorer"
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_PROBE_OUTPUT_BYTES = 1024 * 1024
-ARCHITECTURES = (("arm64", "11.0"), ("x86_64", "10.15"))
+ARCHITECTURES = (("arm64", "12.0"),)
 REQUIRED_CMAKE_BOOL_OPTIONS = {
     "BUILD_SHARED_LIBS": "OFF",
     "GGML_ACCELERATE": "ON",
@@ -340,7 +340,7 @@ def _build_scorer_architecture(
     return output
 
 
-def _verify_universal_architecture_contract(
+def _verify_arm64_architecture_contract(
     path: Path, error_prefix: str
 ) -> None:
     _require_regular(path, error_prefix)
@@ -348,7 +348,7 @@ def _verify_universal_architecture_contract(
         raise PreparationError(f"{error_prefix}_not_executable")
 
     arches = _run(["lipo", "-archs", str(path)], capture=True, timeout=20)
-    if set((arches.stdout or "").split()) != {"arm64", "x86_64"}:
+    if set((arches.stdout or "").split()) != {"arm64"}:
         raise PreparationError(f"{error_prefix}_architectures_invalid")
 
     for architecture, expected_target in ARCHITECTURES:
@@ -368,16 +368,16 @@ def _verify_universal_architecture_contract(
             )
 
 
-def _verify_universal_scorer(path: Path) -> None:
-    _verify_universal_architecture_contract(path, "zenz_scorer")
+def _verify_arm64_scorer(path: Path) -> None:
+    _verify_arm64_architecture_contract(path, "zenz_scorer")
 
     dependencies = _run(["otool", "-L", str(path)], capture=True, timeout=20)
     if "@rpath" in (dependencies.stdout or ""):
         raise PreparationError("zenz_scorer_dynamic_dependency_invalid")
 
 
-def _verify_universal_server(path: Path) -> None:
-    _verify_universal_architecture_contract(path, "llama_server")
+def _verify_arm64_server(path: Path) -> None:
+    _verify_arm64_architecture_contract(path, "llama_server")
 
     dependencies = _run(["otool", "-L", str(path)], capture=True, timeout=20)
     dependency_text = dependencies.stdout or ""
@@ -517,46 +517,21 @@ def prepare_runtime(root: Path, archive: Path, output: Path) -> None:
         if not (source / "CMakeLists.txt").is_file():
             raise PreparationError("llama_archive_layout_invalid")
 
-        slices = [
-            _build_architecture(
-                source, work / "build", architecture, deployment, ninja
-            )
-            for architecture, deployment in ARCHITECTURES
-        ]
-        universal = work / "llama-server"
-        _run(
-            [
-                "lipo",
-                "-create",
-                *(str(path) for path in slices),
-                "-output",
-                str(universal),
-            ]
+        architecture, deployment = ARCHITECTURES[0]
+        server = _build_architecture(
+            source, work / "build", architecture, deployment, ninja
         )
-        os.chmod(universal, 0o755)
-        _verify_universal_server(universal)
+        os.chmod(server, 0o755)
+        _verify_arm64_server(server)
 
-        scorer_slices = [
-            _build_scorer_architecture(
-                root, work / "scorer", architecture, deployment
-            )
-            for architecture, deployment in ARCHITECTURES
-        ]
-        universal_scorer = work / SCORER_NAME
-        _run(
-            [
-                "lipo",
-                "-create",
-                *(str(path) for path in scorer_slices),
-                "-output",
-                str(universal_scorer),
-            ]
+        scorer = _build_scorer_architecture(
+            root, work / "scorer", architecture, deployment
         )
-        os.chmod(universal_scorer, 0o755)
-        _verify_universal_scorer(universal_scorer)
+        os.chmod(scorer, 0o755)
+        _verify_arm64_scorer(scorer)
 
-        _atomic_copy(universal, output / "llama-server", 0o755)
-        _atomic_copy(universal_scorer, output / SCORER_NAME, 0o755)
+        _atomic_copy(server, output / "llama-server", 0o755)
+        _atomic_copy(scorer, output / SCORER_NAME, 0o755)
         _atomic_copy(
             normalized_model,
             output / "models" / MODEL_NAME,
@@ -564,15 +539,15 @@ def prepare_runtime(root: Path, archive: Path, output: Path) -> None:
         )
         _write_manifest(output / "zenz-runtime-manifest.json")
 
-    _verify_universal_server(output / "llama-server")
-    _verify_universal_scorer(output / SCORER_NAME)
+    _verify_arm64_server(output / "llama-server")
+    _verify_arm64_scorer(output / SCORER_NAME)
     if sha256_file(output / "models" / MODEL_NAME) != NORMALIZED_MODEL_SHA256:
         raise PreparationError("staged_model_checksum_mismatch")
 
 
 def _parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build and stage the pinned universal macOS Zenz runtime"
+        description="Build and stage the pinned arm64 macOS Zenz runtime"
     )
     parser.add_argument("--root", type=Path, default=REPOSITORY_ROOT)
     parser.add_argument(

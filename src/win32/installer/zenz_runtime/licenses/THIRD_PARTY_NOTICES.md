@@ -48,12 +48,12 @@ This product includes third-party software and model files.
 - macOS runtime: `llama-server` is built from the official llama.cpp `b9637`
   source archive, pinned by SHA-256
   `762283319feb3de30886dc850d42f0e426b06600e7f9639d34e06506597309ca`.
-  The package contains a universal static CPU/Accelerate build for arm64
-  (deployment target 11.0) and x86_64 (deployment target 10.15), with Metal,
-  CURL, RPC, dynamic backends, multimodal video, tests, examples, the unified
-  app, and the Web UI disabled. The tools subtree is configured because b9637
-  defines `llama-server` there, but only the `llama-server` target is built and
-  staged; no other llama.cpp tool binaries are packaged.
+  The package contains an arm64-only static CPU/Accelerate build with deployment
+  target 12.0. Metal, CURL, RPC, dynamic backends, multimodal video, tests,
+  examples, the unified app, and the Web UI are disabled. The tools subtree is
+  configured because b9637 defines `llama-server` there, but only the
+  `llama-server` target is built and staged; no other llama.cpp tool binaries
+  are packaged.
 - Notes: Used as local inference runtime components for the bundled Zenz GGUF model.
 
 ## cpp-httplib

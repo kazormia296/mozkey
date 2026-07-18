@@ -64,21 +64,21 @@ jobs:
         run: |
           python3 src/build_tools/update_deps.py --noqt --nondk
 
-      - name: Build pinned universal Zenz runtime
+      - name: Build pinned arm64 Zenz runtime
         run: |
           python3 tools/release/prepare_macos_zenz_runtime.py
 
-      - name: Assert universal scorer and server Mach-O contracts
+      - name: Assert arm64 scorer and server Mach-O contracts
         run: |
           python3 - <<'PY'
           from pathlib import Path
           from tools.release import prepare_macos_zenz_runtime as runtime
 
           generated = Path("src/mac/zenz_runtime/generated")
-          runtime._verify_universal_scorer(
+          runtime._verify_arm64_scorer(
               generated / runtime.SCORER_NAME
           )
-          runtime._verify_universal_server(generated / "llama-server")
+          runtime._verify_arm64_server(generated / "llama-server")
           PY
 
       - name: Run runtime preparation contract tests
@@ -90,13 +90,13 @@ jobs:
 
       - name: Archive runtime with executable modes
         run: |
-          tar -czf macos-zenz-runtime.tar.gz src/mac/zenz_runtime/generated
+          tar -czf macos-arm64-zenz-runtime.tar.gz src/mac/zenz_runtime/generated
 
-      - name: Upload universal Zenz runtime
+      - name: Upload arm64 Zenz runtime
         uses: actions/upload-artifact@v6
         with:
-          name: macos-zenz-runtime-b9637
-          path: macos-zenz-runtime.tar.gz
+          name: macos-arm64-zenz-runtime-b9637
+          path: macos-arm64-zenz-runtime.tar.gz
           if-no-files-found: error
 
   build_arm64:
@@ -118,15 +118,15 @@ jobs:
           name: daily-dictionary
           path: .
 
-      - name: Download universal Zenz runtime
+      - name: Download arm64 Zenz runtime
         uses: actions/download-artifact@v6
         with:
-          name: macos-zenz-runtime-b9637
+          name: macos-arm64-zenz-runtime-b9637
           path: .
 
-      - name: Restore universal Zenz runtime
+      - name: Restore arm64 Zenz runtime
         run: |
-          tar -xzf macos-zenz-runtime.tar.gz
+          tar -xzf macos-arm64-zenz-runtime.tar.gz
 
       - name: Try to restore update_deps cache
         uses: actions/cache@v5
@@ -150,143 +150,16 @@ jobs:
         run: |
           bazelisk build package --macos_cpus=arm64 --config release_build --define=mozkey_dictionary_profile=release-approved-only
 
-      - name: Probe packaged universal scorer and server
+      - name: Probe packaged arm64 scorer and server with real inference
         run: |
           python3 tools/release/probe_macos_zenz_runtime.py \
             --package src/bazel-bin/mac/Mozc.pkg \
-            --skip-live
+            --timeout-seconds 300
 
       - name: upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: Mozc_arm64.pkg
-          path: src/bazel-bin/mac/Mozc.pkg
-          if-no-files-found: error
-
-  build_intel64:
-    needs: [prepare_daily_dictionary, prepare_macos_zenz_runtime]
-    # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
-    runs-on: macos-15
-    timeout-minutes: 60
-
-    steps:
-      - name: checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: false
-          persist-credentials: false
-
-      - name: download daily dictionary
-        uses: actions/download-artifact@v6
-        with:
-          name: daily-dictionary
-          path: .
-
-      - name: Download universal Zenz runtime
-        uses: actions/download-artifact@v6
-        with:
-          name: macos-zenz-runtime-b9637
-          path: .
-
-      - name: Restore universal Zenz runtime
-        run: |
-          tar -xzf macos-zenz-runtime.tar.gz
-
-      - name: Try to restore update_deps cache
-        uses: actions/cache@v5
-        with:
-          path: src/third_party_cache
-          key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
-
-      - name: Install dependencies
-        working-directory: ./src
-        # This command uses src/third_party_cache as the download cache.
-        run: |
-          python3 build_tools/update_deps.py
-
-      - name: Build Qt
-        working-directory: ./src
-        run: |
-          python3 build_tools/build_qt.py --release --confirm_license --macos_cpus=x86_64
-
-      - name: bazel build
-        working-directory: ./src
-        run: |
-          bazelisk build package --macos_cpus=x86_64 --config release_build --define=mozkey_dictionary_profile=release-approved-only
-
-      - name: Probe packaged universal scorer and server
-        run: |
-          python3 tools/release/probe_macos_zenz_runtime.py \
-            --package src/bazel-bin/mac/Mozc.pkg \
-            --skip-live
-
-      - name: upload artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: Mozc_intel64.pkg
-          path: src/bazel-bin/mac/Mozc.pkg
-          if-no-files-found: error
-
-  build_universal_binary:
-    needs: [prepare_daily_dictionary, prepare_macos_zenz_runtime]
-    # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
-    runs-on: macos-15
-    timeout-minutes: 90
-
-    steps:
-      - name: checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: false
-          persist-credentials: false
-
-      - name: download daily dictionary
-        uses: actions/download-artifact@v6
-        with:
-          name: daily-dictionary
-          path: .
-
-      - name: Download universal Zenz runtime
-        uses: actions/download-artifact@v6
-        with:
-          name: macos-zenz-runtime-b9637
-          path: .
-
-      - name: Restore universal Zenz runtime
-        run: |
-          tar -xzf macos-zenz-runtime.tar.gz
-
-      - name: Try to restore update_deps cache
-        uses: actions/cache@v5
-        with:
-          path: src/third_party_cache
-          key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
-
-      - name: Install dependencies
-        working-directory: ./src
-        # This command uses src/third_party_cache as the download cache.
-        run: |
-          python3 build_tools/update_deps.py
-
-      - name: Build Qt
-        working-directory: ./src
-        run: |
-          python3 build_tools/build_qt.py --release --confirm_license --macos_cpus=x86_64,arm64
-
-      - name: bazel build
-        working-directory: ./src
-        run: |
-          bazelisk build package --macos_cpus=x86_64,arm64 --config release_build --define=mozkey_dictionary_profile=release-approved-only
-
-      - name: Probe packaged universal scorer and server with real inference
-        run: |
-          python3 tools/release/probe_macos_zenz_runtime.py \
-            --package src/bazel-bin/mac/Mozc.pkg
-
-      - name: upload artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: Mozc_universal_binary.pkg
           path: src/bazel-bin/mac/Mozc.pkg
           if-no-files-found: error
 

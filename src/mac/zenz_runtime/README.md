@@ -4,10 +4,9 @@
 tree consumed by the macOS package target. The preparation gate:
 
 - verifies the official llama.cpp `b9637` source archive SHA-256;
-- builds static CPU/Accelerate-only `arm64` (macOS 11.0) and `x86_64`
-  (macOS 10.15) `llama-server` slices, then combines them with `lipo`;
-- compiles matching `mozc_zenz_scorer` slices with the same deployment targets
-  and stages their explicit `lipo` universal binary;
+- builds a static CPU/Accelerate-only `arm64` (macOS 12.0) `llama-server`;
+- compiles and stages a matching `arm64` `mozc_zenz_scorer` with the same
+  deployment target;
 - disables Metal, CURL, RPC, dynamic backends, multimodal video, tests,
   examples, the unified app, and the server Web UI; the tools subtree is
   configured because b9637 defines `llama-server` there, but the preparation

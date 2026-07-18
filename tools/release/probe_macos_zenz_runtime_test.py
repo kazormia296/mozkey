@@ -81,6 +81,13 @@ def _create_probe_layout(root: Path) -> target.RuntimeLayout:
 
 
 class ProbeMacosZenzRuntimeTest(unittest.TestCase):
+    def test_runtime_architecture_contract_is_arm64_only(self):
+        self.assertEqual(target.ARCHITECTURES, (("arm64", "12.0"),))
+        self.assertEqual(
+            target.ARCHITECTURE_MANIFEST,
+            {"arm64": {"deployment_target": "12.0"}},
+        )
+
     def test_wire_contract_matches_portable_runtime_probe(self):
         for name in (
             "WIRE_MAGIC",
@@ -412,7 +419,7 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
             model=Path("/runtime/model.gguf"),
         )
         with mock.patch.object(
-            target, "_verify_universal_macho_contract"
+            target, "_verify_arm64_macho_contract"
         ) as verify_contract, mock.patch.object(
             target,
             "_run",
@@ -433,22 +440,33 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
             ]
         )
 
-    def test_macho_contract_rejects_single_architecture_scorer(self):
-        with mock.patch.object(target, "_run", return_value="arm64\n"):
+    def test_macho_contract_rejects_extra_scorer_architecture(self):
+        with mock.patch.object(
+            target, "_run", return_value="arm64 x86_64\n"
+        ):
             with self.assertRaisesRegex(
                 target.ProbeFailure, "scorer_architectures_invalid"
             ):
-                target._verify_universal_macho_contract(
+                target._verify_arm64_macho_contract(
                     Path("/runtime/mozc_zenz_scorer"), "scorer"
                 )
+
+    def test_macho_contract_accepts_arm64_and_12_deployment_target(self):
+        with mock.patch.object(
+            target,
+            "_run",
+            side_effect=["arm64\n", "    minos 12.0\n"],
+        ):
+            target._verify_arm64_macho_contract(
+                Path("/runtime/mozc_zenz_scorer"), "scorer"
+            )
 
     def test_macho_contract_rejects_wrong_scorer_deployment_target(self):
         with mock.patch.object(
             target,
             "_run",
             side_effect=[
-                "arm64 x86_64\n",
-                "    minos 11.0\n",
+                "arm64\n",
                 "    minos 11.0\n",
             ],
         ):
@@ -456,7 +474,7 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
                 target.ProbeFailure,
                 "scorer_deployment_target_invalid",
             ):
-                target._verify_universal_macho_contract(
+                target._verify_arm64_macho_contract(
                     Path("/runtime/mozc_zenz_scorer"), "scorer"
                 )
 

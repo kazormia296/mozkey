@@ -52,7 +52,7 @@ WIRE_STATUS_OK = 0
 WIRE_REQUEST_HEADER = struct.Struct("<IHHIIIII")
 WIRE_RESPONSE_HEADER = struct.Struct("<IHHIIIII")
 PROBE_PROMPT = "\uee02彼の動きは\uee00セイサイヲカイタ\uee01"
-ARCHITECTURES = (("arm64", "11.0"), ("x86_64", "10.15"))
+ARCHITECTURES = (("arm64", "12.0"),)
 ARCHITECTURE_MANIFEST = {
     architecture: {"deployment_target": deployment_target}
     for architecture, deployment_target in ARCHITECTURES
@@ -248,14 +248,14 @@ def _verify_license_allowlist(licenses: Path) -> None:
             raise ProbeFailure("runtime_license_checksum_mismatch")
 
 
-def _verify_universal_macho_contract(path: Path, error_prefix: str) -> None:
+def _verify_arm64_macho_contract(path: Path, error_prefix: str) -> None:
     arches = set(
         _run(
             ["/usr/bin/lipo", "-archs", str(path)],
             failure_code=f"{error_prefix}_architectures_invalid",
         ).split()
     )
-    if arches != {"arm64", "x86_64"}:
+    if arches != {"arm64"}:
         raise ProbeFailure(f"{error_prefix}_architectures_invalid")
 
     for architecture, expected_target in ARCHITECTURES:
@@ -279,8 +279,8 @@ def _verify_universal_macho_contract(path: Path, error_prefix: str) -> None:
 
 
 def _verify_macho_contract(layout: RuntimeLayout) -> None:
-    _verify_universal_macho_contract(layout.server, "llama")
-    _verify_universal_macho_contract(layout.scorer, "scorer")
+    _verify_arm64_macho_contract(layout.server, "llama")
+    _verify_arm64_macho_contract(layout.scorer, "scorer")
 
     dependencies = _run(
         ["/usr/bin/otool", "-L", str(layout.server)],

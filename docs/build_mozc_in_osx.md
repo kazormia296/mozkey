@@ -16,19 +16,15 @@ cd mozkey/src
 python3 build_tools/update_deps.py
 
 # CMake is required to build both Qt and the bundled Zenz runtime.
-python3 build_tools/build_qt.py --release --confirm_license
+python3 build_tools/build_qt.py --release --confirm_license --macos_cpus=arm64
 
 python3 ../tools/release/prepare_macos_zenz_runtime.py
-bazelisk build package --config release_build
+bazelisk build package --config release_build --macos_cpus=arm64
 open bazel-bin/mac/Mozc.pkg
 ```
 
-💡 With the above build steps, the target CPU architecture of the binaries in
-`Mozc.pkg` is the same as the CPU architecture of the build environment. That
-is, if you build Mozc on arm64 environment, `Mozc.pkg` contains arm64 binaries.
-See the
-["how to specify target CPU architectures"](#how-to-specify-target-cpu-architectures)
-section below about how to do cross build.
+💡 Mozkey for macOS is distributed for Apple Silicon only. The application,
+installer, Zenz scorer, and `llama-server` runtime are all arm64-only.
 
 💡 You can also download `Mozc.pkg` from GitHub Actions. Check
 [Build with GitHub Actions](#build-with-github-actions) for details.
@@ -37,7 +33,7 @@ section below about how to do cross build.
 
 ### System Requirements
 
-64-bit macOS 12 and later versions are supported.
+Apple Silicon Macs running macOS 12 or later are supported.
 
 ### Software Requirements
 
@@ -81,7 +77,7 @@ You can specify `--noqt` option if you would like to use your own Qt binaries.
 ### Build Qt
 
 ```
-python3 build_tools/build_qt.py --release --confirm_license
+python3 build_tools/build_qt.py --release --confirm_license --macos_cpus=arm64
 ```
 
 Drop `--confirm_license` option if you would like to manually confirm the Qt
@@ -90,20 +86,10 @@ license.
 You can also specify `--debug` option to build debug version of Mozc.
 
 ```
-python3 build_tools/build_qt.py --release --debug --confirm_license
+python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=arm64
 ```
 
-You can also specify `--macos_cpus` option, which has the same semantics as the
-[same name option in Bazel](https://bazel.build/reference/command-line-reference#flag--macos_cpus),
-for cross-build including building a Universal macOS Binary.
-
-```
-# Building x86_64 binaries regardless of the host CPU architecture.
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x86_64
-
-# Building Universal macOS Binary for both x86_64 and arm64.
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x86_64,arm64
-```
+The explicit `--macos_cpus=arm64` option matches the Mozkey release contract.
 
 You can skip this process if you have already installed Qt prebuilt binaries.
 
@@ -120,40 +106,19 @@ brew install cmake
 
 ### Build installer
 
-First stage the pinned Universal Zenz runtime. This command downloads the
+First stage the pinned arm64 Zenz runtime. This command downloads the
 official pinned llama.cpp archive when it is not already cached, verifies its
-SHA-256, and builds both `arm64` and `x86_64` runtime slices.
+SHA-256, and builds the arm64 runtime.
 
 ```
 python3 ../tools/release/prepare_macos_zenz_runtime.py
-bazelisk build package --config release_build
+bazelisk build package --config release_build --macos_cpus=arm64
 open bazel-bin/mac/Mozc.pkg
 ```
 
-#### How to specify target CPU architectures
-
-`--macos_cpus` controls the architecture of the Mozkey applications. Every
-package variant embeds the same independently built Universal (`arm64` and
-`x86_64`) Zenz scorer and `llama-server`, so the runtime preparation command
-does not take `--macos_cpus`.
-
-To build an Intel64 macOS binary regardless of the host CPU architecture.
-
-```
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x86_64
-python3 ../tools/release/prepare_macos_zenz_runtime.py
-bazelisk build package --config release_build --macos_cpus=x86_64
-open bazel-bin/mac/Mozc.pkg
-```
-
-To build a Universal macOS Binary both x86_64 and arm64.
-
-```
-python3 build_tools/build_qt.py --release --debug --confirm_license --macos_cpus=x86_64,arm64
-python3 ../tools/release/prepare_macos_zenz_runtime.py
-bazelisk build package --config release_build --macos_cpus=x86_64,arm64
-open bazel-bin/mac/Mozc.pkg
-```
+The runtime preparation command has no architecture option because its output
+is intentionally fixed to arm64 with a macOS 12 deployment target. The package
+build uses the matching explicit `--macos_cpus=arm64` contract.
 
 ### Unit tests
 

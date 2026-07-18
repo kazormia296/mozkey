@@ -21,21 +21,19 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
             target.NORMALIZED_MODEL_SHA256,
             "601572033a0c231857864ab0a2ccf40fbd1abe6ee4ccecd5399bf82e3e559772",
         )
-        self.assertEqual(
-            target.ARCHITECTURES, (("arm64", "11.0"), ("x86_64", "10.15"))
-        )
+        self.assertEqual(target.ARCHITECTURES, (("arm64", "12.0"),))
 
     def test_cmake_configuration_is_static_cpu_accelerate_only(self):
         command = target.cmake_configure_command(
             Path("/source"),
             Path("/build"),
             "arm64",
-            "11.0",
+            "12.0",
             Path("/ninja"),
         )
         required = {
             "-DCMAKE_OSX_ARCHITECTURES=arm64",
-            "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0",
             "-DBUILD_SHARED_LIBS=OFF",
             "-DGGML_STATIC=ON",
             "-DGGML_CPU=ON",
@@ -69,7 +67,7 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
                     Path("/source"),
                     build_root,
                     "arm64",
-                    "11.0",
+                    "12.0",
                     Path("/ninja"),
                 )
 
@@ -135,7 +133,7 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         self.assertIn("sigfillset(&sa.sa_mask);", source)
         self.assertNotIn("::sigfillset(&sa.sa_mask);", source)
 
-    def test_universal_scorer_rejects_missing_architecture(self):
+    def test_arm64_scorer_rejects_extra_architecture(self):
         with tempfile.TemporaryDirectory() as temporary:
             scorer = Path(temporary) / target.SCORER_NAME
             scorer.write_bytes(b"Mach-O")
@@ -143,15 +141,15 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
             with mock.patch.object(
                 target,
                 "_run",
-                return_value=SimpleNamespace(stdout="arm64\n"),
+                return_value=SimpleNamespace(stdout="arm64 x86_64\n"),
             ):
                 with self.assertRaisesRegex(
                     target.PreparationError,
                     "zenz_scorer_architectures_invalid",
                 ):
-                    target._verify_universal_scorer(scorer)
+                    target._verify_arm64_scorer(scorer)
 
-    def test_universal_scorer_rejects_wrong_deployment_target(self):
+    def test_arm64_scorer_rejects_wrong_deployment_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             scorer = Path(temporary) / target.SCORER_NAME
             scorer.write_bytes(b"Mach-O")
@@ -160,8 +158,7 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
                 target,
                 "_run",
                 side_effect=[
-                    SimpleNamespace(stdout="arm64 x86_64\n"),
-                    SimpleNamespace(stdout="    minos 11.0\n"),
+                    SimpleNamespace(stdout="arm64\n"),
                     SimpleNamespace(stdout="    minos 11.0\n"),
                 ],
             ):
@@ -169,14 +166,17 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
                     target.PreparationError,
                     "zenz_scorer_deployment_target_invalid",
                 ):
-                    target._verify_universal_scorer(scorer)
+                    target._verify_arm64_scorer(scorer)
 
-    def test_macos_package_consumes_staged_generated_universal_scorer(self):
+    def test_macos_package_and_workflow_are_arm64_only(self):
         server_build = (
             target.REPOSITORY_ROOT / "src/server/BUILD.bazel"
         ).read_text(encoding="utf-8")
         runtime_build = (
             target.REPOSITORY_ROOT / "src/mac/zenz_runtime/BUILD.bazel"
+        ).read_text(encoding="utf-8")
+        distribution = (
+            target.REPOSITORY_ROOT / "src/mac/installer/distribution.xml"
         ).read_text(encoding="utf-8")
         workflow = (
             target.REPOSITORY_ROOT / ".github/workflows/macos.yaml"
@@ -204,7 +204,16 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         self.assertIn('"generated/mozc_zenz_scorer"', runtime_build)
         self.assertIn('out = "mozc_zenz_scorer"', runtime_build)
         self.assertIn("is_executable = True", runtime_build)
-        self.assertIn("runtime._verify_universal_scorer", workflow)
+        self.assertIn("runtime._verify_arm64_scorer", workflow)
+        self.assertIn("macos-arm64-zenz-runtime-b9637", workflow)
+        self.assertIn("--macos_cpus=arm64", workflow)
+        self.assertIn("--timeout-seconds 300", workflow)
+        self.assertNotIn("--skip-live", workflow)
+        self.assertNotIn("build_intel64:", workflow)
+        self.assertNotIn("build_universal_binary:", workflow)
+        self.assertNotIn("--macos_cpus=x86_64", workflow)
+        self.assertIn('hostArchitectures="arm64"', distribution)
+        self.assertNotIn('hostArchitectures="x86_64', distribution)
         self.assertIn(
             "./tools/dictionary/prepare_daily_dictionary.ps1 "
             "-ReleaseApprovedOnly",
@@ -215,7 +224,7 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
             for line in workflow.splitlines()
             if line.lstrip().startswith(("bazelisk build ", "bazelisk test "))
         ]
-        self.assertEqual(len(bazel_commands), 6)
+        self.assertEqual(len(bazel_commands), 4)
         for command in bazel_commands:
             with self.subTest(command=command):
                 self.assertIn(
@@ -358,11 +367,14 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
                 },
             )
             self.assertEqual(
+                document["architectures"],
+                {"arm64": {"deployment_target": "12.0"}},
+            )
+            self.assertEqual(
                 document["scorer"],
                 {
                     "architectures": {
-                        "arm64": {"deployment_target": "11.0"},
-                        "x86_64": {"deployment_target": "10.15"},
+                        "arm64": {"deployment_target": "12.0"},
                     },
                     "filename": target.SCORER_NAME,
                 },

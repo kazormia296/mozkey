@@ -76,13 +76,11 @@ records.
 
 Zenz capability publication is fail closed. It is enabled only when the
 packaged scorer, model, and local llama.cpp runtime are all present. Windows
-packages use the bundled named-pipe scorer path. Every macOS application
-package variant (arm64, x86_64, or Universal) stages the same independently
-Universal scorer and CPU/Accelerate `llama-server`, normalized model, and
-licenses inside `MozcConverter.app/Contents/Resources`. CI separately proves
-usability by checking package layout, code signatures, architecture slices,
-deployment targets, and a real inference probe for the Universal application
-package.
+packages use the bundled named-pipe scorer path. The macOS arm64 application
+package stages an arm64-only scorer and CPU/Accelerate `llama-server`, normalized
+model, and licenses inside `MozcConverter.app/Contents/Resources`. CI proves
+usability by checking package layout, code signatures, the exact arm64
+architecture and deployment target, and real inference in the shipped package.
 
 ## Release gates
 
@@ -113,5 +111,5 @@ bazelisk test //grimodex:portable_protocol_v1_tests \
 
 Windows x64, Universal, and ARM64 jobs verify that `Mozc64.msi` is a nontrivial
 OLE Compound File before upload, and missing artifacts fail the workflow.
-macOS arm64, Intel, and Universal jobs probe the packaged Zenz layout before
-publishing their CI artifacts.
+The macOS arm64 job probes the packaged Zenz layout and exercises real inference
+before publishing its CI artifact.
