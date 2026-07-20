@@ -238,6 +238,14 @@ jobs:
             fi
           }
 
+          find_draft_release_id() {
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -r --arg tag "$RELEASE_TAG" \
+                  'add[] | select(.tag_name == $tag and .draft == true) | .id' \
+              | head -n 1
+          }
+
           if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
             > "$current_release" \
             2> "$RUNNER_TEMP/current-release.err"; then
@@ -248,15 +256,25 @@ jobs:
               --title "Mozkey v${RELEASE_VERSION}" \
               --notes-file "$RELEASE_NOTES_FILE"
           elif grep -q 'HTTP 404' "$RUNNER_TEMP/current-release.err"; then
-            gh release create "$RELEASE_TAG" \
-              --verify-tag \
-              --draft \
+            release_id="$(find_draft_release_id)"
+            if [ -z "$release_id" ]; then
+              gh release create "$RELEASE_TAG" \
+                --verify-tag \
+                --draft \
+                --prerelease \
+                --title "Mozkey v${RELEASE_VERSION}" \
+                --notes-file "$RELEASE_NOTES_FILE"
+              release_id="$(find_draft_release_id)"
+            fi
+            if [ -z "$release_id" ]; then
+              echo "::error::Unable to resolve the draft release ${RELEASE_TAG}." >&2
+              exit 1
+            fi
+            require_mutable_draft
+            gh release edit "$RELEASE_TAG" \
               --prerelease \
               --title "Mozkey v${RELEASE_VERSION}" \
               --notes-file "$RELEASE_NOTES_FILE"
-            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-              > "$current_release"
-            release_id="$(jq -r '.id' "$current_release")"
           else
             cat "$RUNNER_TEMP/current-release.err" >&2
             exit 1
