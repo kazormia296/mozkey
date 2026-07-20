@@ -153,7 +153,7 @@ jobs:
       - name: Validate Ubuntu runtime, inference, and multiarch staging
         working-directory: ./src
         run: |
-          runtime="$(pwd)/../dist/zenz/linux/runtime/llama-server"
+          runtime="${GITHUB_WORKSPACE}/dist/zenz/linux/runtime/llama-server"
           runtime_sha256="$(sha256sum "${runtime}" | awk '{print $1}')"
           MOZKEY_LINUX_BUILD_LAYOUT=ubuntu-layout \
             MOZKEY_LLAMA_ATTESTED_SHA256="${runtime_sha256}" \
@@ -260,7 +260,7 @@ jobs:
       - name: Validate Fedora runtime, inference, and staging
         working-directory: ./src
         run: |
-          runtime="$(pwd)/../dist/zenz/linux/runtime/llama-server"
+          runtime="${GITHUB_WORKSPACE}/dist/zenz/linux/runtime/llama-server"
           runtime_sha256="$(sha256sum "${runtime}" | awk '{print $1}')"
           MOZKEY_LINUX_BUILD_LAYOUT=fedora-x86_64 \
             MOZKEY_LLAMA_ATTESTED_SHA256="${runtime_sha256}" \
