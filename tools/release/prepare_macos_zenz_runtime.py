@@ -223,25 +223,22 @@ def scorer_compile_command(
     architecture: str,
     deployment_target: str,
 ) -> list[str]:
-    """Returns the explicit single-architecture scorer compile command."""
+    """Returns the Bazel command that builds the single-architecture scorer.
+
+    The scorer uses the same protobuf-backed JSON parser as the desktop
+    targets.  Building it through Bazel keeps that dependency (and the named
+    pipe endpoint contract) linked into the macOS runtime instead of silently
+    producing a binary that only works when a host protobuf happens to be
+    installed.
+    """
     return [
-        "/usr/bin/xcrun",
-        "--sdk",
-        "macosx",
-        "clang++",
-        "-std=c++20",
-        "-O2",
-        "-DNDEBUG",
-        "-DMOZC_BUILD",
-        "-funsigned-char",
-        f"-mmacosx-version-min={deployment_target}",
-        "-arch",
-        architecture,
-        "-I",
-        str(root / "src"),
-        str(root / "src/zenz_scorer/main.cc"),
-        "-o",
-        str(output),
+        "bazelisk",
+        "build",
+        "//zenz_scorer:mozc_zenz_scorer",
+        "--config",
+        "release_build",
+        f"--macos_cpus={architecture}",
+        "--define=mozkey_dictionary_profile=release-approved-only",
     ]
 
 
@@ -328,15 +325,18 @@ def _build_scorer_architecture(
     architecture: str,
     deployment_target: str,
 ) -> Path:
-    source = root / "src/zenz_scorer/main.cc"
-    _require_regular(source, "zenz_scorer_source")
     output = build_root / architecture / SCORER_NAME
     output.parent.mkdir(parents=True, exist_ok=True)
     _run(
         scorer_compile_command(
             root, output, architecture, deployment_target
-        )
+        ),
+        cwd=root / "src",
     )
+    built = (root / "src/bazel-bin/zenz_scorer" / SCORER_NAME).resolve(
+        strict=True
+    )
+    _atomic_copy(built, output, 0o755)
     return output
 
 
