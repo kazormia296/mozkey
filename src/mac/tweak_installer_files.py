@@ -42,9 +42,7 @@ import tempfile
 from build_tools import util
 
 
-_NESTED_EXECUTABLE_NAMES = frozenset(
-    ('libqcocoa.dylib', 'llama-server', 'mozc_zenz_scorer')
-)
+_NESTED_EXECUTABLE_NAMES = frozenset(('llama-server', 'mozc_zenz_scorer'))
 _ZENZ_MODEL_NAME = 'zenz-v3.2-small-Q5_K_M.gguf'
 _ZENZ_RUNTIME_LICENSE_NAMES = (
     'Apache-2.0.txt',
@@ -70,6 +68,7 @@ def ParseArguments() -> argparse.Namespace:
   # https://github.com/bazelbuild/rules_apple/blob/3.5.1/apple/internal/codesigning_support.bzl#L42
   # https://developer.apple.com/documentation/security/seccodesignatureflags/1397793-adhoc
   parser.add_argument('--codesign_identity', default='-')
+  parser.add_argument('--codesign_keychain', default='login.keychain')
   return parser.parse_args()
 
 
@@ -291,7 +290,9 @@ def NormalizeAndValidateZenzRuntime(top_dir: str, oss: bool) -> None:
       os.close(descriptor)
 
 
-def Codesign(top_dir: str, identity: str) -> None:
+def Codesign(
+    top_dir: str, identity: str, keychain: str = 'login.keychain'
+) -> None:
   """Codesign the installer files."""
   # remove existing _CodeSignature before overwriting the codesigns.
   dir_name = '_CodeSignature'
@@ -300,7 +301,9 @@ def Codesign(top_dir: str, identity: str) -> None:
       shutil.rmtree(os.path.join(cur_dir, dir_name))
       dirs.remove(dir_name)  # skip walking the removed directory.
 
-  args = ['--force', '--sign', identity, '--keychain', 'login.keychain']
+  if not keychain:
+    raise ValueError('codesign keychain must not be empty')
+  args = ['--force', '--sign', identity, '--keychain', keychain]
 
   # Hardened runtime and a trusted timestamp are required for notarization.
   # On the other hand, do not add the option for the pseudo identity ('-').
@@ -315,12 +318,15 @@ def Codesign(top_dir: str, identity: str) -> None:
   for cur_dir, dirs, files in os.walk(top_dir):
     dirs.sort()
     for file_name in sorted(files):
-      if file_name not in _NESTED_EXECUTABLE_NAMES:
+      if (
+          file_name not in _NESTED_EXECUTABLE_NAMES
+          and not file_name.endswith('.dylib')
+      ):
         continue
       path = os.path.join(cur_dir, file_name)
       if os.path.islink(path):
         raise ValueError(f'refusing to codesign symlink: {path}')
-      if file_name != 'libqcocoa.dylib' and not os.access(path, os.X_OK):
+      if not file_name.endswith('.dylib') and not os.access(path, os.X_OK):
         raise ValueError(f'nested executable is not executable: {path}')
       nested_executables.append(path)
 
@@ -360,7 +366,11 @@ def TweakInstallerFiles(args: argparse.Namespace, work_dir: str) -> None:
   if args.productbuild:
     TweakForProductbuild(top_dir, tweak_qt, args.oss, args.channel)
     NormalizeAndValidateZenzRuntime(top_dir, args.oss)
-    Codesign(top_dir, args.codesign_identity)
+    Codesign(
+        top_dir,
+        args.codesign_identity,
+        getattr(args, 'codesign_keychain', 'login.keychain'),
+    )
 
   # Create a zip file with the zip command.
   # It's not easy to contain symlinks with shutil.make_archive.

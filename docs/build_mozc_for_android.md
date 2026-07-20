@@ -1,74 +1,15 @@
-# How to build `libmozc.so` for Android
+# Android source status
 
-<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+Mozkey IbG does not provide an Android product build. Grimodex itself does not
+support Android, so this fork has no Android CI workflow, top-level `//:package`
+mapping, release job, or public Android artifact. iOS is excluded from the same
+product surfaces.
 
-[![Android lib](https://github.com/google/mozc/actions/workflows/android.yaml/badge.svg)](https://github.com/google/mozc/actions/workflows/android.yaml)
+The inherited `src/android/` and `src/ios/` implementation remains in the
+repository to keep the Mozkey / Mozc lineage and make upstream maintenance
+practical. Its presence does not imply that either mobile platform is supported,
+tested, or distributed by Mozkey IbG.
 
-## Summary
-
-If you are not sure what the following commands do, please check the
-descriptions below and make sure the operations before running them.
-
-```
-git clone https://github.com/google/mozc.git
-cd mozc/src
-
-python3 build_tools/update_deps.py
-
-bazelisk build package --config oss_android --config release_build
-```
-
-Client code for Android apk is deprecated. (the last revision with Android
-client code is
-[afb03dd](https://github.com/google/mozc/commit/afb03ddfe72dde4cf2409863a3bfea160f7a66d8)).
-
-## Setup
-
-### System Requirements
-
-Currently macOS and Linux are tested to build `libmozc.so` for Android.
-
-### Software Requirements
-
-Building `libmozc.so` for Android requires the following software.
-
-*   [bazelisk](https://github.com/bazelbuild/bazelisk)
-*   C++ compiler (GCC or clang)
-*   Python 3.12 or later
-
-## Build instructions
-
-### Get the Code
-
-You can download Mozc source code as follows:
-
-```
-git clone https://github.com/google/mozc.git
-cd mozc/src
-```
-
-Hereafter you can do all the operations without changing directory.
-
-### Check out additional build dependencies
-
-```
-python3 build_tools/update_deps.py
-```
-
-In this step, additional build dependencies will be downloaded.
-
-*   [Android NDK r29](https://github.com/android/ndk/wiki/Home/da2aa451f142a10203894c58fd1af78248fb06b4#ndk-r29)
-
-### Build `libmozc.so` for Android
-
-```
-bazelisk build package --config oss_android --config release_build
-```
-
-`package` is an alias to build `android/jni:native_libs`.
-
-## Add your own physical keyboard layout
-
-You could refer to this removed
-[KCM](https://github.com/google/mozc/blob/2.31.5712.102/src/data/android/keyboard_layout_japanese109a.kcm)
-file to write your own physical keyboard layout.
+For upstream Mozc's Android library documentation, consult the matching source
+revision in the [google/mozc repository](https://github.com/google/mozc). Those
+instructions describe upstream Mozc, not a supported build path for this fork.

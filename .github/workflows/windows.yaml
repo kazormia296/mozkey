@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
@@ -64,7 +64,7 @@ jobs:
           .\tools\dictionary\prepare_daily_dictionary.ps1 -ReleaseApprovedOnly
 
       - name: upload daily dictionary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: windows-daily-dictionary
           path: |
@@ -83,19 +83,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: windows-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
@@ -212,7 +212,7 @@ jobs:
             -Destination $destination
 
       - name: Upload versioned x64 MSI
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-windows-x64
           path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi
@@ -229,19 +229,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: recursive
           persist-credentials: false
 
       - name: download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: windows-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
@@ -358,7 +358,7 @@ jobs:
             -Destination $destination
 
       - name: Upload versioned universal MSI
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-windows-universal
           path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_universal.msi
@@ -375,19 +375,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: windows-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
@@ -504,7 +504,7 @@ jobs:
             -Destination $destination
 
       - name: Upload versioned ARM64 MSI
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-windows-arm64
           path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_arm64.msi
@@ -520,13 +520,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: windows-daily-dictionary
           path: .
@@ -543,7 +543,7 @@ jobs:
             tools.release.windows_uninstall_contract_test
 
       - name: Try to restore update_deps cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}

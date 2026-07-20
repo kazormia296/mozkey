@@ -36,9 +36,9 @@ class WindowsSecureProtocolV1FileReader final : public ProtocolV1FileReader {
   std::string root_path_;
 };
 
-// Resolves a UTF-8 override or the current process's %APPDATA% directory.
-// The two-argument overload makes environment selection deterministic in
-// tests and embedding applications.
+// Resolves a UTF-8 override or the current user's FOLDERID_RoamingAppData
+// known folder.  The two-argument overload makes root selection deterministic
+// in tests and embedding applications.
 absl::StatusOr<std::string> ResolveWindowsProtocolV1Root(
     absl::string_view override_root);
 absl::StatusOr<std::string> ResolveWindowsProtocolV1Root(
@@ -46,6 +46,11 @@ absl::StatusOr<std::string> ResolveWindowsProtocolV1Root(
     absl::string_view app_data_directory);
 
 namespace protocol_v1_windows_internal {
+
+// Only a fixed drive preserves the normal local-only contract.  In particular,
+// mapped network drives report DRIVE_REMOTE and must be rejected even though
+// their path has drive-letter syntax.
+bool IsFixedLocalDriveType(uint32_t drive_type);
 
 // Stable fields used to reject an in-place mutation during a read.  This is
 // exposed only so the Windows-only contract test can cover every comparison.

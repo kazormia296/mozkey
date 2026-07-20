@@ -125,6 +125,7 @@ done < "${manifest}"
 rmdir "${install_root}/lib/mozkey/models" 2>/dev/null || true
 rmdir "${install_root}/lib/mozkey" 2>/dev/null || true
 rmdir "${install_root}/share/doc/mozkey" 2>/dev/null || true
+rmdir "${install_root}/share/doc/mozkey-ibg" 2>/dev/null || true
 rmdir "${install_root}/share/licenses/mozkey/dictionary" 2>/dev/null || true
 rmdir "${install_root}/share/licenses/mozkey/zenz-runtime" 2>/dev/null || true
 rmdir "${install_root}/share/licenses/mozkey" 2>/dev/null || true

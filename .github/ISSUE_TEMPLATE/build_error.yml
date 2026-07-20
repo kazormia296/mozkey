@@ -17,7 +17,7 @@ body:
         - Mozc 共通のビルドシステムに関する問題の場合は、upstream Mozc のビルド手順
 
         upstream Mozc のビルド手順:
-        - Linux / Android-lib: https://github.com/google/mozc/blob/master/docs/build_mozc_in_docker.md
+        - Linux: https://github.com/google/mozc/blob/master/docs/build_mozc_for_linux.md
         - macOS: https://github.com/google/mozc/blob/master/docs/build_mozc_in_osx.md
         - Windows: https://github.com/google/mozc/blob/master/docs/build_mozc_in_windows.md
 
@@ -47,7 +47,6 @@ body:
         - Windows binaries
         - macOS package
         - Linux
-        - Android-lib
         - Other
     validations:
       required: true

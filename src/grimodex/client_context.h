@@ -41,9 +41,9 @@ commands::Context BuildClientContext(
     uint64_t focus_epoch,
     const SurroundingTextProvider& surrounding_text_provider = {});
 
-// Returns true only for a bounded, internally consistent typed context.  In
-// particular, a secure context must be PASSWORD and cannot carry surrounding
-// text, while a non-secure context cannot claim PASSWORD input.
+// Returns true only for a bounded, valid-UTF-8, internally consistent typed
+// context.  In particular, a secure context must be PASSWORD and cannot carry
+// surrounding text, while a non-secure context cannot claim PASSWORD input.
 bool IsValidClientContext(const commands::Context& context);
 
 }  // namespace mozc::grimodex

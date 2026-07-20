@@ -8,13 +8,25 @@
 #include <string>
 #include <string_view>
 
+#include "base/strings/unicode.h"
 #include "protocol/commands.pb.h"
 
 namespace mozc::grimodex {
 namespace {
 
 std::string BoundedMetadata(std::string_view value, size_t limit) {
-  return std::string(value.substr(0, std::min(value.size(), limit)));
+  size_t end = std::min(value.size(), limit);
+  if (end < value.size()) {
+    // Metadata is UTF-8.  If the byte limit lands inside a scalar, back up to
+    // its leading byte so the truncated result never contains a partial
+    // sequence.  Malformed input that was already present is rejected by
+    // IsValidClientContext below.
+    while (end > 0 &&
+           (static_cast<unsigned char>(value[end]) & 0xC0) == 0x80) {
+      --end;
+    }
+  }
+  return std::string(value.substr(0, end));
 }
 
 }  // namespace
@@ -71,7 +83,9 @@ bool IsValidClientContext(const commands::Context& context) {
     return false;
   }
   if (context.grimodex().program().size() > kMaxClientProgramBytes ||
-      context.grimodex().frontend().size() > kMaxClientFrontendBytes) {
+      context.grimodex().frontend().size() > kMaxClientFrontendBytes ||
+      !strings::IsValidUtf8(context.grimodex().program()) ||
+      !strings::IsValidUtf8(context.grimodex().frontend())) {
     return false;
   }
 

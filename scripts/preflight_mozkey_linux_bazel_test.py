@@ -112,6 +112,8 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             "win32/installer/zenz_runtime/models/zenz-v3.2-small-Q5_K_M.gguf",
             "win32/installer/zenz_runtime/licenses/zenz-v3.2-small-gguf.txt",
             "win32/installer/zenz_runtime/licenses/llama.cpp-MIT.txt",
+            "win32/installer/zenz_runtime/licenses/cpp-httplib-MIT.txt",
+            "win32/installer/zenz_runtime/licenses/nlohmann-json-MIT.txt",
             "win32/installer/zenz_runtime/licenses/Apache-2.0.txt",
             "win32/installer/zenz_runtime/licenses/THIRD_PARTY_NOTICES.md",
         ]
@@ -177,6 +179,8 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
         source: Path,
         verifier_log: Path,
         destination: Path,
+        bundled_source: Path | None = None,
+        bundled_target: str | None = None,
     ) -> subprocess.CompletedProcess:
         env = os.environ.copy()
         env.update(
@@ -188,6 +192,11 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
                 "MOZKEY_TEST_VERIFIER_LOG": str(verifier_log),
             }
         )
+        if bundled_source is not None:
+            env["MOZKEY_ZENZ_LLAMA_SERVER_SOURCE"] = str(bundled_source)
+            env["MOZKEY_ZENZ_LLAMA_SERVER_TARGET"] = (
+                bundled_target if bundled_target is not None else str(bundled_source)
+            )
         return subprocess.run(
             [str(preflight)],
             cwd=source,
@@ -254,6 +263,25 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             record.symlink_to("/etc/passwd")
             result = self.run_preflight(preflight, source, verifier_log, destination)
             self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(verifier_log.exists())
+
+    def test_rejects_bundled_source_that_differs_from_verified_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            preflight, source, verifier_log = self.make_harness(root)
+            bundled = root / "llama-server"
+            bundled.write_bytes(b"#!/bin/sh\nexit 0\n")
+            bundled.chmod(0o755)
+            result = self.run_preflight(
+                preflight,
+                source,
+                verifier_log,
+                root / "destination",
+                bundled_source=bundled,
+                bundled_target="/bin/true",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("source and verified target must match", result.stderr)
             self.assertFalse(verifier_log.exists())
 
 

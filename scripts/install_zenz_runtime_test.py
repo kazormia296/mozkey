@@ -28,7 +28,10 @@ def sha256(path: Path) -> str:
 
 class InstallZenzRuntimeTest(unittest.TestCase):
     def run_installer(
-        self, destination: Path, target: str = "/usr/bin/llama-server"
+        self,
+        destination: Path,
+        target: str = "/usr/bin/llama-server",
+        source: Path | None = None,
     ) -> subprocess.CompletedProcess:
         env = os.environ.copy()
         env.update(
@@ -38,6 +41,8 @@ class InstallZenzRuntimeTest(unittest.TestCase):
                 "MOZKEY_ZENZ_LLAMA_SERVER_TARGET": target,
             }
         )
+        if source is not None:
+            env["MOZKEY_ZENZ_LLAMA_SERVER_SOURCE"] = str(source)
         return subprocess.run(
             [str(SCRIPT)],
             cwd=SOURCE_ROOT,
@@ -86,6 +91,48 @@ class InstallZenzRuntimeTest(unittest.TestCase):
                 list(link.parent.glob(".mozkey-llama-link.*")),
                 [],
             )
+
+    def test_installs_and_atomically_replaces_bundled_server_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            destination = root / "destination"
+            source = root / "llama-server"
+            source.write_bytes(b"#!/bin/sh\nexit 0\n")
+            source.chmod(0o755)
+
+            result = self.run_installer(destination, str(source), source)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed = destination / "usr/lib/mozkey/llama-server"
+            self.assertTrue(installed.is_file())
+            self.assertFalse(installed.is_symlink())
+            self.assertEqual(installed.read_bytes(), source.read_bytes())
+            self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+
+            source.write_bytes(b"#!/bin/sh\necho updated\n")
+            source.chmod(0o755)
+            result = self.run_installer(destination, str(source), source)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(installed.read_bytes(), source.read_bytes())
+            self.assertEqual(list(installed.parent.glob(".mozkey-install.*")), [])
+
+    def test_bundled_mode_rejects_symlink_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "llama-server"
+            source.symlink_to("/bin/true")
+            result = self.run_installer(root / "destination", "/bin/true", source)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("regular executable", result.stderr)
+
+    def test_bundled_mode_rejects_a_different_verified_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "llama-server"
+            source.write_bytes(b"#!/bin/sh\nexit 0\n")
+            source.chmod(0o755)
+            result = self.run_installer(root / "destination", "/bin/true", source)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("source and verified target must match", result.stderr)
 
 
 if __name__ == "__main__":

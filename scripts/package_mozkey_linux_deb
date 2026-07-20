@@ -1,0 +1,130 @@
+#!/bin/sh
+
+# Build a Debian/Ubuntu amd64 package from the attested Ubuntu payload.
+set -eu
+umask 022
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+output_dir="${MOZKEY_LINUX_OUTPUT_DIR:-${repository_root}/dist}"
+
+if [ "$#" -ne 0 ]; then
+  echo "usage: $0" >&2
+  exit 2
+fi
+case "${output_dir}" in
+  /*) ;;
+  *) echo "MOZKEY_LINUX_OUTPUT_DIR must be absolute" >&2; exit 2 ;;
+esac
+for command in dpkg-deb dpkg-shlibdeps file git install python3
+do
+  command -v "${command}" >/dev/null 2>&1 || {
+    echo "required Debian package command is unavailable: ${command}" >&2
+    exit 1
+  }
+done
+os_release_id="$(sed -n 's/^ID=//p' /etc/os-release 2>/dev/null |
+  sed -n '1p' | tr -d "\"'")"
+case "${os_release_id}" in
+  ubuntu|debian) ;;
+  *)
+    if [ "${MOZKEY_LINUX_ALLOW_NON_DEBIAN_FOR_TESTS:-}" != 1 ]; then
+      echo "deb packaging requires an Ubuntu or Debian build host" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+version="$(sed -n \
+  -e 's/^MOZKEY_RELEASE_VERSION_MAJOR = //p' \
+  -e 's/^MOZKEY_RELEASE_VERSION_MINOR = //p' \
+  -e 's/^MOZKEY_RELEASE_VERSION_PATCH = //p' \
+  "${repository_root}/src/version.bzl" | paste -sd . -)"
+printf '%s\n' "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || exit 1
+source_date_epoch="${SOURCE_DATE_EPOCH:-$(git -C "${repository_root}" log -1 --format=%ct)}"
+case "${source_date_epoch}" in
+  ''|*[!0-9]*) echo "SOURCE_DATE_EPOCH must be a non-negative integer" >&2; exit 2 ;;
+esac
+export SOURCE_DATE_EPOCH="${source_date_epoch}"
+
+stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-deb-stage.XXXXXX")"
+package_workspace="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-deb-work.XXXXXX")"
+publish_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-deb-publish.XXXXXX")"
+extract_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-deb-extract.XXXXXX")"
+cleanup() {
+  rm -rf "${stage_dir}" "${package_workspace}" "${publish_dir}" \
+    "${extract_dir}"
+}
+trap cleanup EXIT HUP INT TERM
+
+"${script_dir}/stage_mozkey_linux_native_package" ubuntu-layout "${stage_dir}"
+
+mkdir -p "${package_workspace}/debian" "${stage_dir}/DEBIAN"
+printf '%s\n' \
+  'Source: mozkey-ibg' \
+  'Section: utils' \
+  'Priority: optional' \
+  'Maintainer: kazormia296 <kazormia296@users.noreply.github.com>' \
+  'Standards-Version: 4.7.0' \
+  '' \
+  'Package: mozkey-ibg' \
+  'Architecture: amd64' \
+  'Description: Mozkey Japanese input method integrated with Grimodex' \
+  > "${package_workspace}/debian/control"
+
+set --
+while IFS= read -r binary
+do
+  set -- "$@" "-e${binary}"
+done <<EOF
+$(find "${stage_dir}/usr" -type f -perm -0100 -print |
+  while IFS= read -r candidate; do
+    file -b "${candidate}" | grep -q '^ELF ' && printf '%s\n' "${candidate}"
+  done)
+EOF
+if [ "$#" -eq 0 ]; then
+  echo "Debian payload contains no ELF executables" >&2
+  exit 1
+fi
+shlibs_output="$(cd "${package_workspace}" && dpkg-shlibdeps -O "$@")"
+depends="$(printf '%s\n' "${shlibs_output}" | sed -n 's/^shlibs:Depends=//p')"
+if [ -z "${depends}" ]; then
+  echo "dpkg-shlibdeps returned no runtime dependencies" >&2
+  exit 1
+fi
+installed_size="$(du -sk "${stage_dir}/usr" | awk '{print $1}')"
+cat > "${stage_dir}/DEBIAN/control" <<EOF
+Package: mozkey-ibg
+Version: ${version}
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: kazormia296 <kazormia296@users.noreply.github.com>
+Installed-Size: ${installed_size}
+Depends: fcitx5 (>= 5.1.0), ${depends}
+Homepage: https://github.com/kazormia296/mozkey
+Description: Mozkey Japanese input method integrated with Grimodex
+ Mozkey IbG is an Fcitx5 Japanese input method with local Zenz correction
+ and a secure Grimodex desktop dictionary integration.
+EOF
+chmod 644 "${stage_dir}/DEBIAN/control"
+find "${stage_dir}" -depth -exec touch -h -d "@${source_date_epoch}" {} +
+
+package_name="mozkey-ibg_${version}_amd64.deb"
+dpkg-deb --root-owner-group --uniform-compression -Zxz -z9 \
+  --build "${stage_dir}" "${publish_dir}/${package_name}"
+dpkg-deb --info "${publish_dir}/${package_name}" >/dev/null
+dpkg-deb --contents "${publish_dir}/${package_name}" |
+  grep -Fq './usr/lib/mozkey/llama-server'
+dpkg-deb --extract "${publish_dir}/${package_name}" "${extract_dir}"
+python3 "${repository_root}/tools/release/verify_staged_linux_payload.py" \
+  "${stage_dir}/usr" "${extract_dir}/usr"
+
+install -d -m 755 "${output_dir}"
+install -m 644 "${publish_dir}/${package_name}" "${output_dir}/${package_name}"
+install -m 644 \
+  "${repository_root}/dist/linux/ubuntu-layout/build-attestation.json" \
+  "${output_dir}/mozkey-v${version}-ubuntu-x86_64.build-attestation.json"
+install -m 644 "${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json" \
+  "${output_dir}/mozkey-v${version}-ubuntu-x86_64.spdx.json"
+printf 'Mozkey Debian package: %s\n' "${output_dir}/${package_name}"

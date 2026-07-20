@@ -21,9 +21,12 @@ requirements.
 
 ### Platform
 
+Mozkey IbG supports product builds for Windows, macOS, and Linux. The inherited
+Android and iOS directories remain for upstream compatibility, but this Grimodex
+fork does not expose them as product build, CI, or release targets.
+
 *   [android/](android/)
-    *   Android specific implementation.
-    *   Note: Mozc does not contain the client UI implementation for Android.
+    *   Inherited Android-specific implementation; not a Mozkey IbG product target.
 *   [unix/](unix/)
     *   Linux specific implementation.
 *   [win32/](win32/)
@@ -31,8 +34,7 @@ requirements.
 *   [mac/](mac/)
     *   macOS specific implementation.
 *   [ios/](ios/)
-    *   iOS specific implementation.
-    *   Note: Mozc does not officially support iOS build.
+    *   Inherited iOS-specific implementation; not a Mozkey IbG product target.
 
 ### Build
 

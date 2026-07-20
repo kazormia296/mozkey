@@ -242,16 +242,37 @@ class Sandbox final {
 
 TEST(ProtocolV1WindowsSecureReaderTest,
      ResolvesUtf8OverrideThenAppDataFallback) {
-  absl::StatusOr<std::string> override = ResolveWindowsProtocolV1Root(
-      R"(C:\Users\tester\辞書)", R"(C:\ignored)");
-  ASSERT_TRUE(override.ok()) << override.status();
-  EXPECT_EQ(*override, R"(C:\Users\tester\辞書)");
+  TempDirectory local_root = testing::MakeTempDirectoryOrDie();
+  const std::wstring local_root_wide = win32::Utf8ToWide(local_root.path());
+  ASSERT_GE(local_root_wide.size(), 3);
+  const std::wstring drive_root = local_root_wide.substr(0, 3);
+  if (!protocol_v1_windows_internal::IsFixedLocalDriveType(
+          ::GetDriveTypeW(drive_root.c_str()))) {
+    GTEST_SKIP() << "test temporary directory is not on a fixed local drive";
+  }
 
+  const std::string override_root = local_root.path() + R"(\辞書)";
+  absl::StatusOr<std::string> override = ResolveWindowsProtocolV1Root(
+      override_root, /*app_data_directory=*/"unused");
+  ASSERT_TRUE(override.ok()) << override.status();
+  EXPECT_EQ(*override, override_root);
+
+  const std::string app_data_directory =
+      local_root.path() + R"(\AppData\Roaming\)";
   absl::StatusOr<std::string> fallback = ResolveWindowsProtocolV1Root(
-      "", R"(C:\Users\tester\AppData\Roaming\)");
+      /*override_root=*/"", app_data_directory);
   ASSERT_TRUE(fallback.ok()) << fallback.status();
   EXPECT_EQ(*fallback,
-            R"(C:\Users\tester\AppData\Roaming\com.miyakey.grimodex\ime)");
+            app_data_directory + R"(com.miyakey.grimodex\ime)");
+}
+
+TEST(ProtocolV1WindowsSecureReaderTest,
+     ResolvesDefaultRootFromRoamingKnownFolder) {
+  const absl::StatusOr<std::string> root =
+      ResolveWindowsProtocolV1Root(/*override_root=*/"");
+
+  ASSERT_TRUE(root.ok()) << root.status();
+  EXPECT_TRUE(root->ends_with(R"(\com.miyakey.grimodex\ime)"));
 }
 
 TEST(ProtocolV1WindowsSecureReaderTest, RejectsInvalidOrRelativeRootPaths) {
@@ -269,6 +290,32 @@ TEST(ProtocolV1WindowsSecureReaderTest, RejectsInvalidOrRelativeRootPaths) {
                 .status()
                 .code(),
             absl::StatusCode::kInvalidArgument);
+}
+
+TEST(ProtocolV1WindowsSecureReaderTest, RejectsUncRootsInLocalOnlyMode) {
+  EXPECT_EQ(ResolveWindowsProtocolV1Root(R"(\\server\share\ime)",
+                                         R"(C:\ignored)")
+                .status()
+                .code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(ResolveWindowsProtocolV1Root(
+                /*override_root=*/"", R"(\\server\profiles\tester\AppData)")
+                .status()
+                .code(),
+            absl::StatusCode::kInvalidArgument);
+}
+
+TEST(ProtocolV1WindowsSecureReaderTest, AllowsOnlyFixedLocalDriveType) {
+  EXPECT_TRUE(
+      protocol_v1_windows_internal::IsFixedLocalDriveType(DRIVE_FIXED));
+  constexpr std::array<UINT, 6> kRejectedDriveTypes = {
+      DRIVE_UNKNOWN, DRIVE_NO_ROOT_DIR, DRIVE_REMOVABLE,
+      DRIVE_REMOTE,  DRIVE_CDROM,      DRIVE_RAMDISK,
+  };
+  for (const UINT drive_type : kRejectedDriveTypes) {
+    EXPECT_FALSE(protocol_v1_windows_internal::IsFixedLocalDriveType(
+        drive_type));
+  }
 }
 
 TEST(ProtocolV1WindowsSecureReaderTest, ReadsValidStateAndProject) {

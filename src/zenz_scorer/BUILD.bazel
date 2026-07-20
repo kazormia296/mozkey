@@ -1,6 +1,32 @@
-load("//:build_defs.bzl", "MOZC_TAGS", "mozc_cc_binary")
+load(
+    "//:build_defs.bzl",
+    "MOZC_TAGS",
+    "mozc_cc_binary",
+    "mozc_cc_library",
+    "mozc_cc_test",
+)
 
 package(default_visibility = ["//visibility:private"])
+
+mozc_cc_library(
+    name = "json_parser",
+    srcs = ["json_parser.cc"],
+    hdrs = ["json_parser.h"],
+    deps = [
+        "@com_google_protobuf//:json_util",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+mozc_cc_test(
+    name = "json_parser_test",
+    size = "small",
+    srcs = ["json_parser_test.cc"],
+    deps = [
+        ":json_parser",
+        "//testing:gunit_main",
+    ],
+)
 
 mozc_cc_binary(
     name = "mozc_zenz_scorer",
@@ -14,5 +40,8 @@ mozc_cc_binary(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    deps = ["//session:zenz_named_pipe_endpoint"],
+    deps = [
+        ":json_parser",
+        "//session:zenz_named_pipe_endpoint",
+    ],
 )

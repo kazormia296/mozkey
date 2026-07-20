@@ -2,12 +2,12 @@
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 
-⚠️ `Dockerfile` provided under [`docker/`](../docker/) are deprecated. See the
-following documents on how to build Mozc for Linux desktop or Android.
+⚠️ `Dockerfile` provided under [`docker/`](../docker/) are deprecated. For the
+supported Mozkey IbG Linux target, see
+[How to build Mozc for Linux](./build_mozc_for_linux.md).
 
-*   [How to build Mozc for Android](./build_mozc_for_android.md): for Android
-    library (`libmozc.so`)
-*   [How to build Mozc for Linux](./build_mozc_for_linux.md): for Linux desktop
+Android and iOS are not product build, CI, or release targets in this Grimodex
+fork. Their inherited source directories remain only for upstream compatibility.
 
 --------------------------------------------------------------------------------
 

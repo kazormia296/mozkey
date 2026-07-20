@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload dictionary and quality diagnostics
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: linux-dictionary-quality-diagnostics
           path: |
@@ -71,7 +71,7 @@ jobs:
           retention-days: 7
 
       - name: Upload release-approved dictionary outputs
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: linux-release-approved-dictionary
           path: |
@@ -88,17 +88,17 @@ jobs:
     needs: prepare_daily_dictionary
     # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: Download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: linux-release-approved-dictionary
           path: .
@@ -111,24 +111,186 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             appstream \
+            build-essential \
+            cmake \
+            diffutils \
+            dpkg-dev \
             fcitx5-modules-dev \
+            file \
             gettext \
             libibus-1.0-dev \
+            ninja-build \
             qt6-base-dev \
             xz-utils
           #
           # Unset the Android NDK setting to skip the unnecessary configuration.
           echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
 
-      - name: Build and attest legacy package and Mozkey Linux targets on Ubuntu
-        run: |
-          scripts/build_mozkey_linux_bazel ubuntu-layout
+      - name: Restore pinned llama.cpp source cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: src/third_party_cache/llama.cpp-b9637.tar.gz
+          key: linux-llama-b9637-${{ hashFiles('tools/release/prepare_linux_zenz_runtime.py', 'tools/release/prepare_macos_zenz_runtime.py') }}
 
-      - name: Validate Ubuntu multiarch staging layout
+      - name: Build pinned CPU-only Linux llama-server
+        run: python3 tools/release/prepare_linux_zenz_runtime.py
+
+      - name: Record the Ubuntu package build environment
+        run: |
+          mkdir -p dist
+          dpkg-query -W \
+            -f='${binary:Package} ${Version}\n' \
+            appstream \
+            build-essential \
+            fcitx5-modules-dev \
+            libc6 \
+            qt6-base-dev \
+            > dist/ubuntu-build-packages.txt
+
+      - name: Build and attest Mozkey Linux targets on Ubuntu
+        run: scripts/build_mozkey_linux_bazel ubuntu-layout
+
+      - name: Validate Ubuntu runtime, inference, and multiarch staging
         working-directory: ./src
         run: |
+          runtime="$(pwd)/../dist/zenz/linux/runtime/llama-server"
+          runtime_sha256="$(sha256sum "${runtime}" | awk '{print $1}')"
+          MOZKEY_LINUX_BUILD_LAYOUT=ubuntu-layout \
+            MOZKEY_LLAMA_ATTESTED_SHA256="${runtime_sha256}" \
+            MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${runtime}" \
+            MOZKEY_ZENZ_LLAMA_SERVER_SOURCE="${runtime}" \
+            ../scripts/preflight_mozkey_linux_bazel
           MOZKEY_LINUX_PREFLIGHT_DONE=1 \
             ../scripts/smoke_test_mozkey_fcitx5_install
+          ../scripts/probe_zenz_runtime_bazel \
+            --layout ubuntu-layout \
+            --llama-server "${runtime}" \
+            --llama-server-sha256 "${runtime_sha256}"
+
+      - name: Build the Debian/Ubuntu package and provenance
+        run: |
+          MOZKEY_LINUX_OUTPUT_DIR="$(pwd)/dist" \
+            scripts/package_mozkey_linux_deb
+
+      - name: Upload the verified Debian/Ubuntu product
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: release-linux-ubuntu-x86_64
+          path: |
+            dist/mozkey-ibg_*_amd64.deb
+            dist/mozkey-v*-ubuntu-x86_64.build-attestation.json
+            dist/mozkey-v*-ubuntu-x86_64.spdx.json
+            dist/ubuntu-build-packages.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  package_fedora:
+    if: ${{ inputs.release == true }}
+    needs: [prepare_daily_dictionary, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    container: fedora:44
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+
+    steps:
+      - name: Install the Fedora target build environment
+        run: |
+          dnf -y --setopt=install_weak_deps=False install \
+            appstream \
+            cmake \
+            cpio \
+            diffutils \
+            fcitx5-devel \
+            file \
+            gcc-c++ \
+            gettext \
+            git \
+            java-latest-openjdk-devel \
+            make \
+            ninja-build \
+            nodejs \
+            npm \
+            python3 \
+            qt6-qtbase-devel \
+            rpm-build \
+            tar \
+            unzip \
+            which \
+            xz \
+            zip
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Download release-approved dictionary
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
+        with:
+          name: linux-release-approved-dictionary
+          path: .
+
+      - name: Verify dictionary and trust the ephemeral checkout
+        run: |
+          python3 tools/dictionary/verify_release_dictionary_artifact.py --root .
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Build pinned CPU-only Linux llama-server
+        run: python3 tools/release/prepare_linux_zenz_runtime.py
+
+      - name: Record the Fedora package build environment
+        run: |
+          mkdir -p dist
+          rpm -q \
+            appstream \
+            fcitx5-devel \
+            gcc-c++ \
+            glibc \
+            qt6-qtbase-devel \
+            rpm-build \
+            > dist/fedora-build-packages.txt
+
+      - name: Build and attest the Fedora x86_64 product
+        run: scripts/build_mozkey_linux_bazel fedora-x86_64
+
+      - name: Validate Fedora runtime, inference, and staging
+        working-directory: ./src
+        run: |
+          runtime="$(pwd)/../dist/zenz/linux/runtime/llama-server"
+          runtime_sha256="$(sha256sum "${runtime}" | awk '{print $1}')"
+          MOZKEY_LINUX_BUILD_LAYOUT=fedora-x86_64 \
+            MOZKEY_LLAMA_ATTESTED_SHA256="${runtime_sha256}" \
+            MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${runtime}" \
+            MOZKEY_ZENZ_LLAMA_SERVER_SOURCE="${runtime}" \
+            ../scripts/preflight_mozkey_linux_bazel
+          MOZKEY_LINUX_PREFLIGHT_DONE=1 \
+            ../scripts/smoke_test_mozkey_fcitx5_install
+          ../scripts/probe_zenz_runtime_bazel \
+            --layout fedora-x86_64 \
+            --llama-server "${runtime}" \
+            --llama-server-sha256 "${runtime_sha256}"
+
+      - name: Build the RPM package and provenance
+        run: |
+          MOZKEY_LINUX_OUTPUT_DIR="$(pwd)/dist" \
+            scripts/package_mozkey_linux_rpm
+
+      - name: Upload the verified Fedora/RPM product
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: release-linux-fedora-x86_64
+          path: |
+            dist/mozkey-ibg-*-1.x86_64.rpm
+            dist/mozkey-v*-fedora-x86_64.build-attestation.json
+            dist/mozkey-v*-fedora-x86_64.spdx.json
+            dist/fedora-build-packages.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   package_archlinux:
     # A downloadable product is emitted only after both the Ubuntu compile /
@@ -162,13 +324,13 @@ jobs:
             zip
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: Download release-approved dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: linux-release-approved-dictionary
           path: .
@@ -211,7 +373,7 @@ jobs:
             ../scripts/package_mozkey_linux_bazel
 
       - name: Upload the verified Arch Linux product
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-linux-archlinux-x86_64
           path: |
@@ -232,13 +394,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: Download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: linux-release-approved-dictionary
           path: .
@@ -277,6 +439,7 @@ jobs:
             tools.dictionary.verify_release_dictionary_artifact_test \
             tools.release.generate_linux_spdx_sbom_test \
             tools.release.linux_build_attestation_test \
+            tools.release.prepare_linux_zenz_runtime_test \
             tools.release.linux_dogfood.atspi_surface_locator_policy_test \
             tools.release.linux_dogfood.consumer_fixture_policy_test \
             tools.release.linux_dogfood.fresh_profile_policy_test \
@@ -284,7 +447,8 @@ jobs:
             tools.release.linux_dogfood.proc_visibility_policy_test \
             tools.release.normalize_zenz_gguf_test \
             tools.release.probe_zenz_runtime_test \
-            tools.release.stop_mozkey_linux_runtime_test
+            tools.release.stop_mozkey_linux_runtime_test \
+            tools.release.verify_staged_linux_payload_test
           python -m py_compile tools/release/linux_dogfood/*.py
           node --check tools/release/linux_dogfood/electron_scope_probe.mjs
           sh -n \
@@ -293,9 +457,12 @@ jobs:
             scripts/install_mozkey_linux_bazel \
             scripts/install_zenz_runtime \
             scripts/package_mozkey_linux_bazel \
+            scripts/package_mozkey_linux_deb \
+            scripts/package_mozkey_linux_rpm \
             scripts/preflight_mozkey_linux_bazel \
             scripts/probe_zenz_runtime_bazel \
             scripts/smoke_test_mozkey_fcitx5_install \
+            scripts/stage_mozkey_linux_native_package \
             scripts/stop_mozkey_linux_runtime \
             scripts/uninstall_mozkey_fcitx5 \
             scripts/verify_mozkey_linux_build_attestation \

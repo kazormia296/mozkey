@@ -222,6 +222,39 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
             with self.assertRaisesRegex(probe.ProbeFailure, "staged_runtime_invalid"):
                 probe._validate_staged_runtime(stage)
 
+    def test_staged_runtime_accepts_verified_bundled_server(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            root = stage / "usr/lib/mozkey"
+            model = root / "models" / probe.MODEL_NAME
+            model.parent.mkdir(parents=True)
+            scorer = root / "mozc_zenz_scorer"
+            scorer.write_bytes(b"scorer")
+            scorer.chmod(0o755)
+            model.write_bytes(b"model")
+            model.chmod(0o644)
+            server = root / "llama-server"
+            server.write_bytes(b"server")
+            server.chmod(0o755)
+            self.assertEqual(
+                probe._validate_staged_runtime(stage, bundled_server=True),
+                (scorer, model, server),
+            )
+
+    def test_bundled_probe_requires_matching_attested_digest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            server = Path(temporary) / "llama-server"
+            server.write_bytes(b"#!/bin/sh\nexit 0\n")
+            server.chmod(0o755)
+            with self.assertRaisesRegex(
+                probe.ProbeFailure, "llama_server_digest_invalid"
+            ):
+                probe.run_probe(
+                    llama_server=server,
+                    llama_server_sha256="0" * 64,
+                    layout="ubuntu-layout",
+                )
+
     def test_probe_directories_split_large_stage_from_short_runtime_home(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
             long_tmp = Path(temporary) / ("long-stage-parent-" * 5)

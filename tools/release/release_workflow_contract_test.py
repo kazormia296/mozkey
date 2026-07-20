@@ -6,14 +6,27 @@ import re
 import unittest
 
 
+SUPPORTED_PLATFORMS = ("linux", "macos", "windows")
+MOBILE_PLATFORMS = ("android", "ios")
+
+
 class ReleaseWorkflowContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.repository = Path(__file__).resolve().parents[2]
-        cls.workflow = (
-            cls.repository / ".github" / "workflows" / "release.yaml"
-        ).read_text(encoding="utf-8")
+        cls.workflow_directory = cls.repository / ".github" / "workflows"
+        cls.workflow_paths = sorted(
+            {
+                *cls.workflow_directory.glob("*.yaml"),
+                *cls.workflow_directory.glob("*.yml"),
+            }
+        )
+        cls.workflow_path = cls.workflow_directory / "release.yaml"
+        cls.workflow = cls.workflow_path.read_text(encoding="utf-8")
         cls.jobs = cls._split_job_blocks(cls.workflow)
+        cls.root_build = (cls.repository / "src" / "BUILD.bazel").read_text(
+            encoding="utf-8"
+        )
 
     @staticmethod
     def _split_job_blocks(workflow: str) -> dict[str, str]:
@@ -29,6 +42,11 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
             ]
             for index, match in enumerate(matches)
         }
+
+    def _platform_workflow(self, platform: str) -> str:
+        return (self.workflow_directory / f"{platform}.yaml").read_text(
+            encoding="utf-8"
+        )
 
     def test_release_is_tag_only_and_gate_validates_dispatch_refs(self) -> None:
         trigger = self.workflow.split("\nconcurrency:\n", maxsplit=1)[0]
@@ -55,8 +73,8 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertEqual(writers, ["publish"])
         self.assertIn("permissions:\n  contents: read", self.workflow)
 
-    def test_all_platform_release_jobs_are_gated(self) -> None:
-        for platform in ("android", "linux", "macos", "windows"):
+    def test_supported_platform_release_jobs_are_gated(self) -> None:
+        for platform in SUPPORTED_PLATFORMS:
             with self.subTest(platform=platform):
                 block = self.jobs[platform]
                 self.assertIn("needs: release-gate", block)
@@ -67,30 +85,47 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
                 self.assertIn("release: true", block)
                 self.assertNotIn("secrets: inherit", block)
 
-                called_workflow = (
-                    self.repository / ".github" / "workflows" / f"{platform}.yaml"
-                ).read_text(encoding="utf-8")
                 self.assertRegex(
-                    called_workflow,
+                    self._platform_workflow(platform),
                     r"(?ms)^  workflow_call:\n    inputs:\n      release:\n"
                     r".*?        type: boolean",
                 )
 
-        self.assertIn("needs: release-gate", self.jobs["release-notes"])
         self.assertIn(
-            "needs: [release-gate, android, linux, macos, windows, release-notes]",
+            "needs: [release-gate, linux, macos, windows]",
             self.jobs["publish"],
         )
 
+    def test_mobile_platforms_are_not_product_or_release_targets(self) -> None:
+        for platform in MOBILE_PLATFORMS:
+            with self.subTest(platform=platform):
+                self.assertNotIn(platform, self.jobs)
+                for suffix in ("yaml", "yml"):
+                    self.assertFalse(
+                        (self.workflow_directory / f"{platform}.{suffix}").exists()
+                    )
+                self.assertNotIn(
+                    f"uses: ./.github/workflows/{platform}.yaml",
+                    self.workflow,
+                )
+
+        package = re.search(
+            r'(?ms)^filegroup\(\n    name = "package",.*?^\)\n',
+            self.root_build,
+        )
+        self.assertIsNotNone(package)
+        assert package is not None
+        self.assertNotRegex(package.group(0), r"(?m)^\s+(android|ios)\s*=")
+        self.assertIn('linux = ["//unix:package"]', package.group(0))
+        self.assertIn('macos = ["//mac:package"]', package.group(0))
+        self.assertIn('windows = ["//win32/installer"]', package.group(0))
+
     def test_release_artifact_names_are_unique(self) -> None:
         names: list[str] = []
-        for platform in ("android", "linux", "macos", "windows"):
-            called_workflow = (
-                self.repository / ".github" / "workflows" / f"{platform}.yaml"
-            ).read_text(encoding="utf-8")
+        for platform in SUPPORTED_PLATFORMS:
             platform_names = re.findall(
                 r"(?m)^\s+name: (release-[A-Za-z0-9_.-]+)\s*$",
-                called_workflow,
+                self._platform_workflow(platform),
             )
             self.assertTrue(platform_names, f"{platform} has no release-* artifact")
             names.extend(platform_names)
@@ -101,16 +136,13 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
 
     def test_routine_ci_skips_all_product_build_jobs(self) -> None:
         gated_jobs = {
-            "android": ("build_on_linux", "build_on_mac"),
-            "linux": ("build", "package_archlinux"),
+            "linux": ("build", "package_fedora", "package_archlinux"),
             "macos": ("prepare_macos_zenz_runtime", "build_arm64"),
             "windows": ("build_x64", "build_universal", "build_arm64"),
         }
         for platform, expected_jobs in gated_jobs.items():
             with self.subTest(platform=platform):
-                workflow = (
-                    self.repository / ".github" / "workflows" / f"{platform}.yaml"
-                ).read_text(encoding="utf-8")
+                workflow = self._platform_workflow(platform)
                 jobs = self._split_job_blocks(workflow)
                 for job in expected_jobs:
                     self.assertIn(
@@ -119,26 +151,20 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
                         f"{platform}/{job} must be release-only",
                     )
 
-                if platform == "android":
-                    trigger = workflow.split("\npermissions:\n", maxsplit=1)[0]
-                    self.assertNotIn("  push:", trigger)
-                    self.assertNotIn("  pull_request:", trigger)
-                else:
-                    trigger = workflow.split("\npermissions:\n", maxsplit=1)[0]
-                    self.assertIn("  pull_request:", trigger)
-                    self.assertIn("  push:\n    branches:\n      - main", trigger)
+                trigger = workflow.split("\npermissions:\n", maxsplit=1)[0]
+                self.assertIn("  pull_request:", trigger)
+                self.assertIn("  push:\n    branches:\n      - main", trigger)
 
     def test_intermediate_artifacts_are_namespaced_and_short_lived(self) -> None:
         artifact_names: list[str] = []
         workflows: dict[str, str] = {}
-        for platform in ("android", "linux", "macos", "windows"):
-            workflow = (
-                self.repository / ".github" / "workflows" / f"{platform}.yaml"
-            ).read_text(encoding="utf-8")
+        for platform in SUPPORTED_PLATFORMS:
+            workflow = self._platform_workflow(platform)
             workflows[platform] = workflow
             artifact_names.extend(
                 re.findall(
-                    r"(?m)^\s+uses: actions/upload-artifact@v[0-9]+\n"
+                    r"(?m)^\s+uses: actions/upload-artifact@[0-9a-f]{40}  "
+                    r"# v[0-9]+(?:\.[0-9]+){0,2}\n"
                     r"\s+with:\n\s+name: ([^\s]+)$",
                     workflow,
                 )
@@ -169,48 +195,188 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
 
     def test_public_product_filenames_are_versioned(self) -> None:
         expected = {
-            "android": "mozkey-v*-android-native-libs.zip",
-            "linux": "dist/mozkey-v*-archlinux-x86_64.tar.xz",
-            "macos": "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg",
-            "windows": "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi",
+            "linux": (
+                "dist/mozkey-v*-archlinux-x86_64.tar.xz",
+                "dist/mozkey-ibg_*_amd64.deb",
+                "dist/mozkey-ibg-*-1.x86_64.rpm",
+            ),
+            "macos": (
+                "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg",
+            ),
+            "windows": (
+                "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi",
+            ),
         }
-        for platform, filename in expected.items():
+        for platform, filenames in expected.items():
             with self.subTest(platform=platform):
-                workflow = (
-                    self.repository / ".github" / "workflows" / f"{platform}.yaml"
-                ).read_text(encoding="utf-8")
-                self.assertIn(filename, workflow)
+                for filename in filenames:
+                    self.assertIn(filename, self._platform_workflow(platform))
 
-    def test_codex_is_last_read_only_step_and_publish_has_fallback(self) -> None:
-        notes = self.jobs["release-notes"]
-        self.assertIn("uses: openai/codex-action@v1", notes)
-        self.assertIn("openai-api-key: ${{ secrets.OPENAI_API_KEY }}", notes)
-        self.assertIn("continue-on-error: true", notes)
-        self.assertIn("sandbox: read-only", notes)
-        self.assertIn("safety-strategy: drop-sudo", notes)
-        self.assertNotIn("OPENAI_API_KEY:", notes)
-        self.assertIn("notes: ${{ steps.codex-notes.outputs.final-message }}", notes)
-        self.assertIn("outcome: ${{ steps.codex-notes.outcome }}", notes)
+        all_workflows = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in self.workflow_paths
+        )
+        self.assertNotIn("android-native-libs", all_workflows)
+        self.assertNotRegex(all_workflows, r"(?i)release[-_/].*ios")
 
-        action_position = notes.index("uses: openai/codex-action@v1")
-        self.assertNotRegex(notes[action_position:], r"(?m)^      - name:")
+    def test_every_external_action_is_pinned_to_a_full_commit(self) -> None:
+        for path in self.workflow_paths:
+            workflow = path.read_text(encoding="utf-8")
+            for line_number, line in enumerate(workflow.splitlines(), start=1):
+                stripped = line.strip()
+                if not stripped.startswith("uses:"):
+                    continue
+                action = stripped.removeprefix("uses:").strip()
+                if action.startswith("./"):
+                    continue
+                with self.subTest(path=path.name, line=line_number):
+                    self.assertRegex(
+                        line,
+                        r"^\s+uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@"
+                        r"[0-9a-f]{40}  # v[0-9]+(?:\.[0-9]+){0,2}$",
+                    )
 
+        all_workflows = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in self.workflow_paths
+        )
+        self.assertNotIn("openai/codex-action", all_workflows)
+        self.assertNotIn("OPENAI_API_KEY", all_workflows)
+
+    def test_release_notes_use_only_github_generation(self) -> None:
+        self.assertNotIn("release-notes", self.jobs)
         publish = self.jobs["publish"]
-        self.assertIn(
-            "CODEX_RELEASE_NOTES: ${{ needs.release-notes.outputs.notes }}",
-            publish,
-        )
-        self.assertIn(
-            "CODEX_RELEASE_NOTES_OUTCOME: ${{ needs.release-notes.outputs.outcome }}",
-            publish,
-        )
-        self.assertIn(
-            '"$CODEX_RELEASE_NOTES_OUTCOME" = "success"',
-            publish,
-        )
-        self.assertIn("printf '%s\\n' \"$CODEX_RELEASE_NOTES\"", publish)
+        self.assertIn("Generate release notes with GitHub", publish)
         self.assertIn("releases/generate-notes", publish)
-        self.assertIn("release-notes-generator:", publish)
+        self.assertIn(
+            "release-notes-generator: github-generate-notes",
+            publish,
+        )
+        self.assertNotIn("CODEX_RELEASE_NOTES", publish)
+
+    def test_macos_release_is_signed_notarized_and_receives_only_named_secrets(
+        self,
+    ) -> None:
+        caller = self.jobs["macos"]
+        workflow = self._platform_workflow("macos")
+        required_secrets = {
+            "APPLE_CERTIFICATE",
+            "APPLE_CERTIFICATE_PASSWORD",
+            "APPLE_INSTALLER_CERTIFICATE",
+            "APPLE_INSTALLER_CERTIFICATE_PASSWORD",
+            "KEYCHAIN_PASSWORD",
+            "APPLE_API_KEY_BASE64",
+            "APPLE_API_KEY",
+            "APPLE_API_ISSUER",
+        }
+        for secret in required_secrets:
+            with self.subTest(secret=secret):
+                self.assertIn(f"      {secret}: ${{{{ secrets.{secret} }}}}", caller)
+                self.assertRegex(
+                    workflow,
+                    rf"(?m)^      {secret}:\n(?:        .*\n)*?        required: true$",
+                )
+
+        self.assertNotIn("secrets: inherit", caller)
+        macos_jobs = self._split_job_blocks(workflow)
+        self.assertIn(
+            "if: ${{ inputs.release == true }}",
+            macos_jobs["validate_release_signing"],
+        )
+        self.assertIn("Build Qt", workflow)
+        self.assertLess(
+            workflow.index("Probe packaged arm64 scorer"),
+            workflow.index("Import Developer ID identities"),
+        )
+        self.assertIn("Developer ID Application", workflow)
+        self.assertIn("Developer ID Installer", workflow)
+        self.assertRegex(
+            workflow,
+            r"python3 src/mac/build_package\.py \\\n\s+--oss \\",
+        )
+        self.assertIn("xcrun notarytool submit", workflow)
+        self.assertIn("xcrun stapler staple", workflow)
+        self.assertIn("spctl --assess --type install", workflow)
+        self.assertIn("if: always()", workflow)
+
+    def test_aur_publication_is_serial_and_monotonic(self) -> None:
+        workflow = self._platform_workflow("aur")
+        self.assertIn("group: mozkey-aur-publish", workflow)
+        self.assertNotIn("group: mozkey-aur-${{", workflow)
+        self.assertIn('vercmp "$RELEASE_VERSION" "$current_version"', workflow)
+        self.assertIn("Refusing AUR package downgrade", workflow)
+        self.assertIn("Refusing AUR pkgrel downgrade", workflow)
+        self.assertIn("next_pkgrel == current_pkgrel", workflow)
+        self.assertIn(
+            "AUR metadata changed without a pkgrel increase",
+            workflow,
+        )
+
+    def test_native_linux_packages_preserve_attested_stage(self) -> None:
+        linux = self._platform_workflow("linux")
+        smoke = (self.repository / "scripts/smoke_test_mozkey_fcitx5_install").read_text(
+            encoding="utf-8"
+        )
+        rpm = (self.repository / "scripts/package_mozkey_linux_rpm").read_text(
+            encoding="utf-8"
+        )
+        deb = (self.repository / "scripts/package_mozkey_linux_deb").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("MOZKEY_ZENZ_LLAMA_SERVER_SOURCE", smoke)
+        self.assertIn("cmp -s --", smoke)
+        self.assertIn("%global __os_install_post %{nil}", rpm)
+        self.assertIn("verify_staged_linux_payload.py", rpm)
+        self.assertIn("verify_staged_linux_payload.py", deb)
+        self.assertIn("tools.release.verify_staged_linux_payload_test", linux)
+
+    def test_publish_replaces_and_verifies_exact_asset_set(self) -> None:
+        publish = self.jobs["publish"]
+        expected = {
+            "Mozkey_v${RELEASE_VERSION}_arm64.msi",
+            "Mozkey_v${RELEASE_VERSION}_macos_arm64.pkg",
+            "Mozkey_v${RELEASE_VERSION}_universal.msi",
+            "Mozkey_v${RELEASE_VERSION}_x64.msi",
+            "archlinux-build-packages.txt",
+            "fedora-build-packages.txt",
+            "mozkey-ibg-${RELEASE_VERSION}-1.x86_64.rpm",
+            "mozkey-ibg_${RELEASE_VERSION}_amd64.deb",
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.build-attestation.json",
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.spdx.json",
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz",
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz.sha256",
+            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.build-attestation.json",
+            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.spdx.json",
+            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.build-attestation.json",
+            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.spdx.json",
+            "ubuntu-build-packages.txt",
+        }
+        allowlist = re.search(
+            r"(?ms)expected_product_assets=\(\n(?P<body>.*?)^          \)",
+            publish,
+        )
+        self.assertIsNotNone(allowlist)
+        assert allowlist is not None
+        self.assertEqual(
+            set(re.findall(r'^\s+"([^"]+)"$', allowlist.group("body"), re.MULTILINE)),
+            expected,
+        )
+
+        self.assertIn("expected-product-assets.txt", publish)
+        self.assertIn("expected-release-assets.txt", publish)
+        self.assertIn("pre-upload-release-assets.txt", publish)
+        self.assertIn("post-upload-release-assets.txt", publish)
+        self.assertIn("releases/assets/${asset_id}", publish)
+        self.assertIn("--method DELETE", publish)
+        self.assertIn("require_mutable_draft", publish)
+        self.assertIn(".immutable // false", publish)
+        self.assertGreaterEqual(publish.count("require_mutable_draft"), 6)
+        edit_block = publish.split('gh release edit "$RELEASE_TAG"', 1)[1].split(
+            'gh release create "$RELEASE_TAG"', 1
+        )[0]
+        self.assertNotIn("--draft", edit_block)
+        self.assertGreaterEqual(publish.count("diff -u"), 4)
+        self.assertNotIn("--clobber", publish)
 
     def test_publish_refuses_published_release_and_builds_checksums(self) -> None:
         publish = self.jobs["publish"]

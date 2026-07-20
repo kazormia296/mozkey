@@ -60,6 +60,16 @@ LAYOUTS: dict[str, dict[str, tuple[str, ...]]] = {
             "--//unix/fcitx5:use_server=true",
         ),
     },
+    "fedora-x86_64": {
+        "targets": COMMON_TARGETS,
+        "flags": (
+            "--config=oss_linux",
+            "--config=release_build",
+            "--config=no_sframe",
+            "--define=mozkey_dictionary_profile=release-approved-only",
+            "--//unix/fcitx5:use_server=true",
+        ),
+    },
 }
 BAZEL_DRIVERS = {
     "bazelisk": ("bazelisk",),
@@ -97,6 +107,13 @@ ZENZ_NORMALIZED_MODEL_PATH = PurePosixPath(
 )
 ZENZ_NORMALIZATION_LOCK_PATH = PurePosixPath(
     "tools/release/zenz_gguf_normalization.lock.json"
+)
+BUNDLED_RUNTIME_LAYOUTS = frozenset({"ubuntu-layout", "fedora-x86_64"})
+BUNDLED_LLAMA_SERVER_PATH = PurePosixPath(
+    "dist/zenz/linux/runtime/llama-server"
+)
+BUNDLED_LLAMA_MANIFEST_PATH = PurePosixPath(
+    "dist/zenz/linux/runtime/llama-server-manifest.json"
 )
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -334,6 +351,13 @@ def build_document(root: Path, layout: str, bazel_driver: str) -> dict[str, Any]
     spec = _layout_spec(layout)
     dictionary = _verify_release_dictionary(root)
     zenz_runtime = _verify_zenz_runtime(root)
+    if layout in BUNDLED_RUNTIME_LAYOUTS:
+        zenz_runtime["bundled_llama_server"] = binary_record(
+            root, BUNDLED_LLAMA_SERVER_PATH
+        )
+        zenz_runtime["bundled_llama_manifest"] = file_record(
+            root, BUNDLED_LLAMA_MANIFEST_PATH
+        )
     binaries = [binary_record(root, path) for path in BINARY_PATHS]
     return {
         "bazel": {
@@ -437,6 +461,13 @@ def verify(root: Path, layout: str, attestation: Path) -> Mapping[str, Any]:
     expected_binaries = [binary_record(root, path) for path in BINARY_PATHS]
     _validate_file_records(document.get("binaries"), expected_binaries, "binary")
     expected_zenz_runtime = _verify_zenz_runtime(root)
+    if layout in BUNDLED_RUNTIME_LAYOUTS:
+        expected_zenz_runtime["bundled_llama_server"] = binary_record(
+            root, BUNDLED_LLAMA_SERVER_PATH
+        )
+        expected_zenz_runtime["bundled_llama_manifest"] = file_record(
+            root, BUNDLED_LLAMA_MANIFEST_PATH
+        )
     if document.get("zenz_runtime") != expected_zenz_runtime:
         raise AttestationError("attested Zenz runtime does not match current inputs")
     return document

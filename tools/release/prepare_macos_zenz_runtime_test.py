@@ -224,7 +224,7 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(
             workflow.count("if: ${{ inputs.release == true }}"),
-            2,
+            3,
         )
         test_job = workflow.split("\n  test:\n", 1)[1]
         self.assertNotIn("inputs.release", test_job)
