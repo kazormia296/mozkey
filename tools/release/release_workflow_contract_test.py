@@ -329,6 +329,14 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertIn("verify_staged_linux_payload.py", rpm)
         self.assertIn("verify_staged_linux_payload.py", deb)
         self.assertIn("tools.release.verify_staged_linux_payload_test", linux)
+        self.assertIn(
+            'runtime="${GITHUB_WORKSPACE}/dist/zenz/linux/runtime/llama-server"',
+            linux,
+        )
+        self.assertNotIn(
+            'runtime="$(pwd)/../dist/zenz/linux/runtime/llama-server"',
+            linux,
+        )
 
     def test_publish_replaces_and_verifies_exact_asset_set(self) -> None:
         publish = self.jobs["publish"]
