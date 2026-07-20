@@ -98,26 +98,19 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
                     deployment_target,
                 )
                 self.assertEqual(
-                    command[:4],
+                    command[:3],
                     [
-                        "/usr/bin/xcrun",
-                        "--sdk",
-                        "macosx",
-                        "clang++",
+                        "bazelisk",
+                        "build",
+                        "//zenz_scorer:mozc_zenz_scorer",
                     ],
                 )
-                self.assertIn("-DMOZC_BUILD", command)
-                self.assertEqual(command[command.index("-arch") + 1], architecture)
+                self.assertIn("--config", command)
+                self.assertIn("release_build", command)
+                self.assertIn(f"--macos_cpus={architecture}", command)
                 self.assertIn(
-                    f"-mmacosx-version-min={deployment_target}", command
-                )
-                self.assertEqual(
-                    command[-3:],
-                    [
-                        "/repo/src/zenz_scorer/main.cc",
-                        "-o",
-                        f"/build/{architecture}/mozc_zenz_scorer",
-                    ],
+                    "--define=mozkey_dictionary_profile=release-approved-only",
+                    command,
                 )
 
     def test_darwin_scorer_spawn_is_thread_safe_and_linux_semantics_remain(self):
