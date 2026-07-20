@@ -290,6 +290,10 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         )
         self.assertIn("Developer ID Application", workflow)
         self.assertIn("Developer ID Installer", workflow)
+        self.assertIn(
+            'security list-keychains -d user -s "$SIGNING_KEYCHAIN"',
+            workflow,
+        )
         self.assertRegex(
             workflow,
             r"python3 src/mac/build_package\.py \\\n\s+--oss \\",
