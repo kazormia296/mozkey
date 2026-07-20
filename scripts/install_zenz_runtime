@@ -1,13 +1,14 @@
 #!/bin/sh
 
-# Installs the verified, metadata-normalized Linux model and a product-private
-# link to the distro-provided llama-server.  The scorer release build accepts
-# no environment path overrides and resolves both beside its own executable.
+# Installs the verified, metadata-normalized Linux model and either the
+# distro-provided llama-server link (Arch/source) or an attested bundled runtime
+# (deb/rpm). The scorer release build resolves both beside its own executable.
 set -eu
 
 PREFIX="${PREFIX:-/usr}"
 DESTDIR="${DESTDIR:-}"
 LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}"
+LLAMA_SERVER_SOURCE="${MOZKEY_ZENZ_LLAMA_SERVER_SOURCE:-}"
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 . "${script_dir}/fcitx5_install_paths"
 validate_mozkey_install_environment
@@ -27,16 +28,37 @@ esac
 case "${LLAMA_SERVER_TARGET}" in
   *..*) echo "llama-server target must not contain traversal" >&2; exit 2 ;;
 esac
+if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
+  case "${LLAMA_SERVER_SOURCE}" in
+    /*) ;;
+    *) echo "bundled llama-server source must be absolute" >&2; exit 2 ;;
+  esac
+  if [ ! -f "${LLAMA_SERVER_SOURCE}" ] || [ -L "${LLAMA_SERVER_SOURCE}" ] ||
+     [ ! -x "${LLAMA_SERVER_SOURCE}" ]; then
+    echo "bundled llama-server source must be a regular executable" >&2
+    exit 1
+  fi
+  if [ "${LLAMA_SERVER_SOURCE}" != "${LLAMA_SERVER_TARGET}" ]; then
+    echo "bundled llama-server source and verified target must match" >&2
+    exit 2
+  fi
+fi
 if [ -z "${DESTDIR}" ]; then
   "${script_dir}/verify_llama_server_compatibility" "${LLAMA_SERVER_TARGET}"
 fi
 "${script_dir}/verify_zenz_gguf_normalization"
 
 runtime_link="${DESTDIR}${PREFIX}/lib/mozkey/llama-server"
-if { [ -e "${runtime_link}" ] || [ -L "${runtime_link}" ]; } &&
-   [ ! -L "${runtime_link}" ]; then
-  echo "refusing to replace non-symlink llama runtime path: ${runtime_link}" >&2
-  exit 1
+if [ -e "${runtime_link}" ] || [ -L "${runtime_link}" ]; then
+  if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
+    if [ ! -f "${runtime_link}" ] || [ -L "${runtime_link}" ]; then
+      echo "refusing to replace non-file bundled llama runtime path: ${runtime_link}" >&2
+      exit 1
+    fi
+  elif [ ! -L "${runtime_link}" ]; then
+    echo "refusing to replace non-symlink llama runtime path: ${runtime_link}" >&2
+    exit 1
+  fi
 fi
 
 runtime_source="win32/installer/zenz_runtime"
@@ -53,9 +75,17 @@ atomic_install_file "${runtime_source}/licenses/zenz-v3.2-small-gguf.txt" 644 \
   "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/zenz-v3.2-small-gguf.txt"
 atomic_install_file "${runtime_source}/licenses/llama.cpp-MIT.txt" 644 \
   "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt"
+atomic_install_file "${runtime_source}/licenses/cpp-httplib-MIT.txt" 644 \
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/cpp-httplib-MIT.txt"
+atomic_install_file "${runtime_source}/licenses/nlohmann-json-MIT.txt" 644 \
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/nlohmann-json-MIT.txt"
 atomic_install_file "${runtime_source}/licenses/Apache-2.0.txt" 644 \
   "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/Apache-2.0.txt"
 atomic_install_file "${runtime_source}/licenses/THIRD_PARTY_NOTICES.md" 644 \
   "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/THIRD_PARTY_NOTICES.md"
 
-atomic_install_symlink "${LLAMA_SERVER_TARGET}" "${runtime_link}"
+if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
+  atomic_install_file "${LLAMA_SERVER_SOURCE}" 755 "${runtime_link}"
+else
+  atomic_install_symlink "${LLAMA_SERVER_TARGET}" "${runtime_link}"
+fi

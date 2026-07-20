@@ -24,7 +24,7 @@ jobs:
       commit: ${{ steps.validate.outputs.commit }}
     steps:
       - name: Checkout the release ref with main history
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -61,15 +61,6 @@ jobs:
             exit 1
           fi
 
-  android:
-    name: Android release artifacts
-    needs: release-gate
-    permissions:
-      contents: read
-    uses: ./.github/workflows/android.yaml
-    with:
-      release: true
-
   linux:
     name: Linux release artifacts
     needs: release-gate
@@ -87,6 +78,15 @@ jobs:
     uses: ./.github/workflows/macos.yaml
     with:
       release: true
+    secrets:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_INSTALLER_CERTIFICATE: ${{ secrets.APPLE_INSTALLER_CERTIFICATE }}
+      APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
   windows:
     name: Windows release artifacts
@@ -97,44 +97,16 @@ jobs:
     with:
       release: true
 
-  release-notes:
-    name: Generate optional Codex release notes
-    needs: release-gate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    outputs:
-      notes: ${{ steps.codex-notes.outputs.final-message }}
-      outcome: ${{ steps.codex-notes.outcome }}
-    steps:
-      - name: Checkout complete release history
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Generate release notes with Codex
-        id: codex-notes
-        continue-on-error: true
-        uses: openai/codex-action@v1
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: .github/codex/prompts/release-notes.md
-          sandbox: read-only
-          safety-strategy: drop-sudo
-          codex-args: '["--ephemeral"]'
-
   publish:
     name: Create or update draft prerelease
-    needs: [release-gate, android, linux, macos, windows, release-notes]
+    needs: [release-gate, linux, macos, windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
     steps:
       - name: Checkout release metadata
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           persist-credentials: false
 
@@ -160,12 +132,14 @@ jobs:
           fi
 
       - name: Download release artifacts only
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           pattern: release-*
           path: release-artifacts
 
       - name: Flatten release assets and generate SHA256SUMS
+        env:
+          RELEASE_VERSION: ${{ needs.release-gate.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -184,44 +158,67 @@ jobs:
             exit 1
           fi
 
+          expected_product_assets=(
+            "Mozkey_v${RELEASE_VERSION}_arm64.msi"
+            "Mozkey_v${RELEASE_VERSION}_macos_arm64.pkg"
+            "Mozkey_v${RELEASE_VERSION}_universal.msi"
+            "Mozkey_v${RELEASE_VERSION}_x64.msi"
+            "archlinux-build-packages.txt"
+            "fedora-build-packages.txt"
+            "mozkey-ibg-${RELEASE_VERSION}-1.x86_64.rpm"
+            "mozkey-ibg_${RELEASE_VERSION}_amd64.deb"
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.build-attestation.json"
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.spdx.json"
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz"
+            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz.sha256"
+            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.build-attestation.json"
+            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.spdx.json"
+            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.build-attestation.json"
+            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.spdx.json"
+            "ubuntu-build-packages.txt"
+          )
+          printf '%s\n' "${expected_product_assets[@]}" \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-product-assets.txt"
+          find publish-assets -maxdepth 1 -type f -printf '%f\n' \
+            | LC_ALL=C sort > "$RUNNER_TEMP/actual-product-assets.txt"
+          if ! diff -u \
+            "$RUNNER_TEMP/expected-product-assets.txt" \
+            "$RUNNER_TEMP/actual-product-assets.txt"; then
+            echo "::error::Release artifact set does not match the desktop product allowlist." >&2
+            exit 1
+          fi
+
           (
             cd publish-assets
-            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
-              | sort -z \
-              | xargs -0 -r sha256sum > SHA256SUMS
+            sha256sum "${expected_product_assets[@]}" > SHA256SUMS
           )
           test -s publish-assets/SHA256SUMS
+          {
+            printf '%s\n' "${expected_product_assets[@]}"
+            printf '%s\n' SHA256SUMS
+          } | LC_ALL=C sort > "$RUNNER_TEMP/expected-release-assets.txt"
 
-      - name: Select Codex notes or GitHub-generated notes
+      - name: Generate release notes with GitHub
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.release-gate.outputs.tag }}
-          CODEX_RELEASE_NOTES: ${{ needs.release-notes.outputs.notes }}
-          CODEX_RELEASE_NOTES_OUTCOME: ${{ needs.release-notes.outputs.outcome }}
         shell: bash
         run: |
           set -euo pipefail
           NOTES_FILE="$RUNNER_TEMP/release-notes.md"
-          if [ "$CODEX_RELEASE_NOTES_OUTCOME" = "success" ] && \
-             [ -n "${CODEX_RELEASE_NOTES//[[:space:]]/}" ]; then
-            printf '%s\n' "$CODEX_RELEASE_NOTES" > "$NOTES_FILE"
-            NOTES_GENERATOR="openai-codex-action"
-          else
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-              -f tag_name="$RELEASE_TAG" \
-              --jq '.body' > "$NOTES_FILE"
-            NOTES_GENERATOR="github-generate-notes"
-          fi
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$RELEASE_TAG" \
+            --jq '.body' > "$NOTES_FILE"
           if [ ! -s "$NOTES_FILE" ] || ! grep -q '[^[:space:]]' "$NOTES_FILE"; then
             echo "::error::Release notes generation returned an empty body." >&2
             exit 1
           fi
-          printf '\n\n<!-- release-notes-generator: %s -->\n' \
-            "$NOTES_GENERATOR" >> "$NOTES_FILE"
+          printf '\n\n<!-- release-notes-generator: github-generate-notes -->\n' \
+            >> "$NOTES_FILE"
           echo "RELEASE_NOTES_FILE=$NOTES_FILE" >> "$GITHUB_ENV"
 
-      - name: Create or update the draft prerelease and upload assets
+      - name: Recreate the draft prerelease asset set
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.release-gate.outputs.tag }}
@@ -229,20 +226,88 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -s "$RUNNER_TEMP/existing-release.json" ]; then
+
+          current_release="$RUNNER_TEMP/current-release.json"
+          require_mutable_draft() {
+            gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+              > "$current_release"
+            if [ "$(jq -r '.draft' "$current_release")" != "true" ] || \
+               [ "$(jq -r '.immutable // false' "$current_release")" != "false" ]; then
+              echo "::error::Release ${RELEASE_TAG} is no longer a mutable draft." >&2
+              exit 1
+            fi
+          }
+
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            > "$current_release" \
+            2> "$RUNNER_TEMP/current-release.err"; then
+            release_id="$(jq -r '.id' "$current_release")"
+            require_mutable_draft
             gh release edit "$RELEASE_TAG" \
-              --draft \
               --prerelease \
               --title "Mozkey v${RELEASE_VERSION}" \
               --notes-file "$RELEASE_NOTES_FILE"
-          else
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/current-release.err"; then
             gh release create "$RELEASE_TAG" \
               --verify-tag \
               --draft \
               --prerelease \
               --title "Mozkey v${RELEASE_VERSION}" \
               --notes-file "$RELEASE_NOTES_FILE"
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+              > "$current_release"
+            release_id="$(jq -r '.id' "$current_release")"
+          else
+            cat "$RUNNER_TEMP/current-release.err" >&2
+            exit 1
+          fi
+
+          require_mutable_draft
+          mapfile -t existing_asset_ids < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+              --jq '.[].id'
+          )
+          for asset_id in "${existing_asset_ids[@]}"; do
+            require_mutable_draft
+            gh api --method DELETE \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+          done
+
+          require_mutable_draft
+          : > "$RUNNER_TEMP/empty-release-assets.txt"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+            --jq '.[].name' \
+            | LC_ALL=C sort > "$RUNNER_TEMP/pre-upload-release-assets.txt"
+          if ! diff -u \
+            "$RUNNER_TEMP/empty-release-assets.txt" \
+            "$RUNNER_TEMP/pre-upload-release-assets.txt"; then
+            echo "::error::Draft release still has assets after cleanup." >&2
+            exit 1
+          fi
+
+          find publish-assets -maxdepth 1 -type f -printf '%f\n' \
+            | LC_ALL=C sort > "$RUNNER_TEMP/local-release-assets.txt"
+          if ! diff -u \
+            "$RUNNER_TEMP/expected-release-assets.txt" \
+            "$RUNNER_TEMP/local-release-assets.txt"; then
+            echo "::error::Local release asset set changed before upload." >&2
+            exit 1
           fi
 
           mapfile -d '' assets < <(find publish-assets -maxdepth 1 -type f -print0 | sort -z)
-          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          require_mutable_draft
+          gh release upload "$RELEASE_TAG" "${assets[@]}"
+
+          require_mutable_draft
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+            --jq '.[].name' \
+            | LC_ALL=C sort > "$RUNNER_TEMP/post-upload-release-assets.txt"
+          if ! diff -u \
+            "$RUNNER_TEMP/expected-release-assets.txt" \
+            "$RUNNER_TEMP/post-upload-release-assets.txt"; then
+            echo "::error::Uploaded release asset set does not match the allowlist." >&2
+            exit 1
+          fi

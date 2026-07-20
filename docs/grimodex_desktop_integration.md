@@ -6,9 +6,10 @@ access, native input-context collection, candidate-window callbacks, and
 installer lifecycle hooks; snapshot parsing, validation, application scope,
 immutable dictionary publication, and consumer-handshake semantics are shared.
 
-The generally published desktop artifact remains the Windows MSI. macOS
-packages are built and tested by native CI, but this repository does not yet
-publish a generally available Developer ID-signed and notarized installer.
+The release workflow builds and tests the macOS package in native CI, signs its
+nested code and installer with Developer ID identities, and requires Apple
+notarization, stapling, and Gatekeeper assessment before attaching it to the
+draft release. Publication remains a deliberate draft-review step.
 
 ## Runtime contract
 
@@ -16,9 +17,10 @@ publish a generally available Developer ID-signed and notarized installer.
   `state.json` again. It publishes a new immutable generation only when the two
   state reads agree and every Protocol v1 size, schema, identifier, digest, and
   entry limit passes.
-- Windows resolves the default root below
-  `%APPDATA%\com.miyakey.grimodex\ime` and validates canonical paths,
-  current-user ACLs, file identity, reparse-point and hard-link constraints.
+- Windows resolves `FOLDERID_RoamingAppData` with the OS known-folder API and
+  appends `com.miyakey.grimodex\ime`. It accepts only canonical fixed local
+  drive paths (not UNC or mapped network drives), then validates current-user
+  ACLs, file identity, reparse-point and hard-link constraints.
   macOS resolves
   `~/Library/Application Support/com.miyakey.grimodex/ime` and requires
   user-owned private directories and regular files without symlink traversal.

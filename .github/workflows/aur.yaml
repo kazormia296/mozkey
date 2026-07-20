@@ -1,0 +1,270 @@
+name: Publish AUR package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published Mozkey release tag (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mozkey-aur-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.repository == 'kazormia296/mozkey' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: aur
+    steps:
+      # The packaging definition deliberately comes from the protected default
+      # branch. This also permits first-time AUR registration for an older
+      # release whose tag predates this workflow.
+      - name: Checkout reviewed AUR packaging definition
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Resolve and verify the published release
+        id: release
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+          MANUAL_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${EVENT_TAG:-${MANUAL_TAG:-}}"
+          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::AUR publication requires an exact vX.Y.Z tag." >&2
+            exit 1
+          fi
+          version="${tag#v}"
+
+          release_json="$RUNNER_TEMP/release.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+            > "$release_json"
+          if [[ "$(jq -r '.draft' "$release_json")" != false ]] ||
+             [[ "$(jq -r '.published_at // empty' "$release_json")" == "" ]]; then
+            echo "::error::AUR publication requires an existing public release." >&2
+            exit 1
+          fi
+          if [[ "$(jq -r '.tag_name' "$release_json")" != "$tag" ]]; then
+            echo "::error::Resolved release tag does not match ${tag}." >&2
+            exit 1
+          fi
+
+          archive="mozkey-v${version}-archlinux-x86_64.tar.xz"
+          checksum_asset="${archive}.sha256"
+          archive_count="$(jq --arg name "$archive" \
+            '[.assets[] | select(.name == $name)] | length' "$release_json")"
+          checksum_count="$(jq --arg name "$checksum_asset" \
+            '[.assets[] | select(.name == $name)] | length' "$release_json")"
+          if [[ "$archive_count" != 1 || "$checksum_count" != 1 ]]; then
+            echo "::error::Published release has a missing or duplicate Arch asset." >&2
+            exit 1
+          fi
+          archive_digest="$(jq -r --arg name "$archive" \
+            '.assets[] | select(.name == $name) | .digest // empty' \
+            "$release_json")"
+          if [[ ! "$archive_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Arch release asset has no valid GitHub SHA-256 digest." >&2
+            exit 1
+          fi
+
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
+          printf 'checksum_asset=%s\n' "$checksum_asset" >> "$GITHUB_OUTPUT"
+          printf 'archive_digest=%s\n' "${archive_digest#sha256:}" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Verify the release checksum sidecar
+        env:
+          ARCHIVE: ${{ steps.release.outputs.archive }}
+          ARCHIVE_DIGEST: ${{ steps.release.outputs.archive_digest }}
+          CHECKSUM_ASSET: ${{ steps.release.outputs.checksum_asset }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 755 "$RUNNER_TEMP/release-assets"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$CHECKSUM_ASSET" \
+            --dir "$RUNNER_TEMP/release-assets"
+          checksum_path="$RUNNER_TEMP/release-assets/$CHECKSUM_ASSET"
+          if [[ ! -f "$checksum_path" || -L "$checksum_path" ]] ||
+             [[ "$(wc -l < "$checksum_path")" != 1 ]]; then
+            echo "::error::Arch checksum sidecar must be one regular line." >&2
+            exit 1
+          fi
+          read -r checksum filename extra < "$checksum_path"
+          if [[ ! "$checksum" =~ ^[0-9a-f]{64}$ ]] ||
+             [[ "$filename" != "$ARCHIVE" ]] || [[ -n "${extra:-}" ]]; then
+            echo "::error::Arch checksum sidecar has an invalid identity." >&2
+            exit 1
+          fi
+          if [[ "$checksum" != "$ARCHIVE_DIGEST" ]]; then
+            echo "::error::Sidecar and GitHub asset digests disagree." >&2
+            exit 1
+          fi
+          printf 'ARCHIVE_SHA256=%s\n' "$checksum" >> "$GITHUB_ENV"
+
+      - name: Render PKGBUILD for the published asset
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/aur-package"
+          sed \
+            -e "s/^pkgver=.*/pkgver=${RELEASE_VERSION}/" \
+            -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${ARCHIVE_SHA256}')/" \
+            packaging/aur/PKGBUILD \
+            > "$RUNNER_TEMP/aur-package/PKGBUILD"
+          install -m 644 packaging/aur/LICENSE \
+            "$RUNNER_TEMP/aur-package/LICENSE"
+          grep -Fqx "pkgver=${RELEASE_VERSION}" \
+            "$RUNNER_TEMP/aur-package/PKGBUILD"
+          grep -Fqx "sha256sums_x86_64=('${ARCHIVE_SHA256}')" \
+            "$RUNNER_TEMP/aur-package/PKGBUILD"
+
+      - name: Generate and verify .SRCINFO with Arch makepkg
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "$RUNNER_TEMP/aur-package:/pkg" \
+            --workdir /pkg \
+            archlinux:base-devel \
+            sh -c 'makepkg --printsrcinfo > .SRCINFO'
+          test -s "$RUNNER_TEMP/aur-package/.SRCINFO"
+          grep -Fqx $'pkgbase = mozkey-ibg-bin' \
+            "$RUNNER_TEMP/aur-package/.SRCINFO"
+          grep -Fqx $'\tpkgver = '"$RELEASE_VERSION" \
+            "$RUNNER_TEMP/aur-package/.SRCINFO"
+          grep -Fqx $'\tsha256sums_x86_64 = '"$ARCHIVE_SHA256" \
+            "$RUNNER_TEMP/aur-package/.SRCINFO"
+
+      - name: Publish PKGBUILD and .SRCINFO to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$AUR_SSH_PRIVATE_KEY" ]]; then
+            echo "::error::The aur environment needs AUR_SSH_PRIVATE_KEY." >&2
+            exit 1
+          fi
+
+          ssh_dir="$RUNNER_TEMP/aur-ssh"
+          install -d -m 700 "$ssh_dir"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$ssh_dir/id_ed25519"
+          chmod 600 "$ssh_dir/id_ed25519"
+          ssh-keygen -y -P '' -f "$ssh_dir/id_ed25519" > /dev/null
+
+          known_hosts="$ssh_dir/known_hosts"
+          ssh-keyscan -T 10 -t ed25519 aur.archlinux.org > "$known_hosts"
+          fingerprints="$(ssh-keygen -lf "$known_hosts" -E sha256 \
+            | awk '{print $2}' | LC_ALL=C sort -u)"
+          expected_fingerprint='SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
+          if [[ "$fingerprints" != "$expected_fingerprint" ]]; then
+            echo "::error::AUR SSH host fingerprint verification failed." >&2
+            exit 1
+          fi
+
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts"
+          aur_repository="$RUNNER_TEMP/mozkey-ibg-bin"
+          git -c init.defaultBranch=master clone \
+            ssh://aur@aur.archlinux.org/mozkey-ibg-bin.git \
+            "$aur_repository"
+          for package_file in PKGBUILD .SRCINFO LICENSE; do
+            if [[ -L "$aur_repository/$package_file" ]]; then
+              echo "::error::AUR package metadata must not be a symlink." >&2
+              exit 1
+            fi
+          done
+
+          current_version="$(sed -n \
+            's/^[[:space:]]*pkgver = \([0-9][0-9.]*\)$/\1/p' \
+            "$aur_repository/.SRCINFO" 2>/dev/null || true)"
+          if [[ -f "$aur_repository/.SRCINFO" ]]; then
+            if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Existing AUR pkgver is missing or invalid." >&2
+              exit 1
+            fi
+            current_pkgrel="$(sed -n \
+              's/^[[:space:]]*pkgrel = \([1-9][0-9]*\)$/\1/p' \
+              "$aur_repository/.SRCINFO")"
+            next_pkgrel="$(sed -n \
+              's/^[[:space:]]*pkgrel = \([1-9][0-9]*\)$/\1/p' \
+              "$RUNNER_TEMP/aur-package/.SRCINFO")"
+            if [[ ! "$current_pkgrel" =~ ^[1-9][0-9]*$ ]] ||
+               [[ ! "$next_pkgrel" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::AUR pkgrel is missing or invalid." >&2
+              exit 1
+            fi
+            version_order="$(docker run --rm archlinux:base-devel \
+              vercmp "$RELEASE_VERSION" "$current_version")"
+            case "$version_order" in
+              -1)
+                echo "::error::Refusing AUR package downgrade from ${current_version} to ${RELEASE_VERSION}." >&2
+                exit 1
+                ;;
+              0)
+                if (( next_pkgrel < current_pkgrel )); then
+                  echo "::error::Refusing AUR pkgrel downgrade." >&2
+                  exit 1
+                fi
+                if (( next_pkgrel == current_pkgrel )); then
+                  if cmp -s "$RUNNER_TEMP/aur-package/PKGBUILD" \
+                       "$aur_repository/PKGBUILD" &&
+                     cmp -s "$RUNNER_TEMP/aur-package/.SRCINFO" \
+                       "$aur_repository/.SRCINFO" &&
+                     cmp -s "$RUNNER_TEMP/aur-package/LICENSE" \
+                       "$aur_repository/LICENSE"; then
+                    echo "AUR already contains Mozkey IbG ${RELEASE_VERSION}."
+                    exit 0
+                  fi
+                  echo "::error::AUR metadata changed without a pkgrel increase." >&2
+                  exit 1
+                fi
+                ;;
+              1) ;;
+              *)
+                echo "::error::Arch vercmp returned an invalid result." >&2
+                exit 1
+                ;;
+            esac
+          fi
+          install -m 644 "$RUNNER_TEMP/aur-package/PKGBUILD" \
+            "$aur_repository/PKGBUILD"
+          install -m 644 "$RUNNER_TEMP/aur-package/.SRCINFO" \
+            "$aur_repository/.SRCINFO"
+          install -m 644 "$RUNNER_TEMP/aur-package/LICENSE" \
+            "$aur_repository/LICENSE"
+
+          git -C "$aur_repository" config user.name kazormia296
+          git -C "$aur_repository" config user.email \
+            kazormia296@users.noreply.github.com
+          git -C "$aur_repository" add PKGBUILD .SRCINFO LICENSE
+          git -C "$aur_repository" diff --cached --check
+          git -C "$aur_repository" commit \
+            -m "Update to ${RELEASE_VERSION}"
+          git -C "$aur_repository" push origin HEAD:master

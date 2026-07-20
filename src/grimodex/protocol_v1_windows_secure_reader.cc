@@ -5,6 +5,7 @@
 #if defined(_WIN32)
 
 #include <aclapi.h>
+#include <shlobj.h>
 
 #include <algorithm>
 #include <array>
@@ -80,9 +81,27 @@ class UniqueLocalMemory final {
   HLOCAL memory_;
 };
 
+class UniqueCoTaskMemory final {
+ public:
+  explicit UniqueCoTaskMemory(PWSTR memory = nullptr) : memory_(memory) {}
+  ~UniqueCoTaskMemory() {
+    if (memory_ != nullptr) {
+      ::CoTaskMemFree(memory_);
+    }
+  }
+
+  UniqueCoTaskMemory(const UniqueCoTaskMemory &) = delete;
+  UniqueCoTaskMemory &operator=(const UniqueCoTaskMemory &) = delete;
+
+  PWSTR get() const { return memory_; }
+
+ private:
+  PWSTR memory_;
+};
+
 struct ParsedRootPath final {
   // Every entry is an extended-length absolute directory path.  The first is
-  // the drive root or UNC share and the last is the configured IME root.
+  // the local drive root and the last is the configured IME root.
   std::vector<std::wstring> prefixes;
 };
 
@@ -248,35 +267,22 @@ absl::StatusOr<ParsedRootPath> ParseRootPath(absl::string_view utf8_path) {
   size_t component_begin = 0;
   if (path.size() >= 3 && IsAsciiAlpha(path[0]) && path[1] == L':' &&
       path[2] == L'\\') {
+    const std::wstring drive_root = path.substr(0, 3);
+    const UINT drive_type = ::GetDriveTypeW(drive_root.c_str());
+    if (!protocol_v1_windows_internal::IsFixedLocalDriveType(drive_type)) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Grimodex root must be on a fixed local drive (drive_type=",
+          drive_type, ")"));
+    }
     prefix = L"\\\\?\\" + path.substr(0, 3);
     result.prefixes.push_back(prefix);
     component_begin = 3;
   } else if (path.rfind(L"\\\\", 0) == 0) {
-    const size_t server_end = path.find(L'\\', 2);
-    if (server_end == std::wstring::npos) {
-      return absl::InvalidArgumentError(
-          "UNC Grimodex root is missing a share name");
-    }
-    const size_t share_end = path.find(L'\\', server_end + 1);
-    if (share_end == std::wstring::npos) {
-      return absl::InvalidArgumentError(
-          "filesystem share cannot be an IME root");
-    }
-    const std::wstring server = path.substr(2, server_end - 2);
-    const std::wstring share =
-        path.substr(server_end + 1, share_end - server_end - 1);
-    if (absl::Status status = ValidatePathComponent(server); !status.ok()) {
-      return status;
-    }
-    if (absl::Status status = ValidatePathComponent(share); !status.ok()) {
-      return status;
-    }
-    prefix = L"\\\\?\\UNC\\" + server + L"\\" + share;
-    result.prefixes.push_back(prefix);
-    component_begin = share_end + 1;
+    return absl::InvalidArgumentError(
+        "UNC Grimodex roots are not allowed in local-only mode");
   } else {
     return absl::InvalidArgumentError(
-        "Grimodex root must be an absolute drive or UNC path");
+        "Grimodex root must be an absolute local drive path");
   }
 
   size_t component_count = 0;
@@ -302,7 +308,7 @@ absl::StatusOr<ParsedRootPath> ParseRootPath(absl::string_view utf8_path) {
   }
   if (component_count == 0) {
     return absl::InvalidArgumentError(
-        "filesystem volume or share cannot be an IME root");
+        "filesystem volume cannot be an IME root");
   }
   return result;
 }
@@ -610,33 +616,30 @@ bool IsSafeIdentifier(absl::string_view value, size_t maximum) {
   return true;
 }
 
-absl::StatusOr<std::wstring> ReadAppDataEnvironment() {
-  for (int attempt = 0; attempt < 3; ++attempt) {
-    ::SetLastError(ERROR_SUCCESS);
-    const DWORD required = ::GetEnvironmentVariableW(L"APPDATA", nullptr, 0);
-    if (required == 0) {
-      const DWORD error = ::GetLastError();
-      return error == ERROR_SUCCESS
-                 ? absl::FailedPreconditionError("%APPDATA% is empty")
-                 : WindowsError("read %APPDATA%", error);
-    }
-    std::wstring value(static_cast<size_t>(required), L'\0');
-    const DWORD copied =
-        ::GetEnvironmentVariableW(L"APPDATA", value.data(), required);
-    if (copied == 0) {
-      return WindowsError("read %APPDATA%", ::GetLastError());
-    }
-    if (copied < required) {
-      value.resize(copied);
-      return value;
-    }
+absl::StatusOr<std::wstring> ReadRoamingAppDataKnownFolder() {
+  PWSTR raw_path = nullptr;
+  const HRESULT result = ::SHGetKnownFolderPath(
+      FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, nullptr, &raw_path);
+  UniqueCoTaskMemory path(raw_path);
+  if (FAILED(result)) {
+    return absl::FailedPreconditionError(absl::StrCat(
+        "resolve FOLDERID_RoamingAppData failed (hresult=",
+        static_cast<uint32_t>(result), ")"));
   }
-  return absl::AbortedError("%APPDATA% changed repeatedly while resolving it");
+  if (path.get() == nullptr || path.get()[0] == L'\0') {
+    return absl::FailedPreconditionError(
+        "FOLDERID_RoamingAppData resolved to an empty path");
+  }
+  return std::wstring(path.get());
 }
 
 }  // namespace
 
 namespace protocol_v1_windows_internal {
+
+bool IsFixedLocalDriveType(uint32_t drive_type) {
+  return drive_type == DRIVE_FIXED;
+}
 
 bool SameFileVersion(const FileVersion &first, const FileVersion &second) {
   return first.volume_serial_number == second.volume_serial_number &&
@@ -834,7 +837,7 @@ absl::StatusOr<std::string> ResolveWindowsProtocolV1Root(
     return std::string(override_root);
   }
   absl::StatusOr<std::wstring> app_data =
-      Utf8ToWideStrict(app_data_directory, "%APPDATA%");
+      Utf8ToWideStrict(app_data_directory, "AppData directory");
   if (!app_data.ok()) {
     return app_data.status();
   }
@@ -861,12 +864,12 @@ absl::StatusOr<std::string> ResolveWindowsProtocolV1Root(
   if (!override_root.empty()) {
     return ResolveWindowsProtocolV1Root(override_root, "unused");
   }
-  absl::StatusOr<std::wstring> app_data = ReadAppDataEnvironment();
+  absl::StatusOr<std::wstring> app_data = ReadRoamingAppDataKnownFolder();
   if (!app_data.ok()) {
     return app_data.status();
   }
   absl::StatusOr<std::string> app_data_utf8 =
-      WideToUtf8Strict("%APPDATA%", *app_data);
+      WideToUtf8Strict("FOLDERID_RoamingAppData", *app_data);
   if (!app_data_utf8.ok()) {
     return app_data_utf8.status();
   }

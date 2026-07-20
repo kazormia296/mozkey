@@ -63,20 +63,47 @@ verify_trusted_parent_chain() {
   done
 }
 
+attested_sha256="${MOZKEY_LLAMA_ATTESTED_SHA256:-}"
 case "${MOZKEY_LLAMA_ALLOW_UNTRUSTED_FOR_TESTS:-}" in
   "")
-    reject_untrusted_metadata "${resolved_server}"
-    verify_trusted_parent_chain "$(dirname -- "${resolved_server}")"
-    if [ -L "${llama_server}" ]; then
-      link_owner="$(stat -c '%u' -- "${llama_server}")"
-      if [ "${link_owner}" != 0 ]; then
-        echo "trusted llama-server symlink must be root-owned: ${llama_server}" >&2
+    if [ -n "${attested_sha256}" ]; then
+      case "${attested_sha256}" in
+        *[!0-9a-f]*|'')
+          echo "MOZKEY_LLAMA_ATTESTED_SHA256 must be lowercase SHA-256" >&2
+          exit 2
+          ;;
+      esac
+      if [ "${#attested_sha256}" -ne 64 ]; then
+        echo "MOZKEY_LLAMA_ATTESTED_SHA256 must be lowercase SHA-256" >&2
+        exit 2
+      fi
+      if [ -L "${llama_server}" ] || [ "${resolved_server}" != "${llama_server}" ]; then
+        echo "attested llama-server must not be a symlink" >&2
         exit 1
       fi
+      actual_sha256="$(sha256sum -- "${resolved_server}" | awk '{print $1}')"
+      if [ "${actual_sha256}" != "${attested_sha256}" ]; then
+        echo "attested llama-server SHA-256 mismatch" >&2
+        exit 1
+      fi
+    else
+      reject_untrusted_metadata "${resolved_server}"
+      verify_trusted_parent_chain "$(dirname -- "${resolved_server}")"
+      if [ -L "${llama_server}" ]; then
+        link_owner="$(stat -c '%u' -- "${llama_server}")"
+        if [ "${link_owner}" != 0 ]; then
+          echo "trusted llama-server symlink must be root-owned: ${llama_server}" >&2
+          exit 1
+        fi
+      fi
+      verify_trusted_parent_chain "$(dirname -- "${llama_server}")"
     fi
-    verify_trusted_parent_chain "$(dirname -- "${llama_server}")"
     ;;
   1)
+    if [ -n "${attested_sha256}" ]; then
+      echo "test ownership override and attested SHA-256 are mutually exclusive" >&2
+      exit 2
+    fi
     echo "warning: bypassing llama-server ownership checks for tests" >&2
     ;;
   *)
@@ -138,6 +165,13 @@ run_bounded_probe() {
 
 run_bounded_probe version --version
 run_bounded_probe help --help
+if [ -n "${attested_sha256}" ]; then
+  post_probe_sha256="$(sha256sum -- "${resolved_server}" | awk '{print $1}')"
+  if [ "${post_probe_sha256}" != "${attested_sha256}" ]; then
+    echo "attested llama-server changed during verification" >&2
+    exit 1
+  fi
+fi
 version_output="${probe_dir}/version.txt"
 help_output="${probe_dir}/help.txt"
 

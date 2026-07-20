@@ -6,12 +6,12 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 ubuntu-layout|archlinux-x86_64" >&2
+  echo "usage: $0 ubuntu-layout|fedora-x86_64|archlinux-x86_64" >&2
   exit 2
 fi
 layout="$1"
 case "${layout}" in
-  ubuntu-layout|archlinux-x86_64) ;;
+  ubuntu-layout|fedora-x86_64|archlinux-x86_64) ;;
   *)
     echo "unsupported Mozkey Linux build layout: ${layout}" >&2
     exit 2

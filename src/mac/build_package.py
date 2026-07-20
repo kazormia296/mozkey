@@ -58,6 +58,18 @@ def ParseArguments():
   return parser.parse_args()
 
 
+def ResolveKeychainPath(keychain: str) -> str:
+  """Resolves a keychain name while allowing an explicit temporary path."""
+  if not keychain:
+    raise ValueError('keychain must not be empty for signed packages')
+  if os.path.isabs(keychain):
+    return keychain
+  home = os.getenv('HOME')
+  if not home:
+    raise ValueError('HOME must be set for a relative keychain name')
+  return os.path.join(home, 'Library/Keychains', keychain)
+
+
 def main():
   args = ParseArguments()
 
@@ -122,9 +134,7 @@ def main():
     if args.codesign_identity == '-':
       shutil.copyfile('package.pkg', output_path)
     else:
-      keychain_path = os.path.join(
-          os.getenv('HOME'), 'Library/Keychains', args.keychain
-      )
+      keychain_path = ResolveKeychainPath(args.keychain)
       codesign_commands = [
           '/usr/bin/productsign',
           '--sign',

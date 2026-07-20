@@ -44,6 +44,7 @@
 #include <vector>
 
 #include "session/zenz_named_pipe_endpoint.h"
+#include "zenz_scorer/json_parser.h"
 
 #if defined(_WIN32)
 #pragma comment(lib, "Advapi32.lib")
@@ -550,31 +551,6 @@ bool IsValidBackendDeviceName(const std::string& name) {
   });
 }
 
-void AppendUtf8(uint32_t codepoint, std::string* output) {
-  if (codepoint <= 0x7F) {
-    output->push_back(static_cast<char>(codepoint));
-  } else if (codepoint <= 0x7FF) {
-    output->push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
-    output->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-  } else if (codepoint <= 0xFFFF) {
-    output->push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
-    output->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-    output->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-  } else {
-    output->push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
-    output->push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
-    output->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-    output->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-  }
-}
-
-int HexValue(char c) {
-  if ('0' <= c && c <= '9') return c - '0';
-  if ('a' <= c && c <= 'f') return c - 'a' + 10;
-  if ('A' <= c && c <= 'F') return c - 'A' + 10;
-  return -1;
-}
-
 std::string JsonEscapeUtf8(const std::string& input) {
   std::string output;
   output.reserve(input.size() + 32);
@@ -615,101 +591,6 @@ std::string JsonEscapeUtf8(const std::string& input) {
   }
 
   return output;
-}
-
-bool ExtractJsonStringField(
-    const std::string& json,
-    const std::string& field,
-    std::string* output) {
-  output->clear();
-
-  const std::string needle = "\"" + field + "\"";
-  size_t pos = json.find(needle);
-  if (pos == std::string::npos) {
-    return false;
-  }
-
-  pos = json.find(':', pos + needle.size());
-  if (pos == std::string::npos) {
-    return false;
-  }
-
-  ++pos;
-  while (pos < json.size() &&
-         (json[pos] == ' ' || json[pos] == '\t' ||
-          json[pos] == '\r' || json[pos] == '\n')) {
-    ++pos;
-  }
-
-  if (pos >= json.size() || json[pos] != '"') {
-    return false;
-  }
-
-  ++pos;
-
-  while (pos < json.size()) {
-    const char c = json[pos++];
-
-    if (c == '"') {
-      return true;
-    }
-
-    if (c != '\\') {
-      output->push_back(c);
-      continue;
-    }
-
-    if (pos >= json.size()) {
-      return false;
-    }
-
-    const char esc = json[pos++];
-    switch (esc) {
-      case '"':
-        output->push_back('"');
-        break;
-      case '\\':
-        output->push_back('\\');
-        break;
-      case '/':
-        output->push_back('/');
-        break;
-      case 'b':
-        output->push_back('\b');
-        break;
-      case 'f':
-        output->push_back('\f');
-        break;
-      case 'n':
-        output->push_back('\n');
-        break;
-      case 'r':
-        output->push_back('\r');
-        break;
-      case 't':
-        output->push_back('\t');
-        break;
-      case 'u': {
-        if (pos + 4 > json.size()) {
-          return false;
-        }
-        uint32_t cp = 0;
-        for (int i = 0; i < 4; ++i) {
-          const int v = HexValue(json[pos++]);
-          if (v < 0) {
-            return false;
-          }
-          cp = (cp << 4) | static_cast<uint32_t>(v);
-        }
-        AppendUtf8(cp, output);
-        break;
-      }
-      default:
-        return false;
-    }
-  }
-
-  return false;
 }
 
 std::string TrimAsciiWhitespace(std::string s) {
@@ -1287,7 +1168,8 @@ bool HttpPostCompletion(
   WinHttpCloseHandle(session);
 
   std::string content;
-  if (!ExtractJsonStringField(response_body, "content", &content)) {
+  if (!mozc::zenz_scorer::ExtractJsonStringField(response_body, "content",
+                                                  &content)) {
     *debug = "content_field_not_found";
     return false;
   }
@@ -2010,7 +1892,8 @@ bool HttpPostCompletion(
   }
 
   std::string content;
-  if (!ExtractJsonStringField(response_body.substr(header_end + 4), "content", &content)) {
+  if (!mozc::zenz_scorer::ExtractJsonStringField(
+          response_body.substr(header_end + 4), "content", &content)) {
     *debug = "content_field_not_found";
     return false;
   }

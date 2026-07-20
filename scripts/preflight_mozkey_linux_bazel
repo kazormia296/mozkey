@@ -10,12 +10,13 @@ source_root="${repository_root}/src"
 PREFIX="${PREFIX:-/usr}"
 DESTDIR="${DESTDIR:-}"
 LLAMA_SERVER_TARGET="${MOZKEY_ZENZ_LLAMA_SERVER_TARGET:-/usr/bin/llama-server}"
+LLAMA_SERVER_SOURCE="${MOZKEY_ZENZ_LLAMA_SERVER_SOURCE:-}"
 BUILD_LAYOUT="${MOZKEY_LINUX_BUILD_LAYOUT:-archlinux-x86_64}"
 . "${script_dir}/fcitx5_install_paths"
 validate_mozkey_install_environment
 
 case "${BUILD_LAYOUT}" in
-  ubuntu-layout|archlinux-x86_64) ;;
+  ubuntu-layout|fedora-x86_64|archlinux-x86_64) ;;
   *)
     echo "unsupported Mozkey Linux build layout: ${BUILD_LAYOUT}" >&2
     exit 2
@@ -65,7 +66,7 @@ require_executable_file() {
 }
 
 for required_command in \
-  awk diff find grep install ldd mktemp msgfmt mv python3 readlink rm sed sort stat
+  awk cmp diff find grep install ldd mktemp msgfmt mv python3 readlink rm sed sort stat
 do
   require_command "${required_command}"
 done
@@ -119,6 +120,8 @@ for required_metadata in \
   ../dist/zenz/linux/zenz-v3.2-small-Q5_K_M.gguf \
   win32/installer/zenz_runtime/licenses/zenz-v3.2-small-gguf.txt \
   win32/installer/zenz_runtime/licenses/llama.cpp-MIT.txt \
+  win32/installer/zenz_runtime/licenses/cpp-httplib-MIT.txt \
+  win32/installer/zenz_runtime/licenses/nlohmann-json-MIT.txt \
   win32/installer/zenz_runtime/licenses/Apache-2.0.txt \
   win32/installer/zenz_runtime/licenses/THIRD_PARTY_NOTICES.md \
   ../scripts/mozkey_fcitx5_install_manifest.txt
@@ -201,10 +204,27 @@ if command -v appstreamcli >/dev/null 2>&1; then
 fi
 
 runtime_link="${DESTDIR}${PREFIX}/lib/mozkey/llama-server"
-if { [ -e "${runtime_link}" ] || [ -L "${runtime_link}" ]; } &&
-   [ ! -L "${runtime_link}" ]; then
-  echo "refusing pre-existing non-symlink llama runtime path: ${runtime_link}" >&2
-  exit 1
+if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
+  case "${LLAMA_SERVER_SOURCE}" in
+    /*) ;;
+    *) echo "bundled llama-server source must be absolute" >&2; exit 2 ;;
+  esac
+  require_executable_file "${LLAMA_SERVER_SOURCE}"
+  if [ "${LLAMA_SERVER_SOURCE}" != "${LLAMA_SERVER_TARGET}" ]; then
+    echo "bundled llama-server source and verified target must match" >&2
+    exit 2
+  fi
+fi
+if [ -e "${runtime_link}" ] || [ -L "${runtime_link}" ]; then
+  if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
+    if [ ! -f "${runtime_link}" ] || [ -L "${runtime_link}" ]; then
+      echo "refusing pre-existing non-file bundled llama runtime path: ${runtime_link}" >&2
+      exit 1
+    fi
+  elif [ ! -L "${runtime_link}" ]; then
+    echo "refusing pre-existing non-symlink llama runtime path: ${runtime_link}" >&2
+    exit 1
+  fi
 fi
 
 "${script_dir}/verify_llama_server_compatibility" "${LLAMA_SERVER_TARGET}"

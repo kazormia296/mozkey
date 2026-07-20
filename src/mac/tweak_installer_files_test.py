@@ -184,6 +184,39 @@ class TweakInstallerFilesCodesignTest(unittest.TestCase):
                 self.assertIn("--timestamp", command)
                 self.assertIn("--options=runtime", command)
 
+    def test_release_identity_uses_explicit_temporary_keychain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "MozcConverter.app"
+            (app / "Contents/MacOS").mkdir(parents=True)
+            keychain = "/private/tmp/mozkey-signing.keychain-db"
+
+            with mock.patch.object(target.util, "RunOrDie") as run:
+                target.Codesign(
+                    temporary,
+                    "Developer ID Application: Example",
+                    keychain,
+                )
+
+            self.assertGreaterEqual(run.call_count, 1)
+            for call in run.call_args_list:
+                command = call.args[0]
+                self.assertEqual(command[command.index("--keychain") + 1], keychain)
+
+    def test_signs_every_nested_dylib_before_enclosing_app(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ConfigDialog.app"
+            plugins = app / "Contents/PlugIns/imageformats"
+            plugins.mkdir(parents=True)
+            plugin = plugins / "libqjpeg.dylib"
+            plugin.write_bytes(b"mach-o fixture")
+            plugin.chmod(0o644)
+
+            with mock.patch.object(target.util, "RunOrDie") as run:
+                target.Codesign(temporary, "-")
+
+            signed_targets = [Path(call.args[0][-1]) for call in run.call_args_list]
+            self.assertEqual(signed_targets, [plugin, app])
+
     def test_refuses_nested_runtime_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
             resources = Path(temporary) / "MozcConverter.app/Contents/Resources"

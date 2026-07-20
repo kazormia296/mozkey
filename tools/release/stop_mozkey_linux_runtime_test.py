@@ -106,6 +106,16 @@ class StopMozkeyLinuxRuntimeTest(unittest.TestCase):
             self.assertEqual([item.pid for item in roots], [10, 20])
             self.assertEqual([item.pid for item in llamas], [21])
 
+    def test_discovers_bundled_llama_only_as_scorer_descendant(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            tree = FakeProcTree(Path(temporary))
+            tree.add(20, stopper.MOZKEY_SCORER, start_time=102)
+            tree.add(21, stopper.BUNDLED_LLAMA_SERVER, ppid=20, start_time=103)
+            tree.add(22, stopper.BUNDLED_LLAMA_SERVER, ppid=1, start_time=104)
+            identities = stopper.Procfs(tree.root).scan(1000)
+            llamas = stopper._descendant_llamas(identities, {20})
+            self.assertEqual([item.pid for item in llamas], [21])
+
     def test_scan_skips_unreadable_same_uid_but_strict_check_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
             tree = FakeProcTree(Path(temporary))

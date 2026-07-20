@@ -6,8 +6,12 @@
 /lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
 /share/doc/mozkey/credits_en.html
 /share/doc/mozkey/archlinux-build-packages.txt
+/share/doc/mozkey/fedora-build-packages.txt
 /share/doc/mozkey/linux-build-attestation.json
+/share/doc/mozkey/llama-server-manifest.json
 /share/doc/mozkey/mozkey-linux.spdx.json
+/share/doc/mozkey/ubuntu-build-packages.txt
+/share/doc/mozkey-ibg/copyright
 /share/fcitx5/addon/mozkey.conf
 /share/fcitx5/inputmethod/mozkey.conf
 /share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml
@@ -21,7 +25,9 @@
 /share/licenses/mozkey/dictionary/daily_sources.lock.json
 /share/licenses/mozkey/zenz-runtime/Apache-2.0.txt
 /share/licenses/mozkey/zenz-runtime/THIRD_PARTY_NOTICES.md
+/share/licenses/mozkey/zenz-runtime/cpp-httplib-MIT.txt
 /share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt
+/share/licenses/mozkey/zenz-runtime/nlohmann-json-MIT.txt
 /share/licenses/mozkey/zenz-runtime/zenz-v3.2-small-gguf.txt
 /share/locale/ca/LC_MESSAGES/fcitx5-mozkey.mo
 /share/locale/da/LC_MESSAGES/fcitx5-mozkey.mo

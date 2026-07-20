@@ -224,34 +224,22 @@ absl::StatusOr<ParsedRootPath> ParseRootPath(absl::string_view utf8_path) {
   size_t component_begin = 0;
   if (path.size() >= 3 && IsAsciiAlpha(path[0]) && path[1] == L':' &&
       path[2] == L'\\') {
+    const std::wstring drive_root = path.substr(0, 3);
+    const UINT drive_type = ::GetDriveTypeW(drive_root.c_str());
+    if (!protocol_v1_windows_internal::IsFixedLocalDriveType(drive_type)) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Grimodex root must be on a fixed local drive (drive_type=",
+          drive_type, ")"));
+    }
     prefix = L"\\\\?\\" + path.substr(0, 3);
     result.prefixes.push_back(prefix);
     component_begin = 3;
   } else if (path.rfind(L"\\\\", 0) == 0) {
-    const size_t server_end = path.find(L'\\', 2);
-    const size_t share_end =
-        server_end == std::wstring::npos
-            ? std::wstring::npos
-            : path.find(L'\\', server_end + 1);
-    if (server_end == std::wstring::npos || share_end == std::wstring::npos) {
-      return absl::InvalidArgumentError(
-          "UNC Grimodex root must include a share and child directory");
-    }
-    const std::wstring server = path.substr(2, server_end - 2);
-    const std::wstring share =
-        path.substr(server_end + 1, share_end - server_end - 1);
-    if (absl::Status status = ValidatePathComponent(server); !status.ok()) {
-      return status;
-    }
-    if (absl::Status status = ValidatePathComponent(share); !status.ok()) {
-      return status;
-    }
-    prefix = L"\\\\?\\UNC\\" + server + L"\\" + share;
-    result.prefixes.push_back(prefix);
-    component_begin = share_end + 1;
+    return absl::InvalidArgumentError(
+        "UNC Grimodex roots are not allowed in local-only mode");
   } else {
     return absl::InvalidArgumentError(
-        "Grimodex root must be an absolute drive or UNC path");
+        "Grimodex root must be an absolute local drive path");
   }
 
   size_t component_count = 0;
@@ -277,7 +265,7 @@ absl::StatusOr<ParsedRootPath> ParseRootPath(absl::string_view utf8_path) {
   }
   if (component_count == 0) {
     return absl::InvalidArgumentError(
-        "filesystem volume or share cannot be a Grimodex root");
+        "filesystem volume cannot be a Grimodex root");
   }
   return result;
 }
@@ -440,9 +428,9 @@ absl::StatusOr<SecureDirectory> OpenPrivateRoot(absl::string_view root,
   std::vector<UniqueHandle> chain;
   chain.reserve(parsed->prefixes.size());
   for (size_t index = 0; index < parsed->prefixes.size(); ++index) {
-    const bool is_volume_or_share = index == 0;
+    const bool is_volume_root = index == 0;
     const bool is_final = index + 1 == parsed->prefixes.size();
-    if (create && !is_volume_or_share &&
+    if (create && !is_volume_root &&
         !::CreateDirectoryW(parsed->prefixes[index].c_str(),
                             (*private_directory)->attributes())) {
       const DWORD error = ::GetLastError();

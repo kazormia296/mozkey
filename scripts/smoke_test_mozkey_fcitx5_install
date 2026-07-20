@@ -74,8 +74,15 @@ require_resolved_links /usr/lib/mozkey/mozc_tool
 require_resolved_links /usr/lib/mozkey/mozc_zenz_scorer
 require_resolved_links /usr/lib/mozkey/unregister-grimodex-consumer
 llama_server_link="${stage_dir}/usr/lib/mozkey/llama-server"
-if [ ! -L "${llama_server_link}" ] ||
-   [ "$(readlink "${llama_server_link}")" != "/usr/bin/llama-server" ]; then
+if [ -n "${MOZKEY_ZENZ_LLAMA_SERVER_SOURCE:-}" ]; then
+  if [ ! -f "${llama_server_link}" ] || [ -L "${llama_server_link}" ] ||
+     [ ! -x "${llama_server_link}" ] ||
+     ! cmp -s -- "${MOZKEY_ZENZ_LLAMA_SERVER_SOURCE}" "${llama_server_link}"; then
+    echo "invalid staged bundled llama-server runtime" >&2
+    exit 1
+  fi
+elif [ ! -L "${llama_server_link}" ] ||
+     [ "$(readlink "${llama_server_link}")" != "/usr/bin/llama-server" ]; then
   echo "invalid staged llama-server runtime link" >&2
   exit 1
 fi
@@ -90,6 +97,8 @@ require_file /usr/share/licenses/mozkey/THIRD_PARTY_NOTICES.md
 require_file /usr/share/licenses/mozkey/dictionary/Apache-2.0.txt
 require_file /usr/share/licenses/mozkey/dictionary/THIRD_PARTY_NOTICES.md
 require_file /usr/share/licenses/mozkey/dictionary/daily_sources.lock.json
+require_file /usr/share/licenses/mozkey/zenz-runtime/cpp-httplib-MIT.txt
+require_file /usr/share/licenses/mozkey/zenz-runtime/nlohmann-json-MIT.txt
 require_file /usr/share/icons/hicolor/32x32/apps/org.fcitx.Fcitx5.fcitx_mozkey.png
 
 grep -qx 'Library=fcitx5-mozkey' "${stage_dir}/usr/share/fcitx5/addon/mozkey.conf"
@@ -205,13 +214,18 @@ require_file "${addon_dir}/fcitx5-mozkey.so"
 require_file /usr/share/mozkey/fcitx5-addon-dir
 
 # Every installed file or symlink must be owned by the audited manifest. The
-# Arch provenance and the embedded SPDX document are package-generated after
-# this source-install smoke, so those manifest entries are intentionally absent.
+# Package provenance, the bundled-runtime manifest, and the embedded SPDX
+# document are generated after this source-install smoke, so those manifest
+# entries are intentionally absent.
 {
   sed \
     -e '/^\/share\/doc\/mozkey\/archlinux-build-packages\.txt$/d' \
+    -e '/^\/share\/doc\/mozkey\/fedora-build-packages\.txt$/d' \
     -e '/^\/share\/doc\/mozkey\/linux-build-attestation\.json$/d' \
+    -e '/^\/share\/doc\/mozkey\/llama-server-manifest\.json$/d' \
     -e '/^\/share\/doc\/mozkey\/mozkey-linux\.spdx\.json$/d' \
+    -e '/^\/share\/doc\/mozkey\/ubuntu-build-packages\.txt$/d' \
+    -e '/^\/share\/doc\/mozkey-ibg\/copyright$/d' \
     -e 's#^#/usr#' \
     "${script_dir}/mozkey_fcitx5_install_manifest.txt"
   printf '%s\n' "${addon_dir}/fcitx5-mozkey.so"

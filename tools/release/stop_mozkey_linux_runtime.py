@@ -28,6 +28,8 @@ from typing import Callable, Iterable, Protocol, Sequence
 MOZKEY_SERVER = "/usr/lib/mozkey/mozc_server"
 MOZKEY_SCORER = "/usr/lib/mozkey/mozc_zenz_scorer"
 LLAMA_SERVER = "/usr/bin/llama-server"
+BUNDLED_LLAMA_SERVER = "/usr/lib/mozkey/llama-server"
+LLAMA_SERVERS = frozenset({LLAMA_SERVER, BUNDLED_LLAMA_SERVER})
 RUNTIME_ROOTS = frozenset({MOZKEY_SERVER, MOZKEY_SCORER})
 # Linux TASK_COMM_LEN includes the trailing NUL, so an executable basename is
 # truncated to at most 15 bytes.  These names are never sufficient authority
@@ -304,7 +306,7 @@ def _descendant_llamas(
     by_pid = {identity.pid: identity for identity in identities}
     output: list[ProcessIdentity] = []
     for identity in identities:
-        if identity.exe != LLAMA_SERVER:
+        if identity.exe not in LLAMA_SERVERS:
             continue
         seen: set[int] = set()
         ancestor_pid = identity.ppid
@@ -492,7 +494,7 @@ def stop_runtime(
         sleep=sleep,
     )
     remaining_llamas = [
-        identity for identity in after_root_kill if identity.exe == LLAMA_SERVER
+        identity for identity in after_root_kill if identity.exe in LLAMA_SERVERS
     ]
     for identity in remaining_llamas:
         forced = (

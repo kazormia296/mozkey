@@ -64,6 +64,59 @@ TEST(ClientContextTest, BoundsMetadataAndMapsRevisionIntoSignedRange) {
   EXPECT_TRUE(IsValidClientContext(context));
 }
 
+TEST(ClientContextTest, BoundsJapaneseAndEmojiAtUtf8ScalarBoundaries) {
+  const std::string hiragana_a = "\xE3\x81\x82";  // U+3042
+  std::string japanese_program;
+  for (int i = 0; i < 86; ++i) {
+    japanese_program.append(hiragana_a);
+  }
+  const std::string grinning_face = "\xF0\x9F\x98\x80";  // U+1F600
+  std::string emoji_frontend;
+  for (int i = 0; i < 33; ++i) {
+    emoji_frontend.append(grinning_face);
+  }
+
+  const commands::Context context = BuildClientContext(
+      japanese_program, emoji_frontend, /*secure_input=*/false,
+      /*focus_epoch=*/9);
+
+  EXPECT_EQ(context.grimodex().program(), japanese_program.substr(0, 85 * 3));
+  EXPECT_EQ(context.grimodex().program().size(), 255);
+  EXPECT_EQ(context.grimodex().frontend(), emoji_frontend.substr(0, 32 * 4));
+  EXPECT_EQ(context.grimodex().frontend().size(),
+            kMaxClientFrontendBytes);
+  EXPECT_TRUE(IsValidClientContext(context));
+}
+
+TEST(ClientContextTest, PreservesUtf8ScalarEndingExactlyAtByteLimit) {
+  const std::string grinning_face = "\xF0\x9F\x98\x80";  // U+1F600
+  const std::string exact_program =
+      std::string(kMaxClientProgramBytes - grinning_face.size(), 'p') +
+      grinning_face;
+
+  const commands::Context context = BuildClientContext(
+      exact_program, "frontend", /*secure_input=*/false, /*focus_epoch=*/10);
+
+  EXPECT_EQ(context.grimodex().program(), exact_program);
+  EXPECT_EQ(context.grimodex().program().size(), kMaxClientProgramBytes);
+  EXPECT_TRUE(IsValidClientContext(context));
+}
+
+TEST(ClientContextTest, DropsCombiningScalarRatherThanSplittingAtLimit) {
+  const std::string base =
+      std::string(kMaxClientProgramBytes - 2, 'p') + "e";
+  const std::string decomposed_accent = base + "\xCC\x81";  // U+0301
+
+  const commands::Context context = BuildClientContext(
+      decomposed_accent, "frontend", /*secure_input=*/false,
+      /*focus_epoch=*/11);
+
+  EXPECT_EQ(context.grimodex().program(), base);
+  EXPECT_EQ(context.grimodex().program().size(),
+            kMaxClientProgramBytes - 1);
+  EXPECT_TRUE(IsValidClientContext(context));
+}
+
 TEST(ClientContextTest, FocusEpochAdvanceSkipsZeroAfterWrap) {
   EXPECT_EQ(AdvanceFocusEpoch(0), 1);
   EXPECT_EQ(AdvanceFocusEpoch(1), 2);
@@ -96,6 +149,18 @@ TEST(ClientContextTest, ValidationRejectsSecureContextWithText) {
   context.set_preceding_text("secret");
 
   EXPECT_FALSE(IsValidClientContext(context));
+}
+
+TEST(ClientContextTest, ValidationRejectsMalformedUtf8Metadata) {
+  commands::Context invalid_program = BuildClientContext(
+      std::string("\xF0\x9F", 2), "frontend", /*secure_input=*/false,
+      /*focus_epoch=*/12);
+  EXPECT_FALSE(IsValidClientContext(invalid_program));
+
+  commands::Context invalid_frontend = BuildClientContext(
+      "program", std::string("\xED\xA0\x80", 3), /*secure_input=*/false,
+      /*focus_epoch=*/13);
+  EXPECT_FALSE(IsValidClientContext(invalid_frontend));
 }
 
 }  // namespace

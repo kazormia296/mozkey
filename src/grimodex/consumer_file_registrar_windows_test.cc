@@ -273,6 +273,15 @@ TEST(WindowsConsumerFileRegistrarTest, RejectsInvalidRootsBeforeWriting) {
   }
 }
 
+TEST(WindowsConsumerFileRegistrarTest, RejectsUncRootInLocalOnlyMode) {
+  WindowsConsumerFileRegistrar registrar(R"(\\server\share\ime)");
+
+  EXPECT_EQ(registrar.Refresh(Handshake()).code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(registrar.Unregister(kTsfConsumerId).code(),
+            absl::StatusCode::kInvalidArgument);
+}
+
 }  // namespace
 }  // namespace mozc::grimodex
 

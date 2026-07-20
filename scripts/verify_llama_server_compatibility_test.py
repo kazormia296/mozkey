@@ -1,4 +1,5 @@
 import os
+import hashlib
 import subprocess
 import tempfile
 import textwrap
@@ -59,6 +60,29 @@ class VerifyLlamaServerCompatibilityTest(unittest.TestCase):
             result = self.run_verifier(server)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("root-owned", result.stderr)
+
+    def test_accepts_user_owned_build_output_only_with_matching_sha256(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            server = self.make_server(
+                Path(temporary),
+                f'''\
+                case "$1" in
+                  --version) echo "version: attested" ;;
+                  --help) echo "{FLAGS}" ;;
+                  *) exit 2 ;;
+                esac
+                ''',
+            )
+            digest = hashlib.sha256(server.read_bytes()).hexdigest()
+            result = self.run_verifier(
+                server, MOZKEY_LLAMA_ATTESTED_SHA256=digest
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rejected = self.run_verifier(
+                server, MOZKEY_LLAMA_ATTESTED_SHA256="0" * 64
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("SHA-256 mismatch", rejected.stderr)
 
     def test_times_out_probe(self):
         with tempfile.TemporaryDirectory() as temporary:

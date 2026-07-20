@@ -43,8 +43,10 @@ This product includes third-party software and model files.
   processes and adds ARM64/ARM64EC TIP bridges; the native ARM64 MSI uses the
   separately built ARM64 runtime.
 - License: MIT License
-- Linux runtime: the product links to a compatible distribution-provided
-  `llama-server`; its package must provide the same MIT license notice.
+- Linux runtime: Arch/source installs link to a compatible
+  distribution-provided `llama-server`. Debian and RPM packages bundle a
+  static CPU-only `llama-server` built from the same pinned b9637 archive and
+  install the llama.cpp, cpp-httplib, and nlohmann/json MIT notices.
 - macOS runtime: `llama-server` is built from the official llama.cpp `b9637`
   source archive, pinned by SHA-256
   `762283319feb3de30886dc850d42f0e426b06600e7f9639d34e06506597309ca`.

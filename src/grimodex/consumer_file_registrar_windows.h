@@ -15,7 +15,8 @@
 namespace mozc::grimodex {
 
 // Windows production writer for Protocol v1 consumer heartbeats.  Paths are
-// UTF-8 at the API boundary and must name an absolute drive or UNC path.
+// UTF-8 at the API boundary and must name an absolute local drive path; UNC
+// roots are rejected to preserve the local-only boundary.
 class WindowsConsumerFileRegistrar final : public ConsumerFileRegistrar {
  public:
   explicit WindowsConsumerFileRegistrar(std::string root);

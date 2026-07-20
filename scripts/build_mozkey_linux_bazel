@@ -15,7 +15,7 @@ dictionary_preparer="${repository_root}/tools/dictionary/prepare_daily_dictionar
 dictionary_verifier="${repository_root}/tools/dictionary/verify_release_dictionary_artifact.py"
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 ubuntu-layout|archlinux-x86_64" >&2
+  echo "usage: $0 ubuntu-layout|fedora-x86_64|archlinux-x86_64" >&2
   exit 2
 fi
 layout="$1"
@@ -34,7 +34,7 @@ case "${layout}" in
       --define=mozkey_dictionary_profile=release-approved-only \
       --//unix/fcitx5:use_server=true
     ;;
-  archlinux-x86_64)
+  fedora-x86_64|archlinux-x86_64)
     set -- \
       //unix/fcitx5:fcitx5-mozkey.so \
       //unix/fcitx5:grimodex_consumer_tool \

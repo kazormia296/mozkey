@@ -32,7 +32,8 @@ This fork uses local resources for normal IME operation:
 - local user history
 - local settings
 - a local Zenz scorer and GGUF model when Zenz support is included
-- a bundled Windows llama.cpp runtime or a verified Linux distribution runtime
+- bundled Windows and macOS llama.cpp runtimes, and either an attested bundled
+  Linux runtime (deb/rpm) or a verified Linux distribution runtime (Arch/source)
 
 Input text is processed locally.
 
@@ -42,13 +43,22 @@ Windows Zenz builds use `mozc_zenz_scorer.exe`, the bundled
 `llama-server.exe`, and the bundled local GGUF model. The scorer communicates
 with the runtime through localhost only.
 
+### macOS Zenz path
+
+macOS packages contain the arm64 scorer, GGUF model, and pinned CPU/Accelerate
+`llama-server` inside the signed package payload. Release CI loads the real
+model before signing and the scorer communicates with the runtime through
+localhost only.
+
 ### Linux Zenz path
 
-Linux Zenz builds use `mozc_zenz_scorer`, the bundled local GGUF model, and a
-compatible distribution `llama-server` reached through the product-private
-`/usr/lib/mozkey/llama-server` link. The Linux artifact does not claim to bundle
-the distribution runtime. Installation checks its CLI contract, while release
-dogfood must also load the model and complete an authenticated inference probe.
+Linux Zenz builds use `mozc_zenz_scorer`, the bundled local GGUF model, and the
+product-private `/usr/lib/mozkey/llama-server` path. Arch/source installs link
+that path to a compatible distribution runtime. Debian and RPM packages contain
+an attested, pinned CPU-only llama.cpp runtime as a regular executable.
+Installation or staging checks the applicable runtime's identity and CLI
+contract, while release dogfood must also load the model and complete an
+authenticated inference probe.
 The Linux GGUF is a deterministic metadata-only derivative of the pinned
 source model: build attestation verifies both complete-file digests and the
 unchanged tensor-data digest, so no patched llama.cpp fork is required.
@@ -57,8 +67,8 @@ model readiness.
 
 ### Shared localhost boundary
 
-On both platforms, the scorer-to-runtime transport is localhost-only and must
-be bound to `127.0.0.1`.
+On all three desktop platforms, the scorer-to-runtime transport is
+localhost-only and must be bound to `127.0.0.1`.
 
 The Zenz localhost transport must not rely on a fixed public-facing endpoint.
 The platform scorer chooses a random high port for `llama-server` and protects

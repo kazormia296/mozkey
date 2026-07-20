@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import hashlib
 import http.client
 import ipaddress
 import json
@@ -244,24 +245,31 @@ def _require_staged_regular(
         raise ProbeFailure("staged_runtime_invalid")
 
 
-def _validate_staged_runtime(stage: Path) -> tuple[Path, Path, Path]:
+def _validate_staged_runtime(
+    stage: Path, *, bundled_server: bool = False
+) -> tuple[Path, Path, Path]:
     scorer = stage / "usr/lib/mozkey/mozc_zenz_scorer"
     model = stage / "usr/lib/mozkey/models" / MODEL_NAME
     llama_link = stage / "usr/lib/mozkey/llama-server"
 
     _require_staged_regular(scorer, mode=0o755, executable=True, nonempty=True)
     _require_staged_regular(model, mode=0o644, executable=False, nonempty=True)
-    try:
-        link_info = llama_link.lstat()
-        target = os.readlink(llama_link)
-    except OSError as error:
-        raise ProbeFailure("staged_runtime_invalid") from error
-    if (
-        not stat.S_ISLNK(link_info.st_mode)
-        or link_info.st_uid != os.geteuid()
-        or target != str(DEFAULT_LLAMA_SERVER)
-    ):
-        raise ProbeFailure("staged_runtime_invalid")
+    if bundled_server:
+        _require_staged_regular(
+            llama_link, mode=0o755, executable=True, nonempty=True
+        )
+    else:
+        try:
+            link_info = llama_link.lstat()
+            target = os.readlink(llama_link)
+        except OSError as error:
+            raise ProbeFailure("staged_runtime_invalid") from error
+        if (
+            not stat.S_ISLNK(link_info.st_mode)
+            or link_info.st_uid != os.geteuid()
+            or target != str(DEFAULT_LLAMA_SERVER)
+        ):
+            raise ProbeFailure("staged_runtime_invalid")
     return scorer, model, llama_link
 
 
@@ -747,7 +755,14 @@ def _stop_runtime(
             raise ProbeFailure("runtime_cleanup_failed")
 
 
-def _stage_release_runtime(repo_root: Path, stage: Path) -> None:
+def _stage_release_runtime(
+    repo_root: Path,
+    stage: Path,
+    *,
+    llama_server: Path = DEFAULT_LLAMA_SERVER,
+    llama_server_sha256: str | None = None,
+    layout: str = "archlinux-x86_64",
+) -> None:
     source_root = repo_root / "src"
     environment = os.environ.copy()
     for name in list(environment):
@@ -759,13 +774,22 @@ def _stage_release_runtime(repo_root: Path, stage: Path) -> None:
         {
             "PREFIX": "/usr",
             "DESTDIR": str(stage),
-            "MOZKEY_ZENZ_LLAMA_SERVER_TARGET": str(DEFAULT_LLAMA_SERVER),
+            "MOZKEY_LINUX_BUILD_LAYOUT": layout,
+            "MOZKEY_ZENZ_LLAMA_SERVER_TARGET": str(llama_server),
             "PATH": "/usr/bin:/bin",
             "TMPDIR": str(stage.parent),
         }
     )
+    if llama_server != DEFAULT_LLAMA_SERVER:
+        environment["MOZKEY_ZENZ_LLAMA_SERVER_SOURCE"] = str(llama_server)
+        if llama_server_sha256 is None:
+            raise ProbeFailure("llama_server_digest_invalid")
+        environment["MOZKEY_LLAMA_ATTESTED_SHA256"] = llama_server_sha256
     _run_bounded_command(
-        [str(repo_root / "scripts/verify_llama_server_compatibility")],
+        [
+            str(repo_root / "scripts/verify_llama_server_compatibility"),
+            str(llama_server),
+        ],
         cwd=source_root,
         env=environment,
         timeout=20,
@@ -780,16 +804,57 @@ def _stage_release_runtime(repo_root: Path, stage: Path) -> None:
     )
 
 
-def run_probe(timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
+def run_probe(
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    *,
+    llama_server: Path = DEFAULT_LLAMA_SERVER,
+    llama_server_sha256: str | None = None,
+    layout: str = "archlinux-x86_64",
+) -> None:
     if not sys.platform.startswith("linux") or not Path("/proc/self").is_dir():
         raise ProbeFailure("linux_proc_required")
     if not 30.0 <= timeout_seconds <= 300.0:
         raise ProbeFailure("timeout_invalid")
+    if layout not in {"ubuntu-layout", "fedora-x86_64", "archlinux-x86_64"}:
+        raise ProbeFailure("layout_invalid")
+    bundled_server = llama_server != DEFAULT_LLAMA_SERVER
+    if bundled_server:
+        try:
+            server_info = llama_server.lstat()
+        except OSError as error:
+            raise ProbeFailure("llama_server_invalid") from error
+        if (
+            not stat.S_ISREG(server_info.st_mode)
+            or server_info.st_size <= 0
+            or not os.access(llama_server, os.X_OK)
+        ):
+            raise ProbeFailure("llama_server_invalid")
+        llama_server = llama_server.resolve(strict=True)
+        if (
+            llama_server_sha256 is None
+            or len(llama_server_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in llama_server_sha256)
+        ):
+            raise ProbeFailure("llama_server_digest_invalid")
+        digest = hashlib.sha256(llama_server.read_bytes()).hexdigest()
+        if digest != llama_server_sha256:
+            raise ProbeFailure("llama_server_digest_invalid")
+    elif llama_server_sha256 is not None:
+        raise ProbeFailure("llama_server_digest_invalid")
 
     repo_root = Path(__file__).resolve().parents[2]
     with _probe_directories() as (stage, home):
-        _stage_release_runtime(repo_root, stage)
-        scorer_path, model_path, llama_link = _validate_staged_runtime(stage)
+        _stage_release_runtime(
+            repo_root,
+            stage,
+            llama_server=llama_server,
+            llama_server_sha256=llama_server_sha256,
+            layout=layout,
+        )
+        scorer_path, model_path, llama_link = _validate_staged_runtime(
+            stage, bundled_server=bundled_server
+        )
+        expected_executable = llama_link if bundled_server else DEFAULT_LLAMA_SERVER
 
         environment = os.environ.copy()
         environment["HOME"] = str(home)
@@ -860,7 +925,7 @@ def run_probe(timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
                 scorer,
                 expected_link=llama_link,
                 expected_model=model_path,
-                expected_executable=DEFAULT_LLAMA_SERVER,
+                expected_executable=expected_executable,
                 expected_backend_device="none",
                 deadline=deadline,
             )
@@ -875,7 +940,7 @@ def run_probe(timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
                 scorer,
                 expected_link=llama_link,
                 expected_model=model_path,
-                expected_executable=DEFAULT_LLAMA_SERVER,
+                expected_executable=expected_executable,
                 expected_backend_device="none",
                 deadline=deadline,
             )
@@ -915,13 +980,34 @@ def _parse_args(argv: Iterable[str]) -> argparse.Namespace:
         default=DEFAULT_TIMEOUT_SECONDS,
         help="runtime readiness deadline (30-300 seconds; default: 120)",
     )
+    parser.add_argument(
+        "--llama-server",
+        type=Path,
+        default=DEFAULT_LLAMA_SERVER,
+        help="verified llama-server to bundle into the staged runtime",
+    )
+    parser.add_argument(
+        "--llama-server-sha256",
+        help="attested lowercase SHA-256 for a bundled llama-server",
+    )
+    parser.add_argument(
+        "--layout",
+        choices=("ubuntu-layout", "fedora-x86_64", "archlinux-x86_64"),
+        default="archlinux-x86_64",
+        help="attested Linux build layout used for staging",
+    )
     return parser.parse_args(list(argv))
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     arguments = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        run_probe(arguments.timeout_seconds)
+        run_probe(
+            arguments.timeout_seconds,
+            llama_server=arguments.llama_server,
+            llama_server_sha256=arguments.llama_server_sha256,
+            layout=arguments.layout,
+        )
     except ProbeFailure as error:
         print(f"Zenz release runtime probe failed: {error.code}", file=sys.stderr)
         return 1

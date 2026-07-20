@@ -13,6 +13,31 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      APPLE_CERTIFICATE:
+        description: Base64-encoded Developer ID Application PKCS#12 certificate.
+        required: true
+      APPLE_CERTIFICATE_PASSWORD:
+        description: Password for APPLE_CERTIFICATE.
+        required: true
+      APPLE_INSTALLER_CERTIFICATE:
+        description: Base64-encoded Developer ID Installer PKCS#12 certificate.
+        required: true
+      APPLE_INSTALLER_CERTIFICATE_PASSWORD:
+        description: Password for APPLE_INSTALLER_CERTIFICATE.
+        required: true
+      KEYCHAIN_PASSWORD:
+        description: Password for the ephemeral signing keychain.
+        required: true
+      APPLE_API_KEY_BASE64:
+        description: Base64-encoded App Store Connect API private key.
+        required: true
+      APPLE_API_KEY:
+        description: App Store Connect API key identifier.
+        required: true
+      APPLE_API_ISSUER:
+        description: App Store Connect API issuer identifier.
+        required: true
 
 permissions:
   contents: read
@@ -23,6 +48,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate_release_signing:
+    if: ${{ inputs.release == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+
+    steps:
+      - name: Require Apple release signing credentials
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_CERTIFICATE: ${{ secrets.APPLE_INSTALLER_CERTIFICATE }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for required in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_INSTALLER_CERTIFICATE \
+            APPLE_INSTALLER_CERTIFICATE_PASSWORD \
+            KEYCHAIN_PASSWORD \
+            APPLE_API_KEY_BASE64 \
+            APPLE_API_KEY \
+            APPLE_API_ISSUER; do
+            if [ -z "${!required}" ]; then
+              missing+=("$required")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Required macOS release secret is empty: %s\n' \
+              "${missing[@]}" >&2
+            exit 1
+          fi
+
   prepare_daily_dictionary:
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
@@ -32,7 +96,7 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
@@ -58,7 +122,7 @@ jobs:
           ./tools/dictionary/prepare_daily_dictionary.ps1 -ReleaseApprovedOnly
 
       - name: upload daily dictionary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: macos-daily-dictionary
           path: |
@@ -75,13 +139,13 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: Restore pinned runtime source cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: src/third_party_cache
           key: macos-zenz-b9637-${{ hashFiles('tools/release/prepare_macos_zenz_runtime.py', 'src/build_tools/update_deps.py') }}
@@ -112,14 +176,16 @@ jobs:
           python3 -m unittest -v \
             tools.release.prepare_macos_zenz_runtime_test \
             tools.release.probe_macos_zenz_runtime_test
-          PYTHONPATH=src python3 -m unittest -v mac.tweak_installer_files_test
+          PYTHONPATH=src python3 -m unittest -v \
+            mac.build_package_test \
+            mac.tweak_installer_files_test
 
       - name: Archive runtime with executable modes
         run: |
           tar -czf macos-arm64-zenz-runtime.tar.gz src/mac/zenz_runtime/generated
 
       - name: Upload arm64 Zenz runtime
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: macos-zenz-runtime-arm64-b9637
           path: macos-arm64-zenz-runtime.tar.gz
@@ -128,7 +194,10 @@ jobs:
           retention-days: 1
 
   build_arm64:
-    needs: [prepare_daily_dictionary, prepare_macos_zenz_runtime]
+    needs:
+      - validate_release_signing
+      - prepare_daily_dictionary
+      - prepare_macos_zenz_runtime
     if: ${{ inputs.release == true }}
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
     runs-on: macos-15
@@ -136,19 +205,19 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: macos-daily-dictionary
           path: .
 
       - name: Download arm64 Zenz runtime
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: macos-zenz-runtime-arm64-b9637
           path: .
@@ -158,7 +227,7 @@ jobs:
           tar -xzf macos-arm64-zenz-runtime.tar.gz
 
       - name: Try to restore update_deps cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
@@ -185,13 +254,220 @@ jobs:
             --package src/bazel-bin/mac/Mozc.pkg \
             --timeout-seconds 300
 
-      - name: Stage versioned arm64 package
+      - name: Prepare the package tree before loading signing credentials
         run: |
-          mv src/bazel-bin/mac/Mozc.pkg \
-            "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg"
+          set -euo pipefail
+          PACKAGE_FILES="$GITHUB_WORKSPACE/src/bazel-bin/mac/package_files.zip"
+          test -s "$PACKAGE_FILES"
+          SIGNING_TREE="$RUNNER_TEMP/mozkey-signing-tree"
+          SIGNED_PACKAGE_FILES="$RUNNER_TEMP/mozkey-signed-package-files.zip"
+          mkdir "$SIGNING_TREE"
+          python3 - "$PACKAGE_FILES" <<'PY'
+          import pathlib
+          import stat
+          import sys
+          import zipfile
+
+          archive = pathlib.Path(sys.argv[1])
+          with zipfile.ZipFile(archive) as source:
+              members = source.infolist()
+          if not members:
+              raise SystemExit("package_files.zip is empty")
+          paths = set()
+          symlinks = set()
+          for member in members:
+              path = pathlib.PurePosixPath(member.filename)
+              if path.is_absolute() or ".." in path.parts:
+                  raise SystemExit(
+                      f"unsafe package archive member: {member.filename}"
+                  )
+              if not path.parts or path.parts[0] != "installer":
+                  raise SystemExit(
+                      f"unexpected package archive member: {member.filename}"
+                  )
+              normalized = tuple(path.parts)
+              if normalized in paths:
+                  raise SystemExit(
+                      f"duplicate package archive member: {member.filename}"
+                  )
+              paths.add(normalized)
+              mode = (member.external_attr >> 16) & 0xFFFF
+              if stat.S_ISLNK(mode):
+                  symlinks.add(normalized)
+          for path in paths:
+              if any(path[:depth] in symlinks for depth in range(1, len(path))):
+                  raise SystemExit(
+                      "package archive member is nested below a symlink: "
+                      + "/".join(path)
+                  )
+          PY
+          unzip -q "$PACKAGE_FILES" -d "$SIGNING_TREE"
+          test -d "$SIGNING_TREE/installer"
+          if find "$SIGNING_TREE" -mindepth 1 -maxdepth 1 \
+            ! -name installer -print -quit | grep -q .; then
+            echo "::error::Unexpected top-level entry in the package signing tree." >&2
+            exit 1
+          fi
+          printf 'SIGNING_TREE=%s\n' "$SIGNING_TREE" >> "$GITHUB_ENV"
+          printf 'SIGNED_PACKAGE_FILES=%s\n' "$SIGNED_PACKAGE_FILES" >> "$GITHUB_ENV"
+
+      - name: Import Developer ID identities into a temporary keychain
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_CERTIFICATE: ${{ secrets.APPLE_INSTALLER_CERTIFICATE }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          SIGNING_KEYCHAIN="$RUNNER_TEMP/mozkey-signing.keychain-db"
+          APPLICATION_P12="$RUNNER_TEMP/developer-id-application.p12"
+          INSTALLER_P12="$RUNNER_TEMP/developer-id-installer.p12"
+
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$APPLICATION_P12"
+          printf '%s' "$APPLE_INSTALLER_CERTIFICATE" | base64 --decode > "$INSTALLER_P12"
+          test -s "$APPLICATION_P12"
+          test -s "$INSTALLER_P12"
+          chmod 600 "$APPLICATION_P12" "$INSTALLER_P12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$SIGNING_KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN"
+          security import "$APPLICATION_P12" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$SIGNING_KEYCHAIN"
+          security import "$INSTALLER_P12" \
+            -P "$APPLE_INSTALLER_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$SIGNING_KEYCHAIN"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN"
+          rm -f "$APPLICATION_P12" "$INSTALLER_P12"
+
+          APP_SIGN_IDENTITY="$(
+            security find-identity -v -p codesigning "$SIGNING_KEYCHAIN" \
+              | awk -F'"' '/Developer ID Application/ { print $2; exit }'
+          )"
+          INSTALLER_SIGN_IDENTITY="$(
+            security find-identity -v -p basic "$SIGNING_KEYCHAIN" \
+              | awk -F'"' '/Developer ID Installer/ { print $2; exit }'
+          )"
+          if [ -z "$APP_SIGN_IDENTITY" ]; then
+            echo "::error::Developer ID Application identity was not found." >&2
+            exit 1
+          fi
+          if [ -z "$INSTALLER_SIGN_IDENTITY" ]; then
+            echo "::error::Developer ID Installer identity was not found." >&2
+            exit 1
+          fi
+
+          printf 'SIGNING_KEYCHAIN=%s\n' "$SIGNING_KEYCHAIN" >> "$GITHUB_ENV"
+          printf 'APP_SIGN_IDENTITY=%s\n' "$APP_SIGN_IDENTITY" >> "$GITHUB_ENV"
+          printf 'INSTALLER_SIGN_IDENTITY=%s\n' "$INSTALLER_SIGN_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Sign nested code and build the signed installer
+        env:
+          RELEASE_VERSION: ${{ needs.prepare_daily_dictionary.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$GITHUB_WORKSPACE/src"
+          python3 - <<'PY'
+          import os
+          from mac import tweak_installer_files
+
+          tweak_installer_files.Codesign(
+              os.path.join(os.environ["SIGNING_TREE"], "installer"),
+              os.environ["APP_SIGN_IDENTITY"],
+              os.environ["SIGNING_KEYCHAIN"],
+          )
+          PY
+          (
+            cd "$SIGNING_TREE"
+            zip -q -ry "$SIGNED_PACKAGE_FILES" installer
+          )
+          test -s "$SIGNED_PACKAGE_FILES"
+          PKG_PATH="$GITHUB_WORKSPACE/Mozkey_v${RELEASE_VERSION}_macos_arm64.pkg"
+          python3 src/mac/build_package.py \
+            --oss \
+            --input "$SIGNED_PACKAGE_FILES" \
+            --output "$PKG_PATH" \
+            --codesign_identity "$INSTALLER_SIGN_IDENTITY" \
+            --keychain "$SIGNING_KEYCHAIN"
+          test -s "$PKG_PATH"
+          printf 'PKG_PATH=%s\n' "$PKG_PATH" >> "$GITHUB_ENV"
+
+      - name: Verify Developer ID signatures before notarization
+        run: |
+          set -euo pipefail
+          signed_target_count=0
+          while IFS= read -r -d '' target; do
+            codesign --verify --strict --verbose=4 "$target"
+            signature="$(codesign -dvvv "$target" 2>&1)"
+            grep -F 'Authority=Developer ID Application' <<< "$signature"
+            grep -E 'flags=.*runtime' <<< "$signature"
+            signed_target_count=$((signed_target_count + 1))
+          done < <(
+            find "$SIGNING_TREE/installer" \
+              \( -type d \( -name '*.app' -o -name '*.bundle' -o -name '*.framework' \) \
+              -o -type f \( -name '*.dylib' -o -name llama-server \
+              -o -name mozc_zenz_scorer \) \) -print0
+          )
+          if [ "$signed_target_count" -eq 0 ]; then
+            echo "::error::No signed code was found in the installer payload." >&2
+            exit 1
+          fi
+          package_signature="$(pkgutil --check-signature "$PKG_PATH")"
+          grep -F 'Developer ID Installer' <<< "$package_signature"
+
+      - name: Notarize and staple the signed installer
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          NOTARY_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          NOTARY_RESULT="$RUNNER_TEMP/mozkey-notary-result.json"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$NOTARY_KEY_PATH"
+          test -s "$NOTARY_KEY_PATH"
+          chmod 600 "$NOTARY_KEY_PATH"
+          trap 'rm -f "$NOTARY_KEY_PATH"' EXIT
+          xcrun notarytool submit "$PKG_PATH" \
+            --key "$NOTARY_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait \
+            --output-format json > "$NOTARY_RESULT"
+          python3 - "$NOTARY_RESULT" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          result = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if result.get("status") != "Accepted" or not result.get("id"):
+              raise SystemExit("Apple notarization was not accepted")
+          PY
+          xcrun stapler staple "$PKG_PATH"
+          xcrun stapler validate "$PKG_PATH"
+          pkgutil --check-signature "$PKG_PATH" \
+            | grep -F 'Developer ID Installer'
+          spctl --assess --type install --verbose=4 "$PKG_PATH"
+
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          set +e
+          security delete-keychain "$RUNNER_TEMP/mozkey-signing.keychain-db"
+          rm -f \
+            "$RUNNER_TEMP/developer-id-application.p12" \
+            "$RUNNER_TEMP/developer-id-installer.p12" \
+            "$RUNNER_TEMP/AuthKey.p8" \
+            "$RUNNER_TEMP/mozkey-notary-result.json" \
+            "$RUNNER_TEMP/mozkey-signed-package-files.zip"
+          rm -rf -- "$RUNNER_TEMP/mozkey-signing-tree"
 
       - name: Upload versioned arm64 package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-macos-arm64
           path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg
@@ -207,19 +483,19 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           submodules: false
           persist-credentials: false
 
       - name: download daily dictionary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: macos-daily-dictionary
           path: .
 
       - name: Try to restore update_deps cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
@@ -246,4 +522,6 @@ jobs:
           python3 -m unittest -v \
             tools.release.prepare_macos_zenz_runtime_test \
             tools.release.probe_macos_zenz_runtime_test
-          PYTHONPATH=src python3 -m unittest -v mac.tweak_installer_files_test
+          PYTHONPATH=src python3 -m unittest -v \
+            mac.build_package_test \
+            mac.tweak_installer_files_test

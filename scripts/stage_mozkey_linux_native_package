@@ -1,0 +1,137 @@
+#!/bin/sh
+
+# Stage a complete, verified native Linux payload for deb/rpm packaging.
+set -eu
+umask 022
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "${script_dir}/.." && pwd -P)"
+
+if [ "$#" -ne 2 ]; then
+  echo "usage: $0 ubuntu-layout|fedora-x86_64 EMPTY_STAGE_DIR" >&2
+  exit 2
+fi
+layout="$1"
+stage_dir="$2"
+case "${layout}" in
+  ubuntu-layout) distro=ubuntu ;;
+  fedora-x86_64) distro=fedora ;;
+  *) echo "unsupported native Linux package layout: ${layout}" >&2; exit 2 ;;
+esac
+case "${stage_dir}" in
+  /*) ;;
+  *) echo "native Linux package stage directory must be absolute" >&2; exit 2 ;;
+esac
+if [ ! -d "${stage_dir}" ] || [ -L "${stage_dir}" ]; then
+  echo "native Linux package stage directory must be a real directory" >&2
+  exit 1
+fi
+if find "${stage_dir}" -mindepth 1 -print -quit | grep -q .; then
+  echo "native Linux package stage directory must be empty" >&2
+  exit 1
+fi
+
+runtime="${repository_root}/dist/zenz/linux/runtime/llama-server"
+runtime_manifest="${repository_root}/dist/zenz/linux/runtime/llama-server-manifest.json"
+attestation="${repository_root}/dist/linux/${layout}/build-attestation.json"
+build_packages="${repository_root}/dist/${distro}-build-packages.txt"
+for required in "${runtime}" "${runtime_manifest}" "${attestation}" "${build_packages}"
+do
+  if [ ! -f "${required}" ] || [ -L "${required}" ] || [ ! -s "${required}" ]; then
+    echo "missing or unsafe native Linux package input: ${required}" >&2
+    exit 1
+  fi
+done
+if [ ! -x "${runtime}" ]; then
+  echo "bundled native Linux llama-server is not executable" >&2
+  exit 1
+fi
+
+"${script_dir}/verify_mozkey_linux_build_attestation" "${layout}"
+runtime_sha256="$(python3 - "${attestation}" "${runtime}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+attestation = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+record = attestation.get("zenz_runtime", {}).get("bundled_llama_server", {})
+runtime = pathlib.Path(sys.argv[2])
+digest = hashlib.sha256(runtime.read_bytes()).hexdigest()
+if record.get("path") != "dist/zenz/linux/runtime/llama-server":
+    raise SystemExit("attestation has the wrong bundled llama-server path")
+if record.get("sha256") != digest or record.get("size_bytes") != runtime.stat().st_size:
+    raise SystemExit("bundled llama-server does not match the attestation")
+print(digest)
+PY
+)"
+MOZKEY_LLAMA_ATTESTED_SHA256="${runtime_sha256}" \
+  "${script_dir}/verify_llama_server_compatibility" "${runtime}"
+
+(
+  cd "${repository_root}/src"
+  DESTDIR="${stage_dir}" \
+    PREFIX=/usr \
+    MOZKEY_LINUX_BUILD_LAYOUT="${layout}" \
+    MOZKEY_LLAMA_ATTESTED_SHA256="${runtime_sha256}" \
+    MOZKEY_ZENZ_LLAMA_SERVER_TARGET="${runtime}" \
+    MOZKEY_ZENZ_LLAMA_SERVER_SOURCE="${runtime}" \
+    "${script_dir}/install_mozkey_linux_bazel"
+)
+
+install -D -m 644 "${attestation}" \
+  "${stage_dir}/usr/share/doc/mozkey/linux-build-attestation.json"
+install -D -m 644 "${build_packages}" \
+  "${stage_dir}/usr/share/doc/mozkey/${distro}-build-packages.txt"
+install -D -m 644 "${runtime_manifest}" \
+  "${stage_dir}/usr/share/doc/mozkey/llama-server-manifest.json"
+if [ "${distro}" = ubuntu ]; then
+  copyright_path="${stage_dir}/usr/share/doc/mozkey-ibg/copyright"
+  install -d -m 755 "$(dirname -- "${copyright_path}")"
+  {
+    printf '%s\n' \
+      'Mozkey — Integrated by Grimodex: copyright and license information' \
+      'Upstream source: https://github.com/kazormia296/mozkey' \
+      '' \
+      'This file reproduces the copyright notices and license texts shipped' \
+      'with the binary distribution. The section labels are installed paths.'
+    for license_path in \
+      usr/share/licenses/mozkey/Mozc-LICENSE.txt \
+      usr/share/licenses/mozkey/Fcitx5-Mozc-BSD-3-Clause.txt \
+      usr/share/licenses/mozkey/LGPL-2.1-or-later.txt \
+      usr/share/licenses/mozkey/THIRD_PARTY_NOTICES.md \
+      usr/share/licenses/mozkey/dictionary/Apache-2.0.txt \
+      usr/share/licenses/mozkey/dictionary/THIRD_PARTY_NOTICES.md \
+      usr/share/licenses/mozkey/zenz-runtime/Apache-2.0.txt \
+      usr/share/licenses/mozkey/zenz-runtime/THIRD_PARTY_NOTICES.md \
+      usr/share/licenses/mozkey/zenz-runtime/cpp-httplib-MIT.txt \
+      usr/share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt \
+      usr/share/licenses/mozkey/zenz-runtime/nlohmann-json-MIT.txt \
+      usr/share/licenses/mozkey/zenz-runtime/zenz-v3.2-small-gguf.txt
+    do
+      printf '\n===== /%s =====\n' "${license_path}"
+      cat "${stage_dir}/${license_path}"
+    done
+  } > "${copyright_path}"
+  chmod 644 "${copyright_path}"
+fi
+
+version="$(sed -n \
+  -e 's/^MOZKEY_RELEASE_VERSION_MAJOR = //p' \
+  -e 's/^MOZKEY_RELEASE_VERSION_MINOR = //p' \
+  -e 's/^MOZKEY_RELEASE_VERSION_PATCH = //p' \
+  "${repository_root}/src/version.bzl" | paste -sd . -)"
+printf '%s\n' "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+  echo "could not resolve Mozkey release version" >&2
+  exit 1
+}
+revision="$(git -C "${repository_root}" rev-parse HEAD)"
+python3 "${repository_root}/tools/release/generate_linux_spdx_sbom.py" \
+  --root "${stage_dir}" \
+  --output "${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json" \
+  --version "${version}" \
+  --revision "${revision}" \
+  --distro "${distro}" \
+  --architecture x86_64
+
+printf 'Mozkey %s native package staged: %s\n' "${distro}" "${stage_dir}"

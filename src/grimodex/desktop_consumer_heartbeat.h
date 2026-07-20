@@ -49,8 +49,9 @@ absl::Status UnregisterDesktopConsumer();
 
 // Windows Installer commit actions do not have a trustworthy user environment
 // block.  This variant resolves the canonical root from MSI's AppDataFolder
-// value instead of consulting process %APPDATA%.  Other platforms return an
-// unsupported status; Google-branded builds are a successful no-op.
+// value instead of resolving FOLDERID_RoamingAppData for the current user.
+// Other platforms return an unsupported status; Google-branded builds are a
+// successful no-op.
 absl::Status UnregisterWindowsDesktopConsumerForAppData(
     absl::string_view app_data_directory);
 

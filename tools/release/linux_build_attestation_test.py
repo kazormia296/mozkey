@@ -140,6 +140,17 @@ class LinuxBuildAttestationTest(unittest.TestCase):
         normalized_path = repository.joinpath(*target.ZENZ_NORMALIZED_MODEL_PATH.parts)
         normalized_path.parent.mkdir(parents=True, exist_ok=True)
         normalized_path.write_bytes(normalized_model)
+        bundled_server = self.write(
+            repository,
+            target.BUNDLED_LLAMA_SERVER_PATH.as_posix(),
+            b"#!/bin/sh\nexit 0\n",
+        )
+        bundled_server.chmod(0o755)
+        self.write(
+            repository,
+            target.BUNDLED_LLAMA_MANIFEST_PATH.as_posix(),
+            b'{"schema_version":"mozkey.linux_llama_server.v1"}\n',
+        )
 
         output_records = [
             self.record(repository, relative) for relative in target.DICTIONARY_OUTPUT_PATHS
@@ -282,6 +293,18 @@ class LinuxBuildAttestationTest(unittest.TestCase):
                 )["tensor_payload_sha256"],
             )
             target.verify(repository, "archlinux-x86_64", output)
+
+    def test_native_package_layouts_attest_the_bundled_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = self.make_repository(Path(temporary))
+            for layout in ("ubuntu-layout", "fedora-x86_64"):
+                output = self.attestation_path(repository, layout)
+                document = target.create(repository, layout, output, "bazelisk")
+                self.assertEqual(
+                    document["zenz_runtime"]["bundled_llama_server"]["path"],
+                    target.BUNDLED_LLAMA_SERVER_PATH.as_posix(),
+                )
+                target.verify(repository, layout, output)
 
     def test_verify_rejects_stale_binary_and_dictionary_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
