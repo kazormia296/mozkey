@@ -342,6 +342,12 @@ jobs:
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN"
+          # codesign resolves the private key through the user's keychain
+          # search list even when --keychain is supplied. Keep this isolated
+          # temporary keychain unlocked and explicitly searchable for the
+          # signing step below.
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN"
+          security list-keychains -d user -s "$SIGNING_KEYCHAIN"
           rm -f "$APPLICATION_P12" "$INSTALLER_P12"
 
           APP_SIGN_IDENTITY="$(
