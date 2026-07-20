@@ -390,6 +390,21 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertGreaterEqual(publish.count("diff -u"), 4)
         self.assertNotIn("--clobber", publish)
 
+    def test_publish_resolves_draft_releases_from_the_release_list(self) -> None:
+        publish = self.jobs["publish"]
+        self.assertIn("find_draft_release_id()", publish)
+        self.assertIn("gh api --paginate --slurp", publish)
+        self.assertIn('"repos/${GITHUB_REPOSITORY}/releases?per_page=100"', publish)
+        self.assertIn(
+            "select(.tag_name == $tag and .draft == true) | .id",
+            publish,
+        )
+        self.assertIn('release_id="$(find_draft_release_id)"', publish)
+        self.assertIn(
+            'Unable to resolve the draft release ${RELEASE_TAG}',
+            publish,
+        )
+
     def test_publish_refuses_published_release_and_builds_checksums(self) -> None:
         publish = self.jobs["publish"]
         self.assertIn("Refusing to mutate published release", publish)
