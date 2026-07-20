@@ -109,6 +109,18 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
                 self.assertIn("release_build", command)
                 self.assertIn(f"--macos_cpus={architecture}", command)
                 self.assertIn(
+                    f"--copt=-mmacosx-version-min={deployment_target}",
+                    command,
+                )
+                self.assertIn(
+                    f"--cxxopt=-mmacosx-version-min={deployment_target}",
+                    command,
+                )
+                self.assertIn(
+                    f"--linkopt=-mmacosx-version-min={deployment_target}",
+                    command,
+                )
+                self.assertIn(
                     "--define=mozkey_dictionary_profile=release-approved-only",
                     command,
                 )

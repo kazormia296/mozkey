@@ -238,6 +238,9 @@ def scorer_compile_command(
         "--config",
         "release_build",
         f"--macos_cpus={architecture}",
+        f"--copt=-mmacosx-version-min={deployment_target}",
+        f"--cxxopt=-mmacosx-version-min={deployment_target}",
+        f"--linkopt=-mmacosx-version-min={deployment_target}",
         "--define=mozkey_dictionary_profile=release-approved-only",
     ]
 
