@@ -37,6 +37,8 @@ jobs:
     name: Offline config tests
     runs-on: windows-2025
     timeout-minutes: 60
+    env:
+      BAZEL_REPOSITORY_CACHE: ${{ runner.temp }}/bazel-repository-cache
 
     steps:
       - name: Checkout
@@ -54,7 +56,7 @@ jobs:
       - name: Restore Bazel repository cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
-          path: src/.bazel-repository-cache
+          path: ${{ runner.temp }}/bazel-repository-cache
           key: bazel-repository-${{ runner.os }}-${{ hashFiles('src/MODULE.bazel', 'src/bazel/**/*.bzl', 'src/bazel/**/*.patch') }}
 
       - name: Install dependencies
@@ -71,7 +73,7 @@ jobs:
         run: |
           $arguments = @(
             "fetch",
-            "--repository_cache=.bazel-repository-cache",
+            "--repository_cache=$env:BAZEL_REPOSITORY_CACHE",
             "--config", "oss_windows",
             "--config", "release_build",
             "//config:stats_config_util_test",
@@ -97,12 +99,14 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test --repository_cache=.bazel-repository-cache --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
+          bazelisk test --repository_cache=%BAZEL_REPOSITORY_CACHE% --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
 
   binary_check:
     name: Binary no-network check
     runs-on: windows-2025
     timeout-minutes: 60
+    env:
+      BAZEL_REPOSITORY_CACHE: ${{ runner.temp }}/bazel-repository-cache
 
     steps:
       - name: Checkout
@@ -120,7 +124,7 @@ jobs:
       - name: Restore Bazel repository cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
-          path: src/.bazel-repository-cache
+          path: ${{ runner.temp }}/bazel-repository-cache
           key: bazel-repository-${{ runner.os }}-${{ hashFiles('src/MODULE.bazel', 'src/bazel/**/*.bzl', 'src/bazel/**/*.patch') }}
 
       - name: Pin Bazel to Visual Studio 2026
@@ -171,7 +175,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build --repository_cache=.bazel-repository-cache --config oss_windows --config release_build //zenz_scorer:mozc_zenz_scorer
+          bazelisk build --repository_cache=%BAZEL_REPOSITORY_CACHE% --config oss_windows --config release_build //zenz_scorer:mozc_zenz_scorer
 
       - name: Prepare pinned x64 Zenz runtime
         shell: pwsh
