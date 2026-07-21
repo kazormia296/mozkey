@@ -190,7 +190,7 @@ jobs:
     needs: [prepare_daily_dictionary, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 150
-    container: fedora@sha256:6c75d5bf57cb0fa5aa4b92c6a83c86c791644496d9ac230de7711f5b8ec3b898
+    container: fedora@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
     env:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
@@ -201,19 +201,19 @@ jobs:
           rm -f -- /etc/yum.repos.d/*.repo
           cat > /etc/yum.repos.d/mozkey-fedora-snapshot.repo <<'EOF'
           [fedora]
-          name=Fedora 44 Everything archive
-          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/44/Everything/\$basearch/os/
+          name=Fedora 42 Everything archive
+          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/42/Everything/\$basearch/os/
           enabled=1
           gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-44-primary
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-42-primary
           metadata_expire=never
 
           [updates]
-          name=Fedora 44 updates archive
-          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/updates/44/Everything/\$basearch/
+          name=Fedora 42 updates archive
+          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/updates/42/Everything/\$basearch/
           enabled=1
           gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-44-primary
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-42-primary
           metadata_expire=never
           EOF
           dnf clean all
@@ -326,7 +326,7 @@ jobs:
       - name: Bootstrap the fixed Arch repository for checkout
         run: |
           cat > /etc/pacman.d/mirrorlist <<'EOF'
-          Server = https://archive.archlinux.org/repos/2026/07/01/\$repo/os/\$arch
+          Server = https://archive.archlinux.org/repos/2026/06/01/\$repo/os/\$arch
           EOF
           pacman -Syy --noconfirm
           pacman -S --noconfirm git
