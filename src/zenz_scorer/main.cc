@@ -169,8 +169,11 @@ bool IsExpectedLlamaProcessImage(HANDLE process,
   }
   full_expected_path.resize(expected_size);
   actual_path.resize(actual_size);
-  return NormalizeWindowsPath(actual_path) ==
-         NormalizeWindowsPath(full_expected_path);
+  const std::wstring actual_path_string(actual_path.begin(), actual_path.end());
+  const std::wstring expected_path_string(full_expected_path.begin(),
+                                          full_expected_path.end());
+  return NormalizeWindowsPath(actual_path_string) ==
+         NormalizeWindowsPath(expected_path_string);
 }
 #else
 class LoopbackPortReservation {
