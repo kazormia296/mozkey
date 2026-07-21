@@ -326,7 +326,7 @@ jobs:
       - name: Bootstrap the fixed Arch repository for checkout
         run: |
           cat > /etc/pacman.d/mirrorlist <<'EOF'
-          Server = https://archive.archlinux.org/repos/2026/06/01/$repo/os/$arch
+          Server = https://archive.archlinux.org/repos/2026/07/17/$repo/os/$arch
           EOF
           pacman -Syy --noconfirm
           pacman -S --noconfirm git

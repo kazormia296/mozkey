@@ -306,6 +306,16 @@ class LinuxBuildAttestationTest(unittest.TestCase):
                 )
                 target.verify(repository, layout, output)
 
+    def test_sframe_workaround_is_limited_to_the_arch_toolchain(self) -> None:
+        self.assertIn(
+            "--config=no_sframe",
+            target.LAYOUTS["archlinux-x86_64"]["flags"],
+        )
+        self.assertNotIn(
+            "--config=no_sframe",
+            target.LAYOUTS["fedora-x86_64"]["flags"],
+        )
+
     def test_verify_rejects_stale_binary_and_dictionary_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = self.make_repository(Path(temporary))

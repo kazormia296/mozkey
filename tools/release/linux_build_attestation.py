@@ -62,13 +62,7 @@ LAYOUTS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "fedora-x86_64": {
         "targets": COMMON_TARGETS,
-        "flags": (
-            "--config=oss_linux",
-            "--config=release_build",
-            "--config=no_sframe",
-            "--define=mozkey_dictionary_profile=release-approved-only",
-            "--//unix/fcitx5:use_server=true",
-        ),
+        "flags": COMMON_FLAGS,
     },
 }
 BAZEL_DRIVERS = {
