@@ -130,8 +130,11 @@ The check is implemented by:
 python tools\check_no_network_imports.py --root src\bazel-bin
 ```
 
-For release validation, the installed or MSI-extracted runtime binaries should
-also be checked.
+The pull-request `Secure Offline Checks` workflow builds
+`mozc_zenz_scorer.exe`, prepares the pinned x64 `llama-server.exe`, and checks
+those explicit binaries without rebuilding a complete installer. For release
+validation, each Windows package job checks the Bazel output, bundled runtime,
+and MSI-extracted payload before it uploads that exact MSI.
 
 ## Binary string checks
 
@@ -149,8 +152,9 @@ The check is implemented by:
 python tools\check_no_network_strings.py --root src\bazel-bin
 ```
 
-For release validation, run the same check against installed or MSI-extracted
-runtime binaries.
+The same PR and release split applies to string checks: routine CI inspects the
+actual scorer and local runtime, while release CI inspects the exact MSI payload
+that will be published.
 
 ## Windows Firewall hardening
 

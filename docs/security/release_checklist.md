@@ -66,9 +66,11 @@ python tools\check_no_network_strings.py --root src\bazel-bin
 
 ## MSI-extracted binary checks
 
-The CI gate uses the same helper for each x64, universal, and arm64 MSI. It
-checks the Bazel output, the bundled `llama-server.exe`, and the MSI-extracted
-payload; missing target binaries fail the check instead of being skipped.
+Routine pull-request CI builds and inspects `mozc_zenz_scorer.exe` and the
+pinned x64 `llama-server.exe` without generating an installer. The reusable
+Windows release workflow uses the same helper for each x64, universal, and
+arm64 MSI before uploading it. It checks the Bazel output, bundled runtime, and
+MSI-extracted payload; missing target binaries fail instead of being skipped.
 
 To reproduce the gate locally, extract the MSI and check the files that will
 actually be installed.

@@ -111,11 +111,50 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertNotIn(r"Visual Studio\18\Community", windows)
         self.assertNotIn(r"Visual Studio\18\Community", secure_offline)
         self.assertNotIn("vs_util.py --arch", windows)
-        self.assertIn("check_windows_msi_offline.ps1", secure_offline)
+        self.assertNotIn("check_windows_msi_offline.ps1", secure_offline)
         self.assertIn("probe_windows_zenz_runtime.ps1", secure_offline)
+
+        windows_jobs = self._split_job_blocks(windows)
+        for job, upload_step in (
+            ("build_x64", "Upload versioned x64 MSI"),
+            ("build_universal", "Upload versioned universal MSI"),
+            ("build_arm64", "Upload versioned ARM64 MSI"),
+        ):
+            with self.subTest(job=job):
+                block = windows_jobs[job]
+                self.assertLess(
+                    block.index("check_windows_msi_offline.ps1"),
+                    block.index(upload_step),
+                )
+
         binary_check = self._split_job_blocks(secure_offline)["binary_check"]
         self.assertNotIn("github.event_name == 'workflow_dispatch'", binary_check)
+        self.assertNotIn("Build Qt", binary_check)
+        self.assertNotRegex(binary_check, r"bazelisk build .*\bpackage\b")
+        self.assertNotIn("actions/upload-artifact", binary_check)
+        self.assertIn("//zenz_scorer:mozc_zenz_scorer", binary_check)
+        self.assertIn("check_no_network_imports.py", binary_check)
+        self.assertIn("check_no_network_strings.py", binary_check)
+        self.assertIn("mozc_zenz_scorer.exe", binary_check)
         self.assertIn("llama-server.exe", binary_check)
+
+    def test_secure_offline_reuses_bazel_repository_downloads(self) -> None:
+        secure_offline = self._workflow("secure-offline")
+        jobs = self._split_job_blocks(secure_offline)
+        for job in ("config_tests", "binary_check"):
+            with self.subTest(job=job):
+                self.assertIn("Restore Bazel repository cache", jobs[job])
+                self.assertIn(
+                    "--repository_cache=.bazel-repository-cache",
+                    jobs[job],
+                )
+
+        config_tests = jobs["config_tests"]
+        self.assertIn("Hydrate Bazel repositories", config_tests)
+        self.assertIn(
+            "for ($attempt = 1; $attempt -le 3; $attempt++)",
+            config_tests,
+        )
 
     def test_windows_crt_source_is_toolchain_selected_and_verified(self) -> None:
         windows = self._platform_workflow("windows")

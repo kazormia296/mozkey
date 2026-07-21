@@ -51,11 +51,45 @@ jobs:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
 
+      - name: Restore Bazel repository cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: src/.bazel-repository-cache
+          key: bazel-repository-${{ runner.os }}-${{ hashFiles('src/MODULE.bazel', 'src/bazel/**/*.bzl', 'src/bazel/**/*.patch') }}
+
       - name: Install dependencies
         shell: cmd
         working-directory: .\src
         run: |
           python build_tools/update_deps.py
+
+      - name: Hydrate Bazel repositories
+        shell: pwsh
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: |
+          $arguments = @(
+            "fetch",
+            "--repository_cache=.bazel-repository-cache",
+            "--config", "oss_windows",
+            "--config", "release_build",
+            "//config:stats_config_util_test",
+            "//config:config_handler_test"
+          )
+
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & bazelisk @arguments
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0) {
+              break
+            }
+            if ($attempt -eq 3) {
+              exit $exitCode
+            }
+            Write-Warning "Bazel repository hydration failed on attempt $attempt; retrying."
+            Start-Sleep -Seconds (15 * $attempt)
+          }
 
       - name: Run offline config tests
         shell: cmd
@@ -63,12 +97,12 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
+          bazelisk test --repository_cache=.bazel-repository-cache --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
 
   binary_check:
     name: Binary no-network check
     runs-on: windows-2025
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -82,6 +116,12 @@ jobs:
         with:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
+
+      - name: Restore Bazel repository cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: src/.bazel-repository-cache
+          key: bazel-repository-${{ runner.os }}-${{ hashFiles('src/MODULE.bazel', 'src/bazel/**/*.bzl', 'src/bazel/**/*.patch') }}
 
       - name: Pin Bazel to Visual Studio 2026
         shell: pwsh
@@ -119,6 +159,20 @@ jobs:
         run: |
           python build_tools/update_deps.py
 
+      - name: Verify CRT redist selected by Visual Studio
+        shell: pwsh
+        run: |
+          .\tools\release\verify_windows_crt.ps1 `
+            -Architecture x64
+
+      - name: Build Windows Zenz scorer
+        shell: cmd
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: |
+          bazelisk build --repository_cache=.bazel-repository-cache --config oss_windows --config release_build //zenz_scorer:mozc_zenz_scorer
+
       - name: Prepare pinned x64 Zenz runtime
         shell: pwsh
         run: |
@@ -128,38 +182,16 @@ jobs:
           python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Build Qt
-        shell: cmd
-        working-directory: .\src
-        run: |
-          python build_tools/build_qt.py --release --confirm_license
-
-      - name: Delete Qt src to save disk space
-        shell: cmd
-        working-directory: .\src
-        run: |
-
-      - name: Verify CRT redist selected by Visual Studio
+      - name: Inspect Windows runtime binaries
         shell: pwsh
         run: |
-          .\tools\release\verify_windows_crt.ps1 `
-            -Architecture x64
+          $scorer = ".\src\bazel-bin\zenz_scorer\mozc_zenz_scorer.exe"
+          $runtime = ".\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe"
 
-      - name: Build Windows package
-        shell: cmd
-        working-directory: .\src
-        env:
-          ANDROID_NDK_HOME: ""
-        run: |
-          bazelisk build --config oss_windows --config release_build package
-
-      - name: Verify MSI artifact
-        shell: pwsh
-        run: |
-          .\tools\release\check_windows_msi_offline.ps1 `
-            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
-            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
-            -ExpectedRuntimeArchitecture x64
+          python .\tools\check_no_network_imports.py $scorer $runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\tools\check_no_network_strings.py $scorer $runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Probe x64 Zenz loopback runtime
         shell: pwsh
@@ -167,12 +199,3 @@ jobs:
           .\tools\release\probe_windows_zenz_runtime.ps1 `
             -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
             -ModelPath .\src\win32\installer\zenz_runtime\generated\x64\models\zenz-v3.2-small-Q5_K_M.gguf
-
-      - name: Upload MSI
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: Mozc64.msi
-          path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 7
