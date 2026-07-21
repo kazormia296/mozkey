@@ -37,8 +37,6 @@ jobs:
     name: Offline config tests
     runs-on: windows-2025
     timeout-minutes: 60
-    env:
-      BAZEL_REPOSITORY_CACHE: ${{ runner.temp }}/bazel-repository-cache
 
     steps:
       - name: Checkout
@@ -71,9 +69,10 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
+          $repositoryCache = Join-Path $env:RUNNER_TEMP "bazel-repository-cache"
           $arguments = @(
             "fetch",
-            "--repository_cache=$env:BAZEL_REPOSITORY_CACHE",
+            "--repository_cache=$repositoryCache",
             "--config", "oss_windows",
             "--config", "release_build",
             "//config:stats_config_util_test",
@@ -99,14 +98,12 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test --repository_cache=%BAZEL_REPOSITORY_CACHE% --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
+          bazelisk test --repository_cache=%RUNNER_TEMP%\bazel-repository-cache --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
 
   binary_check:
     name: Binary no-network check
     runs-on: windows-2025
     timeout-minutes: 60
-    env:
-      BAZEL_REPOSITORY_CACHE: ${{ runner.temp }}/bazel-repository-cache
 
     steps:
       - name: Checkout
@@ -175,7 +172,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build --repository_cache=%BAZEL_REPOSITORY_CACHE% --config oss_windows --config release_build //zenz_scorer:mozc_zenz_scorer
+          bazelisk build --repository_cache=%RUNNER_TEMP%\bazel-repository-cache --config oss_windows --config release_build //zenz_scorer:mozc_zenz_scorer
 
       - name: Prepare pinned x64 Zenz runtime
         shell: pwsh

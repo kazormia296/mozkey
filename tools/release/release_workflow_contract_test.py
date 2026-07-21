@@ -145,13 +145,14 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
             with self.subTest(job=job):
                 self.assertIn("Restore Bazel repository cache", jobs[job])
                 self.assertIn(
-                    "BAZEL_REPOSITORY_CACHE: ${{ runner.temp }}/bazel-repository-cache",
+                    "path: ${{ runner.temp }}/bazel-repository-cache",
                     jobs[job],
                 )
                 self.assertIn(
                     "--repository_cache=",
                     jobs[job],
                 )
+                self.assertIn("RUNNER_TEMP", jobs[job])
 
         config_tests = jobs["config_tests"]
         self.assertIn("Hydrate Bazel repositories", config_tests)
