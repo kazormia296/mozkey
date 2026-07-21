@@ -36,7 +36,10 @@ package(default_visibility = ["//:__subpackages__"])
 mozc_cc_library(
     name = "typing_correction",
     srcs = ["typing_correction.cc"],
-    hdrs = ["generated_contract.h", "typing_correction.h"],
+    hdrs = [
+        "generated_contract.h",
+        "typing_correction.h",
+    ],
     deps = [
         "//protocol:commands_cc_proto",
         "@com_google_absl//absl/strings:string_view",
@@ -95,10 +98,10 @@ mozc_cc_library(
     srcs = ["composer_replayer.cc"],
     hdrs = ["composer_replayer.h"],
     deps = [
-        "//composer:composer",
-        ":kana_typing_corrector",
         ":incremental_cache",
+        ":kana_typing_corrector",
         ":roman_typing_corrector",
+        "//composer",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -110,7 +113,7 @@ mozc_cc_library(
     deps = [
         ":composer_replayer",
         ":incremental_cache",
-        "//composer:composer",
+        "//composer",
         "//converter:converter_interface",
         "//converter:segments",
         "//request:conversion_request",
@@ -133,7 +136,7 @@ mozc_cc_binary(
     srcs = ["inspect_typing_correction.cc"],
     deps = [
         ":composer_replayer",
-        "//composer:composer",
+        "//composer",
         "//composer:table",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
@@ -155,7 +158,7 @@ mozc_cc_binary(
         ":roman_typing_corrector",
         ":typing_correction_holdout",
         "//base:util",
-        "//composer:composer",
+        "//composer",
         "//composer:table",
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
