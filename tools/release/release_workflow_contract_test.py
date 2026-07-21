@@ -437,8 +437,26 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
 
     def test_linux_release_build_inputs_use_fixed_snapshots(self) -> None:
         linux = self._platform_workflow("linux")
-        self.assertIn("container: fedora@sha256:", linux)
+        self.assertIn(
+            "container: fedora@sha256:"
+            "99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814",
+            linux,
+        )
         self.assertIn("container: archlinux/archlinux@sha256:", linux)
+        fedora_snapshot = (
+            self.repository / "tools/release/use_fedora_snapshot.sh"
+        ).read_text(encoding="utf-8")
+        arch_snapshot = (
+            self.repository / "tools/release/use_archlinux_snapshot.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('readonly FEDORA_RELEASE="42"', fedora_snapshot)
+        self.assertIn("Fedora 42 Everything archive", linux)
+        self.assertIn("Fedora 42 updates archive", linux)
+        self.assertIn("fedora/linux/releases/42/Everything/", linux)
+        self.assertIn("fedora/linux/updates/42/Everything/", linux)
+        self.assertIn("RPM-GPG-KEY-fedora-42-primary", linux)
+        self.assertIn('readonly SNAPSHOT_DATE="2026/06/01"', arch_snapshot)
+        self.assertIn("archive.archlinux.org/repos/2026/06/01", linux)
         for script in (
             "use_ubuntu_snapshot.sh",
             "use_fedora_snapshot.sh",

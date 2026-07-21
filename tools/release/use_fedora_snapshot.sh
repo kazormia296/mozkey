@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-readonly FEDORA_RELEASE="44"
+readonly FEDORA_RELEASE="42"
 readonly REPOSITORY_FILE="/etc/yum.repos.d/mozkey-fedora-snapshot.repo"
 
 rm -f -- /etc/yum.repos.d/*.repo
