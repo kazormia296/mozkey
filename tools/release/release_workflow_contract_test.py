@@ -379,6 +379,19 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertNotIn("apt-get update", linux)
         self.assertNotIn("pacman -Syu", linux)
 
+    def test_ubuntu_snapshot_update_is_strict_and_retryable(self) -> None:
+        snapshot = (
+            self.repository / "tools/release/use_ubuntu_snapshot.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('readonly APT_UPDATE_ATTEMPTS=5', snapshot)
+        self.assertIn("/etc/apt/sources.list.d/*.list", snapshot)
+        self.assertIn("/etc/apt/sources.list.d/*.sources", snapshot)
+        self.assertIn("APT::Update::Error-Mode=any", snapshot)
+        self.assertIn(
+            "for ((attempt = 1; attempt <= APT_UPDATE_ATTEMPTS; attempt++))",
+            snapshot,
+        )
+
     def test_publish_replaces_and_verifies_exact_asset_set(self) -> None:
         publish = self.jobs["publish"]
         expected = {
