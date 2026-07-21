@@ -36,5 +36,7 @@ jobs:
       - name: Run
         working-directory: ./src
         run: |
-          go install github.com/bazelbuild/buildtools/v8/buildifier@v8.5.1
+          # v8.5.1 is a semver tag on a module whose path has no /v8 suffix;
+          # pin its immutable tag commit so Go does not reinterpret the tag.
+          go install github.com/bazelbuild/buildtools/buildifier@f6a1982250030df9c2d24a675a04f150ff6aca6b
           $(go env GOPATH)/bin/buildifier --mode=diff -r .
