@@ -455,9 +455,9 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertIn("fedora/linux/releases/42/Everything/", linux)
         self.assertIn("fedora/linux/updates/42/Everything/", linux)
         self.assertIn("RPM-GPG-KEY-fedora-42-primary", linux)
-        self.assertIn('readonly SNAPSHOT_DATE="2026/06/01"', arch_snapshot)
+        self.assertIn('readonly SNAPSHOT_DATE="2026/07/17"', arch_snapshot)
         self.assertIn(
-            "Server = https://archive.archlinux.org/repos/2026/06/01/"
+            "Server = https://archive.archlinux.org/repos/2026/07/17/"
             "$repo/os/$arch",
             linux,
         )
