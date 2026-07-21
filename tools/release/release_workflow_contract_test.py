@@ -133,6 +133,7 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         )
         self.assertIn("VCTOOLSREDISTDIR", installer)
         self.assertIn("VCToolsRedistDir", verifier)
+        self.assertIn('$expectedFileVersion = "14.51.36247.0"', verifier)
         self.assertIn("Get-AuthenticodeSignature", verifier)
         self.assertIn("Get-FileHash", verifier)
         self.assertIn("GetVersionInfo", verifier)
