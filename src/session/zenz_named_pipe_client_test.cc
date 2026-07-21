@@ -1,6 +1,7 @@
 #include "session/zenz_named_pipe_client.h"
 
 #if !defined(_WIN32)
+#include <cerrno>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -72,6 +73,25 @@ ZenzLiveResponse ConvertWithResponsePayloadSizes(uint32_t value_size,
     if (client_fd < 0) {
       return;
     }
+
+    // Wait for the request before sending the response.  Closing the client
+    // socket immediately after sending the header races with the client's
+    // request write on macOS, where SIGPIPE is not suppressed by MSG_NOSIGNAL.
+    uint8_t request_header[sizeof(TestZenzWireResponseHeader)] = {};
+    size_t received = 0;
+    while (received < sizeof(request_header)) {
+      const ssize_t count = recv(client_fd, request_header + received,
+                                 sizeof(request_header) - received, 0);
+      if (count > 0) {
+        received += static_cast<size_t>(count);
+      } else if (count < 0 && errno == EINTR) {
+        continue;
+      } else {
+        close(client_fd);
+        return;
+      }
+    }
+
     const TestZenzWireResponseHeader header = {
         .magic = kTestZenzWireMagic,
         .version = kTestZenzWireVersion,
