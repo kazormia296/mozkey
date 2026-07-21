@@ -2,7 +2,7 @@
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 
-[![macOS](https://github.com/kazormia296/mozkey/actions/workflows/macos.yaml/badge.svg)](https://github.com/kazormia296/mozkey/actions/workflows/macos.yaml)
+[![macOS](https://github.com/kazormia296/mozkey-ibg/actions/workflows/macos.yaml/badge.svg)](https://github.com/kazormia296/mozkey-ibg/actions/workflows/macos.yaml)
 
 ## Summary
 
@@ -10,7 +10,7 @@ If you are not sure what the following commands do, please check the
 descriptions below and make sure the operations before running them.
 
 ```
-git clone https://github.com/kazormia296/mozkey.git
+git clone https://github.com/kazormia296/mozkey-ibg.git
 cd mozkey/src
 
 python3 build_tools/update_deps.py
@@ -55,7 +55,7 @@ Building on Mac requires the following software.
 You can download Mozc source code as follows:
 
 ```
-git clone https://github.com/kazormia296/mozkey.git
+git clone https://github.com/kazormia296/mozkey-ibg.git
 cd mozkey/src
 ```
 
@@ -163,7 +163,7 @@ GitHub Actions steps are already set up in
 run the macOS test gate only; they do not build or upload a package. Installer
 builds are called by the release workflow from a validated release tag.
 
-1.  Fork https://github.com/kazormia296/mozkey to your GitHub repository.
+1.  Fork https://github.com/kazormia296/mozkey-ibg to your GitHub repository.
 2.  Update `src/version.bzl`, merge the tested change into `main`, and create an
     annotated `vX.Y.Z` tag with the same version.
 3.  Push the tag and wait for the **Mozkey Release** workflow to succeed.
@@ -175,11 +175,11 @@ notes, and rerun contract.
 
 You can also find Mozkey installers for macOS in the Mozkey repository. Please
 keep in mind that Mozc is not an officially supported Google product, even if
-downloaded from https://github.com/kazormia296/mozkey/.
+downloaded from https://github.com/kazormia296/mozkey-ibg/.
 
 1.  Sign in GitHub.
 2.  Open the repository's
-    [Releases](https://github.com/kazormia296/mozkey/releases) page.
+    [Releases](https://github.com/kazormia296/mozkey-ibg/releases) page.
 3.  Download the macOS arm64 package for the intended version.
 
 --------------------------------------------------------------------------------

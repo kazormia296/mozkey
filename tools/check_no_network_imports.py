@@ -40,10 +40,19 @@ ALLOWED_FORBIDDEN_DLLS_BY_BINARY = {
     # This is not telemetry, updater, crash upload, or external network access.
     "mozc_zenz_scorer.exe": {
         "winhttp.dll",
+        "ws2_32.dll",
+    },
+    # llama-server is the bundled localhost HTTP endpoint.  Its Windows
+    # socket transport necessarily imports ws2_32.dll, but the pinned build
+    # disables CURL and the scorer supplies the loopback-only host explicitly.
+    "llama-server.exe": {
+        "ws2_32.dll",
     },
 }
 
-RUNTIME_BINARY_PATTERN = re.compile(r"^mozc.*\.(exe|dll)$", re.IGNORECASE)
+RUNTIME_BINARY_PATTERN = re.compile(
+    r"^(?:mozc.*|llama-server)\.(exe|dll)$", re.IGNORECASE
+)
 
 
 class PEFormatError(Exception):
@@ -246,8 +255,11 @@ def main(argv: list[str]) -> int:
     targets = collect_targets(args.root, args.paths)
 
     if not targets:
-        print(f"[NO_NETWORK_IMPORT_CHECK_SKIPPED] No targets found under {args.root}")
-        return 0
+        print(
+            f"[NO_NETWORK_IMPORT_CHECK_FAILED] No targets found under {args.root}",
+            file=sys.stderr,
+        )
+        return 1
 
     failed = False
 

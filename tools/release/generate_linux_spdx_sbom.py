@@ -146,7 +146,7 @@ def generate(
         },
         "dataLicense": "CC0-1.0",
         "documentNamespace": (
-            "https://github.com/kazormia296/mozkey/spdx/"
+            "https://github.com/kazormia296/mozkey-ibg/spdx/"
             f"linux/{target}/{namespace_version}/{namespace_revision}/"
             f"{verification_code}"
         ),

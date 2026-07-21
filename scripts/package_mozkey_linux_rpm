@@ -67,7 +67,7 @@ Version:        ${version}
 Release:        1%{?dist}
 Summary:        Mozkey Japanese input method integrated with Grimodex
 License:        BSD-3-Clause AND Apache-2.0 AND LGPL-2.1-or-later AND MIT
-URL:            https://github.com/kazormia296/mozkey
+URL:            https://github.com/kazormia296/mozkey-ibg
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      x86_64
 Requires:       fcitx5 >= 5.1.0

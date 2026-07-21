@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 
+#include <winsock2.h>
 #include <windows.h>
 #include <bcrypt.h>
 #include <sddl.h>
@@ -19,8 +20,10 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <limits.h>
 #if defined(__APPLE__)
 #include <crt_externs.h>
+#include <libproc.h>
 #include <mach-o/dyld.h>
 #include <spawn.h>
 #endif
@@ -33,6 +36,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cwctype>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -50,6 +54,7 @@
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Bcrypt.lib")
 #pragma comment(lib, "Winhttp.lib")
+#pragma comment(lib, "Ws2_32.lib")
 #endif
 
 namespace {
@@ -60,6 +65,216 @@ std::atomic<bool> g_llama_server_ready{false};
 std::atomic<bool> g_shutdown_requested{false};
 #if !defined(_WIN32)
 volatile sig_atomic_t g_posix_shutdown_requested = 0;
+#endif
+
+constexpr int kRandomPortMin = 49152;
+constexpr int kRandomPortMax = 65535;
+
+#if defined(_WIN32)
+class LoopbackPortReservation {
+ public:
+  LoopbackPortReservation() = default;
+  LoopbackPortReservation(const LoopbackPortReservation&) = delete;
+  LoopbackPortReservation& operator=(const LoopbackPortReservation&) = delete;
+  ~LoopbackPortReservation() { Close(); }
+
+  bool Reserve(int requested_port) {
+    if (requested_port < kRandomPortMin || requested_port > kRandomPortMax) {
+      return false;
+    }
+
+    WSADATA data = {};
+    if (::WSAStartup(MAKEWORD(2, 2), &data) != 0) {
+      return false;
+    }
+    winsock_started_ = true;
+
+    socket_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (socket_ == INVALID_SOCKET) {
+      Close();
+      return false;
+    }
+
+    BOOL exclusive = TRUE;
+    if (::setsockopt(socket_, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                     reinterpret_cast<const char*>(&exclusive),
+                     sizeof(exclusive)) != 0) {
+      Close();
+      return false;
+    }
+
+    sockaddr_in address = {};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(static_cast<u_short>(requested_port));
+    if (::bind(socket_, reinterpret_cast<const sockaddr*>(&address),
+               sizeof(address)) != 0 ||
+        ::listen(socket_, 1) != 0) {
+      Close();
+      return false;
+    }
+
+    sockaddr_in bound = {};
+    int bound_size = sizeof(bound);
+    if (::getsockname(socket_, reinterpret_cast<sockaddr*>(&bound),
+                      &bound_size) != 0 ||
+        ntohs(bound.sin_port) != requested_port) {
+      Close();
+      return false;
+    }
+    return true;
+  }
+
+  void Close() {
+    if (socket_ != INVALID_SOCKET) {
+      ::closesocket(socket_);
+      socket_ = INVALID_SOCKET;
+    }
+    if (winsock_started_) {
+      ::WSACleanup();
+      winsock_started_ = false;
+    }
+  }
+
+ private:
+  SOCKET socket_ = INVALID_SOCKET;
+  bool winsock_started_ = false;
+};
+
+std::wstring NormalizeWindowsPath(std::wstring path) {
+  if (path.rfind(L"\\\\?\\", 0) == 0) {
+    path.erase(0, 4);
+  }
+  std::transform(path.begin(), path.end(), path.begin(), [](wchar_t value) {
+    return static_cast<wchar_t>(::towlower(value));
+  });
+  return path;
+}
+
+bool IsExpectedLlamaProcessImage(HANDLE process,
+                                 const std::wstring& expected_path) {
+  std::vector<wchar_t> actual_path(32768, L'\0');
+  DWORD actual_size = static_cast<DWORD>(actual_path.size());
+  if (!::QueryFullProcessImageNameW(process, 0, actual_path.data(),
+                                    &actual_size)) {
+    return false;
+  }
+
+  std::vector<wchar_t> full_expected_path(32768, L'\0');
+  DWORD expected_size = ::GetFullPathNameW(
+      expected_path.c_str(), static_cast<DWORD>(full_expected_path.size()),
+      full_expected_path.data(), nullptr);
+  if (expected_size == 0 || expected_size >= full_expected_path.size()) {
+    return false;
+  }
+  full_expected_path.resize(expected_size);
+  actual_path.resize(actual_size);
+  return NormalizeWindowsPath(actual_path) ==
+         NormalizeWindowsPath(full_expected_path);
+}
+#else
+class LoopbackPortReservation {
+ public:
+  LoopbackPortReservation() = default;
+  LoopbackPortReservation(const LoopbackPortReservation&) = delete;
+  LoopbackPortReservation& operator=(const LoopbackPortReservation&) = delete;
+  ~LoopbackPortReservation() { Close(); }
+
+  bool Reserve(int requested_port) {
+    if (requested_port < kRandomPortMin || requested_port > kRandomPortMax) {
+      return false;
+    }
+
+    socket_ = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_ < 0) {
+      return false;
+    }
+    const int flags = ::fcntl(socket_, F_GETFD, 0);
+    if (flags < 0 || ::fcntl(socket_, F_SETFD, flags | FD_CLOEXEC) != 0) {
+      Close();
+      return false;
+    }
+
+    sockaddr_in address = {};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(static_cast<uint16_t>(requested_port));
+    if (::bind(socket_, reinterpret_cast<const sockaddr*>(&address),
+               sizeof(address)) != 0 ||
+        ::listen(socket_, 1) != 0) {
+      Close();
+      return false;
+    }
+
+    sockaddr_in bound = {};
+    socklen_t bound_size = sizeof(bound);
+    if (::getsockname(socket_, reinterpret_cast<sockaddr*>(&bound),
+                      &bound_size) != 0 ||
+        ntohs(bound.sin_port) != requested_port) {
+      Close();
+      return false;
+    }
+    return true;
+  }
+
+  void Close() {
+    if (socket_ >= 0) {
+      ::close(socket_);
+      socket_ = -1;
+    }
+  }
+
+ private:
+  int socket_ = -1;
+};
+
+std::string CanonicalPath(const std::string& path) {
+  char resolved[PATH_MAX] = {};
+  if (::realpath(path.c_str(), resolved) == nullptr) {
+    return {};
+  }
+  return resolved;
+}
+
+bool IsExpectedLlamaProcessImage(pid_t pid, const std::string& expected_path) {
+  char actual_path[PATH_MAX] = {};
+#if defined(__linux__)
+  char proc_exe[64] = {};
+  std::snprintf(proc_exe, sizeof(proc_exe), "/proc/%d/exe", pid);
+  const ssize_t size = ::readlink(proc_exe, actual_path, sizeof(actual_path) - 1);
+  if (size <= 0) {
+    return false;
+  }
+  actual_path[size] = '\0';
+#elif defined(__APPLE__)
+  if (::proc_pidpath(pid, actual_path, sizeof(actual_path)) <= 0) {
+    return false;
+  }
+#else
+  return true;
+#endif
+
+  const std::string expected = CanonicalPath(expected_path);
+  const std::string actual = CanonicalPath(actual_path);
+  return !expected.empty() && !actual.empty() && expected == actual;
+}
+
+bool WaitForExpectedLlamaProcessImage(pid_t pid,
+                                      const std::string& expected_path) {
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    if (IsExpectedLlamaProcessImage(pid, expected_path)) {
+      return true;
+    }
+
+    int status = 0;
+    const pid_t result = ::waitpid(pid, &status, WNOHANG);
+    if (result == pid || (result < 0 && errno != EINTR)) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return false;
+}
 #endif
 std::atomic<uint64_t> g_llama_runtime_generation{0};
 
@@ -83,8 +298,6 @@ constexpr char kDefaultPipeNameSuffix[] = "/.mozc_zenz_scorer_pipe";
 #endif
 
 constexpr wchar_t kDefaultHost[] = L"127.0.0.1";
-constexpr int kRandomPortMin = 49152;
-constexpr int kRandomPortMax = 65535;
 constexpr int kApiKeyBytes = 32;
 constexpr int kDefaultCtx = 256;
 constexpr int kDefaultThreads = 4;
@@ -933,6 +1146,16 @@ bool LaunchLlamaServer(const Options& options, std::wstring* error) {
     return false;
   }
 
+  // Reserve the exact loopback port until the child has been created.  The
+  // llama.cpp server does not currently accept an inherited listening socket,
+  // so the reservation is released immediately before exec/CreateProcess and
+  // the resulting child is checked before it is trusted.
+  LoopbackPortReservation port_reservation;
+  if (!port_reservation.Reserve(options.port)) {
+    *error = L"loopback_port_reservation_failed";
+    return false;
+  }
+
   std::wstring cmd;
   cmd += L"\"";
   cmd += options.llama_server_path;
@@ -982,6 +1205,17 @@ bool LaunchLlamaServer(const Options& options, std::wstring* error) {
           &process)) {
     const DWORD err = GetLastError();
     *error = L"CreateProcessW failed error=" + std::to_wstring(err);
+    return false;
+  }
+
+  port_reservation.Close();
+  if (!IsExpectedLlamaProcessImage(process.hProcess,
+                                   options.llama_server_path)) {
+    ::TerminateProcess(process.hProcess, 1);
+    ::WaitForSingleObject(process.hProcess, 3000);
+    ::CloseHandle(process.hThread);
+    ::CloseHandle(process.hProcess);
+    *error = L"llama_process_identity_invalid";
     return false;
   }
 
@@ -1657,6 +1891,16 @@ bool LaunchLlamaServer(const Options& options, std::string* error) {
     return false;
   }
 
+  // Reserve the exact loopback port until the child has been created.  The
+  // llama.cpp server does not currently accept an inherited listening socket,
+  // so the reservation is released immediately before exec and the resulting
+  // child image is checked before it is trusted.
+  LoopbackPortReservation port_reservation;
+  if (!port_reservation.Reserve(options.port)) {
+    *error = "loopback_port_reservation_failed";
+    return false;
+  }
+
   Debug("launch llama-server port=random api_key_bytes=" +
         std::to_string(options.api_key.size()));
 
@@ -1733,6 +1977,7 @@ bool LaunchLlamaServer(const Options& options, std::string* error) {
   }
 
   if (pid == 0) {
+    port_reservation.Close();
 #if defined(__linux__)
     ::prctl(PR_SET_PDEATHSIG, SIGTERM);
 #endif
@@ -1748,6 +1993,14 @@ bool LaunchLlamaServer(const Options& options, std::string* error) {
     ::_exit(127);
   }
 #endif
+
+  port_reservation.Close();
+  if (!WaitForExpectedLlamaProcessImage(pid, options.llama_server_path)) {
+    ::kill(pid, SIGKILL);
+    ::waitpid(pid, nullptr, 0);
+    *error = "llama_process_identity_invalid";
+    return false;
+  }
 
   std::lock_guard<std::mutex> lock(g_llama_process_mutex);
   g_llama_process = pid;

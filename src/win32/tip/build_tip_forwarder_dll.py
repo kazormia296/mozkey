@@ -127,14 +127,14 @@ class ForwarderInfo:
   @property
   def file_description(self) -> str:
     return {
-        'Mozc': 'Mozc TIP Module Forwarder',
+        'Mozc': 'Mozkey IbG TIP Module Forwarder',
         'GoogleJapaneseInput': 'Google 日本語入力 TIP モジュール フォワーダー',
     }[self.branding]
 
   @property
   def product_name(self) -> str:
     return {
-        'Mozc': 'Mozc',
+        'Mozc': 'Mozkey IbG',
         'GoogleJapaneseInput': 'Google 日本語入力',
     }[self.branding]
 

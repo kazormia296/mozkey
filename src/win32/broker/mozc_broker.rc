@@ -44,7 +44,7 @@ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_FILE_DESCRIPTION "Google 日本語入力 ブローカー"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_FILE_DESCRIPTION "Mozc Broker"
+    #define MOZC_RES_FILE_DESCRIPTION "Mozkey IbG Broker"
   #endif
 #endif
 #ifndef MOZC_RES_FILETYPE
@@ -70,4 +70,3 @@ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
-

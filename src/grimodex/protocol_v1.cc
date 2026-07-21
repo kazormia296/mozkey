@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -299,9 +300,102 @@ bool ValidTimestamp(absl::string_view value) {
          second <= 59;
 }
 
+bool HasOnlyAllowedFields(
+    const google::protobuf::Struct &object,
+    std::initializer_list<absl::string_view> allowed_fields) {
+  for (const auto &[field_name, ignored_value] : object.fields()) {
+    bool allowed = false;
+    for (const absl::string_view allowed_field : allowed_fields) {
+      if (field_name == allowed_field) {
+        allowed = true;
+        break;
+      }
+    }
+    if (!allowed) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ParseJsonObject(absl::string_view bytes, google::protobuf::Struct *object) {
+  const absl::Status status =
+      google::protobuf::util::JsonStringToMessage(bytes, object);
+  return status.ok();
+}
+
+bool ValidateDictionaryEntryKeys(const google::protobuf::Value &value) {
+  return value.kind_case() == google::protobuf::Value::kStructValue &&
+         HasOnlyAllowedFields(
+             value.struct_value(),
+             {"yomi", "surface", "category", "priority", "entry_id"});
+}
+
+bool ValidateStateJsonKeys(absl::string_view bytes) {
+  google::protobuf::Struct object;
+  return ParseJsonObject(bytes, &object) &&
+         HasOnlyAllowedFields(object, {"format_version", "active_project_id",
+                                       "updated_at", "future_optional_field"});
+}
+
+bool ValidateProjectJsonKeys(absl::string_view bytes) {
+  google::protobuf::Struct object;
+  if (!ParseJsonObject(bytes, &object) ||
+      !HasOnlyAllowedFields(
+          object, {"format_version", "project_id", "project_name",
+                   "generated_at", "entries", "profile", "zenzai_context",
+                   "future_optional_field"})) {
+    return false;
+  }
+
+  const auto entries = object.fields().find("entries");
+  if (entries != object.fields().end()) {
+    if (entries->second.kind_case() != google::protobuf::Value::kListValue) {
+      return false;
+    }
+    for (const google::protobuf::Value &entry :
+         entries->second.list_value().values()) {
+      if (!ValidateDictionaryEntryKeys(entry)) {
+        return false;
+      }
+    }
+  }
+
+  const auto context = object.fields().find("zenzai_context");
+  if (context != object.fields().end() &&
+      (context->second.kind_case() != google::protobuf::Value::kStructValue ||
+       !HasOnlyAllowedFields(context->second.struct_value(),
+                             {"topic", "style", "preference",
+                              "future_optional_field"}))) {
+    return false;
+  }
+  return true;
+}
+
+template <typename Message>
+bool ValidateProtocolV1Keys(absl::string_view bytes) {
+  return true;
+}
+
+template <>
+bool ValidateProtocolV1Keys<protocol_v1::StateJson>(absl::string_view bytes) {
+  return ValidateStateJsonKeys(bytes);
+}
+
+template <>
+bool ValidateProtocolV1Keys<protocol_v1::ProjectJson>(absl::string_view bytes) {
+  return ValidateProjectJsonKeys(bytes);
+}
+
 template <typename Message>
 bool ParseJson(absl::string_view bytes, Message *message) {
+  if (!ValidateProtocolV1Keys<Message>(bytes)) {
+    return false;
+  }
   google::protobuf::util::JsonParseOptions options;
+  // The explicit allowlist above rejects unknown keys while preserving the
+  // documented future_optional_field extension slot.  Protobuf may therefore
+  // ignore only keys that this version intentionally reserves.
   options.ignore_unknown_fields = true;
   const absl::Status status =
       google::protobuf::util::JsonStringToMessage(bytes, message, options);

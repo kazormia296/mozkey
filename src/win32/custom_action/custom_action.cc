@@ -555,7 +555,7 @@ UINT __stdcall ShutdownServer(MSIHANDLE msi_handle) {
   if (!zenz_stopped || !server_stopped) {
     LogInstallerInfo(
         msi_handle,
-        L"Mozkey could not prove that all installed runtime processes stopped.");
+        L"Mozkey IbG could not prove that all installed runtime processes stopped.");
     return ERROR_INSTALL_FAILURE;
   }
   return ERROR_SUCCESS;
@@ -581,7 +581,7 @@ UINT __stdcall UnregisterGrimodexConsumer(MSIHANDLE msi_handle) {
     // record while an exact installed server may still republish it.
     LogInstallerInfo(
         msi_handle,
-        L"Mozkey kept its Grimodex consumer heartbeat because the installed "
+        L"Mozkey IbG kept its Grimodex consumer heartbeat because the installed "
         L"mozc_server.exe could not be stopped and proven absent.");
     return ERROR_INSTALL_FAILURE;
   }
@@ -598,7 +598,7 @@ UINT __stdcall UnregisterGrimodexConsumer(MSIHANDLE msi_handle) {
   // A secure registrar failure must never fall back to broad recursive
   // removal. The checked MSI action reports the failure to the user.
   LogInstallerInfo(msi_handle, mozc::win32::Utf8ToWide(absl::StrCat(
-                                   "Mozkey could not remove its Grimodex "
+                                   "Mozkey IbG could not remove its Grimodex "
                                    "consumer heartbeat: ",
                                    status.ToString())));
   return ERROR_INSTALL_FAILURE;

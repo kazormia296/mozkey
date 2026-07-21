@@ -42,7 +42,7 @@ import sys
 # A dictionary from --branding to a product name which is embedded into the
 # properties above.
 PRODUCT_NAMES = {
-    'Mozc': 'Mozc',
+    'Mozc': 'Mozkey IbG',
     'GoogleJapaneseInput': 'Google Japanese Input',
 }
 
@@ -127,7 +127,7 @@ def main():
       '--branding',
       dest='branding',
       default=None,
-      help='GoogleJapaneseInput for the official build. Otherwise, Mozc.',
+      help='GoogleJapaneseInput for the official build. Otherwise, Mozkey IbG.',
   )
   parser.add_option(
       '--ibus_mozc_path',

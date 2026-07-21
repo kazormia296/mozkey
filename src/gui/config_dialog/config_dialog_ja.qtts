@@ -955,13 +955,13 @@ The current Windows default IME override will be saved so it can be restored lat
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc、Rust、会計、法律。空欄なら送信しません。</source>
-        <translation>例: Mozc、Rust、会計、法律。空欄なら送信しません。</translation>
+        <source>例: Mozkey IbG、Rust、会計、法律。空欄なら送信しません。</source>
+        <translation>例: Mozkey IbG、Rust、会計、法律。空欄なら送信しません。</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc</source>
-        <translation>例: Mozc</translation>
+        <source>例: Mozkey IbG</source>
+        <translation>例: Mozkey IbG</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>

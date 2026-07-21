@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   publish:
-    if: ${{ github.repository == 'kazormia296/mozkey' }}
+    if: ${{ github.repository == 'kazormia296/mozkey-ibg' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: aur
@@ -151,7 +151,7 @@ jobs:
             --user "$(id -u):$(id -g)" \
             --volume "$RUNNER_TEMP/aur-package:/pkg" \
             --workdir /pkg \
-            archlinux:base-devel \
+            archlinux/archlinux@sha256:0cd360b9243ce17125ef37dee01e99d115e96321fd46d4b212b6a6247a5d6cea \
             sh -c 'makepkg --printsrcinfo > .SRCINFO'
           test -s "$RUNNER_TEMP/aur-package/.SRCINFO"
           grep -Fqx $'pkgbase = mozkey-ibg-bin' \
@@ -220,7 +220,7 @@ jobs:
               echo "::error::AUR pkgrel is missing or invalid." >&2
               exit 1
             fi
-            version_order="$(docker run --rm archlinux:base-devel \
+            version_order="$(docker run --rm archlinux/archlinux@sha256:0cd360b9243ce17125ef37dee01e99d115e96321fd46d4b212b6a6247a5d6cea \
               vercmp "$RELEASE_VERSION" "$current_version")"
             case "$version_order" in
               -1)

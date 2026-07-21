@@ -80,6 +80,10 @@ require_regular_file /usr/share/fcitx5/addon/mozkey.conf
 require_regular_file /usr/share/fcitx5/inputmethod/mozkey.conf
 [ -x /usr/lib/mozkey/mozc_server ] ||
   die "installed Mozkey server is not executable: /usr/lib/mozkey/mozc_server"
+grep -qx 'Name=Mozkey IbG' /usr/share/fcitx5/addon/mozkey.conf ||
+  die "installed addon metadata does not expose the Mozkey IbG display name"
+grep -qx 'Name=Mozkey IbG' /usr/share/fcitx5/inputmethod/mozkey.conf ||
+  die "installed input method metadata does not expose the Mozkey IbG display name"
 grep -qx 'Library=fcitx5-mozkey' /usr/share/fcitx5/addon/mozkey.conf ||
   die "installed addon metadata does not select fcitx5-mozkey"
 grep -qx 'Addon=mozkey' /usr/share/fcitx5/inputmethod/mozkey.conf ||

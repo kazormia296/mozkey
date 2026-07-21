@@ -71,16 +71,23 @@ On all three desktop platforms, the scorer-to-runtime transport is
 localhost-only and must be bound to `127.0.0.1`.
 
 The Zenz localhost transport must not rely on a fixed public-facing endpoint.
-The platform scorer chooses a random high port for `llama-server` and protects
-completion requests with a random API key. Generated port and API key values
-must not be written to release logs.
+The platform scorer chooses a random high port, reserves that loopback port
+until `llama-server` is created, and verifies the child executable image before
+accepting it. It protects completion requests with a random API key. Generated
+port and API key values must not be written to release logs.
 
 The API key is a defense-in-depth measure for stale, accidental, or mismatched
 localhost endpoints. It is passed to the platform `llama-server` through the
 command line because that is the interface exposed by llama.cpp server.
 Therefore it should not be treated as a strong secret against same-user local
 malware. The primary boundary is that the server is bound to `127.0.0.1`, uses
-a random high port, and is launched and managed by the platform scorer.
+a random high port, and is launched and managed by the platform scorer. The
+same-user residual risk is explicit: because the bundled llama.cpp interface
+accepts `--api-key` on its command line, same-user malware with process
+inspection privileges may still observe that defense-in-depth key. Such a
+process is outside this desktop user's threat boundary; the scorer's private
+IPC endpoint, loopback-only listener, port reservation, and child-image check
+remain mandatory controls.
 
 ## Usage statistics and crash reports
 

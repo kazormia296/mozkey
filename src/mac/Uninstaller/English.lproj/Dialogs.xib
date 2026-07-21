@@ -51,7 +51,7 @@
                     <textField verticalHuggingPriority="750" horizontalCompressionResistancePriority="250" fixedFrame="YES" preferredMaxLayoutWidth="307" translatesAutoresizingMaskIntoConstraints="NO" id="462">
                         <rect key="frame" x="17" y="144" width="311" height="34"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="left" title="Are you sure you want to uninstall Mozc?" id="463">
+                        <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="left" title="Are you sure you want to uninstall Mozkey IbG?" id="463">
                             <font key="font" metaFont="system"/>
                             <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -116,7 +116,7 @@
                     <textField verticalHuggingPriority="750" horizontalCompressionResistancePriority="250" fixedFrame="YES" preferredMaxLayoutWidth="329" translatesAutoresizingMaskIntoConstraints="NO" id="477">
                         <rect key="frame" x="17" y="127" width="333" height="51"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="left" title="Mozc files have been erased. Please restart your computer to complete the uninstallation." id="480">
+                        <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="left" title="Mozkey IbG files have been erased. Please restart your computer to complete the uninstallation." id="480">
                             <font key="font" metaFont="system"/>
                             <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>

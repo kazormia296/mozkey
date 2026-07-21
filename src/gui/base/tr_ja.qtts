@@ -10,8 +10,8 @@
     </message>
     <message>
         <location filename="tr.cc" line="23"/>
-        <source>Mozkey</source>
-        <translation></translation>
+        <source>Mozkey IbG</source>
+        <translation>Mozkey IbG</translation>
     </message>
     <message>
         <location filename="../about_dialog/about_dialog.cc" line="39"/>

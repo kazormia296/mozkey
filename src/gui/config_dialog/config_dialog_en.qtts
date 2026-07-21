@@ -929,13 +929,13 @@ The current Windows default IME override will be saved so it can be restored lat
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc、Rust、会計、法律。空欄なら送信しません。</source>
-        <translation>Example: Mozc, Rust, accounting, law. Empty values are not sent.</translation>
+        <source>例: Mozkey IbG、Rust、会計、法律。空欄なら送信しません。</source>
+        <translation>Example: Mozkey IbG, Rust, accounting, law. Empty values are not sent.</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc</source>
-        <translation>Example: Mozc</translation>
+        <source>例: Mozkey IbG</source>
+        <translation>Example: Mozkey IbG</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>

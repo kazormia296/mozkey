@@ -66,7 +66,12 @@ python tools\check_no_network_strings.py --root src\bazel-bin
 
 ## MSI-extracted binary checks
 
-Extract the MSI and check the files that will actually be installed.
+The CI gate uses the same helper for each x64, universal, and arm64 MSI. It
+checks the Bazel output, the bundled `llama-server.exe`, and the MSI-extracted
+payload; missing target binaries fail the check instead of being skipped.
+
+To reproduce the gate locally, extract the MSI and check the files that will
+actually be installed.
 
 ```powershell
 cd C:\Users\Makoto\dev\mozc

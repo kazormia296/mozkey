@@ -27,7 +27,7 @@ ConsumerHandshake Handshake(absl::string_view id = kImkitConsumerId,
                                 "2026-07-18T01:02:03.456Z") {
   return ConsumerHandshake{
       .consumer_id = std::string(id),
-      .name = "Mozkey for Grimodex on macOS",
+      .name = "Mozkey IbG for Grimodex on macOS",
       .version = "0.8.0",
       .platform = "macos",
       .last_seen = std::string(timestamp),

@@ -92,7 +92,7 @@ def main():
     product_name = 'Google Japanese Input'
   else:
     domain_prefix = 'org.mozc'
-    product_name = 'Mozc'
+    product_name = 'Mozkey IbG'
 
   variables = {
       'GOOGLE_VERSIONINFO_LONG': long_version,

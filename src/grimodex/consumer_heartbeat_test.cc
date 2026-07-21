@@ -47,7 +47,7 @@ class FakeClock final {
 ConsumerHandshake WindowsMetadata(bool zenz_available = true) {
   return ConsumerHandshake{
       .consumer_id = std::string(kTsfConsumerId),
-      .name = "Mozkey for Grimodex on Windows",
+      .name = "Mozkey IbG for Grimodex on Windows",
       .version = "v0.7.7",
       .platform = "windows",
       .last_seen = "caller-supplied-time-must-be-ignored",
@@ -72,7 +72,7 @@ TEST(ConsumerHeartbeatTest, PublishesCanonicalUtcMillisecondsImmediately) {
   const ConsumerHandshake &published = registrar.refreshes.front();
   EXPECT_EQ(published.last_seen, "1970-01-01T00:00:00.456Z");
   EXPECT_EQ(published.consumer_id, kTsfConsumerId);
-  EXPECT_EQ(published.name, "Mozkey for Grimodex on Windows");
+  EXPECT_EQ(published.name, "Mozkey IbG for Grimodex on Windows");
   EXPECT_EQ(published.version, "v0.7.7");
   EXPECT_EQ(published.platform, "windows");
   EXPECT_TRUE(published.capabilities.profile);

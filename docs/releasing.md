@@ -15,6 +15,9 @@ from a `vX.Y.Z` tag (or a manual run whose selected ref is such a tag).
 - Only the final publish job has `contents: write`; build jobs are read-only.
 - Every external GitHub Action is pinned to a full commit SHA. Dependabot checks
   those pins weekly and proposes reviewed updates.
+- The publish job creates GitHub Artifact Attestations for every release asset,
+  including `SHA256SUMS`. Verify an asset with
+  `gh attestation verify --repo kazormia296/mozkey-ibg <asset>`.
 - The workflow creates one draft prerelease. Publishing it remains a deliberate
   human action while the Windows packages are unsigned. The macOS package must
   pass Developer ID signature, notarization-ticket, and Gatekeeper checks before
@@ -34,13 +37,20 @@ The expected public artifacts are:
   `archlinux-build-packages.txt`
 - `SHA256SUMS`
 
+The checksum file is not the only provenance record: the published assets and
+`SHA256SUMS` also have GitHub Artifact Attestations bound to their exact
+SHA-256 subjects.
+
 Ubuntu 24.04 builds the amd64 Debian package and verifies its multiarch addon
-layout. Fedora 44 independently builds the x86_64 RPM and verifies its
-`/usr/lib64` addon layout. Both native packages contain an attested, pinned,
-CPU-only `llama-server`. The Arch payload uses the distribution `llama-cpp`
-runtime and is the source for the separately published `mozkey-ibg-bin` AUR
-package. AppImage is not a product target because this Fcitx5 IME must install
-system addon and input-method metadata.
+layout from the fixed Ubuntu snapshot configured by
+`tools/release/use_ubuntu_snapshot.sh`. Fedora and Arch use digest-pinned
+container images plus fixed Fedora/Arch archive repositories; their resolved
+package inventories are published with the release, and the Arch job does not
+perform a rolling `pacman -Syu` upgrade. Both native packages contain an
+attested, pinned, CPU-only `llama-server`. The Arch payload uses the
+distribution `llama-cpp` runtime and is the source for the separately
+published `mozkey-ibg-bin` AUR package. AppImage is not a product target
+because this Fcitx5 IME must install system addon and input-method metadata.
 Android and iOS are outside Grimodex's supported platform scope and are not
 product build, CI, or release targets in this fork.
 

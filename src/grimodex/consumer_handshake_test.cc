@@ -68,9 +68,9 @@ TEST(ConsumerHandshakeTest, SerializesAllCanonicalPlatformConsumers) {
     absl::string_view platform;
   };
   constexpr std::array<PlatformConsumer, 3> kConsumers = {{
-      {kFcitx5ConsumerId, "Mozkey for Grimodex on Linux", "linux"},
-      {kTsfConsumerId, "Mozkey for Grimodex on Windows", "windows"},
-      {kImkitConsumerId, "Mozkey for Grimodex on macOS", "macos"},
+      {kFcitx5ConsumerId, "Mozkey IbG for Grimodex on Linux", "linux"},
+      {kTsfConsumerId, "Mozkey IbG for Grimodex on Windows", "windows"},
+      {kImkitConsumerId, "Mozkey IbG for Grimodex on macOS", "macos"},
   }};
 
   for (const PlatformConsumer &consumer : kConsumers) {
@@ -94,12 +94,12 @@ TEST(ConsumerHandshakeTest, SerializesAllCanonicalPlatformConsumers) {
 
 TEST(ConsumerHandshakeTest, UsesDeterministicCanonicalFieldOrder) {
   const ConsumerHandshake handshake = MakeHandshake(
-      kFcitx5ConsumerId, "Mozkey for Grimodex on Linux", "linux");
+      kFcitx5ConsumerId, "Mozkey IbG for Grimodex on Linux", "linux");
   absl::StatusOr<std::string> payload = SerializeConsumerHandshake(handshake);
   ASSERT_TRUE(payload.ok()) << payload.status();
   EXPECT_EQ(
       *payload,
-      R"json({"capabilities":{"application_scoping":true,"dynamic_dictionary":true,"profile":true,"zenzai_v3_conditions":false},"consumer_id":"fcitx5-mozkey","format_version":1,"last_seen":"2026-07-18T01:02:03.456Z","name":"Mozkey for Grimodex on Linux","platform":"linux","version":"v0.7.7"})json"
+      R"json({"capabilities":{"application_scoping":true,"dynamic_dictionary":true,"profile":true,"zenzai_v3_conditions":false},"consumer_id":"fcitx5-mozkey","format_version":1,"last_seen":"2026-07-18T01:02:03.456Z","name":"Mozkey IbG for Grimodex on Linux","platform":"linux","version":"v0.7.7"})json"
       "\n");
 }
 
@@ -153,7 +153,7 @@ TEST(ConsumerHandshakeTest, RejectsUnsafeOrUnboundedMetadata) {
 
 TEST(ConsumerHandshakeTest, ReportsTheTruthfulZenzCapability) {
   ConsumerHandshake handshake =
-      MakeHandshake(kImkitConsumerId, "Mozkey for Grimodex on macOS", "macos");
+      MakeHandshake(kImkitConsumerId, "Mozkey IbG for Grimodex on macOS", "macos");
   handshake.capabilities.zenzai_v3_conditions = false;
   absl::StatusOr<std::string> unavailable =
       SerializeConsumerHandshake(handshake);

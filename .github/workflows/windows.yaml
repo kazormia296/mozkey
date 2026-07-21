@@ -135,57 +135,9 @@ jobs:
       - name: Prepare CRT redist directory expected by WiX
         shell: pwsh
         run: |
-          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
-
-          $requiredDlls = @(
-            "msvcp140.dll",
-            "msvcp140_1.dll",
-            "msvcp140_2.dll",
-            "vcruntime140.dll",
-            "vcruntime140_1.dll"
-          )
-
-          $searchRoots = @(
-            "C:\Program Files\Microsoft Visual Studio\2022",
-            "C:\Program Files\Microsoft Visual Studio\17",
-            "C:\Program Files\Microsoft Visual Studio\18",
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022",
-            "C:\Program Files (x86)\Microsoft Visual Studio\17",
-            "C:\Program Files (x86)\Microsoft Visual Studio\18"
-          ) | Where-Object { Test-Path $_ }
-
-          Write-Host "Expected CRT redist dir:"
-          Write-Host $expectedDir
-
-          Write-Host "Search roots:"
-          $searchRoots | ForEach-Object { Write-Host $_ }
-
-          New-Item -ItemType Directory -Force $expectedDir | Out-Null
-
-          foreach ($dll in $requiredDlls) {
-            $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT\\" } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-
-            if (-not $source) {
-              Write-Host "Available CRT directories:"
-              Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT$" } |
-                Select-Object FullName
-
-              throw "Required CRT DLL was not found: $dll"
-            }
-
-            $destination = Join-Path $expectedDir $dll
-            Copy-Item $source.FullName $destination -Force
-            Write-Host "Copied $dll"
-            Write-Host "  from: $($source.FullName)"
-            Write-Host "  to:   $destination"
-          }
-
-          Write-Host "Prepared CRT redist directory:"
-          Get-ChildItem $expectedDir | Select-Object FullName
+          .\tools\release\verify_windows_crt.ps1 `
+            -Architecture x64 `
+            -DestinationRoot "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
 
       - name: build artifacts
         shell: cmd
@@ -198,10 +150,17 @@ jobs:
       - name: Verify MSI artifact
         shell: pwsh
         run: |
-          .\tools\release\verify_windows_msi.ps1 `
+          .\tools\release\check_windows_msi_offline.ps1 `
             -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
             -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
             -ExpectedRuntimeArchitecture x64
+
+      - name: Probe x64 Zenz loopback runtime
+        shell: pwsh
+        run: |
+          .\tools\release\probe_windows_zenz_runtime.ps1 `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ModelPath .\src\win32\installer\zenz_runtime\generated\x64\models\zenz-v3.2-small-Q5_K_M.gguf
 
       - name: Stage versioned x64 MSI
         shell: pwsh
@@ -281,57 +240,9 @@ jobs:
       - name: Prepare CRT redist directory expected by WiX
         shell: pwsh
         run: |
-          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
-
-          $requiredDlls = @(
-            "msvcp140.dll",
-            "msvcp140_1.dll",
-            "msvcp140_2.dll",
-            "vcruntime140.dll",
-            "vcruntime140_1.dll"
-          )
-
-          $searchRoots = @(
-            "C:\Program Files\Microsoft Visual Studio\2022",
-            "C:\Program Files\Microsoft Visual Studio\17",
-            "C:\Program Files\Microsoft Visual Studio\18",
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022",
-            "C:\Program Files (x86)\Microsoft Visual Studio\17",
-            "C:\Program Files (x86)\Microsoft Visual Studio\18"
-          ) | Where-Object { Test-Path $_ }
-
-          Write-Host "Expected CRT redist dir:"
-          Write-Host $expectedDir
-
-          Write-Host "Search roots:"
-          $searchRoots | ForEach-Object { Write-Host $_ }
-
-          New-Item -ItemType Directory -Force $expectedDir | Out-Null
-
-          foreach ($dll in $requiredDlls) {
-            $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT\\" } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-
-            if (-not $source) {
-              Write-Host "Available CRT directories:"
-              Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT$" } |
-                Select-Object FullName
-
-              throw "Required CRT DLL was not found: $dll"
-            }
-
-            $destination = Join-Path $expectedDir $dll
-            Copy-Item $source.FullName $destination -Force
-            Write-Host "Copied $dll"
-            Write-Host "  from: $($source.FullName)"
-            Write-Host "  to:   $destination"
-          }
-
-          Write-Host "Prepared CRT redist directory:"
-          Get-ChildItem $expectedDir | Select-Object FullName
+          .\tools\release\verify_windows_crt.ps1 `
+            -Architecture x64 `
+            -DestinationRoot "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
 
       - name: build artifacts
         shell: cmd
@@ -344,10 +255,17 @@ jobs:
       - name: Verify MSI artifact
         shell: pwsh
         run: |
-          .\tools\release\verify_windows_msi.ps1 `
+          .\tools\release\check_windows_msi_offline.ps1 `
             -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
             -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
             -ExpectedRuntimeArchitecture x64
+
+      - name: Probe universal x64 Zenz loopback runtime
+        shell: pwsh
+        run: |
+          .\tools\release\probe_windows_zenz_runtime.ps1 `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ModelPath .\src\win32\installer\zenz_runtime\generated\x64\models\zenz-v3.2-small-Q5_K_M.gguf
 
       - name: Stage versioned universal MSI
         shell: pwsh
@@ -427,57 +345,9 @@ jobs:
       - name: Prepare CRT redist directory expected by WiX
         shell: pwsh
         run: |
-          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\arm64\Microsoft.VC145.CRT"
-
-          $requiredDlls = @(
-            "msvcp140.dll",
-            "msvcp140_1.dll",
-            "msvcp140_2.dll",
-            "vcruntime140.dll",
-            "vcruntime140_1.dll"
-          )
-
-          $searchRoots = @(
-            "C:\Program Files\Microsoft Visual Studio\2022",
-            "C:\Program Files\Microsoft Visual Studio\17",
-            "C:\Program Files\Microsoft Visual Studio\18",
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022",
-            "C:\Program Files (x86)\Microsoft Visual Studio\17",
-            "C:\Program Files (x86)\Microsoft Visual Studio\18"
-          ) | Where-Object { Test-Path $_ }
-
-          Write-Host "Expected CRT redist dir:"
-          Write-Host $expectedDir
-
-          Write-Host "Search roots:"
-          $searchRoots | ForEach-Object { Write-Host $_ }
-
-          New-Item -ItemType Directory -Force $expectedDir | Out-Null
-
-          foreach ($dll in $requiredDlls) {
-            $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\arm64\\Microsoft\.VC[0-9]+\.CRT\\" } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-
-            if (-not $source) {
-              Write-Host "Available CRT directories:"
-              Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\arm64\\Microsoft\.VC[0-9]+\.CRT$" } |
-                Select-Object FullName
-
-              throw "Required CRT DLL was not found: $dll"
-            }
-
-            $destination = Join-Path $expectedDir $dll
-            Copy-Item $source.FullName $destination -Force
-            Write-Host "Copied $dll"
-            Write-Host "  from: $($source.FullName)"
-            Write-Host "  to:   $destination"
-          }
-
-          Write-Host "Prepared CRT redist directory:"
-          Get-ChildItem $expectedDir | Select-Object FullName
+          .\tools\release\verify_windows_crt.ps1 `
+            -Architecture arm64 `
+            -DestinationRoot "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\arm64\Microsoft.VC145.CRT"
 
       - name: build artifacts
         shell: cmd
@@ -490,7 +360,7 @@ jobs:
       - name: Verify MSI artifact
         shell: pwsh
         run: |
-          .\tools\release\verify_windows_msi.ps1 `
+          .\tools\release\check_windows_msi_offline.ps1 `
             -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
             -RuntimePath .\src\win32\installer\zenz_runtime\generated\arm64\llama-server.exe `
             -ExpectedRuntimeArchitecture arm64

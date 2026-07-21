@@ -108,7 +108,7 @@ jobs:
 
       - name: Setup
         run: |
-          sudo apt-get update
+          tools/release/use_ubuntu_snapshot.sh
           sudo apt-get install -y \
             appstream \
             build-essential \
@@ -190,14 +190,44 @@ jobs:
     needs: [prepare_daily_dictionary, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 150
-    container: fedora:44
+    container: fedora@sha256:6c75d5bf57cb0fa5aa4b92c6a83c86c791644496d9ac230de7711f5b8ec3b898
     env:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
 
     steps:
+      - name: Bootstrap the fixed Fedora repository for checkout
+        run: |
+          rm -f -- /etc/yum.repos.d/*.repo
+          cat > /etc/yum.repos.d/mozkey-fedora-snapshot.repo <<'EOF'
+          [fedora]
+          name=Fedora 44 Everything archive
+          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/44/Everything/\$basearch/os/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-44-primary
+          metadata_expire=never
+
+          [updates]
+          name=Fedora 44 updates archive
+          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/updates/44/Everything/\$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-44-primary
+          metadata_expire=never
+          EOF
+          dnf clean all
+          dnf -y install git
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          submodules: false
+          persist-credentials: false
+
       - name: Install the Fedora target build environment
         run: |
+          tools/release/use_fedora_snapshot.sh
           dnf -y --setopt=install_weak_deps=False install \
             appstream \
             cmake \
@@ -222,12 +252,6 @@ jobs:
             xz \
             zip
 
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
-        with:
-          submodules: false
-          persist-credentials: false
-
       - name: Download release-approved dictionary
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
@@ -245,14 +269,8 @@ jobs:
       - name: Record the Fedora package build environment
         run: |
           mkdir -p dist
-          rpm -q \
-            appstream \
-            fcitx5-devel \
-            gcc-c++ \
-            glibc \
-            qt6-qtbase-devel \
-            rpm-build \
-            > dist/fedora-build-packages.txt
+          rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' \
+            | LC_ALL=C sort > dist/fedora-build-packages.txt
 
       - name: Build and attest the Fedora x86_64 product
         run: scripts/build_mozkey_linux_bazel fedora-x86_64
@@ -299,15 +317,30 @@ jobs:
     needs: [prepare_daily_dictionary, build, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    container: archlinux:base-devel
+    container: archlinux/archlinux@sha256:0cd360b9243ce17125ef37dee01e99d115e96321fd46d4b212b6a6247a5d6cea
     env:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
 
     steps:
+      - name: Bootstrap the fixed Arch repository for checkout
+        run: |
+          cat > /etc/pacman.d/mirrorlist <<'EOF'
+          Server = https://archive.archlinux.org/repos/2026/07/01/\$repo/os/\$arch
+          EOF
+          pacman -Syy --noconfirm
+          pacman -S --noconfirm git
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          submodules: false
+          persist-credentials: false
+
       - name: Install the Arch Linux target build environment
         run: |
-          pacman -Syu --noconfirm --needed \
+          tools/release/use_archlinux_snapshot.sh
+          pacman -S --noconfirm --needed \
             appstream \
             bazelisk \
             fcitx5 \
@@ -323,19 +356,13 @@ jobs:
             xz \
             zip
 
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
-        with:
-          submodules: false
-          persist-credentials: false
-
       - name: Download release-approved dictionary
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: linux-release-approved-dictionary
           path: .
 
-      - name: Verify dictionary and record the rolling build environment
+      - name: Verify dictionary and record the fixed build environment
         run: |
           python tools/dictionary/verify_release_dictionary_artifact.py --root .
           mkdir -p dist
@@ -410,7 +437,7 @@ jobs:
 
       - name: Setup
         run: |
-          sudo apt-get update
+          tools/release/use_ubuntu_snapshot.sh
           sudo apt-get install -y \
             fcitx5-modules-dev \
             gettext \
@@ -428,6 +455,7 @@ jobs:
           python tools/release/normalize_zenz_gguf.py create --root .
           python tools/release/normalize_zenz_gguf.py verify --root .
           python -m unittest \
+            tools.check_no_network_checks_test \
             scripts.install_mozkey_linux_bazel_test \
             scripts.install_zenz_runtime_test \
             scripts.package_mozkey_linux_bazel_test \
@@ -447,6 +475,9 @@ jobs:
             tools.release.linux_dogfood.proc_visibility_policy_test \
             tools.release.normalize_zenz_gguf_test \
             tools.release.probe_zenz_runtime_test \
+            tools.release.aur_repository_contract_test \
+            tools.release.release_workflow_contract_test \
+            tools.release.zenz_scorer_security_contract_test \
             tools.release.stop_mozkey_linux_runtime_test \
             tools.release.verify_staged_linux_payload_test
           python -m py_compile tools/release/linux_dogfood/*.py
@@ -468,6 +499,9 @@ jobs:
             scripts/verify_mozkey_linux_build_attestation \
             scripts/verify_zenz_gguf_normalization \
             scripts/verify_llama_server_compatibility \
+            tools/release/use_archlinux_snapshot.sh \
+            tools/release/use_fedora_snapshot.sh \
+            tools/release/use_ubuntu_snapshot.sh \
             tools/release/linux_dogfood/send_ime_sequence.sh
 
       - name: bazel test

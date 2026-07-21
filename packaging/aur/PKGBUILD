@@ -5,7 +5,7 @@ pkgver=0.8.1
 pkgrel=1
 pkgdesc='Mozkey IbG Japanese input method for Fcitx 5 (prebuilt)'
 arch=('x86_64')
-url='https://github.com/kazormia296/mozkey'
+url='https://github.com/kazormia296/mozkey-ibg'
 license=('Apache-2.0' 'BSD-3-Clause' 'LGPL-2.1-or-later' 'MIT')
 depends=('fcitx5' 'hicolor-icon-theme' 'llama-cpp' 'qt6-base')
 provides=("mozkey-ibg=${pkgver}")

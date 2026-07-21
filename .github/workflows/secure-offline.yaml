@@ -67,9 +67,8 @@ jobs:
 
   binary_check:
     name: Binary no-network check
-    runs-on: windows-2022
+    runs-on: windows-2025
     timeout-minutes: 120
-    if: github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout
@@ -84,19 +83,19 @@ jobs:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
 
-      - name: Pin Bazel to Visual Studio 2022
+      - name: Pin Bazel to Visual Studio 2026
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 
           $vs = & $vswhere `
-            -version "[17.0,18.0)" `
+            -version "[18.0,19.0)" `
             -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
             -property installationPath
 
           if (-not $vs) {
-            throw "Visual Studio 2022 with VC tools was not found."
+            throw "Visual Studio 2026 with VC tools was not found."
           }
 
           $vc = Join-Path $vs "VC"
@@ -111,15 +110,23 @@ jobs:
           Write-Host "Pinned BAZEL_VS=$vs"
           Write-Host "Pinned BAZEL_VC=$vc"
 
-          Write-Host "Available CRT redist files:"
-          Get-ChildItem (Join-Path $vc "Redist\MSVC") -Recurse -Filter msvcp140.dll |
-            Select-Object FullName
+          Write-Host "CRT redist root:"
+          Write-Host (Join-Path $vc "Redist\MSVC")
 
       - name: Install dependencies
         shell: cmd
         working-directory: .\src
         run: |
           python build_tools/update_deps.py
+
+      - name: Prepare pinned x64 Zenz runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Qt
         shell: cmd
@@ -135,57 +142,9 @@ jobs:
       - name: Prepare CRT redist directory expected by WiX
         shell: pwsh
         run: |
-          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
-
-          $requiredDlls = @(
-            "msvcp140.dll",
-            "msvcp140_1.dll",
-            "msvcp140_2.dll",
-            "vcruntime140.dll",
-            "vcruntime140_1.dll"
-          )
-
-          $searchRoots = @(
-            "C:\Program Files\Microsoft Visual Studio\2022",
-            "C:\Program Files\Microsoft Visual Studio\17",
-            "C:\Program Files\Microsoft Visual Studio\18",
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022",
-            "C:\Program Files (x86)\Microsoft Visual Studio\17",
-            "C:\Program Files (x86)\Microsoft Visual Studio\18"
-          ) | Where-Object { Test-Path $_ }
-
-          Write-Host "Expected CRT redist dir:"
-          Write-Host $expectedDir
-
-          Write-Host "Search roots:"
-          $searchRoots | ForEach-Object { Write-Host $_ }
-
-          New-Item -ItemType Directory -Force $expectedDir | Out-Null
-
-          foreach ($dll in $requiredDlls) {
-            $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT\\" } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-
-            if (-not $source) {
-              Write-Host "Available CRT directories:"
-              Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT$" } |
-                Select-Object FullName
-
-              throw "Required CRT DLL was not found: $dll"
-            }
-
-            $destination = Join-Path $expectedDir $dll
-            Copy-Item $source.FullName $destination -Force
-            Write-Host "Copied $dll"
-            Write-Host "  from: $($source.FullName)"
-            Write-Host "  to:   $destination"
-          }
-
-          Write-Host "Prepared CRT redist directory:"
-          Get-ChildItem $expectedDir | Select-Object FullName
+          .\tools\release\verify_windows_crt.ps1 `
+            -Architecture x64 `
+            -DestinationRoot "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
 
       - name: Build Windows package
         shell: cmd
@@ -198,45 +157,17 @@ jobs:
       - name: Verify MSI artifact
         shell: pwsh
         run: |
-          .\tools\release\verify_windows_msi.ps1 `
-            -Path .\src\bazel-bin\win32\installer\Mozc64.msi
+          .\tools\release\check_windows_msi_offline.ps1 `
+            -Path .\src\bazel-bin\win32\installer\Mozc64.msi `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ExpectedRuntimeArchitecture x64
 
-      - name: Check Bazel output network DLL imports
+      - name: Probe x64 Zenz loopback runtime
         shell: pwsh
         run: |
-          python tools\check_no_network_imports.py --root src\bazel-bin
-
-      - name: Check Bazel output string markers
-        shell: pwsh
-        run: |
-          python tools\check_no_network_strings.py --root src\bazel-bin
-
-      - name: Extract MSI
-        shell: pwsh
-        run: |
-          $extractDir = Join-Path $PWD "msi_extract"
-          Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force $extractDir | Out-Null
-
-          $msi = Resolve-Path "src\bazel-bin\win32\installer\Mozc64.msi"
-
-          & msiexec.exe /a "$msi" /qn TARGETDIR="$extractDir"
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-          Get-ChildItem $extractDir -Recurse -Include "mozc*.exe","mozc*.dll" |
-            Select-Object FullName
-
-      - name: Check MSI-extracted network DLL imports
-        shell: pwsh
-        run: |
-          python tools\check_no_network_imports.py --root msi_extract
-
-      - name: Check MSI-extracted string markers
-        shell: pwsh
-        run: |
-          python tools\check_no_network_strings.py --root msi_extract
+          .\tools\release\probe_windows_zenz_runtime.ps1 `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ModelPath .\src\win32\installer\zenz_runtime\generated\x64\models\zenz-v3.2-small-Q5_K_M.gguf
 
       - name: Upload MSI
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7

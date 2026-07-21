@@ -39,6 +39,10 @@ from build_tools import mozc_version
 from build_tools import vs_util
 
 
+EXPECTED_CRT_REDIST_VERSION = '14.50.35710'
+EXPECTED_CRT_TOOLSET = 'Microsoft.VC145.CRT'
+
+
 def exec_command(args: list[str], cwd: str) -> None:
   """Runs the given command then returns the output.
 
@@ -71,36 +75,36 @@ def exec_command(args: list[str], cwd: str) -> None:
 
 
 def find_redist_crt_dir(redist_root: pathlib.Path, arch: str) -> pathlib.Path:
-    arch_dir = redist_root.joinpath(arch).resolve()
-    required = (
-        'msvcp140.dll',
-        'msvcp140_1.dll',
-        'msvcp140_2.dll',
-        'vcruntime140.dll',
-        'vcruntime140_1.dll',
-    )
-
-    def is_valid_dir(path: pathlib.Path) -> bool:
-        return path.is_dir() and all(path.joinpath(name).exists() for name in required)
-
-    # まず標準的な Microsoft.VC*.CRT を直接見る
-    direct_candidates = sorted(
-        [p for p in arch_dir.glob('Microsoft.VC*.CRT') if is_valid_dir(p)],
-        key=lambda p: p.name,
-    )
-    if direct_candidates:
-        return direct_candidates[-1]
-
-    # 次に再帰的に探索して、実際に DLL が入っているディレクトリを拾う
-    for dll_name in ('msvcp140.dll', 'vcruntime140.dll'):
-        for match in arch_dir.rglob(dll_name):
-            candidate = match.parent
-            if is_valid_dir(candidate):
-                return candidate.resolve()
-
+  if redist_root.name != EXPECTED_CRT_REDIST_VERSION:
     raise FileNotFoundError(
-        f'Could not find CRT redistributable directory containing {required} under: {arch_dir}'
+        'The installer requires the pinned CRT redistributable '
+        f'{EXPECTED_CRT_REDIST_VERSION}, got: {redist_root}'
     )
+  arch_dir = redist_root.joinpath(arch).resolve()
+  required = (
+      'msvcp140.dll',
+      'msvcp140_1.dll',
+      'msvcp140_2.dll',
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+  )
+
+  def is_valid_dir(path: pathlib.Path) -> bool:
+    return path.is_dir() and all(
+        path.joinpath(name).exists() for name in required
+    )
+
+  # The toolset directory is an input to the installer contract.  Never
+  # select an arbitrary version by recursive search or lexical ordering.
+  candidate = arch_dir.joinpath(EXPECTED_CRT_TOOLSET).resolve()
+  if is_valid_dir(candidate):
+    return candidate
+
+  raise FileNotFoundError(
+      f'Could not find the exact CRT redistributable directory '
+      f'{EXPECTED_CRT_TOOLSET} containing {required} under: {arch_dir}'
+  )
+
 
 def run_wix4(args) -> None:
   """Run 'dotnet tool run wix build ...'.
@@ -118,21 +122,12 @@ def run_wix4(args) -> None:
         )
     )
 
-  # 'VCTOOLSREDISTDIR' environment variable is the same among x86, x64 and arm64
-  # architectures, so just using 'x64' should be fine here.
+  # 'VCTOOLSREDISTDIR' is the exact versioned CRT root selected by vcvarsall.
+  # Keep the installer contract on the pinned VC145 redistributable rather than
+  # falling back to whichever toolset happens to be installed on the runner.
   vs_env = vs_util.get_vs_env_vars('x64', vcvarsall_hint)
   redist_root = pathlib.Path(vs_env['VCTOOLSREDISTDIR']).resolve()
-  # The CRT redist subfolder is named after the platform toolset, not the
-  # MSVC compiler version: VS 2022 ships 'Microsoft.VC143.CRT' (toolset v143,
-  # MSVC 14.3x/14.4x) while VS 2026 ships 'Microsoft.VC145.CRT' (toolset
-  # v145, MSVC 14.50+). v144 was skipped. Pick the subfolder by reading the
-  # MSVC compiler minor version that vcvarsall.bat exports as
-  # 'VCTOOLSVERSION'.
-  vc_tools_minor = int(vs_env['VCTOOLSVERSION'].split('.')[1])
-  crt_subdir = (
-      'Microsoft.VC145.CRT' if vc_tools_minor >= 50 else 'Microsoft.VC143.CRT'
-  )
-  redist_64bit = redist_root.joinpath(arch).joinpath(crt_subdir)
+  redist_64bit = find_redist_crt_dir(redist_root, arch)
   version_file = pathlib.Path(args.version_file).resolve()
   version = mozc_version.MozcVersion(version_file)
   credit_file = pathlib.Path(args.credit_file).resolve()

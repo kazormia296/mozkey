@@ -2,7 +2,7 @@
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 
-[![Windows](https://github.com/kazormia296/mozkey/actions/workflows/windows.yaml/badge.svg)](https://github.com/kazormia296/mozkey/actions/workflows/windows.yaml)
+[![Windows](https://github.com/kazormia296/mozkey-ibg/actions/workflows/windows.yaml/badge.svg)](https://github.com/kazormia296/mozkey-ibg/actions/workflows/windows.yaml)
 
 ## Summary
 
@@ -10,7 +10,7 @@ If you are unsure about what the following commands do, please review the
 descriptions below to understand the operations before running them.
 
 ```
-git clone https://github.com/kazormia296/mozkey.git
+git clone https://github.com/kazormia296/mozkey-ibg.git
 cd mozkey\src
 
 python build_tools/update_deps.py
@@ -57,7 +57,7 @@ Building Mozc on Windows requires the following software.
 ### Download the repository from GitHub
 
 ```
-git clone https://github.com/kazormia296/mozkey.git
+git clone https://github.com/kazormia296/mozkey-ibg.git
 cd mozkey\src
 ```
 
@@ -213,7 +213,7 @@ pushes run the Windows test gate only; they do not build or upload an MSI.
 Installer builds are called by the release workflow from a validated release
 tag.
 
-1.  Fork https://github.com/kazormia296/mozkey to your GitHub repository.
+1.  Fork https://github.com/kazormia296/mozkey-ibg to your GitHub repository.
 2.  Update `src/version.bzl`, merge the tested change into `main`, and create an
     annotated `vX.Y.Z` tag with the same version.
 3.  Push the tag and wait for the **Mozkey Release** workflow to succeed.
@@ -226,11 +226,11 @@ notes, and rerun contract.
 
 You can also find Mozkey installers for Windows in the Mozkey repository.
 Please keep in mind that Mozc is not an officially supported Google product,
-even if downloaded from https://github.com/kazormia296/mozkey/.
+even if downloaded from https://github.com/kazormia296/mozkey-ibg/.
 
 1.  Sign in GitHub.
 2.  Open the repository's
-    [Releases](https://github.com/kazormia296/mozkey/releases) page.
+    [Releases](https://github.com/kazormia296/mozkey-ibg/releases) page.
 3.  Download the `x64`, `universal`, or `arm64` MSI that matches the target
     machine.
 

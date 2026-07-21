@@ -92,8 +92,31 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
                 )
 
         self.assertIn(
-            "needs: [release-gate, linux, macos, windows]",
+            "needs: [release-gate, linux, macos, windows, secure_offline]",
             self.jobs["publish"],
+        )
+
+    def test_secure_offline_gate_runs_before_publish(self) -> None:
+        gate = self.jobs["secure_offline"]
+        self.assertIn("needs: release-gate", gate)
+        self.assertIn("uses: ./.github/workflows/secure-offline.yaml", gate)
+        self.assertIn("contents: read", gate)
+        self.assertIn("secure_offline", self.jobs["publish"])
+
+    def test_windows_release_checks_built_and_extracted_msi_payloads(self) -> None:
+        windows = self._platform_workflow("windows")
+        secure_offline = self._workflow("secure-offline")
+        self.assertEqual(windows.count("check_windows_msi_offline.ps1"), 3)
+        self.assertEqual(windows.count("probe_windows_zenz_runtime.ps1"), 2)
+        self.assertIn("check_windows_msi_offline.ps1", secure_offline)
+        self.assertIn("probe_windows_zenz_runtime.ps1", secure_offline)
+        binary_check = self._split_job_blocks(secure_offline)["binary_check"]
+        self.assertNotIn("github.event_name == 'workflow_dispatch'", binary_check)
+        self.assertIn("llama-server.exe", binary_check)
+
+    def _workflow(self, name: str) -> str:
+        return (self.workflow_directory / f"{name}.yaml").read_text(
+            encoding="utf-8"
         )
 
     def test_mobile_platforms_are_not_product_or_release_targets(self) -> None:
@@ -342,6 +365,20 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
             linux,
         )
 
+    def test_linux_release_build_inputs_use_fixed_snapshots(self) -> None:
+        linux = self._platform_workflow("linux")
+        self.assertIn("container: fedora@sha256:", linux)
+        self.assertIn("container: archlinux/archlinux@sha256:", linux)
+        for script in (
+            "use_ubuntu_snapshot.sh",
+            "use_fedora_snapshot.sh",
+            "use_archlinux_snapshot.sh",
+        ):
+            with self.subTest(script=script):
+                self.assertIn(script, linux)
+        self.assertNotIn("apt-get update", linux)
+        self.assertNotIn("pacman -Syu", linux)
+
     def test_publish_replaces_and_verifies_exact_asset_set(self) -> None:
         publish = self.jobs["publish"]
         expected = {
@@ -410,6 +447,10 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertIn("Refusing to mutate published release", publish)
         self.assertIn("pattern: release-*", publish)
         self.assertIn("SHA256SUMS", publish)
+        self.assertIn("id-token: write", publish)
+        self.assertIn("attestations: write", publish)
+        self.assertIn("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6", publish)
+        self.assertIn("subject-path: publish-assets/*", publish)
         self.assertIn("--draft", publish)
         self.assertIn("--prerelease", publish)
 

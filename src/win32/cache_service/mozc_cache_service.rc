@@ -44,7 +44,7 @@ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_FILE_DESCRIPTION "Google 日本語入力 キャッシュサービス"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_FILE_DESCRIPTION "Mozc Cache Service"
+    #define MOZC_RES_FILE_DESCRIPTION "Mozkey IbG Cache Service"
   #endif
 #endif
 #ifndef MOZC_RES_FILETYPE
@@ -70,8 +70,8 @@ BEGIN
     IDS_DISPLAYNAME         "Google Japanese Input Cache Service"
     IDS_DESCRIPTION         "Google 日本語入力 の辞書を常に物理メモリに配置し、変換を高速化します。停止しても日本語入力はできますが、パフォーマンスが低下する場合があります。"
 #elif defined(MOZC_BUILD)
-    IDS_DISPLAYNAME         "Mozc Cache Service"
-    IDS_DESCRIPTION         "Mozc の辞書を常に物理メモリに配置し、変換を高速化します。停止しても日本語入力はできますが、パフォーマンスが低下する場合があります。"
+    IDS_DISPLAYNAME         "Mozkey IbG Cache Service"
+    IDS_DESCRIPTION         "Mozkey IbG の辞書を常に物理メモリに配置し、変換を高速化します。停止しても日本語入力はできますが、パフォーマンスが低下する場合があります。"
 #endif
 END
 
@@ -81,8 +81,8 @@ BEGIN
     IDS_DISPLAYNAME         "Google Japanese Input Cache Service"
     IDS_DESCRIPTION         "Always allocates conversion dictionary of Google Japanese input into physical memory."
 #elif defined(MOZC_BUILD)
-    IDS_DISPLAYNAME         "Mozc Cache Service"
-    IDS_DESCRIPTION         "Always allocates conversion dictionary of Mozc into physical memory."
+    IDS_DISPLAYNAME         "Mozkey IbG Cache Service"
+    IDS_DESCRIPTION         "Always allocates conversion dictionary of Mozkey IbG into physical memory."
 #endif
 END
 
@@ -95,4 +95,3 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
-
