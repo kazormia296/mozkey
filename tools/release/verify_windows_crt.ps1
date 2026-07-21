@@ -30,7 +30,12 @@ if (-not (Test-Path -LiteralPath $vswhere)) {
   throw "vswhere.exe was not found."
 }
 
-$installations = @(& $vswhere -all -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format value)
+$installations = @(
+  & $vswhere -all -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath |
+    Where-Object {
+      $_ -and (Test-Path -LiteralPath $_ -PathType Container)
+    }
+)
 $sourceCandidates = @(
   foreach ($installation in $installations) {
     $candidate = Join-Path $installation "VC\Redist\MSVC\$expectedRedistVersion\$Architecture\$expectedToolsetDirectory"
