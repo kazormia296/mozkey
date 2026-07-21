@@ -137,7 +137,7 @@ jobs:
         run: |
           $vc = (& python .\src\build_tools\vs_util.py --arch x64 | Select-Object -Last 1).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $destinationRoot = Join-Path $vc "Redist\MSVC\14.51.36247\x64\Microsoft.VC145.CRT"
+          $destinationRoot = Join-Path $vc "Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
           .\tools\release\verify_windows_crt.ps1 `
             -Architecture x64 `
             -DestinationRoot $destinationRoot
@@ -245,7 +245,7 @@ jobs:
         run: |
           $vc = (& python .\src\build_tools\vs_util.py --arch x64 | Select-Object -Last 1).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $destinationRoot = Join-Path $vc "Redist\MSVC\14.51.36247\x64\Microsoft.VC145.CRT"
+          $destinationRoot = Join-Path $vc "Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
           .\tools\release\verify_windows_crt.ps1 `
             -Architecture x64 `
             -DestinationRoot $destinationRoot
@@ -353,7 +353,7 @@ jobs:
         run: |
           $vc = (& python .\src\build_tools\vs_util.py --arch arm64 | Select-Object -Last 1).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $destinationRoot = Join-Path $vc "Redist\MSVC\14.51.36247\arm64\Microsoft.VC145.CRT"
+          $destinationRoot = Join-Path $vc "Redist\MSVC\14.50.35710\arm64\Microsoft.VC145.CRT"
           .\tools\release\verify_windows_crt.ps1 `
             -Architecture arm64 `
             -DestinationRoot $destinationRoot

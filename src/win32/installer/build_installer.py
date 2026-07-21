@@ -33,15 +33,14 @@
 import argparse
 import os
 import pathlib
-import re
 import subprocess
 
 from build_tools import mozc_version
 from build_tools import vs_util
 
 
-EXPECTED_CRT_REDIST_VERSION = '14.51.36247'
-EXPECTED_CRT_TOOLSET_PATTERN = re.compile(r'^Microsoft\.VC\d+\.CRT$')
+EXPECTED_CRT_REDIST_VERSION = '14.50.35710'
+EXPECTED_CRT_TOOLSET_DIRECTORY = 'Microsoft.VC145.CRT'
 
 
 def exec_command(args: list[str], cwd: str) -> None:
@@ -95,19 +94,14 @@ def find_redist_crt_dir(redist_root: pathlib.Path, arch: str) -> pathlib.Path:
         path.joinpath(name).exists() for name in required
     )
 
-  candidates = tuple(
-      path.resolve()
-      for path in arch_dir.glob('Microsoft.VC*.CRT')
-      if EXPECTED_CRT_TOOLSET_PATTERN.fullmatch(path.name)
-      and is_valid_dir(path)
-  )
-  if len(candidates) == 1:
-    return candidates[0]
+  candidate = arch_dir.joinpath(EXPECTED_CRT_TOOLSET_DIRECTORY).resolve()
+  if is_valid_dir(candidate):
+    return candidate
 
   raise FileNotFoundError(
-      f'Expected exactly one valid CRT redistributable directory matching '
-      f'{EXPECTED_CRT_TOOLSET_PATTERN.pattern} containing {required} under: '
-      f'{arch_dir}; found {len(candidates)}'
+      f'Expected the pinned CRT redistributable directory '
+      f'{EXPECTED_CRT_TOOLSET_DIRECTORY} containing {required} under: '
+      f'{arch_dir}'
   )
 
 

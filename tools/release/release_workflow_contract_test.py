@@ -122,7 +122,7 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertIn("llama-server.exe", binary_check)
 
     def test_windows_crt_pin_is_consistent_across_build_and_verification(self) -> None:
-        expected = "14.51.36247"
+        expected = "14.50.35710"
         windows = self._platform_workflow("windows")
         secure_offline = self._workflow("secure-offline")
         installer = (
@@ -134,6 +134,10 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
 
         self.assertIn(
             f"EXPECTED_CRT_REDIST_VERSION = '{expected}'",
+            installer,
+        )
+        self.assertIn(
+            "EXPECTED_CRT_TOOLSET_DIRECTORY = 'Microsoft.VC145.CRT'",
             installer,
         )
         self.assertIn(f'$expectedRedistVersion = "{expected}"', verifier)

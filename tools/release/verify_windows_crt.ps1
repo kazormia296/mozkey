@@ -21,9 +21,10 @@ $requiredDlls = @(
   "vcruntime140.dll",
   "vcruntime140_1.dll"
 )
-$expectedRedistVersion = "14.51.36247"
+$expectedRedistVersion = "14.50.35710"
 $expectedFileVersion = "$expectedRedistVersion.0"
 $expectedToolsetDirectoryPattern = '^Microsoft\.VC\d+\.CRT$'
+$expectedToolsetDirectory = "Microsoft.VC145.CRT"
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path -LiteralPath $vswhere)) {
@@ -56,6 +57,9 @@ if ($sourceToolsetDirectory -notmatch $expectedToolsetDirectoryPattern -or
     $sourceRoot -notmatch "\\$Architecture\\$sourceToolsetDirectory$") {
   throw "CRT source directory has an unexpected architecture or toolset: $sourceRoot"
 }
+if ((Split-Path -Leaf $DestinationRoot) -ne $expectedToolsetDirectory) {
+  throw "CRT destination must use the canonical toolset directory ${expectedToolsetDirectory}: $DestinationRoot"
+}
 
 New-Item -ItemType Directory -Force $DestinationRoot | Out-Null
 foreach ($dll in $requiredDlls) {
@@ -86,4 +90,4 @@ foreach ($dll in $requiredDlls) {
   Write-Host "$dll version=$fileVersion sha256=$sourceHash signer=$($signature.SignerCertificate.Subject)"
 }
 
-Write-Host "Prepared exact Microsoft CRT $expectedRedistVersion/$sourceToolsetDirectory for $Architecture"
+Write-Host "Prepared exact Microsoft CRT $expectedRedistVersion/$sourceToolsetDirectory as $expectedToolsetDirectory for $Architecture"
