@@ -4568,7 +4568,7 @@ TEST_F(EngineConverterTest, JisKanaCorrectionUsesKeyTraceAndKeepsSource) {
         candidate->content_key = candidate->key;
         candidate->value = candidate->key;
         candidate->content_value = candidate->value;
-        candidate->cost = request.key() == "え" ? 900 : 100;
+        candidate->cost = request.key() == "え" ? 2000 : 100;
         return true;
       }));
 
@@ -4612,8 +4612,8 @@ TEST_F(EngineConverterTest, JisKanaModifierCorrectionReplaysSamePhysicalKey) {
         candidate->content_key = candidate->key;
         candidate->value = candidate->key;
         candidate->content_value = candidate->value;
-        candidate->cost = 100;
-        candidate->wcost = 100;
+        candidate->cost = request.key() == "あ" ? 2000 : 100;
+        candidate->wcost = candidate->cost;
         return true;
       }));
 
@@ -4632,6 +4632,45 @@ TEST_F(EngineConverterTest, JisKanaModifierCorrectionReplaysSamePhysicalKey) {
     }
   }
   EXPECT_TRUE(found);
+}
+
+TEST_F(EngineConverterTest,
+       JisKanaDisplayPolicySuppressesCostLosingCorrections) {
+  config_->set_preedit_method(Config::KANA);
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  commands::KeyEvent kana_a;
+  kana_a.set_key_code('3');
+  kana_a.set_key_string("あ");
+  commands::KeyEvent kana_u;
+  kana_u.set_key_code('4');
+  kana_u.set_key_string("う");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_a));
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_u));
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = 100;
+        candidate->wcost = 100;
+        return true;
+      }));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  EXPECT_TRUE(converter.TypingCorrectionCandidateValues().empty());
+  ASSERT_EQ(GetSegments(converter).conversion_segments_size(), 1);
+  EXPECT_EQ(GetSegments(converter).conversion_segment(0).candidates_size(), 1);
 }
 
 TEST_F(EngineConverterTest,

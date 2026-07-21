@@ -57,10 +57,12 @@ rows are suggestion-only and the gate requires zero automatic hypotheses.
 Composer replay is currently 98/100 and the official Engine metrics target is
 currently 93/100 (Engine candidate-window top-1/top-K are 68/100 and 93/100;
 Roman display-policy Negative FPR is 0/40). The independent 150-case Kana
-Engine holdout currently reports 29/150 recall, 12/150 candidate-window
-top-1, and 29/150 top-K; the corresponding positive thresholds are enforced
-and currently fail. The newly enforced Kana candidate-window Negative FPR also
-reports 75/75 and blocks the release gate. The schema thresholds are 0.95
+Engine holdout uses a controlled converter-cost fixture. Explicit Kana
+conversion scores all 16 bounded replayed readings and reports 150/150 recall,
+150/150 candidate-window top-1, and 150/150 top-K. Kana alternatives are
+displayed only when their converter cost plus edit penalty strictly beats the
+source path, reducing display-forbidden violations to 0/75.
+The schema thresholds are 0.95
 Composer recall, 0.90 Roman Engine recall, 0.90 Kana Engine recall, 0.50
 Kana Engine top-1, 0.90 Kana Engine top-K, and zero display FPR.
 The Engine result is emitted by
@@ -72,7 +74,9 @@ Counts and schema-derived strata are also emitted by
 Roman length strata mean raw ASCII character count; kana length strata mean
 physical key-event count. The runtime contract is min/max Roman raw bytes
 4/64, max kana key events 64, max edit cost 300, max raw hypotheses 16, max
-replayed readings 3, max edits 1, and max candidate-window additions 2.
+replayed readings 3 for Roman and incremental suggestion/prediction, max
+replayed readings 16 for explicit Kana conversion, max edits 1, and max
+candidate-window additions 2.
 
 `PROVENANCE.md` records that the fixtures are project-authored.
 

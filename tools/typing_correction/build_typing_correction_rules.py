@@ -16,6 +16,7 @@ from tools.typing_correction.validate_typing_correction_corpus import (
     EVALUATION_TARGETS,
     RELEASE_THRESHOLDS,
     RUNTIME_LIMITS,
+    RUNTIME_POLICIES,
     corpus_digest,
     load_corpus,
 )
@@ -90,8 +91,12 @@ def render_contract_header() -> str:
             f"inline constexpr int32_t kTypingCorrectionMaxEditCost = {RUNTIME_LIMITS['max_edit_cost']};",
             f"inline constexpr size_t kTypingCorrectionMaxRawHypotheses = {RUNTIME_LIMITS['max_raw_hypotheses']};",
             f"inline constexpr size_t kTypingCorrectionMaxReadingHypotheses = {RUNTIME_LIMITS['max_reading_hypotheses']};",
+            f"inline constexpr size_t kTypingCorrectionMaxKanaConversionReadingHypotheses = {RUNTIME_LIMITS['max_kana_conversion_reading_hypotheses']};",
             f"inline constexpr size_t kTypingCorrectionMaxEdits = {RUNTIME_LIMITS['max_edits']};",
             f"inline constexpr size_t kTypingCorrectionMaxCandidateWindowAdditions = {RUNTIME_LIMITS['max_candidate_window_additions']};",
+            "inline constexpr bool "
+            "kTypingCorrectionKanaDisplayRequiresCostAdvantage = "
+            f"{'true' if RUNTIME_POLICIES['kana_display_requires_cost_advantage'] else 'false'};",
             f"inline constexpr double kTypingCorrectionRomanCandidatePrecisionMinimum = {RELEASE_THRESHOLDS['roman']['raw_hypothesis_candidate_precision_min']:.6f};",
             f"inline constexpr double kTypingCorrectionRomanCandidateRecallMinimum = {RELEASE_THRESHOLDS['roman']['raw_hypothesis_candidate_recall_min']:.6f};",
             f"inline constexpr double kTypingCorrectionRomanTop1AccuracyMinimum = {RELEASE_THRESHOLDS['roman']['raw_hypothesis_top1_accuracy_min']:.6f};",

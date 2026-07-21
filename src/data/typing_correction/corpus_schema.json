@@ -383,8 +383,12 @@
     "max_edit_cost": 300,
     "max_raw_hypotheses": 16,
     "max_reading_hypotheses": 3,
+    "max_kana_conversion_reading_hypotheses": 16,
     "max_edits": 1,
     "max_candidate_window_additions": 2
+  },
+  "runtime_policies": {
+    "kana_display_requires_cost_advantage": true
   },
   "exclusivity": {
     "global_case_ids": true,

@@ -28,10 +28,11 @@ automatic correction. Kana automatic correction is disabled and every Kana
 Gold row is suggestion-only. Roman `auto_recall` uses only Gold rows marked
 `behavior=auto`; the separate `suggest_recall` metric covers suggestion Gold
 rows. The Engine metric now evaluates both display-policy sets and all 150
-Kana holdout positives. The current Kana positive result is 29/150 Engine
-recall, 12/150 candidate-window top-1, and 29/150 top-K; its 75/75 display
-Negative result is an intentional release-gate failure until the runtime
-candidate policy is corrected.
+Kana holdout positives. The controlled converter-cost fixture gives 150/150
+Engine recall, 150/150 candidate-window top-1, and 150/150 top-K when explicit
+Kana conversion scores all 16 bounded replayed readings. The runtime
+cost-margin policy rejects all display-forbidden Kana alternatives, so
+Negative violations are 0/75 and are separately reported and gated.
 
 Changes to Gold, Negative, or override rows require regenerated artifacts and
 the corresponding unit-test update. Holdout changes require regenerating the

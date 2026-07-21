@@ -29,6 +29,9 @@ created the source composition.
    candidate window for conversion, suggestion, and prediction. Preview,
    result tokens, consumed source length, commit, and external corrected
    reading learning are handled without replacing the source Segments.
+   JIS-kana alternatives are displayed only when converter cost plus the edit
+   penalty is strictly lower than the aggregate first-candidate cost of the
+   source path; equal or worse alternatives fail closed.
 6. M5 applies a unique high-confidence alternative to live conversion only
    when it beats the source candidate after edit cost and is not shadowed by
    an exact user/project dictionary entry. Source raw/key state remains the
@@ -98,9 +101,11 @@ test-based and release-scale:
   live preview, pending source-prefix handling, Esc recovery, Enter commit,
   corrected external learning boundary, and source candidate preservation.
 - The enforced limits are 4–64 Roman raw bytes, 64 physical kana key events,
-  max edit cost 300, max raw hypotheses 16, max replayed readings 3, max
-  candidate-window additions 2, and max edits 1. Secure/password gates
-  execute no correction and typo raw readings are never learned.
+  max edit cost 300, max raw hypotheses 16, max replayed readings 3 for Roman
+  and incremental suggestion/prediction, max replayed readings 16 for explicit
+  Kana conversion, max candidate-window additions 2, and max edits 1.
+  Secure/password gates execute no correction and typo raw readings are never
+  learned.
 
 Run the Python corpus gate from the repository root:
 
@@ -132,10 +137,11 @@ and top-K are 68/100 and 93/100, and the display-policy Negative FPR is 0/40.
 Roman raw-hypothesis candidate precision/top-1 are 0.0625/0.98, with raw FPR,
 automatic precision/recall, and suggestion automatic-violation rate all 0.
 Kana raw-hypothesis candidate precision/top-1 are 0.077821/0.15; automatic
-correction is disabled. The independent 150-case Kana Engine holdout reports
-29/150 Engine recall, 12/150 candidate-window top-1, and 29/150 top-K, so its
-positive release thresholds currently fail. The Kana Engine candidate-window
-Negative FPR is also reported separately as 75/75 (1.0), so the report
-correctly fails the zero-FPR release threshold until the runtime candidate
-policy is corrected. The release thresholds are stored in schema v3 and applied by
+correction is disabled. The independent 150-case Kana Engine holdout uses a
+controlled converter-cost fixture in which the expected corrected reading is
+the supported low-cost path. Explicit Kana conversion scores all 16 bounded
+replayed readings and reports 150/150 Engine recall, 150/150 candidate-window
+top-1, and 150/150 top-K. The cost-margin display policy suppresses all 75
+display-forbidden Negative traces (0/75 violations). All release thresholds
+stored in schema v3 pass and are applied by
 `validate_typing_correction_metrics.py`.

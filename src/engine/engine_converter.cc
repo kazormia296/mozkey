@@ -343,6 +343,20 @@ MakeKanaModeMismatchInputGateContext(
       transliteration::T13n::IsInFullAsciiTypes(input_mode);
   return context;
 }
+
+std::optional<int64_t> BestSourcePathCost(const Segments& segments) {
+  if (segments.conversion_segments_size() == 0) {
+    return std::nullopt;
+  }
+  int64_t cost = 0;
+  for (const Segment& segment : segments.conversion_segments()) {
+    if (segment.candidates_size() == 0) {
+      return std::nullopt;
+    }
+    cost += segment.candidate(0).cost;
+  }
+  return cost;
+}
 }  // namespace
 
 EngineConverter::EngineConverter(
@@ -428,6 +442,11 @@ bool EngineConverter::ConvertWithPreferences(
     limits.max_reading_hypotheses =
         typing_correction::kTypingCorrectionMaxReadingHypotheses;
     if (config_->preedit_method() == config::Config::KANA) {
+      // Explicit conversion can afford to score the complete bounded kana
+      // raw set before the display-cost gate selects at most two candidates.
+      limits.max_reading_hypotheses =
+          typing_correction::
+              kTypingCorrectionMaxKanaConversionReadingHypotheses;
       const typing_correction::KanaInputGateContext gate =
           MakeKanaInputGateContext(composer, *request_, *config_);
       shadow_conversions = typing_correction::GenerateShadowKanaConversions(
@@ -2080,12 +2099,31 @@ void EngineConverter::AppendTypingCorrectionCandidates(
   constexpr size_t kMaxCandidateWindowAlternatives =
       typing_correction::kTypingCorrectionMaxCandidateWindowAdditions;
   Segment* source_segment = segments_.mutable_conversion_segment(0);
+  std::optional<int64_t> kana_source_path_cost;
+  if (typing_correction::
+          kTypingCorrectionKanaDisplayRequiresCostAdvantage &&
+      config_->preedit_method() == config::Config::KANA) {
+    kana_source_path_cost = BestSourcePathCost(segments_);
+    if (!kana_source_path_cost.has_value()) {
+      return;
+    }
+  }
   size_t appended = 0;
   for (typing_correction::WholeSequenceConversion& alternative :
        alternatives) {
     if (appended >= kMaxCandidateWindowAlternatives ||
         alternative.candidate.value.empty()) {
       break;
+    }
+
+    // JIS-kana generic edits are dense: almost every valid trace has a
+    // neighboring-key hypothesis.  Expose one only when normal conversion
+    // evidence beats the source path after the edit penalty.  Roman and
+    // kana-as-Roman candidates retain their existing candidate-only policy.
+    if (kana_source_path_cost.has_value() &&
+        static_cast<int64_t>(alternative.total_cost) >=
+            *kana_source_path_cost) {
+      continue;
     }
 
     bool duplicate_surface = false;

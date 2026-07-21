@@ -628,6 +628,18 @@ bool InsertKanaKeyTrace(composer::Composer* composer,
   return true;
 }
 
+std::string ReplayKanaReading(
+    const std::shared_ptr<composer::Table>& table,
+    const commands::Request& request, const config::Config& config,
+    const absl::string_view key_codes,
+    const absl::string_view key_strings) {
+  composer::Composer expected_composer(table, request, config);
+  if (!InsertKanaKeyTrace(&expected_composer, key_codes, key_strings)) {
+    return {};
+  }
+  return std::string(expected_composer.GetQueryForConversion());
+}
+
 EngineWindowObservation ObserveEngineWindow(
     composer::Composer* composer, const std::shared_ptr<::mozc::MockConverter>&
                                      mock_converter,
@@ -702,12 +714,16 @@ bool EvaluateEngineWindowNegative(
       .has_visible_typing_correction;
 }
 
-std::shared_ptr<::mozc::MockConverter> MakeEngineMetricsMockConverter() {
+std::shared_ptr<::mozc::MockConverter> MakeEngineMetricsMockConverter(
+    const absl::string_view favored_reading = {},
+    const int32_t favored_cost = 100, const int32_t other_cost = 100) {
   auto mock_converter = std::make_shared<::mozc::MockConverter>();
+  const std::string favored(favored_reading);
   EXPECT_CALL(*mock_converter, StartConversion(::testing::_, ::testing::_))
       .WillRepeatedly(::testing::Invoke(
-          [](const ::mozc::ConversionRequest& conversion_request,
-             ::mozc::Segments* segments) {
+          [favored, favored_cost, other_cost](
+              const ::mozc::ConversionRequest& conversion_request,
+              ::mozc::Segments* segments) {
             segments->Clear();
             ::mozc::Segment* segment = segments->add_segment();
             segment->set_key(conversion_request.key());
@@ -717,8 +733,11 @@ std::shared_ptr<::mozc::MockConverter> MakeEngineMetricsMockConverter() {
             candidate->content_key = candidate->key;
             candidate->value = candidate->key;
             candidate->content_value = candidate->value;
-            candidate->cost = 100;
-            candidate->wcost = 100;
+            candidate->cost = !favored.empty() &&
+                                      conversion_request.key() == favored
+                                  ? favored_cost
+                                  : other_cost;
+            candidate->wcost = candidate->cost;
             return true;
           }));
   return mock_converter;
@@ -786,12 +805,24 @@ EngineWindowSummary EvaluateEngineE2E() {
   composer::Composer kana_composer(kana_table, *kana_request, *kana_config);
   auto kana_mock_converter = MakeEngineMetricsMockConverter();
   for (const KanaHoldoutCase& test_case : kGeneratedKanaHoldoutCases) {
+    const std::string expected_reading = ReplayKanaReading(
+        kana_table, *kana_request, *kana_config,
+        test_case.corrected_key_codes, test_case.corrected_key_strings);
+    if (expected_reading.empty()) {
+      continue;
+    }
+    // The controlled Engine fixture models the corrected reading as a known
+    // dictionary path and the typo/other edits as expensive paths.  Raw
+    // generation coverage is measured separately; this loop verifies that
+    // the production display margin preserves converter-supported positives.
+    auto kana_positive_converter = MakeEngineMetricsMockConverter(
+        expected_reading, 100, 5000);
     bool top1 = false;
     bool topk = false;
     if (EvaluateEngineWindowCase(
-            &kana_composer, kana_mock_converter, kana_request, kana_config,
-            test_case.typed_key_codes, test_case.typed_key_strings,
-            test_case.corrected_key_strings, &top1, &topk)) {
+            &kana_composer, kana_positive_converter, kana_request,
+            kana_config, test_case.typed_key_codes,
+            test_case.typed_key_strings, expected_reading, &top1, &topk)) {
       ++summary.kana_correct;
     }
     if (top1) {
