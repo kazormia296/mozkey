@@ -125,7 +125,7 @@ END
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_FILE_DESCRIPTION "Google 日本語入力 TIP モジュール"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_FILE_DESCRIPTION "Mozkey TIP Module"
+    #define MOZC_RES_FILE_DESCRIPTION "Mozkey IbG TIP Module"
   #endif
 #endif
 #ifndef MOZC_RES_FILETYPE
@@ -147,8 +147,8 @@ BEGIN
     IDS_IME_DISPLAYNAME     "Google 日本語入力"
     IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Google 日本語入力"
 #else
-    IDS_IME_DISPLAYNAME     "Mozkey"
-    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Mozkey"
+    IDS_IME_DISPLAYNAME     "Mozkey IbG"
+    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Mozkey IbG"
 #endif
     IDS_INPUTMODE           "入力モード"
     IDS_WIN8_TRAY_ITEM      "右クリックで IME のオプションを表示します"
@@ -163,7 +163,7 @@ BEGIN
 #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     IDS_ABOUT               "Google 日本語入力について"
 #else
-    IDS_ABOUT               "Mozkey について"
+    IDS_ABOUT               "Mozkey IbG について"
 #endif
     IDS_FULL_KATAKANA       "全角カタカナ"
     IDS_HALF_ALPHANUMERIC   "半角英数"
@@ -177,10 +177,10 @@ BEGIN
     IDS_CANDIDATE_WINDOW             "Google 日本語入力 候補ウィンドウ"
     IDS_INDICATOR_WINDOW             "Google 日本語入力 インジケータ ウィンドウ"
 #else
-    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Mozkey サジェストウィンドウ"
-    IDS_OBSERVABLE_SUGGEST_WINDOW    "Mozkey サジェスト候補ウィンドウ"
-    IDS_CANDIDATE_WINDOW             "Mozkey 候補ウィンドウ"
-    IDS_INDICATOR_WINDOW             "Mozkey インジケータ ウィンドウ"
+    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Mozkey IbG サジェストウィンドウ"
+    IDS_OBSERVABLE_SUGGEST_WINDOW    "Mozkey IbG サジェスト候補ウィンドウ"
+    IDS_CANDIDATE_WINDOW             "Mozkey IbG 候補ウィンドウ"
+    IDS_INDICATOR_WINDOW             "Mozkey IbG インジケータ ウィンドウ"
 #endif
 END
 
@@ -190,8 +190,8 @@ BEGIN
     IDS_IME_DISPLAYNAME     "Google Japanese Input"
     IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Google Japanese Input"
 #else
-    IDS_IME_DISPLAYNAME     "Mozkey"
-    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Mozkey"
+    IDS_IME_DISPLAYNAME     "Mozkey IbG"
+    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Mozkey IbG"
 #endif
     IDS_INPUTMODE           "Input Mode"
     IDS_WIN8_TRAY_ITEM      "Right click to show IME options"
@@ -206,7 +206,7 @@ BEGIN
 #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     IDS_ABOUT               "About Google Japanese Input"
 #else
-    IDS_ABOUT               "About Mozkey"
+    IDS_ABOUT               "About Mozkey IbG"
 #endif
     IDS_FULL_KATAKANA       "Full-width Katakana"
     IDS_HALF_ALPHANUMERIC   "Half-width Alphanumeric"
@@ -219,9 +219,9 @@ BEGIN
     IDS_OBSERVABLE_SUGGEST_WINDOW    "Google Japanese Input Suggestion Candidate Window"
     IDS_CANDIDATE_WINDOW             "Google Japanese Input Candidate Window"
 #else
-    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Mozkey Suggestion Window"
-    IDS_OBSERVABLE_SUGGEST_WINDOW    "Mozkey Suggestion Candidate Window"
-    IDS_CANDIDATE_WINDOW             "Mozkey Candidate Window"
+    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Mozkey IbG Suggestion Window"
+    IDS_OBSERVABLE_SUGGEST_WINDOW    "Mozkey IbG Suggestion Candidate Window"
+    IDS_CANDIDATE_WINDOW             "Mozkey IbG Candidate Window"
 #endif
 END
 

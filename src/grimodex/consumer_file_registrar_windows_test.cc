@@ -78,7 +78,7 @@ ConsumerHandshake Handshake(absl::string_view timestamp =
                                 "2026-07-18T01:02:03.456Z") {
   return ConsumerHandshake{
       .consumer_id = std::string(kTsfConsumerId),
-      .name = "Mozkey for Grimodex on Windows",
+      .name = "Mozkey IbG for Grimodex on Windows",
       .version = "0.8.0",
       .platform = "windows",
       .last_seen = std::string(timestamp),

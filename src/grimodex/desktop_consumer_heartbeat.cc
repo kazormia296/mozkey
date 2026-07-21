@@ -119,7 +119,7 @@ absl::StatusOr<PlatformRegistration> MakePlatformRegistration(
       .metadata =
           ConsumerHandshake{
               .consumer_id = std::string(kTsfConsumerId),
-              .name = "Mozkey for Grimodex on Windows",
+              .name = "Mozkey IbG for Grimodex on Windows",
               .version = Version::GetMozkeyReleaseVersion(),
               .platform = "windows",
               .last_seen = "",
@@ -180,7 +180,7 @@ absl::StatusOr<PlatformRegistration> MakePlatformRegistration(
       .metadata =
           ConsumerHandshake{
               .consumer_id = std::string(kImkitConsumerId),
-              .name = "Mozkey for Grimodex on macOS",
+              .name = "Mozkey IbG for Grimodex on macOS",
               .version = Version::GetMozkeyReleaseVersion(),
               .platform = "macos",
               .last_seen = "",

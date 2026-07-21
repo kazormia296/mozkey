@@ -71,16 +71,23 @@ On all three desktop platforms, the scorer-to-runtime transport is
 localhost-only and must be bound to `127.0.0.1`.
 
 The Zenz localhost transport must not rely on a fixed public-facing endpoint.
-The platform scorer chooses a random high port for `llama-server` and protects
-completion requests with a random API key. Generated port and API key values
-must not be written to release logs.
+The platform scorer chooses a random high port, reserves that loopback port
+until `llama-server` is created, and verifies the child executable image before
+accepting it. It protects completion requests with a random API key. Generated
+port and API key values must not be written to release logs.
 
 The API key is a defense-in-depth measure for stale, accidental, or mismatched
 localhost endpoints. It is passed to the platform `llama-server` through the
 command line because that is the interface exposed by llama.cpp server.
 Therefore it should not be treated as a strong secret against same-user local
 malware. The primary boundary is that the server is bound to `127.0.0.1`, uses
-a random high port, and is launched and managed by the platform scorer.
+a random high port, and is launched and managed by the platform scorer. The
+same-user residual risk is explicit: because the bundled llama.cpp interface
+accepts `--api-key` on its command line, same-user malware with process
+inspection privileges may still observe that defense-in-depth key. Such a
+process is outside this desktop user's threat boundary; the scorer's private
+IPC endpoint, loopback-only listener, port reservation, and child-image check
+remain mandatory controls.
 
 ## Usage statistics and crash reports
 
@@ -123,8 +130,11 @@ The check is implemented by:
 python tools\check_no_network_imports.py --root src\bazel-bin
 ```
 
-For release validation, the installed or MSI-extracted runtime binaries should
-also be checked.
+The pull-request `Secure Offline Checks` workflow builds
+`mozc_zenz_scorer.exe`, prepares the pinned x64 `llama-server.exe`, and checks
+those explicit binaries without rebuilding a complete installer. For release
+validation, each Windows package job checks the Bazel output, bundled runtime,
+and MSI-extracted payload before it uploads that exact MSI.
 
 ## Binary string checks
 
@@ -142,8 +152,9 @@ The check is implemented by:
 python tools\check_no_network_strings.py --root src\bazel-bin
 ```
 
-For release validation, run the same check against installed or MSI-extracted
-runtime binaries.
+The same PR and release split applies to string checks: routine CI inspects the
+actual scorer and local runtime, while release CI inspects the exact MSI payload
+that will be published.
 
 ## Windows Firewall hardening
 

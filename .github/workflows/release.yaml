@@ -97,13 +97,22 @@ jobs:
     with:
       release: true
 
+  secure_offline:
+    name: Secure offline release gate
+    needs: release-gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/secure-offline.yaml
+
   publish:
     name: Create or update draft prerelease
-    needs: [release-gate, linux, macos, windows]
+    needs: [release-gate, linux, macos, windows, secure_offline]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout release metadata
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
@@ -197,6 +206,11 @@ jobs:
             printf '%s\n' "${expected_product_assets[@]}"
             printf '%s\n' SHA256SUMS
           } | LC_ALL=C sort > "$RUNNER_TEMP/expected-release-assets.txt"
+
+      - name: Attest release assets and SHA256SUMS
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6  # v4.2.0
+        with:
+          subject-path: publish-assets/*
 
       - name: Generate release notes with GitHub
         env:

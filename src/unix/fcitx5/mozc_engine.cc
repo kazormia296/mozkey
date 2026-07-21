@@ -175,8 +175,8 @@ MozcEngine::MozcEngine(Instance* instance)
 
   instance_->inputContextManager().registerProperty("mozkeyState", &factory_);
   instance_->userInterfaceManager().registerAction("mozkey-tool", &toolAction_);
-  toolAction_.setShortText(_("Mozkey Settings"));
-  toolAction_.setLongText(_("Mozkey Settings"));
+  toolAction_.setShortText(_("Mozkey IbG Settings"));
+  toolAction_.setLongText(_("Mozkey IbG Settings"));
   toolAction_.setIcon("fcitx_mozkey_tool");
 
   int i = 0;
@@ -226,7 +226,7 @@ MozcEngine::MozcEngine(Instance* instance)
 
   instance_->userInterfaceManager().registerAction("mozkey-tool-about",
                                                    &aboutAction_);
-  aboutAction_.setShortText(_("About Mozkey"));
+  aboutAction_.setShortText(_("About Mozkey IbG"));
   aboutAction_.connect<SimpleAction::Activated>([](InputContext*) {
     mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=about_dialog");
   });

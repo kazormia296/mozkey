@@ -235,7 +235,7 @@ std::string Handshake(absl::string_view version,
       zenzai_v3_conditions ? "true" : "false",
       R"json(},"consumer_id":"fcitx5-mozkey","format_version":1,"last_seen":")json",
       timestamp,
-      R"json(","name":"Mozkey for Grimodex on Linux","platform":"linux","version":")json",
+      R"json(","name":"Mozkey IbG for Grimodex on Linux","platform":"linux","version":")json",
       version, R"json("})json",
       "\n");
 }

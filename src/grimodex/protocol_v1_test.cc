@@ -212,6 +212,63 @@ TEST(ProtocolV1Test, StrictlyRequiresEveryProtocolV1ContractKey) {
   }
 }
 
+TEST(ProtocolV1Test, RejectsUnknownProtocolV1Keys) {
+  ProtocolV1Loader state_loader(ReaderFor(R"json({
+    "format_version": 1,
+    "active_project_id": "project-a",
+    "updated_at": "2026-07-11T00:00:00.000Z",
+    "unexpected": true
+  })json"));
+  EXPECT_EQ(state_loader.Load().diagnostic, LoadDiagnostic::kInvalidState);
+
+  ProtocolV1Loader project_loader(ReaderFor(
+      kStateA, R"json({
+        "format_version": 1,
+        "project_id": "project-a",
+        "project_name": "Unknown key",
+        "generated_at": "2026-07-11T00:00:00.000Z",
+        "entries": [],
+        "unexpected": true
+      })json"));
+  EXPECT_EQ(project_loader.Load().diagnostic,
+            LoadDiagnostic::kInvalidSnapshot);
+
+  ProtocolV1Loader nested_entry_loader(ReaderFor(
+      kStateA, R"json({
+        "format_version": 1,
+        "project_id": "project-a",
+        "project_name": "Unknown nested key",
+        "generated_at": "2026-07-11T00:00:00.000Z",
+        "entries": [{
+          "yomi": "せつな",
+          "surface": "刹那",
+          "category": "person",
+          "priority": 2,
+          "entry_id": "entry-setsuna",
+          "unexpected": true
+        }]
+      })json"));
+  EXPECT_EQ(nested_entry_loader.Load().diagnostic,
+            LoadDiagnostic::kInvalidSnapshot);
+
+  ProtocolV1Loader nested_context_loader(ReaderFor(
+      kStateA, R"json({
+        "format_version": 1,
+        "project_id": "project-a",
+        "project_name": "Unknown context key",
+        "generated_at": "2026-07-11T00:00:00.000Z",
+        "entries": [],
+        "zenzai_context": {
+          "topic": "topic",
+          "style": null,
+          "preference": null,
+          "unexpected": true
+        }
+      })json"));
+  EXPECT_EQ(nested_context_loader.Load().diagnostic,
+            LoadDiagnostic::kInvalidSnapshot);
+}
+
 TEST(ProtocolV1Test, RejectsOversizedStateAndProjectFiles) {
   {
     ProtocolV1Loader loader(ReaderFor(

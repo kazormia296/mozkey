@@ -87,6 +87,12 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
             probe._inspect_llama_argv(
                 unsafe_device, expected_link=link, expected_model=model
             )
+        with self.assertRaisesRegex(probe.ProbeFailure, "llama_arguments_invalid"):
+            probe._inspect_llama_argv(
+                base,
+                expected_link=Path("/private/stage/usr/lib/mozkey/other-server"),
+                expected_model=model,
+            )
 
     def test_parses_only_listening_proc_tcp_entries(self):
         table = """\

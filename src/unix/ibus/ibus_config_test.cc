@@ -41,7 +41,7 @@ TEST(IbusConfigTest, LoadConfig) {
   IbusConfig config;
   const std::string config_data = R"(engines {
   name : "mozc-jp"
-  longname : "Mozc"
+  longname : "Mozkey IbG"
   layout : "default"
   layout_variant : ""
   layout_option : ""
@@ -53,7 +53,7 @@ active_on_launch: False
 
   const std::string expected_xml = R"(<engines>
 <engine>
-  <description>Mozc (Japanese Input Method)</description>
+  <description>Mozkey IbG (Japanese Input Method)</description>
   <language>ja</language>
   <icon>/usr/share/ibus-mozc/product_icon.png</icon>
   <rank>80</rank>
@@ -61,7 +61,7 @@ active_on_launch: False
   <symbol>あ</symbol>
   <setup>/usr/lib/mozkey/mozc_tool --mode=config_dialog</setup>
   <name>mozc-jp</name>
-  <longname>Mozc</longname>
+  <longname>Mozkey IbG</longname>
   <layout>default</layout>
   <layout_variant></layout_variant>
   <layout_option></layout_option>
@@ -75,7 +75,7 @@ TEST(IbusConfigTest, NormalizeLayout) {
   IbusConfig config;
   const std::string config_data = R"(engines {
   name : "mozc-jp"
-  longname : "Mozc"
+  longname : "Mozkey IbG"
   layout : "nec_vndr/jp"
   layout_variant : "Hello World!"
   layout_option : "09AZaz!@#$%^&*()_+|;-"

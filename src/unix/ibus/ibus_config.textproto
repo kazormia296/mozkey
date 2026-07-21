@@ -39,7 +39,7 @@
 
 engines {
   name : "mozc-jp"
-  longname : "Mozc"
+  longname : "Mozkey IbG"
   layout : "default"
   layout_variant : ""
   layout_option : ""
@@ -48,7 +48,7 @@ engines {
 }
 engines {
   name : "mozc-on"
-  longname : "Mozc:あ"
+  longname : "Mozkey IbG:あ"
   layout : "default"
   layout_variant : ""
   layout_option : ""
@@ -58,7 +58,7 @@ engines {
 }
 engines {
   name : "mozc-off"
-  longname : "Mozc:A_"
+  longname : "Mozkey IbG:A_"
   layout : "default"
   layout_variant : ""
   layout_option : ""

@@ -45,7 +45,7 @@ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_FILE_DESCRIPTION "Google 日本語入力 インストーラー ヘルパー"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_FILE_DESCRIPTION "Mozc Installer Helper"
+    #define MOZC_RES_FILE_DESCRIPTION "Mozkey IbG Installer Helper"
   #endif
 #endif
 #ifndef MOZC_RES_FILETYPE
@@ -70,7 +70,7 @@ BEGIN
   IDS_UNEXPECTED_ERROR          "未知のエラーが発生しました。"
   IDS_FORMAT_FUNCTION_AND_LINE  "%1!s! (%2!u!) でエラーが発生したため、インストールを中止しました。"
 #elif defined(MOZC_BUILD)
-  IDS_FORMAT_VERSION_INFO       "Mozc インストーラー (バージョン %1!s!)"
+  IDS_FORMAT_VERSION_INFO       "Mozkey IbG インストーラー (バージョン %1!s!)"
   IDS_UNEXPECTED_ERROR          "未知のエラーが発生しました。"
   IDS_FORMAT_FUNCTION_AND_LINE  "%1!s! (%2!u!) でエラーが発生したため、インストールを中止しました。"
 #endif
@@ -83,7 +83,7 @@ BEGIN
   IDS_UNEXPECTED_ERROR          "An unknown error occurred."
   IDS_FORMAT_FUNCTION_AND_LINE  "The installation was stopped because of an error at %1!s! (%2!u!)"
 #elif defined(MOZC_BUILD)
-  IDS_FORMAT_VERSION_INFO       "Mozc Installer (Ver. %1!s!)"
+  IDS_FORMAT_VERSION_INFO       "Mozkey IbG Installer (Ver. %1!s!)"
   IDS_UNEXPECTED_ERROR          "An unknown error occurred."
   IDS_FORMAT_FUNCTION_AND_LINE  "The installation was stopped because of an error at %1!s! (%2!u!)"
 #endif
@@ -103,4 +103,3 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
-

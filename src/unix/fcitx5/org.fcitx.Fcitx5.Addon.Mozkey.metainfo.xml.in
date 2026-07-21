@@ -4,8 +4,8 @@
   <extends>org.fcitx.Fcitx5</extends>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>BSD-3-Clause AND LGPL-2.1-or-later AND Apache-2.0</project_license>
-  <name>Mozkey for Fcitx 5</name>
-  <summary>Developer pre-release of Mozkey for Fcitx 5 with local Zenz support</summary>
+  <name>Mozkey IbG for Fcitx 5</name>
+  <summary>Developer pre-release of Mozkey IbG for Fcitx 5 with local Zenz support</summary>
   <description>
     <p>
       This Fcitx 5 integration is a developer pre-release available from source
@@ -16,8 +16,8 @@
   <developer id="io.github.kazormia296">
     <name>Mozkey contributors</name>
   </developer>
-  <url type="homepage">https://github.com/kazormia296/mozkey</url>
-  <url type="bugtracker">https://github.com/kazormia296/mozkey/issues</url>
-  <url type="vcs-browser">https://github.com/kazormia296/mozkey</url>
-  <project_group>Mozkey</project_group>
+  <url type="homepage">https://github.com/kazormia296/mozkey-ibg</url>
+  <url type="bugtracker">https://github.com/kazormia296/mozkey-ibg/issues</url>
+  <url type="vcs-browser">https://github.com/kazormia296/mozkey-ibg</url>
+  <project_group>Mozkey IbG</project_group>
 </component>

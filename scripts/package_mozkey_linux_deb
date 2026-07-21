@@ -102,7 +102,7 @@ Architecture: amd64
 Maintainer: kazormia296 <kazormia296@users.noreply.github.com>
 Installed-Size: ${installed_size}
 Depends: fcitx5 (>= 5.1.0), ${depends}
-Homepage: https://github.com/kazormia296/mozkey
+Homepage: https://github.com/kazormia296/mozkey-ibg
 Description: Mozkey Japanese input method integrated with Grimodex
  Mozkey IbG is an Fcitx5 Japanese input method with local Zenz correction
  and a secure Grimodex desktop dictionary integration.

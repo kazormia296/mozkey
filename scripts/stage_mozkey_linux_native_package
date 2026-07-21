@@ -91,7 +91,7 @@ if [ "${distro}" = ubuntu ]; then
   {
     printf '%s\n' \
       'Mozkey — Integrated by Grimodex: copyright and license information' \
-      'Upstream source: https://github.com/kazormia296/mozkey' \
+      'Upstream source: https://github.com/kazormia296/mozkey-ibg' \
       '' \
       'This file reproduces the copyright notices and license texts shipped' \
       'with the binary distribution. The section labels are installed paths.'

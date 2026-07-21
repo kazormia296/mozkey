@@ -101,6 +101,8 @@ require_file /usr/share/licenses/mozkey/zenz-runtime/cpp-httplib-MIT.txt
 require_file /usr/share/licenses/mozkey/zenz-runtime/nlohmann-json-MIT.txt
 require_file /usr/share/icons/hicolor/32x32/apps/org.fcitx.Fcitx5.fcitx_mozkey.png
 
+grep -qx 'Name=Mozkey IbG' "${stage_dir}/usr/share/fcitx5/addon/mozkey.conf"
+grep -qx 'Name=Mozkey IbG' "${stage_dir}/usr/share/fcitx5/inputmethod/mozkey.conf"
 grep -qx 'Library=fcitx5-mozkey' "${stage_dir}/usr/share/fcitx5/addon/mozkey.conf"
 grep -qx 'Addon=mozkey' "${stage_dir}/usr/share/fcitx5/inputmethod/mozkey.conf"
 grep -Fqx "${addon_dir}" "${stage_dir}/usr/share/mozkey/fcitx5-addon-dir"

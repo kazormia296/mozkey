@@ -1423,13 +1423,13 @@
          <item row="21" column="3" colspan="5">
           <widget class="QLineEdit" name="zenzLiveCorrectionTopicLineEdit">
            <property name="toolTip">
-            <string>例: Mozc、Rust、会計、法律。空欄なら送信しません。</string>
+            <string>例: Mozkey IbG、Rust、会計、法律。空欄なら送信しません。</string>
            </property>
            <property name="maxLength">
             <number>128</number>
            </property>
            <property name="placeholderText">
-            <string>例: Mozc</string>
+            <string>例: Mozkey IbG</string>
            </property>
           </widget>
          </item>
@@ -1542,7 +1542,7 @@
          <item row="28" column="0" colspan="8">
           <widget class="QCheckBox" name="zenzFeedbackAutoBlockCheckBox">
            <property name="toolTip">
-            <string>Zenz 補正を通常変換などで別の文字列に確定した回数が指定回数に達した場合、同じ読み・同じ文脈クラス・同じ補正結果を次回以降の Zenz 補正として表示しないようにします。通常の Mozc 候補から削除する機能ではありません。</string>
+            <string>Zenz 補正を通常変換などで別の文字列に確定した回数が指定回数に達した場合、同じ読み・同じ文脈クラス・同じ補正結果を次回以降の Zenz 補正として表示しないようにします。通常の Mozkey IbG 候補から削除する機能ではありません。</string>
            </property>
            <property name="text">
             <string>Zenz 補正と異なる結果で確定した場合、その補正を自動ブロックする</string>

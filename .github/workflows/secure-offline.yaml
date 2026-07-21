@@ -51,11 +51,46 @@ jobs:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
 
+      - name: Restore Bazel repository cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: ${{ runner.temp }}/bazel-repository-cache
+          key: bazel-repository-${{ runner.os }}-${{ hashFiles('src/MODULE.bazel', 'src/bazel/**/*.bzl', 'src/bazel/**/*.patch') }}
+
       - name: Install dependencies
         shell: cmd
         working-directory: .\src
         run: |
           python build_tools/update_deps.py
+
+      - name: Hydrate Bazel repositories
+        shell: pwsh
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: |
+          $repositoryCache = Join-Path $env:RUNNER_TEMP "bazel-repository-cache"
+          $arguments = @(
+            "fetch",
+            "--repository_cache=$repositoryCache",
+            "--config", "oss_windows",
+            "--config", "release_build",
+            "//config:stats_config_util_test",
+            "//config:config_handler_test"
+          )
+
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & bazelisk @arguments
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0) {
+              break
+            }
+            if ($attempt -eq 3) {
+              exit $exitCode
+            }
+            Write-Warning "Bazel repository hydration failed on attempt $attempt; retrying."
+            Start-Sleep -Seconds (15 * $attempt)
+          }
 
       - name: Run offline config tests
         shell: cmd
@@ -63,13 +98,12 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk test --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
+          bazelisk test --repository_cache=%RUNNER_TEMP%\bazel-repository-cache --config oss_windows --config release_build --test_output=errors //config:stats_config_util_test //config:config_handler_test
 
   binary_check:
     name: Binary no-network check
-    runs-on: windows-2022
-    timeout-minutes: 120
-    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -84,19 +118,25 @@ jobs:
           path: src/third_party_cache
           key: update_deps-${{ runner.os }}-${{ hashFiles('src/build_tools/update_deps.py') }}
 
-      - name: Pin Bazel to Visual Studio 2022
+      - name: Restore Bazel repository cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: ${{ runner.temp }}/bazel-repository-cache
+          key: bazel-repository-${{ runner.os }}-${{ hashFiles('src/MODULE.bazel', 'src/bazel/**/*.bzl', 'src/bazel/**/*.patch') }}
+
+      - name: Pin Bazel to Visual Studio 2026
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 
           $vs = & $vswhere `
-            -version "[17.0,18.0)" `
+            -version "[18.0,19.0)" `
             -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
             -property installationPath
 
           if (-not $vs) {
-            throw "Visual Studio 2022 with VC tools was not found."
+            throw "Visual Studio 2026 with VC tools was not found."
           }
 
           $vc = Join-Path $vs "VC"
@@ -111,9 +151,8 @@ jobs:
           Write-Host "Pinned BAZEL_VS=$vs"
           Write-Host "Pinned BAZEL_VC=$vc"
 
-          Write-Host "Available CRT redist files:"
-          Get-ChildItem (Join-Path $vc "Redist\MSVC") -Recurse -Filter msvcp140.dll |
-            Select-Object FullName
+          Write-Host "CRT redist root:"
+          Write-Host (Join-Path $vc "Redist\MSVC")
 
       - name: Install dependencies
         shell: cmd
@@ -121,128 +160,43 @@ jobs:
         run: |
           python build_tools/update_deps.py
 
-      - name: Build Qt
-        shell: cmd
-        working-directory: .\src
-        run: |
-          python build_tools/build_qt.py --release --confirm_license
-
-      - name: Delete Qt src to save disk space
-        shell: cmd
-        working-directory: .\src
-        run: |
-
-      - name: Prepare CRT redist directory expected by WiX
+      - name: Verify CRT redist selected by Visual Studio
         shell: pwsh
         run: |
-          $expectedDir = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
+          .\tools\release\verify_windows_crt.ps1 `
+            -Architecture x64
 
-          $requiredDlls = @(
-            "msvcp140.dll",
-            "msvcp140_1.dll",
-            "msvcp140_2.dll",
-            "vcruntime140.dll",
-            "vcruntime140_1.dll"
-          )
-
-          $searchRoots = @(
-            "C:\Program Files\Microsoft Visual Studio\2022",
-            "C:\Program Files\Microsoft Visual Studio\17",
-            "C:\Program Files\Microsoft Visual Studio\18",
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022",
-            "C:\Program Files (x86)\Microsoft Visual Studio\17",
-            "C:\Program Files (x86)\Microsoft Visual Studio\18"
-          ) | Where-Object { Test-Path $_ }
-
-          Write-Host "Expected CRT redist dir:"
-          Write-Host $expectedDir
-
-          Write-Host "Search roots:"
-          $searchRoots | ForEach-Object { Write-Host $_ }
-
-          New-Item -ItemType Directory -Force $expectedDir | Out-Null
-
-          foreach ($dll in $requiredDlls) {
-            $source = Get-ChildItem -Path $searchRoots -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT\\" } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-
-            if (-not $source) {
-              Write-Host "Available CRT directories:"
-              Get-ChildItem -Path $searchRoots -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC[0-9]+\.CRT$" } |
-                Select-Object FullName
-
-              throw "Required CRT DLL was not found: $dll"
-            }
-
-            $destination = Join-Path $expectedDir $dll
-            Copy-Item $source.FullName $destination -Force
-            Write-Host "Copied $dll"
-            Write-Host "  from: $($source.FullName)"
-            Write-Host "  to:   $destination"
-          }
-
-          Write-Host "Prepared CRT redist directory:"
-          Get-ChildItem $expectedDir | Select-Object FullName
-
-      - name: Build Windows package
+      - name: Build Windows Zenz scorer
         shell: cmd
         working-directory: .\src
         env:
           ANDROID_NDK_HOME: ""
         run: |
-          bazelisk build --config oss_windows --config release_build package
+          bazelisk build --repository_cache=%RUNNER_TEMP%\bazel-repository-cache --config oss_windows --config release_build //zenz_scorer:mozc_zenz_scorer
 
-      - name: Verify MSI artifact
+      - name: Prepare pinned x64 Zenz runtime
         shell: pwsh
         run: |
-          .\tools\release\verify_windows_msi.ps1 `
-            -Path .\src\bazel-bin\win32\installer\Mozc64.msi
+          $ErrorActionPreference = "Stop"
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\tools\release\prepare_windows_zenz_runtime.py --arch x64 --verify-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Check Bazel output network DLL imports
+      - name: Inspect Windows runtime binaries
         shell: pwsh
         run: |
-          python tools\check_no_network_imports.py --root src\bazel-bin
+          $scorer = ".\src\bazel-bin\zenz_scorer\mozc_zenz_scorer.exe"
+          $runtime = ".\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe"
 
-      - name: Check Bazel output string markers
+          python .\tools\check_no_network_imports.py $scorer $runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\tools\check_no_network_strings.py $scorer $runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Probe x64 Zenz loopback runtime
         shell: pwsh
         run: |
-          python tools\check_no_network_strings.py --root src\bazel-bin
-
-      - name: Extract MSI
-        shell: pwsh
-        run: |
-          $extractDir = Join-Path $PWD "msi_extract"
-          Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force $extractDir | Out-Null
-
-          $msi = Resolve-Path "src\bazel-bin\win32\installer\Mozc64.msi"
-
-          & msiexec.exe /a "$msi" /qn TARGETDIR="$extractDir"
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-          Get-ChildItem $extractDir -Recurse -Include "mozc*.exe","mozc*.dll" |
-            Select-Object FullName
-
-      - name: Check MSI-extracted network DLL imports
-        shell: pwsh
-        run: |
-          python tools\check_no_network_imports.py --root msi_extract
-
-      - name: Check MSI-extracted string markers
-        shell: pwsh
-        run: |
-          python tools\check_no_network_strings.py --root msi_extract
-
-      - name: Upload MSI
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: Mozc64.msi
-          path: src/bazel-bin/win32/installer/Mozc64.msi
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 7
+          .\tools\release\probe_windows_zenz_runtime.ps1 `
+            -RuntimePath .\src\win32\installer\zenz_runtime\generated\x64\llama-server.exe `
+            -ModelPath .\src\win32\installer\zenz_runtime\generated\x64\models\zenz-v3.2-small-Q5_K_M.gguf

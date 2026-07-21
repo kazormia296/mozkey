@@ -83,10 +83,10 @@ def main():
         }
   else:
     variables = {
-        'CF_BUNDLE_NAME_EN': 'Mozc',
-        'CF_BUNDLE_NAME_JA': 'Mozc',
+        'CF_BUNDLE_NAME_EN': 'Mozkey IbG',
+        'CF_BUNDLE_NAME_JA': 'Mozkey IbG',
         'NS_HUMAN_READABLE_COPYRIGHT': copyright_message,
-        'INPUT_MODE_ANNOTATION': 'Mozc',
+        'INPUT_MODE_ANNOTATION': 'Mozkey IbG',
         }
 
   codecs.open(options.output, 'w', encoding='utf-8').write(

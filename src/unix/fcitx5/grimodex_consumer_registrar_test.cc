@@ -78,7 +78,7 @@ TEST(GrimodexConsumerRegistrarTest, CreatesPrivateAtomicHandshake) {
   const google::protobuf::Struct value = ReadJson(destination);
   EXPECT_EQ(value.fields().at("format_version").number_value(), 1);
   EXPECT_EQ(StringField(value, "consumer_id"), "fcitx5-mozkey");
-  EXPECT_EQ(StringField(value, "name"), "Mozkey for Grimodex on Linux");
+  EXPECT_EQ(StringField(value, "name"), "Mozkey IbG for Grimodex on Linux");
   EXPECT_EQ(StringField(value, "version"), "v0.7.7");
   EXPECT_EQ(StringField(value, "platform"), "linux");
   EXPECT_EQ(StringField(value, "last_seen"), kTimeA);

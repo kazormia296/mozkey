@@ -48,7 +48,9 @@ REPORT_ONLY_STRINGS = {
     "usage_stats",
 }
 
-RUNTIME_BINARY_PATTERN = re.compile(r"^mozc.*\.(exe|dll)$", re.IGNORECASE)
+RUNTIME_BINARY_PATTERN = re.compile(
+    r"^(?:mozc.*|llama-server)\.(exe|dll)$", re.IGNORECASE
+)
 
 
 def collect_targets(root: Path, explicit_paths: list[Path]) -> list[Path]:
@@ -111,8 +113,11 @@ def main(argv: list[str]) -> int:
     targets = collect_targets(args.root, args.paths)
 
     if not targets:
-        print(f"[NO_NETWORK_STRING_CHECK_SKIPPED] No targets found under {args.root}")
-        return 0
+        print(
+            f"[NO_NETWORK_STRING_CHECK_FAILED] No targets found under {args.root}",
+            file=sys.stderr,
+        )
+        return 1
 
     failed = False
 

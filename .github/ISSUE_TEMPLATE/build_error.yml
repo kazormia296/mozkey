@@ -12,7 +12,7 @@ body:
         報告前に、可能であれば以下を確認してください。
 
         - このリポジトリの最新 CI 状態:
-          https://github.com/kazormia296/mozkey/actions
+          https://github.com/kazormia296/mozkey-ibg/actions
         - このリポジトリの README / Release notes
         - Mozc 共通のビルドシステムに関する問題の場合は、upstream Mozc のビルド手順
 
@@ -57,8 +57,8 @@ body:
       label: ビルド元
       description: どのソースコードをビルドしましたか？
       options:
-        - kazormia296/mozkey main
-        - kazormia296/mozkey release tag
+        - kazormia296/mozkey-ibg main
+        - kazormia296/mozkey-ibg release tag
         - my local branch
         - upstream google/mozc
         - other fork

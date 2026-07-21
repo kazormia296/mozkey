@@ -31,7 +31,7 @@
 -->
 
 <installer-gui-script minSpecVersion="1">
-    <title>Mozc</title>
+    <title>Mozkey IbG</title>
     <allowed-os-versions>
         <os-version min="12.0"/>
     </allowed-os-versions>
