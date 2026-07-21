@@ -1,0 +1,3 @@
+rule_id	wrong	corrected	operation	cost	auto_applicable	scope	note
+R-TRANSPOSE-IA	ia	ai	transpose	100	false	local	隣接転置の候補規則
+R-OMISSION-IASH	iash	imash	omission	160	false	local	局所脱落の候補規則

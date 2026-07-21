@@ -5016,6 +5016,12 @@ void Session::CancelPendingLiveConversion() {
   CancelPendingZenzLiveCorrection();
 }
 
+absl::string_view Session::LiveConversionKeyForZenz() const {
+  return live_conversion_corrected_key_.empty()
+             ? absl::string_view(live_conversion_key_)
+             : absl::string_view(live_conversion_corrected_key_);
+}
+
 void Session::ClearLiveConversionState() {
   ++live_conversion_generation_;
 
@@ -5028,6 +5034,8 @@ void Session::ClearLiveConversionState() {
   live_conversion_suggestion_candidate_window_.Clear();
 
   live_conversion_key_.clear();
+  live_conversion_corrected_key_.clear();
+  live_conversion_corrected_raw_.clear();
   live_conversion_preedit_.clear();
   live_conversion_value_.clear();
   live_conversion_preedit_output_.Clear();
@@ -5038,6 +5046,8 @@ void Session::ClearLiveConversionState() {
 void Session::CancelLiveConversionForEditing() {
   CancelPendingLiveConversion();
   ClearZenzLiveCorrectionState();
+  live_conversion_corrected_key_.clear();
+  live_conversion_corrected_raw_.clear();
 
   if (!live_conversion_active_) {
     return;
@@ -5114,6 +5124,8 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   pending_live_conversion_suggestion_candidate_window_.Clear();
 
   if (!context_->mutable_converter()->Convert(context_->composer())) {
+    live_conversion_corrected_key_.clear();
+    live_conversion_corrected_raw_.clear();
     if (ShouldKeepPendingLiveConversionForTransientSokuon(live_conversion_key) &&
         OutputPendingLiveConversion(command)) {
       ClearZenzLiveCorrectionState();
@@ -5130,6 +5142,16 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   // Keep the candidate list visible internally so that the Windows renderer is
   // updated.
   context_->mutable_converter()->SetCandidateListVisible(true);
+
+  std::string corrected_raw;
+  std::string corrected_reading;
+  const bool applied_typing_correction =
+      context_->mutable_converter()->TryApplyTypingCorrectionForLiveConversion(
+          context_->composer(), &corrected_raw, &corrected_reading);
+  live_conversion_corrected_key_ =
+      applied_typing_correction ? corrected_reading : std::string();
+  live_conversion_corrected_raw_ =
+      applied_typing_correction ? corrected_raw : std::string();
 
   Output(command);
 
@@ -5160,7 +5182,7 @@ bool Session::MaybeStartLiveConversion(commands::Command* command) {
   live_conversion_protected_spans_.clear();
   if (context_->GetConfig().use_zenz_live_correction()) {
     live_conversion_protected_spans_ = BuildZenzProtectedConversionSpans(
-        context_->converter(), command->output(), live_conversion_key_,
+        context_->converter(), command->output(), LiveConversionKeyForZenz(),
         live_conversion_value_);
   }
 
@@ -5740,7 +5762,7 @@ bool Session::HasVisibleZenzLiveCorrection() const {
     return false;
   }
 
-  if (live_conversion_key_ != zenz_live_key_) {
+  if (LiveConversionKeyForZenz() != zenz_live_key_) {
     return false;
   }
 
@@ -6232,7 +6254,8 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
     return false;
   }
 
-  if (live_conversion_key_.empty() || live_conversion_value_.empty()) {
+  const absl::string_view zenz_key = LiveConversionKeyForZenz();
+  if (zenz_key.empty() || live_conversion_value_.empty()) {
     return false;
   }
 
@@ -6249,13 +6272,13 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
   }
 
   const ZenzTextPrivacyDecision key_privacy =
-      EvaluateZenzLiveKeyPrivacy(live_conversion_key_);
+      EvaluateZenzLiveKeyPrivacy(zenz_key);
   if (!key_privacy.allow) {
     ZenzDebugOutput(absl::StrCat(
         "[zenz-feedback] fast path skip key_privacy reason=",
         key_privacy.reason,
         " ",
-        ZenzRedactedTextStats("key", live_conversion_key_)));
+        ZenzRedactedTextStats("key", zenz_key)));
     return false;
   }
 
@@ -6271,7 +6294,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
   }
 
   const uint32_t min_key_len = GetZenzLiveCorrectionMinKeyLength(config);
-  if (Util::CharsLen(live_conversion_key_) < min_key_len) {
+  if (Util::CharsLen(zenz_key) < min_key_len) {
     return false;
   }
 
@@ -6296,7 +6319,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
 
   const std::vector<ZenzFeedbackCandidate> feedback_candidates =
       zenz_feedback_store_.GetAcceptedCandidates(
-          live_conversion_key_, context_class,
+          zenz_key, context_class,
           GetZenzFeedbackAutoBlockPolicy(config));
 
   if (feedback_candidates.empty()) {
@@ -6314,7 +6337,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
           "[zenz-feedback] fast path candidate rejected reason=value_privacy_",
           feedback_value_privacy.reason,
           " ",
-          ZenzRedactedTextStats("key", live_conversion_key_),
+          ZenzRedactedTextStats("key", zenz_key),
           " ",
           ZenzRedactedTextStats("value", feedback_value),
           " context_class=", context_class,
@@ -6324,7 +6347,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
     }
 
     ZenzValidationInput validation_input;
-    validation_input.key = live_conversion_key_;
+    validation_input.key = std::string(zenz_key);
     validation_input.mozc_value = live_conversion_value_;
     validation_input.zenz_value = feedback_value;
     validation_input.left_context = left_context_for_validation;
@@ -6339,7 +6362,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
       ZenzDebugOutput(absl::StrCat(
           "[zenz-feedback] fast path candidate rejected reason=",
           validation.reason,
-          " ", ZenzRedactedTextStats("key", live_conversion_key_),
+          " ", ZenzRedactedTextStats("key", zenz_key),
           " ", ZenzRedactedTextStats("value", feedback_value),
           " context_class=", context_class,
           " accepted_count=", feedback_candidate.accepted_count,
@@ -6348,7 +6371,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
     }
 
     ZenzAdoptionInput adoption_input;
-    adoption_input.key = live_conversion_key_;
+    adoption_input.key = std::string(zenz_key);
     adoption_input.mozc_value = live_conversion_value_;
     adoption_input.zenz_value = feedback_value;
     adoption_input.protected_spans = live_conversion_protected_spans_;
@@ -6359,7 +6382,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
       ZenzDebugOutput(absl::StrCat(
           "[zenz-feedback] fast path candidate rejected reason=",
           adoption.reason,
-          " ", ZenzRedactedTextStats("key", live_conversion_key_),
+          " ", ZenzRedactedTextStats("key", zenz_key),
           " ", ZenzRedactedTextStats("value", feedback_value),
           " context_class=", context_class,
           " accepted_count=", feedback_candidate.accepted_count,
@@ -6373,9 +6396,9 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
     pending_zenz_live_ = PendingZenzLiveCorrection();
 
     zenz_live_visible_generation_ = zenz_live_generation_;
-    zenz_live_key_ = live_conversion_key_;
+    zenz_live_key_ = std::string(zenz_key);
     zenz_live_display_key_ = live_conversion_preedit_.empty()
-                                 ? live_conversion_key_
+                                 ? zenz_key
                                  : live_conversion_preedit_;
     zenz_live_value_ = adopted_feedback_value;
     zenz_live_mozc_value_ = live_conversion_value_;
@@ -6422,18 +6445,19 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
     return false;
   }
 
-  if (live_conversion_key_.empty() || live_conversion_value_.empty()) {
+  const absl::string_view zenz_key = LiveConversionKeyForZenz();
+  if (zenz_key.empty() || live_conversion_value_.empty()) {
     return false;
   }
 
   const ZenzTextPrivacyDecision key_privacy =
-      EvaluateZenzLiveKeyPrivacy(live_conversion_key_);
+      EvaluateZenzLiveKeyPrivacy(zenz_key);
   if (!key_privacy.allow) {
     ZenzDebugOutput(absl::StrCat(
         "[zenz] skip key_privacy reason=",
         key_privacy.reason,
         " ",
-        ZenzRedactedTextStats("key", live_conversion_key_)));
+        ZenzRedactedTextStats("key", zenz_key)));
     return false;
   }
 
@@ -6449,7 +6473,7 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
   }
 
   const uint32_t min_key_len = GetZenzLiveCorrectionMinKeyLength(config);
-  if (Util::CharsLen(live_conversion_key_) < min_key_len) {
+  if (Util::CharsLen(zenz_key) < min_key_len) {
     return false;
   }
 
@@ -6508,7 +6532,7 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
   }
 
   ZenzProtectedPromptInput protected_prompt_input;
-  protected_prompt_input.key = live_conversion_key_;
+  protected_prompt_input.key = std::string(zenz_key);
   protected_prompt_input.protected_spans = live_conversion_protected_spans_;
   const ZenzProtectedPromptResult protected_prompt =
       zenz_adoption_policy_.ProtectPromptKey(protected_prompt_input);
@@ -6520,13 +6544,13 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
   ++zenz_live_generation_;
 
   pending_zenz_live_.generation = zenz_live_generation_;
-  pending_zenz_live_.key = live_conversion_key_;
+  pending_zenz_live_.key = std::string(zenz_key);
   pending_zenz_live_.left_context = left_context_for_prompt;
   pending_zenz_live_.right_context = right_context_for_prompt;
   pending_zenz_live_.context_class = context_result.context_class;
   pending_zenz_live_.mozc_value = live_conversion_value_;
   pending_zenz_live_.symbol_style_source =
-      live_conversion_preedit_.empty() ? live_conversion_key_
+      live_conversion_preedit_.empty() ? std::string(zenz_key)
                                        : live_conversion_preedit_;
   pending_zenz_live_.prompt = prompt;
   pending_zenz_live_.protected_spans = protected_prompt.protected_spans;
@@ -6537,7 +6561,7 @@ bool Session::MaybeScheduleZenzLiveCorrection(commands::Command* command) {
 
   ZenzDebugOutput(absl::StrCat(
       "[zenz] scheduled ",
-      ZenzRedactedTextStats("key", live_conversion_key_),
+      ZenzRedactedTextStats("key", zenz_key),
       " ", ZenzRedactedTextStats("mozc_value", live_conversion_value_),
       " context_class=", context_result.context_class,
       " context_allowed=", ZenzBool(context_result.allowed_for_prompt),
@@ -6600,6 +6624,7 @@ void Session::AttachZenzLiveCorrectionPollCallback(
 
 bool Session::IsCurrentZenzLiveCorrectionCallback(
     const commands::Command& command) const {
+  const absl::string_view zenz_key = LiveConversionKeyForZenz();
   if (!pending_zenz_live_.pending) {
     ZenzDebugOutput(absl::StrCat(
         "[zenz] stale reason=no_pending_zenz",
@@ -6701,11 +6726,11 @@ bool Session::IsCurrentZenzLiveCorrectionCallback(
     return false;
   }
 
-  if (live_conversion_key_ != pending_zenz_live_.key) {
+  if (zenz_key != pending_zenz_live_.key) {
     ZenzDebugOutput(absl::StrCat(
         "[zenz] stale reason=live_key_mismatch",
         " pending_gen=", pending_zenz_live_.generation,
-        " ", ZenzRedactedTextStats("live_key", live_conversion_key_),
+        " ", ZenzRedactedTextStats("live_key", zenz_key),
         " ", ZenzRedactedTextStats("pending_key", pending_zenz_live_.key),
         " ", ZenzRedactedTextStats("live_value", live_conversion_value_),
         " ", ZenzRedactedTextStats("pending_value",
@@ -7355,7 +7380,9 @@ bool Session::CommitZenzLiveCorrectionResult(commands::Command* command) {
   return true;
 }
 
-bool Session::CommitLiveConversionResult(commands::Command* command) {
+bool Session::CommitLiveConversionResult(
+    commands::Command* command,
+    const absl::string_view corrected_key_for_commit) {
   if (context_->state() != ImeContext::COMPOSITION) {
     return false;
   }
@@ -7375,9 +7402,23 @@ bool Session::CommitLiveConversionResult(commands::Command* command) {
   const std::string last_char(
       Util::Utf8SubString(preedit, length - 1, 1));
 
+  const absl::string_view corrected_key =
+      corrected_key_for_commit.empty()
+          ? absl::string_view(live_conversion_corrected_key_)
+          : corrected_key_for_commit;
   std::string key = context_->composer().GetQueryForConversion();
+  if (!corrected_key.empty() &&
+      StartsWithString(key, live_conversion_key_)) {
+    key = std::string(corrected_key) +
+          key.substr(live_conversion_key_.size());
+  }
   std::string value = live_conversion_value_;
   value.append(last_char);
+
+  if (!corrected_key.empty()) {
+    context_->mutable_converter()->LearnExternalConversionResult(
+        key, value, command->input().context());
+  }
 
   ClearLiveConversionState();
 
@@ -7633,6 +7674,8 @@ bool Session::InsertCharacter(commands::Command* command) {
 
   const bool was_live_conversion = live_conversion_active_;
   const bool was_pending_live_conversion = live_conversion_pending_;
+  const std::string live_conversion_corrected_key_before_edit =
+      live_conversion_corrected_key_;
 
   // Preserve the visible zenz correction before editing cancels the temporary
   // live conversion state.
@@ -7657,9 +7700,11 @@ bool Session::InsertCharacter(commands::Command* command) {
       CommitZenzLiveCorrectionResult(command);
     } else if (live_conversion_active_) {
       const std::string live_key =
-          live_conversion_key_.empty()
-              ? context_->composer().GetQueryForConversion()
-              : live_conversion_key_;
+          live_conversion_corrected_key_.empty()
+              ? (live_conversion_key_.empty()
+                     ? context_->composer().GetQueryForConversion()
+                     : live_conversion_key_)
+              : live_conversion_corrected_key_;
       const std::string live_value =
           live_conversion_value_.empty()
               ? context_->composer().GetStringForSubmission()
@@ -7733,6 +7778,8 @@ bool Session::InsertCharacter(commands::Command* command) {
     // A new composition must not reuse the stable prefix from a previous
     // live conversion.
     live_conversion_key_.clear();
+    live_conversion_corrected_key_.clear();
+    live_conversion_corrected_raw_.clear();
     live_conversion_preedit_.clear();
     live_conversion_value_.clear();
     live_conversion_preedit_output_.Clear();
@@ -7783,7 +7830,8 @@ bool Session::InsertCharacter(commands::Command* command) {
     }
 
     if (!learned_reranked_preedit_after_cancel && was_live_conversion &&
-        CommitLiveConversionResult(command)) {
+        CommitLiveConversionResult(command,
+                                   live_conversion_corrected_key_before_edit)) {
       return true;
     }
 

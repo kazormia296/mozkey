@@ -1,0 +1,92 @@
+{
+  "version": "v1",
+  "encoding": "UTF-8",
+  "roman_gold_columns": [
+    "case_id",
+    "intended_raw",
+    "typed_raw",
+    "intended_reading",
+    "operation",
+    "confidence",
+    "behavior",
+    "note"
+  ],
+  "roman_negative_columns": [
+    "case_id",
+    "typed_raw",
+    "expected_reading",
+    "reason"
+  ],
+  "roman_override_columns": [
+    "rule_id",
+    "wrong",
+    "corrected",
+    "operation",
+    "cost",
+    "auto_applicable",
+    "scope",
+    "note"
+  ],
+  "kana_gold_columns": [
+    "case_id",
+    "typed_key_codes",
+    "typed_key_strings",
+    "corrected_key_codes",
+    "corrected_key_strings",
+    "operation",
+    "confidence",
+    "behavior",
+    "note"
+  ],
+  "kana_negative_columns": [
+    "case_id",
+    "typed_key_codes",
+    "typed_key_strings",
+    "reason"
+  ],
+  "kana_layout_columns": [
+    "key_code",
+    "key_string",
+    "row"
+  ],
+  "kana_modifier_columns": [
+    "rule_id",
+    "wrong_key_code",
+    "wrong_key_string",
+    "corrected_key_code",
+    "corrected_key_string",
+    "operation",
+    "cost",
+    "behavior",
+    "note"
+  ],
+  "roman_holdout_columns": [
+    "case_id",
+    "typed_raw",
+    "corrected_raw",
+    "operation",
+    "behavior",
+    "note"
+  ],
+  "kana_holdout_columns": [
+    "case_id",
+    "typed_key_codes",
+    "typed_key_strings",
+    "corrected_key_codes",
+    "corrected_key_strings",
+    "operation",
+    "behavior",
+    "note"
+  ],
+  "holdout_policy": {
+    "behavior": "test_only",
+    "included_in_generated_rules": false,
+    "included_in_corpus_sha256": false
+  },
+  "limits": {
+    "max_raw_bytes": 64,
+    "max_raw_hypotheses": 16,
+    "max_reading_hypotheses": 3,
+    "max_edits": 1
+  }
+}

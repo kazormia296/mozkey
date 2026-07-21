@@ -52,6 +52,8 @@
 #include "protocol/config.pb.h"
 #include "request/conversion_request.h"
 #include "transliteration/transliteration.h"
+#include "typing_correction/incremental_cache.h"
+#include "typing_correction/shadow_conversion.h"
 
 namespace mozc {
 namespace engine {
@@ -88,6 +90,9 @@ class EngineConverter : public EngineConverterInterface {
   bool ConvertWithPreferences(
       const composer::Composer& composer,
       const ConversionPreferences& preferences) override;
+  bool TryApplyTypingCorrectionForLiveConversion(
+      const composer::Composer& composer, std::string* corrected_raw,
+      std::string* corrected_reading) override;
 
   // Gets reading text (e.g. from "猫" to "ねこ").
   bool GetReadingText(absl::string_view source_text,
@@ -414,6 +419,16 @@ class EngineConverter : public EngineConverterInterface {
   void SetRequestType(ConversionRequest::RequestType request_type,
                       ConversionRequest::Options& options);
 
+  // Adds rule-based raw-input corrections as whole-sequence alternatives.
+  // The source conversion segments remain the authoritative state; these
+  // alternatives are only selected through the candidate-list boundary.
+  void AppendTypingCorrectionCandidates(
+      std::vector<typing_correction::WholeSequenceConversion> alternatives);
+  const typing_correction::WholeSequenceConversion*
+  FindTypingCorrectionAlternative(size_t segment_index,
+                                  int candidate_index) const;
+  bool HasSelectedTypingCorrection() const;
+
   std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
   PinnedProjectDictionary() const;
 
@@ -430,6 +445,12 @@ class EngineConverter : public EngineConverterInterface {
 
   // Conversion stats used by converter_.
   Segments segments_;
+
+  // Whole-sequence alternatives are attached to the first source segment but
+  // retain their corrected segment list for preview, commit, and learning.
+  std::vector<typing_correction::WholeSequenceConversion>
+      typing_correction_alternatives_;
+  typing_correction::IncrementalRomanCache typing_correction_cache_;
 
   // Segments for Text Conversion API to fill incognito_candidate_words
   // Note:

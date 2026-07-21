@@ -1,0 +1,5 @@
+case_id	typed_key_codes	typed_key_strings	corrected_key_codes	corrected_key_strings	operation	behavior	note
+KH000001	ll	りり	l	り	duplicate	test_only	未登録の複数キー重複
+KH000002	oo	らら	o	ら	duplicate	test_only	未登録の複数キー重複
+KH000003	rr	すす	r	す	duplicate	test_only	未登録の複数キー重複
+KH000004	yy	んん	y	ん	duplicate	test_only	未登録の複数キー重複

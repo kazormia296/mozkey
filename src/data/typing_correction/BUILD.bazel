@@ -1,0 +1,10 @@
+# Copyright 2026 Grimodex contributors.
+
+package(default_visibility = ["//:__subpackages__"])
+
+exports_files(glob([
+    "LICENSE",
+    "*.md",
+    "*.json",
+    "*.tsv",
+]))

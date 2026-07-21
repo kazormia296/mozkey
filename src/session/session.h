@@ -343,6 +343,15 @@ class Session {
   // The reading used for the latest successful live conversion.
   std::string live_conversion_key_;
 
+  // Corrected reading used by raw typing correction and Zenz.  The source
+  // key above remains authoritative for pending-input prefix checks and Esc
+  // recovery.
+  std::string live_conversion_corrected_key_;
+
+  // Corrected raw sequence used only for diagnostics and commit-path
+  // bookkeeping. Pending input continues to use the source raw preedit.
+  std::string live_conversion_corrected_raw_;
+
   // The raw preedit string at the time of the latest successful live
   // conversion. This is used to compute the pending raw suffix.
   std::string live_conversion_preedit_;
@@ -585,10 +594,13 @@ class Session {
       mozc::commands::Output* output);
   bool AttachCachedLiveConversionSuggestionCandidateWindow(
       mozc::commands::Output* output);
-  bool CommitLiveConversionResult(mozc::commands::Command* command);
+  bool CommitLiveConversionResult(
+      mozc::commands::Command* command,
+      absl::string_view corrected_key_for_commit = {});
   bool CommitPendingLiveConversionDisplayDirectly(
       mozc::commands::Command* command);
   bool OutputPendingLiveConversion(mozc::commands::Command* command) const;
+  absl::string_view LiveConversionKeyForZenz() const;
   void AttachDelayedLiveConversionCallback(
       mozc::commands::Command* command) const;
 

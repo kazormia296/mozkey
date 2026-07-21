@@ -1,0 +1,5 @@
+The project-authored fixtures in this directory are distributed under the
+BSD 3-Clause License in the repository root `LICENSE` file.
+
+No external corpus is included in these files. They are deterministic test
+fixtures and rule-generation inputs created for this project.

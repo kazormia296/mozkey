@@ -30,8 +30,11 @@ jobs:
           submodules: false
           persist-credentials: false
 
-      - name: Verify canonical repository metadata
-        run: python -m unittest tools.release.aur_repository_contract_test
+      - name: Verify canonical repository metadata and typing-correction corpus
+        run: |
+          python -m unittest \
+            tools.release.aur_repository_contract_test \
+            tools.typing_correction.validate_typing_correction_corpus_test
 
       - name: Run
         working-directory: ./src

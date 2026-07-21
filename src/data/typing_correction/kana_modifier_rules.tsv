@@ -1,0 +1,8 @@
+rule_id	wrong_key_code	wrong_key_string	corrected_key_code	corrected_key_string	operation	cost	behavior	note
+K000002	3	あ	3	ぁ	kana_modifier	140	suggest	小書きかなのShift脱落
+K000003	@	゛	[	゜	kana_modifier	140	suggest	濁点半濁点混同
+K000016	4	う	4	ぅ	kana_modifier	140	suggest	小かな
+K000017	5	え	5	ぇ	kana_modifier	140	suggest	小かな
+K000018	6	お	6	ぉ	kana_modifier	140	suggest	小かな
+K000019	7	や	7	ゃ	kana_modifier	140	suggest	小かな
+K000020	8	ゆ	8	ゅ	kana_modifier	140	suggest	小かな

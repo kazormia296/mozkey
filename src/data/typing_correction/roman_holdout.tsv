@@ -1,0 +1,7 @@
+case_id	typed_raw	corrected_raw	operation	behavior	note
+H000001	teh	the	transpose	test_only	未登録の短語転置
+H000002	hte	the	transpose	test_only	未登録の短語転置
+H000003	gooogle	google	duplicate	test_only	未登録の重複削除
+H000004	bookk	book	duplicate	test_only	未登録の語末重複
+H000005	lone	kone	neighbor	test_only	未登録のQWERTY隣接
+H000006	fip	fop	neighbor	test_only	未登録のQWERTY隣接
