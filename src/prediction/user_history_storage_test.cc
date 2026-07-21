@@ -67,6 +67,10 @@ class UserHistoryStorageTestPeer
 
 TEST_F(UserHistoryStorageTest, BasicTest) {
   UserHistoryStorage storage;
+  // Complete the constructor's asynchronous load before mutating the
+  // in-memory history.  Otherwise AsyncSave() may be skipped while the load
+  // is still running, making serialization depend on platform timing.
+  storage.Wait();
 
   EXPECT_TRUE(storage.IsEmpty());
   EXPECT_FALSE(storage.Head());
@@ -85,12 +89,10 @@ TEST_F(UserHistoryStorageTest, BasicTest) {
 
   // Serialization.
   storage.AsyncSave();
-  EXPECT_TRUE(storage.IsSyncerRunning());
   storage.Wait();
   EXPECT_FALSE(storage.IsSyncerRunning());
 
   storage.AsyncLoad();
-  EXPECT_TRUE(storage.IsSyncerRunning());
   storage.Wait();
   EXPECT_FALSE(storage.IsSyncerRunning());
   EXPECT_FALSE(storage.IsEmpty());
