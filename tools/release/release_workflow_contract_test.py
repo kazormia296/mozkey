@@ -108,6 +108,13 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         secure_offline = self._workflow("secure-offline")
         self.assertEqual(windows.count("check_windows_msi_offline.ps1"), 3)
         self.assertEqual(windows.count("probe_windows_zenz_runtime.ps1"), 2)
+        self.assertNotIn(r"Visual Studio\18\Community", windows)
+        self.assertNotIn(r"Visual Studio\18\Community", secure_offline)
+        self.assertEqual(windows.count("vs_util.py --arch"), 3)
+        self.assertIn(
+            "$destinationRoot = Join-Path $env:BAZEL_VC",
+            secure_offline,
+        )
         self.assertIn("check_windows_msi_offline.ps1", secure_offline)
         self.assertIn("probe_windows_zenz_runtime.ps1", secure_offline)
         binary_check = self._split_job_blocks(secure_offline)["binary_check"]
