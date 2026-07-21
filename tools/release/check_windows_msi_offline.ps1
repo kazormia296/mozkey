@@ -27,7 +27,7 @@ $verifyScript = Join-Path $PSScriptRoot "verify_windows_msi.ps1"
   -Path $artifact `
   -RuntimePath $runtime `
   -ExpectedRuntimeArchitecture $ExpectedRuntimeArchitecture
-if ($LASTEXITCODE -ne 0) {
+if (-not $?) {
   throw "MSI structural verification failed."
 }
 

@@ -161,6 +161,15 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
             config_tests,
         )
 
+    def test_windows_msi_checker_uses_the_right_exit_status_contract(self) -> None:
+        checker = (
+            self.repository / "tools/release/check_windows_msi_offline.ps1"
+        ).read_text(encoding="utf-8")
+        script_verification = checker.split("function Invoke-NetworkCheck", 1)[0]
+        self.assertIn("if (-not $?)", script_verification)
+        self.assertNotIn("$LASTEXITCODE", script_verification)
+        self.assertEqual(checker.count("if ($LASTEXITCODE -ne 0)"), 2)
+
     def test_windows_crt_source_is_toolchain_selected_and_verified(self) -> None:
         windows = self._platform_workflow("windows")
         secure_offline = self._workflow("secure-offline")
