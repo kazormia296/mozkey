@@ -33,14 +33,15 @@
 import argparse
 import os
 import pathlib
+import re
 import subprocess
 
 from build_tools import mozc_version
 from build_tools import vs_util
 
 
-EXPECTED_CRT_REDIST_VERSION = '14.50.35710'
-EXPECTED_CRT_TOOLSET_DIRECTORY = 'Microsoft.VC145.CRT'
+EXPECTED_CRT_REDIST_VERSION_PATTERN = re.compile(r'^\d+\.\d+\.\d+$')
+EXPECTED_CRT_TOOLSET_PATTERN = re.compile(r'^Microsoft\.VC\d+\.CRT$')
 
 
 def exec_command(args: list[str], cwd: str) -> None:
@@ -75,10 +76,10 @@ def exec_command(args: list[str], cwd: str) -> None:
 
 
 def find_redist_crt_dir(redist_root: pathlib.Path, arch: str) -> pathlib.Path:
-  if redist_root.name != EXPECTED_CRT_REDIST_VERSION:
+  if not EXPECTED_CRT_REDIST_VERSION_PATTERN.fullmatch(redist_root.name):
     raise FileNotFoundError(
-        'The installer requires the pinned CRT redistributable '
-        f'{EXPECTED_CRT_REDIST_VERSION}, got: {redist_root}'
+        'The installer requires a versioned CRT redistributable root, '
+        f'got: {redist_root}'
     )
   arch_dir = redist_root.joinpath(arch).resolve()
   required = (
@@ -94,14 +95,19 @@ def find_redist_crt_dir(redist_root: pathlib.Path, arch: str) -> pathlib.Path:
         path.joinpath(name).exists() for name in required
     )
 
-  candidate = arch_dir.joinpath(EXPECTED_CRT_TOOLSET_DIRECTORY).resolve()
-  if is_valid_dir(candidate):
-    return candidate
+  candidates = tuple(
+      path.resolve()
+      for path in arch_dir.glob('Microsoft.VC*.CRT')
+      if EXPECTED_CRT_TOOLSET_PATTERN.fullmatch(path.name)
+      and is_valid_dir(path)
+  )
+  if len(candidates) == 1:
+    return candidates[0]
 
   raise FileNotFoundError(
-      f'Expected the pinned CRT redistributable directory '
-      f'{EXPECTED_CRT_TOOLSET_DIRECTORY} containing {required} under: '
-      f'{arch_dir}'
+      f'Expected exactly one valid CRT redistributable directory matching '
+      f'{EXPECTED_CRT_TOOLSET_PATTERN.pattern} containing {required} under: '
+      f'{arch_dir}; found {len(candidates)}'
   )
 
 
@@ -122,8 +128,8 @@ def run_wix4(args) -> None:
     )
 
   # 'VCTOOLSREDISTDIR' is the exact versioned CRT root selected by vcvarsall.
-  # Keep the installer contract on the pinned VC145 redistributable rather than
-  # falling back to whichever toolset happens to be installed on the runner.
+  # Keep the installer contract on that exact toolchain-selected root rather
+  # than falling back to whichever toolset happens to be installed on the runner.
   vs_env = vs_util.get_vs_env_vars('x64', vcvarsall_hint)
   redist_root = pathlib.Path(vs_env['VCTOOLSREDISTDIR']).resolve()
   redist_64bit = find_redist_crt_dir(redist_root, arch)

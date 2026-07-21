@@ -132,15 +132,11 @@ jobs:
         run: |
           rmdir third_party\qt_src /s /q
 
-      - name: Prepare CRT redist directory expected by WiX
+      - name: Verify CRT redist selected by Visual Studio
         shell: pwsh
         run: |
-          $vc = (& python .\src\build_tools\vs_util.py --arch x64 | Select-Object -Last 1).Trim()
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $destinationRoot = Join-Path $vc "Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
           .\tools\release\verify_windows_crt.ps1 `
-            -Architecture x64 `
-            -DestinationRoot $destinationRoot
+            -Architecture x64
 
       - name: build artifacts
         shell: cmd
@@ -240,15 +236,11 @@ jobs:
         run: |
           rmdir third_party\qt_src /s /q
 
-      - name: Prepare CRT redist directory expected by WiX
+      - name: Verify CRT redist selected by Visual Studio
         shell: pwsh
         run: |
-          $vc = (& python .\src\build_tools\vs_util.py --arch x64 | Select-Object -Last 1).Trim()
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $destinationRoot = Join-Path $vc "Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
           .\tools\release\verify_windows_crt.ps1 `
-            -Architecture x64 `
-            -DestinationRoot $destinationRoot
+            -Architecture x64
 
       - name: build artifacts
         shell: cmd
@@ -348,15 +340,11 @@ jobs:
         run: |
           rmdir third_party\qt_src /s /q
 
-      - name: Prepare CRT redist directory expected by WiX
+      - name: Verify CRT redist selected by Visual Studio
         shell: pwsh
         run: |
-          $vc = (& python .\src\build_tools\vs_util.py --arch arm64 | Select-Object -Last 1).Trim()
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $destinationRoot = Join-Path $vc "Redist\MSVC\14.50.35710\arm64\Microsoft.VC145.CRT"
           .\tools\release\verify_windows_crt.ps1 `
-            -Architecture arm64 `
-            -DestinationRoot $destinationRoot
+            -Architecture arm64
 
       - name: build artifacts
         shell: cmd

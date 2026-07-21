@@ -110,19 +110,14 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertEqual(windows.count("probe_windows_zenz_runtime.ps1"), 2)
         self.assertNotIn(r"Visual Studio\18\Community", windows)
         self.assertNotIn(r"Visual Studio\18\Community", secure_offline)
-        self.assertEqual(windows.count("vs_util.py --arch"), 3)
-        self.assertIn(
-            "$destinationRoot = Join-Path $env:BAZEL_VC",
-            secure_offline,
-        )
+        self.assertNotIn("vs_util.py --arch", windows)
         self.assertIn("check_windows_msi_offline.ps1", secure_offline)
         self.assertIn("probe_windows_zenz_runtime.ps1", secure_offline)
         binary_check = self._split_job_blocks(secure_offline)["binary_check"]
         self.assertNotIn("github.event_name == 'workflow_dispatch'", binary_check)
         self.assertIn("llama-server.exe", binary_check)
 
-    def test_windows_crt_pin_is_consistent_across_build_and_verification(self) -> None:
-        expected = "14.50.35710"
+    def test_windows_crt_source_is_toolchain_selected_and_verified(self) -> None:
         windows = self._platform_workflow("windows")
         secure_offline = self._workflow("secure-offline")
         installer = (
@@ -133,16 +128,16 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn(
-            f"EXPECTED_CRT_REDIST_VERSION = '{expected}'",
+            "EXPECTED_CRT_REDIST_VERSION_PATTERN",
             installer,
         )
-        self.assertIn(
-            "EXPECTED_CRT_TOOLSET_DIRECTORY = 'Microsoft.VC145.CRT'",
-            installer,
-        )
-        self.assertIn(f'$expectedRedistVersion = "{expected}"', verifier)
-        self.assertEqual(windows.count(expected), 3)
-        self.assertIn(expected, secure_offline)
+        self.assertIn("VCTOOLSREDISTDIR", installer)
+        self.assertIn("VCToolsRedistDir", verifier)
+        self.assertIn("Get-AuthenticodeSignature", verifier)
+        self.assertIn("Get-FileHash", verifier)
+        self.assertIn("GetVersionInfo", verifier)
+        self.assertEqual(windows.count("verify_windows_crt.ps1"), 3)
+        self.assertIn("verify_windows_crt.ps1", secure_offline)
 
     def _workflow(self, name: str) -> str:
         return (self.workflow_directory / f"{name}.yaml").read_text(

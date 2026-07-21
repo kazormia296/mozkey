@@ -342,12 +342,11 @@ class PrepareWindowsZenzRuntimeTest(unittest.TestCase):
             "\n  test:\n", 1
         )[0]
         self.assertNotIn("choco install ninja", workflow)
-        self.assertIn("\\arm64\\Microsoft.VC145.CRT", arm64_job)
         self.assertIn("verify_windows_crt.ps1", arm64_job)
         self.assertIn("-Architecture arm64", arm64_job)
         self.assertNotIn("\\x64\\Microsoft.VC145.CRT", arm64_job)
         self.assertIn("probe_windows_zenz_runtime.ps1", workflow)
-        self.assertEqual(workflow.count("if ($LASTEXITCODE -ne 0)"), 9)
+        self.assertEqual(workflow.count("if ($LASTEXITCODE -ne 0)"), 6)
         self.assertIn("  pull_request:\n", workflow)
         self.assertIn("  push:\n    branches:\n      - main\n", workflow)
         self.assertIn("  workflow_call:\n    inputs:\n      release:\n", workflow)

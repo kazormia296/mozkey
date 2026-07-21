@@ -139,13 +139,11 @@ jobs:
         working-directory: .\src
         run: |
 
-      - name: Prepare CRT redist directory expected by WiX
+      - name: Verify CRT redist selected by Visual Studio
         shell: pwsh
         run: |
-          $destinationRoot = Join-Path $env:BAZEL_VC "Redist\MSVC\14.50.35710\x64\Microsoft.VC145.CRT"
           .\tools\release\verify_windows_crt.ps1 `
-            -Architecture x64 `
-            -DestinationRoot $destinationRoot
+            -Architecture x64
 
       - name: Build Windows package
         shell: cmd
