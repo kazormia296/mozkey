@@ -121,6 +121,25 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         self.assertNotIn("github.event_name == 'workflow_dispatch'", binary_check)
         self.assertIn("llama-server.exe", binary_check)
 
+    def test_windows_crt_pin_is_consistent_across_build_and_verification(self) -> None:
+        expected = "14.51.36247"
+        windows = self._platform_workflow("windows")
+        secure_offline = self._workflow("secure-offline")
+        installer = (
+            self.repository / "src/win32/installer/build_installer.py"
+        ).read_text(encoding="utf-8")
+        verifier = (
+            self.repository / "tools/release/verify_windows_crt.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            f"EXPECTED_CRT_REDIST_VERSION = '{expected}'",
+            installer,
+        )
+        self.assertIn(f'$expectedRedistVersion = "{expected}"', verifier)
+        self.assertEqual(windows.count(expected), 3)
+        self.assertIn(expected, secure_offline)
+
     def _workflow(self, name: str) -> str:
         return (self.workflow_directory / f"{name}.yaml").read_text(
             encoding="utf-8"

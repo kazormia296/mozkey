@@ -21,7 +21,7 @@ $requiredDlls = @(
   "vcruntime140.dll",
   "vcruntime140_1.dll"
 )
-$expectedRedistVersion = "14.50.35710"
+$expectedRedistVersion = "14.51.36247"
 $expectedFileVersion = "$expectedRedistVersion.0"
 $expectedToolsetDirectory = "Microsoft.VC145.CRT"
 

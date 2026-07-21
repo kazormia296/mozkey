@@ -39,7 +39,7 @@ from build_tools import mozc_version
 from build_tools import vs_util
 
 
-EXPECTED_CRT_REDIST_VERSION = '14.50.35710'
+EXPECTED_CRT_REDIST_VERSION = '14.51.36247'
 EXPECTED_CRT_TOOLSET = 'Microsoft.VC145.CRT'
 
 
