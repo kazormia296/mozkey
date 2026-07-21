@@ -305,6 +305,13 @@ class Composer final {
   // The main purpose is Transliteration.
   std::string GetRawString() const;
 
+  // Returns the contiguous tail key trace when the composition was entered
+  // entirely through key events carrying both a physical key code and a
+  // key_string.  This is intentionally empty after cursor edits, direct
+  // string insertion, or mixed input, because replaying such a partial trace
+  // would be unsafe.
+  absl::Span<const commands::KeyEvent> GetKeyEventTrace() const;
+
   // Returns substring of raw input.  The position and size is based on the
   // composed string.  For example, when [さ|sa][し|shi][み|mi] is the
   // composition, GetRawSubString(0, 2) returns "sashi".
@@ -404,6 +411,12 @@ class Composer final {
   // The original text for the composition.  The value is usually
   // empty, and used for reverse conversion.
   std::string source_text_;
+
+  // Physical key trace used by JIS-kana raw-input correction.  It is valid
+  // only while the current composition is a contiguous tail sequence of
+  // key_string events.
+  std::vector<commands::KeyEvent> key_event_trace_;
+  bool key_event_trace_valid_ = true;
 
   size_t max_length_;
 

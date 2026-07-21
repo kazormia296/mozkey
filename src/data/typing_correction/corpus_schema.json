@@ -1,0 +1,536 @@
+{
+  "version": "v3",
+  "encoding": "UTF-8",
+  "roman_gold_columns": [
+    "case_id",
+    "intended_raw",
+    "typed_raw",
+    "intended_reading",
+    "operation",
+    "confidence",
+    "behavior",
+    "stratum",
+    "note"
+  ],
+  "roman_negative_columns": [
+    "case_id",
+    "typed_raw",
+    "expected_reading",
+    "reason",
+    "raw_policy",
+    "display_policy",
+    "auto_policy",
+    "stratum"
+  ],
+  "roman_override_columns": [
+    "rule_id",
+    "wrong",
+    "corrected",
+    "operation",
+    "cost",
+    "auto_applicable",
+    "scope",
+    "note"
+  ],
+  "kana_gold_columns": [
+    "case_id",
+    "typed_key_codes",
+    "typed_key_strings",
+    "corrected_key_codes",
+    "corrected_key_strings",
+    "operation",
+    "confidence",
+    "behavior",
+    "stratum",
+    "note"
+  ],
+  "kana_evaluation_columns": [
+    "case_id",
+    "typed_key_codes",
+    "typed_key_strings",
+    "corrected_key_codes",
+    "corrected_key_strings",
+    "operation",
+    "confidence",
+    "behavior",
+    "stratum",
+    "note"
+  ],
+  "kana_negative_columns": [
+    "case_id",
+    "typed_key_codes",
+    "typed_key_strings",
+    "raw_policy",
+    "display_policy",
+    "auto_policy",
+    "stratum",
+    "reason"
+  ],
+  "kana_layout_columns": [
+    "key_code",
+    "key_string",
+    "row"
+  ],
+  "kana_modifier_columns": [
+    "rule_id",
+    "wrong_key_code",
+    "wrong_key_string",
+    "corrected_key_code",
+    "corrected_key_string",
+    "operation",
+    "cost",
+    "behavior",
+    "note"
+  ],
+  "roman_holdout_columns": [
+    "case_id",
+    "typed_raw",
+    "corrected_raw",
+    "corrected_reading",
+    "operation",
+    "behavior",
+    "stratum",
+    "note"
+  ],
+  "kana_holdout_columns": [
+    "case_id",
+    "typed_key_codes",
+    "typed_key_strings",
+    "corrected_key_codes",
+    "corrected_key_strings",
+    "operation",
+    "behavior",
+    "stratum",
+    "note"
+  ],
+  "enums": {
+    "roman_operations": [
+      "transpose",
+      "omission",
+      "duplicate",
+      "replacement",
+      "neighbor"
+    ],
+    "kana_operations": [
+      "neighbor",
+      "kana_modifier"
+    ],
+    "roman_holdout_operations": [
+      "transpose",
+      "duplicate",
+      "neighbor"
+    ],
+    "kana_holdout_operations": [
+      "duplicate",
+      "neighbor",
+      "kana_modifier"
+    ],
+    "confidence": ["high", "medium", "low"],
+    "behavior": ["auto", "suggest", "test_only"],
+    "negative_raw_policy": ["allowed", "forbidden"],
+    "negative_display_policy": ["allowed", "forbidden"],
+    "negative_auto_policy": ["forbidden"],
+    "override_scope": ["local", "full"],
+    "layout_row": ["top", "qwerty", "home", "bottom"]
+  },
+  "holdout_policy": {
+    "behavior": "test_only",
+    "included_in_generated_rules": false,
+    "included_in_corpus_sha256": false,
+    "kana_input_disjointness": "typed_key_codes_and_typed_key_strings"
+  },
+  "evaluation_targets": {
+    "total_cases": 1000,
+    "roman_gold": 250,
+    "roman_negative": 250,
+    "kana_gold": 100,
+    "kana_gold_fixture": 100,
+    "kana_negative": 150,
+    "roman_composer_engine_holdout": 100,
+    "kana_holdout": 150
+  },
+  "negative_policy_targets": {
+    "roman": {"raw_forbidden": 90, "display_forbidden": 40},
+    "kana": {"raw_forbidden": 75, "display_forbidden": 75}
+  },
+  "stratum_fields": {
+    "required": ["length", "position", "lexical", "feature"],
+    "separator": ";",
+    "assignment": "key=value",
+    "values": {
+      "length": ["short", "medium", "long"],
+      "position": ["initial", "medial", "final", "none", "single"],
+      "lexical": [
+        "common",
+        "proper_noun",
+        "technical_term",
+        "product_name",
+        "url_or_email",
+        "intentional"
+      ],
+      "feature": [
+        "none",
+        "n",
+        "sokuon",
+        "long_vowel",
+        "small_kana",
+        "dakuten",
+        "handakuten",
+        "kana_neighbor",
+        "kana_modifier",
+        "multi_key",
+        "intentional_duplicate",
+        "dakuten_sequence",
+        "unknown_key",
+        "url",
+        "duplicate",
+        "intentional"
+      ]
+    }
+  },
+  "stratum_dimensions": {
+    "roman": {
+      "length": {
+        "unit": "raw_ascii_characters",
+        "buckets": {
+          "short": {"min": 4, "max": 6},
+          "medium": {"min": 7, "max": 10},
+          "long": {"min": 11}
+        }
+      },
+      "position": {
+        "unit": "zero_based_raw_character_index",
+        "values": ["initial", "medial", "final", "none"]
+      }
+    },
+    "kana": {
+      "length": {
+        "unit": "physical_key_events",
+        "buckets": {
+          "short": {"min": 1, "max": 3},
+          "medium": {"min": 4, "max": 8},
+          "long": {"min": 9}
+        }
+      },
+      "position": {
+        "unit": "zero_based_key_event_index",
+        "values": ["initial", "medial", "final", "none", "single"]
+      }
+    }
+  },
+  "metric_buckets": {
+    "roman": {
+      "operation": ["transpose", "omission", "duplicate", "replacement", "neighbor"],
+      "length": ["short", "medium", "long"],
+      "position": ["initial", "medial", "final"],
+      "lexical": ["common", "proper_noun"],
+      "feature": ["none", "n", "sokuon"]
+    },
+    "kana": {
+      "operation": ["neighbor", "kana_modifier"],
+      "length": ["short", "medium"],
+      "position": ["initial", "medial", "final"],
+      "lexical": ["common"],
+      "feature": [
+        "kana_neighbor",
+        "small_kana",
+        "dakuten",
+        "handakuten",
+        "kana_modifier"
+      ]
+    }
+  },
+  "negative_metric_buckets": {
+    "roman": {
+      "length": ["short", "medium", "long"],
+      "position": ["none"],
+      "lexical": ["common", "technical_term", "product_name"],
+      "feature": ["none", "url", "intentional"]
+    },
+    "kana": {
+      "length": ["short", "medium"],
+      "position": ["none"],
+      "lexical": ["common"],
+      "feature": [
+        "multi_key",
+        "intentional_duplicate",
+        "dakuten_sequence",
+        "unknown_key"
+      ]
+    }
+  },
+  "dataset_constraints": {
+    "kana_gold": {"min_key_events": 1, "max_key_events": 1},
+    "kana_gold_evaluation": {
+      "min_key_events": 3,
+      "max_key_events": 4,
+      "unique_typed_trace": true
+    },
+    "kana_negative": {"min_key_events": 1},
+    "kana_holdout": {"min_key_events": 2}
+  },
+  "coverage_minimums": {
+    "roman_gold": {
+      "operation": {
+        "transpose": 45,
+        "omission": 45,
+        "duplicate": 45,
+        "replacement": 40,
+        "neighbor": 40
+      },
+      "length": {"short": 40, "medium": 150, "long": 20},
+      "position": {"initial": 20, "medial": 150, "final": 15},
+      "lexical": {"common": 230, "proper_noun": 10},
+      "feature": {"none": 150, "n": 25, "sokuon": 20}
+    },
+    "roman_negative": {
+      "length": {"short": 100, "medium": 80, "long": 40},
+      "lexical": {"common": 60, "technical_term": 30, "product_name": 30},
+      "feature": {"url": 40, "intentional": 3},
+      "raw_policy": {"forbidden": 90, "allowed": 160},
+      "display_policy": {"forbidden": 40, "allowed": 210}
+    },
+    "roman_holdout": {
+      "operation": {"transpose": 30, "duplicate": 30, "neighbor": 20},
+      "length": {"short": 60, "medium": 20, "long": 5},
+      "position": {"initial": 15, "medial": 50, "final": 5},
+      "lexical": {"common": 70, "proper_noun": 20},
+      "feature": {"none": 65, "n": 7, "sokuon": 5}
+    },
+    "kana_gold_fixture": {
+      "operation": {"neighbor": 50, "kana_modifier": 30},
+      "behavior": {"suggest": 100},
+      "length": {"short": 100},
+      "position": {"single": 100},
+      "lexical": {"common": 100},
+      "feature": {
+        "kana_neighbor": 60,
+        "small_kana": 7,
+        "dakuten": 15,
+        "handakuten": 5
+      }
+    },
+    "kana_negative": {
+      "length": {"short": 140, "medium": 4},
+      "raw_policy": {"forbidden": 75, "allowed": 75},
+      "display_policy": {"forbidden": 75, "allowed": 75},
+      "feature": {
+        "multi_key": 25,
+        "intentional_duplicate": 15,
+        "dakuten_sequence": 15,
+        "unknown_key": 75
+      }
+    },
+    "kana_gold_evaluation": {
+      "operation": {"neighbor": 50, "kana_modifier": 30},
+      "behavior": {"suggest": 100},
+      "length": {"short": 80, "medium": 20},
+      "position": {"initial": 20, "medial": 20, "final": 20},
+      "lexical": {"common": 100},
+      "feature": {
+        "kana_neighbor": 50,
+        "small_kana": 5,
+        "dakuten": 10,
+        "handakuten": 5
+      }
+    },
+    "kana_holdout": {
+      "operation": {"neighbor": 50, "duplicate": 50, "kana_modifier": 25},
+      "length": {"short": 130, "medium": 8, "long": 8},
+      "position": {"initial": 80, "medial": 50, "final": 10},
+      "lexical": {"common": 150},
+      "feature": {
+        "kana_neighbor": 50,
+        "duplicate": 50,
+        "small_kana": 5,
+        "dakuten": 10,
+        "handakuten": 5
+      }
+    }
+  },
+  "strict_negative_coverage": {
+    "roman": {
+      "raw_forbidden": {
+        "length": {"short": 1, "long": 1},
+        "lexical": {"common": 1, "technical_term": 1, "product_name": 10},
+        "feature": {"none": 1, "url": 40, "intentional": 3}
+      },
+      "display_forbidden": {
+        "length": {"short": 1, "medium": 1},
+        "lexical": {"technical_term": 1, "product_name": 1},
+        "feature": {"none": 40}
+      }
+    },
+    "kana": {
+      "raw_forbidden": {
+        "length": {"short": 71, "medium": 4},
+        "feature": {"unknown_key": 75}
+      },
+      "display_forbidden": {
+        "length": {"short": 71, "medium": 4},
+        "feature": {
+          "multi_key": 25,
+          "intentional_duplicate": 15,
+          "dakuten_sequence": 15
+        }
+      }
+    }
+  },
+  "runtime_limits": {
+    "min_raw_bytes": 4,
+    "max_raw_bytes": 64,
+    "max_key_events": 64,
+    "max_edit_cost": 300,
+    "max_raw_hypotheses": 16,
+    "max_reading_hypotheses": 3,
+    "max_kana_conversion_reading_hypotheses": 16,
+    "max_edits": 1,
+    "max_candidate_window_additions": 2
+  },
+  "runtime_policies": {
+    "kana_display_requires_cost_advantage": true
+  },
+  "exclusivity": {
+    "global_case_ids": true,
+    "roman_typed_raw_disjoint_across_datasets": true,
+    "kana_typed_trace_disjoint_across_datasets": true,
+    "reject_contradictory_expected_readings": true,
+    "holdout_typed_inputs_disjoint_from_generated_inputs": true
+  },
+  "mode_policies": {
+    "roman": {"auto_enabled": true},
+    "kana": {"auto_enabled": false}
+  },
+  "metrics_report_contract": {
+    "mode_count_authorities": {
+      "candidate_recall_denominator": ["gold_cases"],
+      "top1_accuracy_denominator": ["gold_cases"],
+      "gold_candidate_precision_denominator": ["gold_total_candidates"],
+      "candidate_precision_denominator": [
+        "gold_total_candidates",
+        "raw_policy_forbidden_candidates"
+      ],
+      "candidate_precision_numerator": [
+        "gold_candidate_precision_numerator"
+      ],
+      "auto_recall_denominator": ["auto_gold_cases"],
+      "suggest_recall_denominator": ["suggest_gold_cases"],
+      "suggest_auto_violation_rate_denominator": ["suggest_gold_cases"],
+      "auto_candidates": ["gold_auto_candidates"],
+      "auto_precision_denominator": [
+        "gold_auto_candidates",
+        "negative_auto_candidates"
+      ]
+    },
+    "mode_component_totals": {
+      "gold_cases": ["auto_gold_cases", "suggest_gold_cases"]
+    },
+    "positive_stratum_totals": {
+      "cases": ["gold_cases"],
+      "total_candidates": ["gold_total_candidates"],
+      "correct_candidates": ["gold_candidate_precision_numerator"],
+      "correct_rows": ["candidate_recall_numerator"],
+      "top1_correct": ["top1_accuracy_numerator"],
+      "auto_candidates": ["gold_auto_candidates"],
+      "correct_auto_candidates": ["auto_precision_numerator"],
+      "correct_auto_rows": ["auto_recall_numerator"],
+      "suggest_cases": ["suggest_gold_cases"],
+      "suggest_auto_violation_rows": [
+        "suggest_auto_violation_rate_numerator"
+      ]
+    },
+    "negative_stratum_totals": {
+      "cases": ["negative_cases"],
+      "rows_with_candidates": ["negative_rows_with_candidates"],
+      "negative_rows_with_candidates": ["negative_rows_with_candidates"],
+      "raw_policy_forbidden_cases": ["raw_policy_forbidden_cases"],
+      "raw_policy_forbidden_violations": [
+        "raw_policy_forbidden_violations"
+      ],
+      "raw_policy_forbidden_candidates": [
+        "raw_policy_forbidden_candidates"
+      ],
+      "display_policy_forbidden_cases": [
+        "display_policy_forbidden_cases"
+      ],
+      "display_policy_forbidden_violations": [
+        "display_policy_forbidden_violations"
+      ],
+      "auto_candidates": ["negative_auto_candidates"],
+      "auto_policy_violations": ["auto_policy_violations"]
+    }
+  },
+  "metric_definitions": {
+    "raw_hypothesis_candidate_precision": "correct Gold hypotheses divided by all emitted raw hypotheses for Gold and raw_policy=forbidden Negative rows",
+    "raw_hypothesis_candidate_recall": "Gold rows with at least one exact corrected raw/key trace in raw hypotheses divided by all Gold rows",
+    "suggest_recall": "behavior=suggest Gold rows with at least one exact candidate divided by behavior=suggest Gold rows",
+    "raw_hypothesis_top1_accuracy": "Gold rows whose first ranked raw hypothesis is the exact corrected raw/key trace divided by all Gold rows",
+    "raw_hypothesis_candidate_false_positive_rate": "raw_policy=forbidden Negative rows with at least one emitted raw hypothesis divided by raw_policy=forbidden Negative rows",
+    "raw_policy_false_positive_rate": "raw_policy=forbidden Negative rows with at least one emitted raw hypothesis divided by raw_policy=forbidden Negative rows",
+    "negative_candidate_rate": "Negative rows with at least one emitted candidate divided by all Negative rows; display_policy=allowed rows are diagnostic, not false positives",
+    "auto_precision": "exact correct automatic hypotheses divided by all automatic hypotheses",
+    "auto_recall": "behavior=auto Gold rows with an exact automatic hypothesis divided by behavior=auto Gold rows",
+    "auto_false_positive_rate": "Negative rows with at least one automatic hypothesis divided by all Negative rows",
+    "suggest_auto_violation_rate": "behavior=suggest Gold rows with at least one automatic hypothesis divided by behavior=suggest Gold rows",
+    "composer_replay_recall": "Roman holdout rows with an exact corrected reading after Composer replay divided by Roman holdout rows",
+    "engine_e2e_recall": "Roman holdout rows whose expected corrected reading appears in the actual Engine candidate window divided by Roman holdout rows; the EngineConverter test separately verifies TYPING_CORRECTION provenance on the internal candidate",
+    "engine_candidate_window_top1_accuracy": "Roman holdout rows whose first visible typing-correction candidate in the Engine candidate window is the expected corrected reading divided by Roman holdout rows",
+    "engine_candidate_window_topk_accuracy": "Roman holdout rows whose visible Engine candidate window contains the expected corrected reading and a typing-correction alternative divided by Roman holdout rows",
+    "kana_engine_e2e_recall": "Kana holdout rows whose expected corrected reading appears in the actual JIS Kana Engine candidate window divided by Kana holdout rows",
+    "engine_candidate_window_kana_top1_accuracy": "Kana holdout rows whose first visible typing-correction candidate in the JIS Kana Engine candidate window is the expected corrected reading divided by Kana holdout rows",
+    "engine_candidate_window_kana_topk_accuracy": "Kana holdout rows whose visible JIS Kana Engine candidate window contains the expected corrected reading and a typing-correction alternative divided by Kana holdout rows",
+    "engine_candidate_window_negative_false_positive_rate": "Roman display_policy=forbidden Negative rows with a visible typing-correction alternative in the Engine candidate window divided by Roman display_policy=forbidden Negative rows",
+    "engine_candidate_window_kana_negative_false_positive_rate": "Kana display_policy=forbidden Negative rows with a visible typing-correction alternative in the JIS Kana Engine candidate window divided by Kana display_policy=forbidden Negative rows"
+  },
+  "release_thresholds": {
+    "roman": {
+      "raw_hypothesis_candidate_precision_min": 0.05,
+      "raw_hypothesis_candidate_recall_min": 0.9,
+      "raw_hypothesis_top1_accuracy_min": 0.95,
+      "suggest_recall_min": 0.9,
+      "auto_recall_min": 0.9,
+      "auto_precision_min": 0.9,
+      "auto_false_positive_rate_max": 0.0,
+      "suggest_auto_violation_rate_max": 0.0
+    },
+    "kana": {
+      "raw_hypothesis_candidate_precision_min": 0.05,
+      "raw_hypothesis_candidate_recall_min": 0.9,
+      "raw_hypothesis_top1_accuracy_min": 0.15,
+      "suggest_recall_min": 0.9,
+      "auto_false_positive_rate_max": 0.0,
+      "suggest_auto_violation_rate_max": 0.0,
+      "auto_candidates_max": 0,
+      "auto_rows_max": 0
+    },
+    "composer_replay_recall_min": 0.95,
+    "engine_e2e_recall_min": 0.9,
+    "engine_candidate_window_top1_accuracy_min": 0.5,
+    "engine_candidate_window_topk_accuracy_min": 0.9,
+    "kana_engine_e2e_recall_min": 0.9,
+    "engine_candidate_window_kana_top1_accuracy_min": 0.5,
+    "engine_candidate_window_kana_topk_accuracy_min": 0.9,
+    "engine_candidate_window_negative_false_positive_rate_max": 0.0,
+    "candidate_false_positive_rate_max": 0.0
+  },
+  "stratum_thresholds": {
+    "roman": {
+      "raw_hypothesis_candidate_recall_min": {
+        "operation": 0.9,
+        "length": 0.9,
+        "position": 0.9,
+        "lexical": 0.9,
+        "feature": 0.9
+      }
+    },
+    "kana": {
+      "raw_hypothesis_candidate_recall_min": {
+        "operation": 0.9,
+        "length": 0.9,
+        "position": 0.9,
+        "lexical": 0.9,
+        "feature": 0.9
+      }
+    }
+  }
+}

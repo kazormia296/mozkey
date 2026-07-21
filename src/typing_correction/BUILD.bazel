@@ -1,0 +1,211 @@
+# Copyright 2026 Grimodex contributors.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#     * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright
+# notice, this list of conditions and the following disclaimer in the
+# documentation and/or other materials provided with the distribution.
+#     * Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+load(
+    "//:build_defs.bzl",
+    "mozc_cc_binary",
+    "mozc_cc_library",
+    "mozc_cc_test",
+)
+
+package(default_visibility = ["//:__subpackages__"])
+
+mozc_cc_library(
+    name = "typing_correction",
+    srcs = ["typing_correction.cc"],
+    hdrs = [
+        "generated_contract.h",
+        "typing_correction.h",
+    ],
+    deps = [
+        "//protocol:commands_cc_proto",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+mozc_cc_library(
+    name = "typing_correction_holdout",
+    hdrs = ["generated_holdout_cases.h"],
+    deps = [":typing_correction"],
+)
+
+mozc_cc_library(
+    name = "roman_typing_corrector",
+    srcs = ["roman_typing_corrector.cc"],
+    hdrs = [
+        "generated_roman_rules.h",
+        "roman_typing_corrector.h",
+    ],
+    deps = [
+        ":typing_correction",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+mozc_cc_library(
+    name = "kana_typing_corrector",
+    srcs = ["kana_typing_corrector.cc"],
+    hdrs = [
+        "generated_kana_rules.h",
+        "kana_typing_corrector.h",
+    ],
+    deps = [
+        ":typing_correction",
+        "//base:util",
+        "//protocol:commands_cc_proto",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+mozc_cc_library(
+    name = "incremental_cache",
+    srcs = ["incremental_cache.cc"],
+    hdrs = ["incremental_cache.h"],
+    deps = [
+        ":roman_typing_corrector",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "composer_replayer",
+    srcs = ["composer_replayer.cc"],
+    hdrs = ["composer_replayer.h"],
+    deps = [
+        ":incremental_cache",
+        ":kana_typing_corrector",
+        ":roman_typing_corrector",
+        "//composer",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_library(
+    name = "shadow_conversion",
+    srcs = ["shadow_conversion.cc"],
+    hdrs = ["shadow_conversion.h"],
+    deps = [
+        ":composer_replayer",
+        ":incremental_cache",
+        "//composer",
+        "//converter:converter_interface",
+        "//converter:segments",
+        "//request:conversion_request",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+mozc_cc_test(
+    name = "typing_correction_test",
+    size = "small",
+    srcs = ["typing_correction_test.cc"],
+    deps = [
+        ":typing_correction",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_binary(
+    name = "inspect_typing_correction",
+    srcs = ["inspect_typing_correction.cc"],
+    deps = [
+        ":composer_replayer",
+        "//composer",
+        "//composer:table",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+    ],
+)
+
+mozc_cc_binary(
+    name = "benchmark_typing_correction",
+    srcs = ["benchmark_typing_correction.cc"],
+    deps = [":roman_typing_corrector"],
+)
+
+mozc_cc_binary(
+    name = "evaluate_typing_correction_metrics",
+    srcs = ["evaluation_metrics.cc"],
+    deps = [
+        ":composer_replayer",
+        ":kana_typing_corrector",
+        ":roman_typing_corrector",
+        ":typing_correction_holdout",
+        "//base:util",
+        "//composer",
+        "//composer:table",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+    ],
+)
+
+mozc_cc_test(
+    name = "kana_typing_corrector_test",
+    size = "small",
+    srcs = ["kana_typing_corrector_test.cc"],
+    deps = [
+        ":kana_typing_corrector",
+        ":typing_correction_holdout",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "incremental_cache_test",
+    size = "small",
+    srcs = ["incremental_cache_test.cc"],
+    deps = [
+        ":incremental_cache",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "roman_typing_corrector_test",
+    size = "small",
+    srcs = ["roman_typing_corrector_test.cc"],
+    deps = [
+        ":roman_typing_corrector",
+        ":typing_correction_holdout",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_test(
+    name = "composer_replayer_test",
+    size = "small",
+    srcs = ["composer_replayer_test.cc"],
+    deps = [
+        ":composer_replayer",
+        ":typing_correction_holdout",
+        "//composer:table",
+        "//protocol:commands_cc_proto",
+        "//testing:gunit_main",
+    ],
+)

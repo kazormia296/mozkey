@@ -63,6 +63,7 @@
 #include "protocol/config.pb.h"
 #include "request/conversion_request.h"
 #include "transliteration/transliteration.h"
+#include "typing_correction/typing_correction.h"
 
 #if defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
 #include <windows.h>
@@ -267,6 +268,95 @@ int32_t CalculateCursorOffset(absl::string_view committed_text) {
   // If committed_text is a bracket pair, set the cursor in the middle.
   return Util::IsBracketPairText(committed_text) ? -1 : 0;
 }
+
+bool IsLowerAscii(absl::string_view text) {
+  if (text.empty()) {
+    return false;
+  }
+  return std::all_of(text.begin(), text.end(), [](const char character) {
+    return character >= 'a' && character <= 'z';
+  });
+}
+
+typing_correction::RomanInputGateContext MakeRomanInputGateContext(
+    const composer::Composer& composer, const commands::Request& request,
+    const config::Config& config) {
+  const std::string raw = composer.GetRawString();
+  const transliteration::TransliterationType input_mode =
+      composer.GetInputMode();
+
+  typing_correction::RomanInputGateContext context;
+  context.feature_enabled = config.use_typing_correction();
+  context.is_roman_input = IsLowerAscii(raw);
+  context.cursor_at_end = composer.GetCursor() == composer.GetLength();
+  context.secure_input =
+      composer.GetInputFieldType() == commands::Context::PASSWORD;
+  context.reverse_conversion = !composer.source_text().empty();
+  context.ascii_input_mode =
+      transliteration::T13n::IsInHalfAsciiTypes(input_mode) ||
+      transliteration::T13n::IsInFullAsciiTypes(input_mode);
+  context.mixed_script = !IsLowerAscii(raw);
+  context.url_like = raw.find("://") != absl::string_view::npos;
+  context.email_like = raw.find('@') != absl::string_view::npos;
+  context.path_like = raw.find('/') != absl::string_view::npos ||
+                      raw.find('\\') != absl::string_view::npos;
+  context.default_roman_table =
+      request.special_romanji_table() == commands::Request::DEFAULT_TABLE &&
+      (!config.has_custom_roman_table() || config.custom_roman_table().empty());
+  return context;
+}
+
+typing_correction::KanaInputGateContext MakeKanaInputGateContext(
+    const composer::Composer& composer, const commands::Request& request,
+    const config::Config& config) {
+  typing_correction::KanaInputGateContext context;
+  context.feature_enabled = config.use_typing_correction();
+  context.is_jis_kana_input = config.preedit_method() == config::Config::KANA;
+  context.cursor_at_end = composer.GetCursor() == composer.GetLength();
+  context.secure_input =
+      composer.GetInputFieldType() == commands::Context::PASSWORD;
+  context.reverse_conversion = !composer.source_text().empty();
+  const transliteration::TransliterationType input_mode =
+      composer.GetInputMode();
+  context.ascii_input_mode =
+      transliteration::T13n::IsInHalfAsciiTypes(input_mode) ||
+      transliteration::T13n::IsInFullAsciiTypes(input_mode);
+  context.modifier_insensitive_conversion =
+      request.kana_modifier_insensitive_conversion() &&
+      config.use_kana_modifier_insensitive_conversion();
+  return context;
+}
+
+typing_correction::KanaModeMismatchInputGateContext
+MakeKanaModeMismatchInputGateContext(
+    const composer::Composer& composer, const config::Config& config) {
+  typing_correction::KanaModeMismatchInputGateContext context;
+  context.feature_enabled = config.use_typing_correction();
+  context.cursor_at_end = composer.GetCursor() == composer.GetLength();
+  context.secure_input =
+      composer.GetInputFieldType() == commands::Context::PASSWORD;
+  context.reverse_conversion = !composer.source_text().empty();
+  const transliteration::TransliterationType input_mode =
+      composer.GetInputMode();
+  context.ascii_input_mode =
+      transliteration::T13n::IsInHalfAsciiTypes(input_mode) ||
+      transliteration::T13n::IsInFullAsciiTypes(input_mode);
+  return context;
+}
+
+std::optional<int64_t> BestSourcePathCost(const Segments& segments) {
+  if (segments.conversion_segments_size() == 0) {
+    return std::nullopt;
+  }
+  int64_t cost = 0;
+  for (const Segment& segment : segments.conversion_segments()) {
+    if (segment.candidates_size() == 0) {
+      return std::nullopt;
+    }
+    cost += segment.candidate(0).cost;
+  }
+  return cost;
+}
 }  // namespace
 
 EngineConverter::EngineConverter(
@@ -343,6 +433,40 @@ bool EngineConverter::ConvertWithPreferences(
           .SetProjectDictionary(PinnedProjectDictionary())
           .Build();
 
+  typing_correction_alternatives_.clear();
+  std::vector<typing_correction::WholeSequenceConversion>
+      shadow_conversions;
+  if (config_->use_typing_correction() &&
+      !conversion_request.incognito_mode()) {
+    typing_correction::Limits limits;
+    limits.max_reading_hypotheses =
+        typing_correction::kTypingCorrectionMaxReadingHypotheses;
+    if (config_->preedit_method() == config::Config::KANA) {
+      // Explicit conversion can afford to score the complete bounded kana
+      // raw set before the display-cost gate selects at most two candidates.
+      limits.max_reading_hypotheses =
+          typing_correction::
+              kTypingCorrectionMaxKanaConversionReadingHypotheses;
+      const typing_correction::KanaInputGateContext gate =
+          MakeKanaInputGateContext(composer, *request_, *config_);
+      shadow_conversions = typing_correction::GenerateShadowKanaConversions(
+          composer, gate, *converter_, conversion_request, limits);
+    } else {
+      const typing_correction::RomanInputGateContext gate =
+          MakeRomanInputGateContext(composer, *request_, *config_);
+      shadow_conversions = typing_correction::GenerateShadowConversions(
+          composer, gate, *converter_, conversion_request, limits,
+          &typing_correction_cache_);
+      const typing_correction::KanaModeMismatchInputGateContext mode_gate =
+          MakeKanaModeMismatchInputGateContext(composer, *config_);
+      const std::vector<typing_correction::WholeSequenceConversion>
+          mode_mismatch = typing_correction::GenerateShadowKanaModeMismatch(
+              composer, mode_gate, *converter_, conversion_request, limits);
+      shadow_conversions.insert(shadow_conversions.end(), mode_mismatch.begin(),
+                                mode_mismatch.end());
+    }
+  }
+
   if (!converter_->StartConversion(conversion_request, &segments_)) {
     LOG(WARNING) << "StartConversion() failed";
     ResetState();
@@ -358,6 +482,8 @@ bool EngineConverter::ConvertWithPreferences(
       segments_.DebugString()));
 #endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
 
+  AppendTypingCorrectionCandidates(std::move(shadow_conversions));
+
   segment_index_ = 0;
   state_ = CONVERSION;
   // If TalkBack is enabled, the candidate list should be always visible to
@@ -366,6 +492,81 @@ bool EngineConverter::ConvertWithPreferences(
   candidate_list_visible_ = request_->is_a11y_talkback_enabled();
   UpdateCandidateList();
   InitializeSelectedCandidateIndices();
+  return true;
+}
+
+bool EngineConverter::TryApplyTypingCorrectionForLiveConversion(
+    const composer::Composer& composer, std::string* corrected_raw,
+    std::string* corrected_reading) {
+  if (corrected_raw != nullptr) {
+    corrected_raw->clear();
+  }
+  if (corrected_reading != nullptr) {
+    corrected_reading->clear();
+  }
+
+  if (!config_->use_typing_correction() || config_->incognito_mode() ||
+      request_->is_incognito_mode() || !CheckState(CONVERSION) ||
+      segments_.conversion_segments_size() == 0 ||
+      composer.GetCursor() != composer.GetLength() ||
+      composer.GetInputFieldType() == commands::Context::PASSWORD) {
+    return false;
+  }
+
+  const Segment& source_segment = segments_.conversion_segment(0);
+  if (source_segment.candidates_size() == 0) {
+    return false;
+  }
+
+  const typing_correction::WholeSequenceConversion* selected = nullptr;
+  size_t auto_count = 0;
+  for (const typing_correction::WholeSequenceConversion& alternative :
+       typing_correction_alternatives_) {
+    if (!alternative.hypothesis.auto_applicable) {
+      continue;
+    }
+    ++auto_count;
+    selected = &alternative;
+  }
+  if (auto_count != 1 || selected == nullptr ||
+      selected->candidate_index < 0) {
+    return false;
+  }
+
+  // A correction must beat the source path after its edit penalty.  This is
+  // the live-only margin gate; candidate-only conversion remains available
+  // even when this check rejects automatic preview.
+  if (selected->total_cost >= source_segment.candidate(0).cost) {
+    return false;
+  }
+
+  const std::string source_reading = composer.GetQueryForConversion();
+  std::vector<UserDictionaryLookupResult> user_dictionary_entries;
+  converter_->LookupUserDictionaryPrefixEntries(source_reading,
+                                                 &user_dictionary_entries);
+  for (const UserDictionaryLookupResult& entry : user_dictionary_entries) {
+    if (entry.key == source_reading) {
+      return false;
+    }
+  }
+  const std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
+      project_dictionary = PinnedProjectDictionary();
+  if (project_dictionary != nullptr &&
+      project_dictionary->HasKey(source_reading)) {
+    return false;
+  }
+
+  candidate_list_.MoveToId(selected->candidate_index);
+  candidate_list_visible_ = false;
+  UpdateSelectedCandidateIndex();
+  SegmentFocus();
+
+  if (corrected_raw != nullptr) {
+    *corrected_raw = selected->hypothesis.corrected_raw;
+  }
+  if (corrected_reading != nullptr) {
+    *corrected_reading = selected->hypothesis.corrected_reading;
+  }
   return true;
 }
 
@@ -742,6 +943,42 @@ bool EngineConverter::SuggestWithPreferences(
           .SetProjectDictionary(PinnedProjectDictionary())
           .Build();
 
+  std::vector<typing_correction::WholeSequenceConversion>
+      shadow_predictions;
+  if (config_->use_typing_correction() &&
+      !conversion_request.incognito_mode()) {
+    typing_correction::Limits limits;
+    limits.max_reading_hypotheses =
+        typing_correction::kTypingCorrectionMaxReadingHypotheses;
+    if (config_->preedit_method() == config::Config::KANA) {
+      const typing_correction::KanaInputGateContext gate =
+          MakeKanaInputGateContext(composer, *request_, *config_);
+      shadow_predictions = typing_correction::GenerateShadowKanaPredictions(
+          composer, gate, *converter_, conversion_request, limits);
+    } else {
+      const typing_correction::RomanInputGateContext gate =
+          MakeRomanInputGateContext(composer, *request_, *config_);
+      shadow_predictions = typing_correction::GenerateShadowPredictions(
+          composer, gate, *converter_, conversion_request, limits,
+          &typing_correction_cache_);
+      const typing_correction::KanaModeMismatchInputGateContext mode_gate =
+          MakeKanaModeMismatchInputGateContext(composer, *config_);
+      const std::vector<typing_correction::WholeSequenceConversion>
+          mode_mismatch =
+              typing_correction::GenerateShadowKanaModeMismatchPredictions(
+                  composer, mode_gate, *converter_, conversion_request, limits);
+      shadow_predictions.insert(shadow_predictions.end(), mode_mismatch.begin(),
+                                mode_mismatch.end());
+    }
+    for (typing_correction::WholeSequenceConversion& alternative :
+         shadow_predictions) {
+      alternative.candidate.attributes |=
+          converter::Attribute::PARTIALLY_KEY_CONSUMED;
+      alternative.candidate.consumed_key_size =
+          Util::CharsLen(alternative.hypothesis.original_reading);
+    }
+  }
+
   // Start actual suggestion/prediction.
   bool result = converter_->StartPrediction(conversion_request, &segments_);
   if (!result) {
@@ -781,6 +1018,8 @@ bool EngineConverter::SuggestWithPreferences(
     }
   }
   DCHECK_EQ(segments_.conversion_segments_size(), 1);
+
+  AppendTypingCorrectionCandidates(std::move(shadow_predictions));
 
   // Copy current suggestions so that we can merge
   // prediction/suggestions later
@@ -842,6 +1081,42 @@ bool EngineConverter::PredictWithPreferences(
 
   segments_.clear_conversion_segments();
 
+  std::vector<typing_correction::WholeSequenceConversion>
+      shadow_predictions;
+  if (predict_first && config_->use_typing_correction() &&
+      !conversion_request.incognito_mode()) {
+    typing_correction::Limits limits;
+    limits.max_reading_hypotheses =
+        typing_correction::kTypingCorrectionMaxReadingHypotheses;
+    if (config_->preedit_method() == config::Config::KANA) {
+      const typing_correction::KanaInputGateContext gate =
+          MakeKanaInputGateContext(composer, *request_, *config_);
+      shadow_predictions = typing_correction::GenerateShadowKanaPredictions(
+          composer, gate, *converter_, conversion_request, limits);
+    } else {
+      const typing_correction::RomanInputGateContext gate =
+          MakeRomanInputGateContext(composer, *request_, *config_);
+      shadow_predictions = typing_correction::GenerateShadowPredictions(
+          composer, gate, *converter_, conversion_request, limits,
+          &typing_correction_cache_);
+      const typing_correction::KanaModeMismatchInputGateContext mode_gate =
+          MakeKanaModeMismatchInputGateContext(composer, *config_);
+      const std::vector<typing_correction::WholeSequenceConversion>
+          mode_mismatch =
+              typing_correction::GenerateShadowKanaModeMismatchPredictions(
+                  composer, mode_gate, *converter_, conversion_request, limits);
+      shadow_predictions.insert(shadow_predictions.end(), mode_mismatch.begin(),
+                                mode_mismatch.end());
+    }
+    for (typing_correction::WholeSequenceConversion& alternative :
+         shadow_predictions) {
+      alternative.candidate.attributes |=
+          converter::Attribute::PARTIALLY_KEY_CONSUMED;
+      alternative.candidate.consumed_key_size =
+          Util::CharsLen(alternative.hypothesis.original_reading);
+    }
+  }
+
   if (predict_expand || predict_first) {
     const bool result = converter_->StartPredictionWithPreviousSuggestion(
         conversion_request, previous_suggestions_, &segments_);
@@ -856,6 +1131,8 @@ bool EngineConverter::PredictWithPreferences(
     converter_->PrependCandidates(conversion_request, previous_suggestions_,
                                   &segments_);
   }
+
+  AppendTypingCorrectionCandidates(std::move(shadow_predictions));
 
   segment_index_ = 0;
   state_ = PREDICTION;
@@ -901,6 +1178,7 @@ void EngineConverter::Cancel() {
 void EngineConverter::Reset() {
   DCHECK(CheckState(COMPOSITION | SUGGESTION | PREDICTION | CONVERSION));
   project_dictionary_registry_.EndComposition();
+  typing_correction_cache_.Clear();
 
   // Even if composition mode, call ResetConversion
   // in order to clear history segments.
@@ -925,6 +1203,32 @@ void EngineConverter::Commit(const composer::Composer& composer,
                              const commands::Context& context) {
   DCHECK(CheckState(PREDICTION | CONVERSION));
   ResetResult();
+
+  if (const typing_correction::WholeSequenceConversion* alternative =
+          HasSelectedTypingCorrection()
+              ? FindTypingCorrectionAlternative(
+                    segment_index_,
+                    GetCandidateIndexForConverter(segment_index_))
+              : nullptr;
+      alternative != nullptr) {
+    if (!UpdateResult(0, segments_.conversion_segments_size(), nullptr)) {
+      Cancel();
+      ResetState();
+      return;
+    }
+
+    // A correction candidate is committed as an externally supplied corrected
+    // conversion.  Never call CommitSegmentValue on the source segments: that
+    // would learn the typo reading and would also commit the wrong segment
+    // boundaries when the scratch conversion split the input differently.
+    if (!alternative->learning_segments.empty()) {
+      LearnExternalConversionSegments(alternative->learning_segments, context);
+    }
+    converter_->CancelConversion(&segments_);
+    project_dictionary_registry_.EndComposition();
+    ResetState();
+    return;
+  }
 
   if (!UpdateResult(0, segments_.conversion_segments_size(), nullptr)) {
     Cancel();
@@ -1075,6 +1379,22 @@ bool EngineConverter::CommitSuggestionInternal(
     return false;
   }
 
+  if (const typing_correction::WholeSequenceConversion* alternative =
+          HasSelectedTypingCorrection()
+              ? FindTypingCorrectionAlternative(
+                    segment_index_,
+                    GetCandidateIndexForConverter(segment_index_))
+              : nullptr;
+      alternative != nullptr) {
+    if (!alternative->learning_segments.empty()) {
+      LearnExternalConversionSegments(alternative->learning_segments, context);
+    }
+    converter_->CancelConversion(&segments_);
+    project_dictionary_registry_.EndComposition();
+    ResetState();
+    return true;
+  }
+
   const size_t preedit_length = Util::CharsLen(preedit);
 
   // TODO(horo): When we will support hardware keyboard and introduce
@@ -1173,6 +1493,15 @@ void EngineConverter::CommitSegmentsInternal(const composer::Composer& composer,
 
   // If commit all segments, just call Commit.
   if (segments_.conversion_segments_size() <= segments_to_commit) {
+    Commit(composer, context);
+    return;
+  }
+
+  // A typing-correction candidate represents a replacement for the complete
+  // source reading.  It is backed by a scratch conversion and therefore
+  // cannot be committed safely as just the first source segment.  Commit the
+  // selected whole-sequence candidate and leave no source prefix behind.
+  if (HasSelectedTypingCorrection()) {
     Commit(composer, context);
     return;
   }
@@ -1730,6 +2059,17 @@ void EngineConverter::FillOutput(const composer::Composer& composer,
   }
 }
 
+std::vector<std::string> EngineConverter::TypingCorrectionCandidateValues()
+    const {
+  std::vector<std::string> values;
+  values.reserve(typing_correction_alternatives_.size());
+  for (const typing_correction::WholeSequenceConversion& alternative :
+       typing_correction_alternatives_) {
+    values.push_back(alternative.candidate.value);
+  }
+  return values;
+}
+
 EngineConverter* EngineConverter::Clone() const {
   EngineConverter* engine_converter =
       new EngineConverter(converter_, request_, config_,
@@ -1746,6 +2086,91 @@ EngineConverter* EngineConverter::Clone() const {
   return engine_converter;
 }
 
+void EngineConverter::AppendTypingCorrectionCandidates(
+    std::vector<typing_correction::WholeSequenceConversion> alternatives) {
+  if (alternatives.empty() || segments_.conversion_segments_size() == 0) {
+    return;
+  }
+
+  // The full shadow budget is three readings, while the production candidate
+  // window receives at most two additional entries.  This keeps the normal
+  // converter candidates visible and makes the UI budget independently
+  // testable from the raw hypothesis budget.
+  constexpr size_t kMaxCandidateWindowAlternatives =
+      typing_correction::kTypingCorrectionMaxCandidateWindowAdditions;
+  Segment* source_segment = segments_.mutable_conversion_segment(0);
+  std::optional<int64_t> kana_source_path_cost;
+  if (typing_correction::
+          kTypingCorrectionKanaDisplayRequiresCostAdvantage &&
+      config_->preedit_method() == config::Config::KANA) {
+    kana_source_path_cost = BestSourcePathCost(segments_);
+    if (!kana_source_path_cost.has_value()) {
+      return;
+    }
+  }
+  size_t appended = 0;
+  for (typing_correction::WholeSequenceConversion& alternative :
+       alternatives) {
+    if (appended >= kMaxCandidateWindowAlternatives ||
+        alternative.candidate.value.empty()) {
+      break;
+    }
+
+    // JIS-kana generic edits are dense: almost every valid trace has a
+    // neighboring-key hypothesis.  Expose one only when normal conversion
+    // evidence beats the source path after the edit penalty.  Roman and
+    // kana-as-Roman candidates retain their existing candidate-only policy.
+    if (kana_source_path_cost.has_value() &&
+        static_cast<int64_t>(alternative.total_cost) >=
+            *kana_source_path_cost) {
+      continue;
+    }
+
+    bool duplicate_surface = false;
+    for (const converter::Candidate* existing : source_segment->candidates()) {
+      if (existing != nullptr && existing->value == alternative.candidate.value) {
+        duplicate_surface = true;
+        break;
+      }
+    }
+    if (duplicate_surface) {
+      continue;
+    }
+
+    converter::Candidate* candidate = source_segment->add_candidate();
+    *candidate = alternative.candidate;
+    alternative.candidate_index =
+        static_cast<int>(source_segment->candidates_size() - 1);
+    typing_correction_alternatives_.push_back(std::move(alternative));
+    ++appended;
+  }
+}
+
+const typing_correction::WholeSequenceConversion*
+EngineConverter::FindTypingCorrectionAlternative(
+    const size_t segment_index, const int candidate_index) const {
+  if (segment_index != 0 || candidate_index < 0) {
+    return nullptr;
+  }
+  for (const typing_correction::WholeSequenceConversion& alternative :
+       typing_correction_alternatives_) {
+    if (alternative.candidate_index == candidate_index) {
+      return &alternative;
+    }
+  }
+  return nullptr;
+}
+
+bool EngineConverter::HasSelectedTypingCorrection() const {
+  if (!CheckState(SUGGESTION | PREDICTION | CONVERSION) ||
+      segments_.conversion_segments_size() == 0) {
+    return false;
+  }
+  return FindTypingCorrectionAlternative(
+             segment_index_, GetCandidateIndexForConverter(segment_index_)) !=
+         nullptr;
+}
+
 void EngineConverter::ResetResult() { result_.Clear(); }
 
 std::shared_ptr<const dictionary::ProjectDictionarySnapshot>
@@ -1756,6 +2181,7 @@ EngineConverter::PinnedProjectDictionary() const {
 void EngineConverter::ResetState() {
   state_ = COMPOSITION;
   segment_index_ = 0;
+  typing_correction_alternatives_.clear();
   previous_suggestions_.clear();
   candidate_list_visible_ = false;
   candidate_list_.Clear();
@@ -1871,6 +2297,13 @@ void EngineConverter::GetPreedit(const size_t index, const size_t size,
   DCHECK(preedit);
 
   preedit->clear();
+  if (const typing_correction::WholeSequenceConversion* alternative =
+          FindTypingCorrectionAlternative(
+              segment_index_, GetCandidateIndexForConverter(segment_index_));
+      alternative != nullptr && index == 0) {
+    *preedit = alternative->hypothesis.corrected_reading;
+    return;
+  }
   for (size_t i = index; i < size; ++i) {
     if (CheckState(CONVERSION)) {
       // In conversion mode, all the key of candidates is same.
@@ -1893,6 +2326,13 @@ void EngineConverter::GetConversion(const size_t index, const size_t size,
   DCHECK(conversion);
 
   conversion->clear();
+  if (const typing_correction::WholeSequenceConversion* alternative =
+          FindTypingCorrectionAlternative(
+              segment_index_, GetCandidateIndexForConverter(segment_index_));
+      alternative != nullptr && index == 0) {
+    *conversion = alternative->candidate.value;
+    return;
+  }
   for (size_t i = index; i < size; ++i) {
     conversion->append(GetSelectedCandidateValue(i));
   }
@@ -1917,6 +2357,23 @@ void EngineConverter::UpdateResultTokens(const size_t index,
     }
   };
 
+  if (const typing_correction::WholeSequenceConversion* alternative =
+          FindTypingCorrectionAlternative(
+              segment_index_, GetCandidateIndexForConverter(segment_index_));
+      alternative != nullptr && index == 0) {
+    const int first_token_idx = result_.tokens_size();
+    for (const auto& inner : alternative->candidate.inner_segments()) {
+      add_tokens(inner.GetContentKey(), inner.GetContentValue(),
+                 inner.GetFunctionalKey(), inner.GetFunctionalValue());
+    }
+    if (result_.tokens_size() > first_token_idx) {
+      result_.mutable_tokens(first_token_idx)->set_lid(alternative->candidate.lid);
+      result_.mutable_tokens(result_.tokens_size() - 1)
+          ->set_rid(alternative->candidate.rid);
+    }
+    return;
+  }
+
   for (size_t i = index; i < size; ++i) {
     const int cand_idx = GetCandidateIndexForConverter(i);
     const converter::Candidate& candidate =
@@ -1940,6 +2397,13 @@ size_t EngineConverter::GetConsumedPreeditSize(const size_t index,
                                                const size_t size) const {
   DCHECK(CheckState(SUGGESTION | PREDICTION | CONVERSION));
   DCHECK(index + size <= segments_.conversion_segments_size());
+
+  if (const typing_correction::WholeSequenceConversion* alternative =
+          FindTypingCorrectionAlternative(
+              segment_index_, GetCandidateIndexForConverter(segment_index_));
+      alternative != nullptr) {
+    return Util::CharsLen(alternative->hypothesis.original_reading);
+  }
 
   if (CheckState(SUGGESTION | PREDICTION)) {
     DCHECK_EQ(1, size);
@@ -2139,6 +2603,22 @@ const converter::Candidate& EngineConverter::GetSelectedCandidate(
 
 void EngineConverter::FillConversion(commands::Preedit* preedit) const {
   DCHECK(CheckState(PREDICTION | CONVERSION));
+  if (const typing_correction::WholeSequenceConversion* alternative =
+          FindTypingCorrectionAlternative(
+              segment_index_, GetCandidateIndexForConverter(segment_index_));
+      alternative != nullptr) {
+    preedit->Clear();
+    const bool added = output::AddSegment(
+        alternative->hypothesis.corrected_reading,
+        alternative->candidate.value, output::CONVERSION | output::FOCUSED,
+        preedit);
+    if (added) {
+      preedit->set_highlighted_position(0);
+      preedit->set_cursor(
+          static_cast<uint32_t>(Util::CharsLen(alternative->candidate.value)));
+    }
+    return;
+  }
   output::FillConversion(segments_, segment_index_,
                          candidate_list_.focused_id(), preedit);
 }

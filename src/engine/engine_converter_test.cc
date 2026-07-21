@@ -35,6 +35,7 @@
 
 #include "engine/engine_converter.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -73,6 +74,7 @@
 #include "testing/mozctest.h"
 #include "testing/testing_util.h"
 #include "transliteration/transliteration.h"
+#include "typing_correction/generated_holdout_cases.h"
 
 namespace mozc {
 namespace engine {
@@ -159,6 +161,21 @@ void AddSegmentWithSingleCandidate(Segments* segments, absl::string_view key,
   cand->value.assign(value.data(), value.size());
   cand->content_value = cand->value;
 }
+
+class RecordingExternalLearningConverter final : public MockConverter {
+ public:
+  bool LearnExternalConversionSegments(
+      const ConversionRequest& request,
+      absl::Span<const ExternalConversionSegment> segments) const override {
+    (void)request;
+    ++learn_segments_call_count;
+    learned_segments.assign(segments.begin(), segments.end());
+    return true;
+  }
+
+  mutable size_t learn_segments_call_count = 0;
+  mutable std::vector<ExternalConversionSegment> learned_segments;
+};
 
 class EngineConverterTest : public testing::TestWithTempUserProfile {
  protected:
@@ -4273,6 +4290,669 @@ TEST_F(EngineConverterTest, CommitContext) {
 
   EXPECT_CALL(*mock_converter, CommitContext(_)).WillOnce(Return());
   converter.CommitContext(*composer_, Context::default_instance());
+}
+
+TEST_F(EngineConverterTest, TypingCorrectionWholeSequenceKeepsSourceAndLearnsCorrectedReading) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter =
+      std::make_shared<RecordingExternalLearningConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = 100;
+        candidate->wcost = 100;
+        candidate->lid = 42;
+        candidate->rid = 84;
+        return true;
+      }));
+
+  composer_->InsertCharacter("kudasia");
+  ASSERT_EQ(composer_->GetRawString(), "kudasia");
+  ASSERT_EQ(composer_->GetQueryForConversion(), "くだしあ");
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  const Segments& source_segments = GetSegments(converter);
+  ASSERT_EQ(source_segments.conversion_segments_size(), 1);
+  ASSERT_EQ(source_segments.conversion_segment(0).key(), "くだしあ");
+  ASSERT_GE(source_segments.conversion_segment(0).candidates_size(), 2);
+
+  int corrected_id = -1;
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    if (source_segments.conversion_segment(0).candidate(id).value ==
+        "ください") {
+      corrected_id = id;
+      break;
+    }
+  }
+  ASSERT_GE(corrected_id, 0);
+  EXPECT_NE(source_segments.conversion_segment(0)
+                .candidate(corrected_id)
+                .attributes & converter::Attribute::TYPING_CORRECTION,
+            0);
+
+  converter.SetCandidateListVisible(true);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_candidate_window());
+
+  converter.CandidateMoveToId(corrected_id, *composer_);
+  output.Clear();
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_preedit());
+  ASSERT_EQ(output.preedit().segment_size(), 1);
+  EXPECT_EQ(output.preedit().segment(0).key(), "ください");
+  EXPECT_EQ(output.preedit().segment(0).value(), "ください");
+
+  converter.Commit(*composer_, Context::default_instance());
+  output.Clear();
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_result());
+  EXPECT_EQ(output.result().key(), "ください");
+  EXPECT_EQ(output.result().value(), "ください");
+  ASSERT_EQ(mock_converter->learn_segments_call_count, 1);
+  ASSERT_EQ(mock_converter->learned_segments.size(), 1);
+  EXPECT_EQ(mock_converter->learned_segments.front().key, "ください");
+  EXPECT_EQ(mock_converter->learned_segments.front().value, "ください");
+  ASSERT_EQ(output.result().tokens_size(), 1);
+  EXPECT_EQ(output.result().tokens(0).lid(), 42);
+  EXPECT_EQ(output.result().tokens(0).rid(), 84);
+}
+
+TEST_F(EngineConverterTest,
+       TypingCorrectionCandidateWindowExposesNonEmptyNegativeCandidate) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        AddSegmentWithSingleCandidate(segments, request.key(), request.key());
+        Segment* segment = segments->mutable_conversion_segment(0);
+        segment->mutable_candidate(0)->cost = 100;
+        segment->mutable_candidate(0)->wcost = 100;
+        return true;
+      }));
+
+  composer_->InsertCharacter("kana");
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  const std::vector<std::string> typing_values =
+      converter.TypingCorrectionCandidateValues();
+  ASSERT_FALSE(typing_values.empty());
+
+  converter.SetCandidateListVisible(true);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_candidate_window());
+  bool visible = false;
+  for (const auto& candidate : output.candidate_window().candidate()) {
+    if (std::find(typing_values.begin(), typing_values.end(),
+                  candidate.value()) != typing_values.end()) {
+      visible = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(visible);
+}
+
+TEST_F(EngineConverterTest, RomanJapaneseHoldoutAttachesEngineCandidates) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        AddSegmentWithSingleCandidate(segments, request.key(), request.key());
+        converter::Candidate* candidate =
+            segments->mutable_segment(0)->mutable_candidate(0);
+        candidate->cost = 100;
+        candidate->wcost = 100;
+        return true;
+      }));
+
+  size_t engine_holdout_correct = 0;
+  for (const typing_correction::RomanHoldoutCase& test_case
+       : typing_correction::kGeneratedRomanHoldoutCases) {
+    composer_->EditErase();
+    composer_->InsertCharacter(std::string(test_case.typed_raw));
+    EngineConverter converter(mock_converter, request_, config_);
+    ASSERT_TRUE(converter.Convert(*composer_)) << test_case.case_id;
+
+    bool found = false;
+    for (size_t index = 0; index < GetCandidateList(converter).size();
+         ++index) {
+      const int id = GetCandidateList(converter).candidate(index).id();
+      const converter::Candidate& candidate =
+          GetSegments(converter).conversion_segment(0).candidate(id);
+      if (candidate.value != test_case.corrected_reading ||
+          (candidate.attributes & converter::Attribute::TYPING_CORRECTION) ==
+              0) {
+        continue;
+      }
+      found = true;
+      break;
+    }
+    if (found) {
+      ++engine_holdout_correct;
+    }
+  }
+  EXPECT_GE(
+      static_cast<double>(engine_holdout_correct) /
+          typing_correction::kGeneratedRomanHoldoutCaseCount,
+      typing_correction::kTypingCorrectionEngineE2eRecallMinimum);
+}
+
+TEST_F(EngineConverterTest,
+       TypingCorrectionPartialCommitCommitsTheWholeCorrectedSequence) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter =
+      std::make_shared<RecordingExternalLearningConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        if (request.key() == "ください") {
+          AddSegmentWithSingleCandidate(segments, "ください", "ください");
+          return true;
+        }
+
+        AddSegmentWithSingleCandidate(segments, "くだしあ", "くだしあ");
+        AddSegmentWithSingleCandidate(segments, "尾", "尾");
+        return true;
+      }));
+
+  composer_->InsertCharacter("kudasia");
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  int corrected_id = -1;
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    if (GetSegments(converter).conversion_segment(0).candidate(id).value ==
+        "ください") {
+      corrected_id = id;
+      break;
+    }
+  }
+  ASSERT_GE(corrected_id, 0);
+  converter.CandidateMoveToId(corrected_id, *composer_);
+
+  size_t consumed_key_size = 999;
+  converter.CommitFirstSegment(*composer_, Context::default_instance(),
+                               &consumed_key_size);
+  EXPECT_EQ(consumed_key_size, 0);
+
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_result());
+  EXPECT_EQ(output.result().key(), "ください");
+  EXPECT_EQ(output.result().value(), "ください");
+  ASSERT_EQ(mock_converter->learn_segments_call_count, 1);
+  ASSERT_EQ(mock_converter->learned_segments.size(), 1);
+  EXPECT_EQ(mock_converter->learned_segments.front().key, "ください");
+  EXPECT_EQ(mock_converter->learned_segments.front().value, "ください");
+}
+
+TEST_F(EngineConverterTest, TypingCorrectionLiveApplyUsesAStrictCostMargin) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = request.key() == "くだしあ" ? 2000 : 100;
+        candidate->wcost = candidate->cost;
+        return true;
+      }));
+
+  composer_->InsertCharacter("kudasia");
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  std::string corrected_raw;
+  std::string corrected_reading;
+  EXPECT_TRUE(converter.TryApplyTypingCorrectionForLiveConversion(
+      *composer_, &corrected_raw, &corrected_reading));
+  EXPECT_EQ(corrected_raw, "kudasai");
+  EXPECT_EQ(corrected_reading, "ください");
+}
+
+TEST_F(EngineConverterTest, JisKanaCorrectionUsesKeyTraceAndKeepsSource) {
+  config_->set_preedit_method(Config::KANA);
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  commands::KeyEvent event;
+  event.set_key_code('5');
+  event.set_key_string("え");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(event));
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = request.key() == "え" ? 2000 : 100;
+        return true;
+      }));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  ASSERT_EQ(GetSegments(converter).conversion_segment(0).key(), "え");
+
+  bool found = false;
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    const converter::Candidate& candidate =
+        GetSegments(converter).conversion_segment(0).candidate(id);
+    if (candidate.value == "う") {
+      found = true;
+      EXPECT_NE(candidate.attributes & converter::Attribute::TYPING_CORRECTION,
+                0);
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST_F(EngineConverterTest, JisKanaModifierCorrectionReplaysSamePhysicalKey) {
+  config_->set_preedit_method(Config::KANA);
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  commands::KeyEvent event;
+  event.set_key_code('3');
+  event.set_key_string("あ");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(event));
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = request.key() == "あ" ? 2000 : 100;
+        candidate->wcost = candidate->cost;
+        return true;
+      }));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  bool found = false;
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    const converter::Candidate& candidate =
+        GetSegments(converter).conversion_segment(0).candidate(id);
+    if (candidate.value == "ぁ") {
+      found = true;
+      EXPECT_NE(candidate.attributes & converter::Attribute::TYPING_CORRECTION,
+                0);
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST_F(EngineConverterTest,
+       JisKanaDisplayPolicySuppressesCostLosingCorrections) {
+  config_->set_preedit_method(Config::KANA);
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  commands::KeyEvent kana_a;
+  kana_a.set_key_code('3');
+  kana_a.set_key_string("あ");
+  commands::KeyEvent kana_u;
+  kana_u.set_key_code('4');
+  kana_u.set_key_string("う");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_a));
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_u));
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = 100;
+        candidate->wcost = 100;
+        return true;
+      }));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  EXPECT_TRUE(converter.TypingCorrectionCandidateValues().empty());
+  ASSERT_EQ(GetSegments(converter).conversion_segments_size(), 1);
+  EXPECT_EQ(GetSegments(converter).conversion_segment(0).candidates_size(), 1);
+}
+
+TEST_F(EngineConverterTest,
+       JisKanaCorrectionDoesNotDuplicateModifierInsensitiveConversion) {
+  config_->set_preedit_method(Config::KANA);
+  config_->set_use_typing_correction(true);
+  config_->set_use_kana_modifier_insensitive_conversion(true);
+  request_->set_kana_modifier_insensitive_conversion(true);
+  composer_->SetConfig(config_);
+
+  commands::KeyEvent event;
+  event.set_key_code('3');
+  event.set_key_string("あ");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(event));
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key(composer_->GetQueryForConversion());
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = segment->key();
+  candidate->content_key = candidate->key;
+  candidate->value = candidate->key;
+  candidate->content_value = candidate->value;
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  ASSERT_EQ(GetSegments(converter).conversion_segment(0).candidates_size(),
+            1);
+}
+
+TEST_F(EngineConverterTest, KanaModeMismatchIsCandidateOnly) {
+  config_->set_preedit_method(Config::ROMAN);
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  commands::KeyEvent kana_t;
+  kana_t.set_key_code('t');
+  kana_t.set_key_string("か");
+  commands::KeyEvent kana_u;
+  kana_u.set_key_code('u');
+  kana_u.set_key_string("な");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_t));
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_u));
+  ASSERT_EQ(composer_->GetQueryForConversion(), "かな");
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = 100;
+        candidate->wcost = 100;
+        return true;
+      }));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  bool found = false;
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    const converter::Candidate& candidate =
+        GetSegments(converter).conversion_segment(0).candidate(id);
+    if (candidate.value == "つ") {
+      found = true;
+      EXPECT_NE(candidate.attributes & converter::Attribute::TYPING_CORRECTION,
+                0);
+    }
+  }
+  EXPECT_TRUE(found);
+  EXPECT_FALSE(converter.TryApplyTypingCorrectionForLiveConversion(
+      *composer_, nullptr, nullptr));
+}
+
+TEST_F(EngineConverterTest, KanaModeMismatchSuggestionUsesPredictionApi) {
+  config_->set_preedit_method(Config::ROMAN);
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  commands::KeyEvent kana_t;
+  kana_t.set_key_code('t');
+  kana_t.set_key_string("か");
+  commands::KeyEvent kana_u;
+  kana_u.set_key_code('u');
+  kana_u.set_key_string("な");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_t));
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_u));
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartPrediction(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = 100;
+        return true;
+      }));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Suggest(*composer_, Context::default_instance()));
+
+  bool found = false;
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    const converter::Candidate& candidate =
+        GetSegments(converter).conversion_segment(0).candidate(id);
+    if (candidate.value == "つ") {
+      found = true;
+      EXPECT_NE(candidate.attributes & converter::Attribute::TYPING_CORRECTION,
+                0);
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST_F(EngineConverterTest, SecureInputDoesNotExecuteTypingCorrection) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+  composer_->SetInputFieldType(Context::PASSWORD);
+  composer_->InsertCharacter("kudasia");
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key(composer_->GetQueryForConversion());
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = segment->key();
+  candidate->content_key = candidate->key;
+  candidate->value = candidate->key;
+  candidate->content_value = candidate->value;
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    EXPECT_EQ(GetSegments(converter)
+                  .conversion_segment(0)
+                  .candidate(id)
+                  .attributes & converter::Attribute::TYPING_CORRECTION,
+              0);
+  }
+}
+
+TEST_F(EngineConverterTest,
+       SecureInputDoesNotExecuteKanaModeMismatchTypingCorrection) {
+  config_->set_preedit_method(Config::ROMAN);
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+  composer_->SetInputFieldType(Context::PASSWORD);
+
+  commands::KeyEvent kana_t;
+  kana_t.set_key_code('t');
+  kana_t.set_key_string("か");
+  commands::KeyEvent kana_u;
+  kana_u.set_key_code('u');
+  kana_u.set_key_string("な");
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_t));
+  ASSERT_TRUE(composer_->InsertCharacterKeyEvent(kana_u));
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key(composer_->GetQueryForConversion());
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = segment->key();
+  candidate->content_key = candidate->key;
+  candidate->value = candidate->key;
+  candidate->content_value = candidate->value;
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    EXPECT_EQ(GetSegments(converter)
+                  .conversion_segment(0)
+                  .candidate(id)
+                  .attributes & converter::Attribute::TYPING_CORRECTION,
+              0);
+  }
+}
+
+TEST_F(EngineConverterTest, IncognitoInputDoesNotExecuteTypingCorrection) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+  request_->set_is_incognito_mode(true);
+  composer_->InsertCharacter("kudasia");
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key(composer_->GetQueryForConversion());
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = segment->key();
+  candidate->content_key = candidate->key;
+  candidate->value = candidate->key;
+  candidate->content_value = candidate->value;
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    EXPECT_EQ(GetSegments(converter)
+                  .conversion_segment(0)
+                  .candidate(id)
+                  .attributes & converter::Attribute::TYPING_CORRECTION,
+              0);
+  }
+  EXPECT_FALSE(converter.TryApplyTypingCorrectionForLiveConversion(
+      *composer_, nullptr, nullptr));
+}
+
+TEST_F(EngineConverterTest, TypingCorrectionIsAvailableInSuggestionCommit) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartPrediction(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        return true;
+      }));
+
+  composer_->InsertCharacter("kudasia");
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Suggest(*composer_, Context::default_instance()));
+
+  const Segments& source_segments = GetSegments(converter);
+  int corrected_id = -1;
+  for (size_t i = 0; i < GetCandidateList(converter).size(); ++i) {
+    const int id = GetCandidateList(converter).candidate(i).id();
+    if (source_segments.conversion_segment(0).candidate(id).value ==
+        "ください") {
+      corrected_id = id;
+      break;
+    }
+  }
+  ASSERT_GE(corrected_id, 0);
+  EXPECT_NE(source_segments.conversion_segment(0)
+                .candidate(corrected_id)
+                .attributes & converter::Attribute::PARTIALLY_KEY_CONSUMED,
+            0);
+
+  size_t consumed_key_size = 0;
+  ASSERT_TRUE(converter.CommitSuggestionById(
+      corrected_id, *composer_, Context::default_instance(),
+      &consumed_key_size));
+  EXPECT_EQ(consumed_key_size, Util::CharsLen("くだしあ"));
+
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_result());
+  EXPECT_EQ(output.result().key(), "ください");
+  EXPECT_EQ(output.result().value(), "ください");
 }
 
 }  // namespace engine

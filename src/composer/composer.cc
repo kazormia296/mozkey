@@ -764,6 +764,8 @@ bool Composer::ProcessCompositionInput(CompositionInput input) {
 }
 
 void Composer::InsertCharacter(std::string key) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   CompositionInput input;
   input.InitFromRaw(std::move(key), is_new_input_);
   ProcessCompositionInput(std::move(input));
@@ -786,6 +788,8 @@ void Composer::InsertCommandCharacter(const InternalCommand internal_command) {
 }
 
 void Composer::InsertCharacterPreedit(const absl::string_view input) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   size_t begin = 0;
   const size_t end = input.size();
   while (begin < end) {
@@ -801,6 +805,8 @@ void Composer::InsertCharacterPreedit(const absl::string_view input) {
 
 // Note: This method is only for test.
 void Composer::SetPreeditTextForTestOnly(const absl::string_view input) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   composition_.SetInputMode(Transliterators::RAW_STRING);
 
   const Utf8AsChars input_chars(input);
@@ -825,6 +831,8 @@ void Composer::SetPreeditTextForTestOnly(const absl::string_view input) {
 void Composer::SetCompositionsForHandwriting(
     absl::Span<const commands::SessionCommand::CompositionEvent* const>
         compositions) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   Reset();
   compositions_for_handwriting_.clear();
   for (const auto& elm : compositions) {
@@ -855,6 +863,8 @@ Composer::GetHandwritingCompositions() const {
 
 bool Composer::InsertCharacterKeyAndPreedit(const absl::string_view key,
                                             const absl::string_view preedit) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   CompositionInput input;
   input.InitFromRawAndConv(std::string(key), std::string(preedit),
                            is_new_input_);
@@ -894,6 +904,8 @@ bool Composer::InsertCharacterKeyEvent(const commands::KeyEvent& key) {
   // If only SHIFT is pressed, this is used to revert back to the
   // previous input mode.
   if (!key.has_key_code()) {
+    key_event_trace_.clear();
+    key_event_trace_valid_ = false;
     for (size_t i = 0; key.modifier_keys_size(); ++i) {
       if (key.modifier_keys(i) == commands::KeyEvent::SHIFT) {
         // TODO(komatsu): Enable to customize the behavior.
@@ -931,10 +943,20 @@ bool Composer::InsertCharacterKeyEvent(const commands::KeyEvent& key) {
   if (comeback_input_mode_ == input_mode_) {
     AutoSwitchMode();
   }
+
+  if (key_event_trace_valid_ && key.has_key_string() &&
+      key.has_key_code() && position_ == composition_.GetLength()) {
+    key_event_trace_.push_back(key);
+  } else {
+    key_event_trace_.clear();
+    key_event_trace_valid_ = false;
+  }
   return true;
 }
 
 void Composer::DeleteAt(size_t pos) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   composition_.DeleteAt(pos);
   // Adjust cursor position for composition mode.
   if (position_ > pos) {
@@ -943,19 +965,28 @@ void Composer::DeleteAt(size_t pos) {
 }
 
 void Composer::Delete() {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   position_ = composition_.DeleteAt(position_);
   UpdateInputMode();
 }
 
 void Composer::DeleteRange(size_t pos, size_t length) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   for (int i = 0; i < length && pos < composition_.GetLength(); ++i) {
-    DeleteAt(pos);
+    composition_.DeleteAt(pos);
+    if (position_ > pos) {
+      position_--;
+    }
   }
 }
 
 void Composer::EditErase() {
   composition_.Erase();
   position_ = 0;
+  key_event_trace_.clear();
+  key_event_trace_valid_ = true;
   SetInputMode(comeback_input_mode_);
 }
 
@@ -963,6 +994,10 @@ void Composer::Backspace() {
   if (position_ == 0) {
     return;
   }
+
+  const bool can_pop_key_event =
+      key_event_trace_valid_ && position_ == composition_.GetLength() &&
+      !key_event_trace_.empty();
 
   // In the view point of updating input mode,
   // backspace is special case because new input mode is based on both
@@ -979,9 +1014,17 @@ void Composer::Backspace() {
 
   // Delete 'character to be deleted'
   position_ = composition_.DeleteAt(position_);
+  if (can_pop_key_event) {
+    key_event_trace_.pop_back();
+  } else {
+    key_event_trace_.clear();
+    key_event_trace_valid_ = false;
+  }
 }
 
 void Composer::MoveCursorLeft() {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   if (position_ > 0) {
     --position_;
   }
@@ -989,6 +1032,8 @@ void Composer::MoveCursorLeft() {
 }
 
 void Composer::MoveCursorRight() {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   if (position_ < composition_.GetLength()) {
     ++position_;
   }
@@ -996,11 +1041,15 @@ void Composer::MoveCursorRight() {
 }
 
 void Composer::MoveCursorToBeginning() {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   position_ = 0;
   SetInputMode(comeback_input_mode_);
 }
 
 void Composer::MoveCursorToEnd() {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   position_ = composition_.GetLength();
   // Behavior between MoveCursorToEnd and MoveCursorToRight is different.
   // MoveCursorToEnd always makes current input mode default.
@@ -1008,6 +1057,8 @@ void Composer::MoveCursorToEnd() {
 }
 
 void Composer::MoveCursorTo(uint32_t new_position) {
+  key_event_trace_.clear();
+  key_event_trace_valid_ = false;
   if (new_position <= composition_.GetLength()) {
     position_ = new_position;
     UpdateInputMode();
@@ -1072,6 +1123,13 @@ std::string Composer::GetTransliteratedText(
 
 std::string Composer::GetRawString() const {
   return common::GetRawString(composition_);
+}
+
+absl::Span<const commands::KeyEvent> Composer::GetKeyEventTrace() const {
+  if (!key_event_trace_valid_) {
+    return {};
+  }
+  return absl::Span<const commands::KeyEvent>(key_event_trace_);
 }
 
 std::string Composer::GetRawSubString(const size_t position,

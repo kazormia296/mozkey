@@ -29,6 +29,7 @@
 
 load(
     "//:build_defs.bzl",
+    "mozc_cc_binary",
     "mozc_cc_library",
     "mozc_cc_test",
     "mozc_select",
@@ -466,6 +467,8 @@ mozc_cc_library(
         "//protocol:config_cc_proto",
         "//request:conversion_request",
         "//transliteration",
+        "//typing_correction:incremental_cache",
+        "//typing_correction:shadow_conversion",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
@@ -515,9 +518,32 @@ mozc_cc_test(
         "//testing:mozctest",
         "//testing:testing_util",
         "//transliteration",
+        "//typing_correction:typing_correction_holdout",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+mozc_cc_binary(
+    name = "evaluate_typing_correction_metrics",
+    testonly = 1,
+    srcs = ["//typing_correction:evaluation_metrics.cc"],
+    copts = ["-DMOZKEY_ENGINE_METRICS"],
+    deps = [
+        ":engine_converter",
+        "//base:util",
+        "//composer",
+        "//composer:table",
+        "//converter:converter_mock",
+        "//converter:segments",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//testing:gunit",
+        "//typing_correction:composer_replayer",
+        "//typing_correction:kana_typing_corrector",
+        "//typing_correction:roman_typing_corrector",
+        "//typing_correction:typing_correction_holdout",
     ],
 )
 

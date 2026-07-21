@@ -30,8 +30,24 @@ jobs:
           submodules: false
           persist-credentials: false
 
-      - name: Verify canonical repository metadata
-        run: python -m unittest tools.release.aur_repository_contract_test
+      - name: Verify canonical repository metadata and typing-correction corpus
+        run: |
+          python -m unittest \
+            tools.release.aur_repository_contract_test \
+            tools.typing_correction.validate_typing_correction_corpus_test \
+            tools.typing_correction.validate_typing_correction_metrics_test
+
+      - name: Run the official typing-correction Engine metrics gate
+        working-directory: ./src
+        run: |
+          npx --yes @bazel/bazelisk@1.28.1 build \
+            //engine:evaluate_typing_correction_metrics \
+            -c dbg --define=mozkey_dictionary_profile=release-approved-only
+          bazel_bin="bazel-bin/engine/evaluate_typing_correction_metrics"
+          "${bazel_bin}" > /tmp/typing-correction-metrics.json
+          cd ..
+          python tools/typing_correction/validate_typing_correction_metrics.py \
+            /tmp/typing-correction-metrics.json
 
       - name: Run
         working-directory: ./src

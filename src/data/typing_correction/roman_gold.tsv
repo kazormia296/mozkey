@@ -1,0 +1,251 @@
+case_id	intended_raw	typed_raw	intended_reading	operation	confidence	behavior	stratum	note
+R000001	onegai	onegia	おねがい	transpose	high	auto	length=short;position=medial;lexical=common;feature=none	隣接転置
+R000002	kudasai	kudasia	ください	transpose	high	auto	length=medium;position=medial;lexical=common;feature=none	隣接転置
+R000003	shimaimashita	shimaiashita	しまいました	omission	high	suggest	length=long;position=medial;lexical=common;feature=none	m脱落
+R000004	arigatou	arigatouu	ありがとう	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	末尾重複
+R000005	dekita	deita	できた	omission	medium	suggest	length=short;position=medial;lexical=common;feature=none	k脱落
+R000006	ohayou	ohayouu	おはよう	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	末尾重複
+R000007	sakura	sakrua	さくら	transpose	high	auto	length=short;position=medial;lexical=common;feature=none	中長語の隣接転置
+R000008	arigatou	airgatou	ありがとう	transpose	high	auto	length=medium;position=medial;lexical=common;feature=none	長語の隣接転置
+R000009	ohayou	oahyou	おはよう	transpose	high	auto	length=short;position=medial;lexical=common;feature=none	母音境界の転置
+R000010	kanji	kani	かんじ	omission	medium	suggest	length=short;position=final;lexical=common;feature=n	子音脱落
+R000011	kawaii	kawii	かわいい	omission	medium	suggest	length=short;position=medial;lexical=common;feature=none	母音脱落
+R000012	hajimemashite	hajimemashte	はじめまして	omission	medium	suggest	length=long;position=medial;lexical=common;feature=none	長語の母音脱落
+R000013	sakura	sakuraa	さくら	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	末尾母音重複
+R000014	tanuki	tanukii	たぬき	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	末尾母音重複
+R000015	densha	denshaa	でんしゃ	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=n	末尾母音重複
+R000016	yoroshiku	yoroshikuu	よろしく	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	長語の末尾重複
+R000017	sakura	sakora	さくら	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=none	母音置換
+R000018	kudasai	kudasei	ください	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	母音置換
+R000019	ohayou	ohayoo	おはよう	replacement	medium	suggest	length=short;position=final;lexical=common;feature=none	末尾母音置換
+R000020	neko	niko	ねこ	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=none	母音置換
+R000021	sakura	sakurq	さくら	neighbor	medium	suggest	length=short;position=final;lexical=common;feature=none	QWERTY隣接置換
+R000022	kudasai	kudaszi	ください	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	QWERTY隣接置換
+R000023	ohayou	ohayu	おはよう	omission	medium	suggest	length=short;position=final;lexical=common;feature=none	母音脱落
+R000024	ittekimasu	itekimasu	いってきます	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	促音脱落
+R000025	mataashita	matashita	またあした	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	長語音節脱落
+R000026	oyasuminasai	oyasuminasaii	おやすみなさい	duplicate	high	auto	length=long;position=medial;lexical=common;feature=none	末尾母音重複
+R000027	arigatou	arigatoy	ありがとう	neighbor	medium	suggest	length=medium;position=final;lexical=common;feature=none	QWERTY隣接置換
+R000028	asobou	asobuo	あそぼう	transpose	high	auto	length=short;position=medial;lexical=common;feature=none	語末転置
+R000029	daijoubu	daijobu	だいじょうぶ	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	母音脱落
+R000030	otsukaresama	otsukaresamaa	おつかれさま	duplicate	high	auto	length=long;position=medial;lexical=common;feature=none	長語の末尾重複
+R000031	arigatou	raigatou	ありがとう	transpose	high	auto	length=medium;position=initial;lexical=common;feature=none	generated stratified transpose fixture
+R000032	arigatou	arrigatou	ありがとう	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000033	arigatou	argatou	ありがとう	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000034	arigatou	zrigatou	ありがとう	neighbor	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified neighbor fixture
+R000035	arigatou	urigatou	ありがとう	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000036	yoroshiku	yrooshiku	よろしく	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000037	yoroshiku	yorroshiku	よろしく	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000038	yoroshiku	yorshiku	よろしく	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000039	yoroshiku	yiroshiku	よろしく	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000040	yoroshiku	ooroshiku	よろしく	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000041	kudasai	kuadsai	ください	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000042	kudasai	kudaasai	ください	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000043	kudasai	kudaai	ください	omission	medium	suggest	length=short;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000044	kudasai	kydasai	ください	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000045	kudasai	uudasai	ください	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000046	sumimasen	summiasen	すみません	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000047	sumimasen	sumimmasen	すみません	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000048	sumimasen	sumimsen	すみません	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified omission fixture
+R000049	sumimasen	symimasen	すみません	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000050	sumimasen	pumimasen	すみません	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=n	generated stratified replacement fixture
+R000051	otsukaresama	otsuakresama	おつかれさま	transpose	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000052	otsukaresama	otsukaaresama	おつかれさま	duplicate	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000053	otsukaresama	otsukaesama	おつかれさま	omission	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000054	otsukaresama	oysukaresama	おつかれさま	neighbor	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000055	otsukaresama	stsukaresama	おつかれさま	replacement	medium	suggest	length=long;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000056	tabemasu	tabemsau	たべます	transpose	high	auto	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000057	tabemasu	tabemassu	たべます	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000058	tabemasu	tabemas	たべます	omission	medium	suggest	length=medium;position=final;lexical=common;feature=none	generated stratified omission fixture
+R000059	tabemasu	tavemasu	たべます	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000060	tabemasu	dabemasu	たべます	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000061	nomimasu	nomimaus	のみます	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000062	nomimasu	nomimasuu	のみます	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000063	nomimasu	omimasu	のみます	omission	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified omission fixture
+R000064	nomimasu	nojimasu	のみます	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000065	nomimasu	aomimasu	のみます	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000066	wakarimasu	wakarimsau	わかります	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000067	wakarimasu	wakarimassu	わかります	duplicate	medium	suggest	length=long;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000068	wakarimasu	wakarimas	わかります	omission	medium	suggest	length=medium;position=final;lexical=common;feature=n	generated stratified omission fixture
+R000069	wakarimasu	waoarimasu	わかります	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000070	wakarimasu	jakarimasu	わかります	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=n	generated stratified replacement fixture
+R000071	dekimasu	dkeimasu	できます	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000072	dekimasu	deekimasu	できます	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000073	dekimasu	deimasu	できます	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000074	dekimasu	deiimasu	できます	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000075	dekimasu	kekimasu	できます	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000076	ganbarimasu	ganbarimaus	がんばります	transpose	medium	suggest	length=long;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000077	ganbarimasu	ganbarimasuu	がんばります	duplicate	medium	suggest	length=long;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000078	ganbarimasu	anbarimasu	がんばります	omission	medium	suggest	length=medium;position=initial;lexical=common;feature=n	generated stratified omission fixture
+R000079	ganbarimasu	gajbarimasu	がんばります	neighbor	medium	suggest	length=long;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000080	ganbarimasu	lanbarimasu	がんばります	replacement	medium	suggest	length=long;position=initial;lexical=common;feature=n	generated stratified replacement fixture
+R000081	tanoshii	tanohsii	たのしい	transpose	high	auto	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000082	tanoshii	tanooshii	たのしい	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000083	tanoshii	tanohii	たのしい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000084	tanoshii	tankshii	たのしい	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000085	tanoshii	zanoshii	たのしい	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000086	kawaii	kawiai	かわいい	transpose	medium	suggest	length=short;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000087	kawaii	kkawaii	かわいい	duplicate	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified duplicate fixture
+R000088	kawaii	kwaii	かわいい	omission	medium	suggest	length=short;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000089	kawaii	kawwii	かわいい	neighbor	medium	suggest	length=short;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000090	kawaii	xawaii	かわいい	replacement	medium	suggest	length=short;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000091	atarashii	atarahsii	あたらしい	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000092	atarashii	ataraashii	あたらしい	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000093	atarashii	atarahii	あたらしい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000094	atarashii	atatashii	あたらしい	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000095	atarashii	ctarashii	あたらしい	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000096	omoshiroi	omoshrioi	おもしろい	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000097	omoshiroi	omoshiiroi	おもしろい	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000098	omoshiroi	omoshioi	おもしろい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000099	omoshiroi	omozhiroi	おもしろい	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000100	omoshiroi	vmoshiroi	おもしろい	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000101	muzukashii	muzukahsii	むずかしい	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000102	muzukashii	muzukaashii	むずかしい	duplicate	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000103	muzukashii	muzukahii	むずかしい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000104	muzukashii	muzulashii	むずかしい	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000105	muzukashii	xuzukashii	むずかしい	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000106	yasashii	yassahii	やさしい	transpose	high	auto	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000107	yasashii	yyasashii	やさしい	duplicate	high	auto	length=medium;position=initial;lexical=common;feature=none	generated stratified duplicate fixture
+R000108	yasashii	ysashii	やさしい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000109	yasashii	yasaahii	やさしい	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000110	yasashii	nasashii	やさしい	replacement	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified replacement fixture
+R000111	daijoubu	dajioubu	だいじょうぶ	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000112	daijoubu	daaijoubu	だいじょうぶ	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000113	daijoubu	dajoubu	だいじょうぶ	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000114	daijoubu	dainoubu	だいじょうぶ	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000115	daijoubu	drijoubu	だいじょうぶ	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000116	chotto	cohtto	ちょっと	transpose	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified transpose fixture
+R000117	chotto	cchotto	ちょっと	duplicate	medium	suggest	length=medium;position=initial;lexical=common;feature=sokuon	generated stratified duplicate fixture
+R000118	chotto	cotto	ちょっと	omission	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified omission fixture
+R000119	chotto	chotgo	ちょっと	neighbor	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified neighbor fixture
+R000120	chotto	cqotto	ちょっと	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified replacement fixture
+R000121	massugu	massguu	まっすぐ	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified transpose fixture
+R000122	massugu	massuggu	まっすぐ	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified duplicate fixture
+R000123	massugu	massug	まっすぐ	omission	medium	suggest	length=short;position=final;lexical=common;feature=sokuon	generated stratified omission fixture
+R000124	massugu	massjgu	まっすぐ	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified neighbor fixture
+R000125	massugu	messugu	まっすぐ	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified replacement fixture
+R000126	densha	densah	でんしゃ	transpose	medium	suggest	length=short;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000127	densha	dennsha	でんしゃ	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000128	densha	denha	でんしゃ	omission	medium	suggest	length=short;position=medial;lexical=common;feature=n	generated stratified omission fixture
+R000129	densha	densua	でんしゃ	neighbor	medium	suggest	length=short;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000130	densha	dinsha	でんしゃ	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=n	generated stratified replacement fixture
+R000131	gakkou	agkkou	がっこう	transpose	high	auto	length=short;position=initial;lexical=common;feature=sokuon	generated stratified transpose fixture
+R000132	gakkou	gakkkou	がっこう	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified duplicate fixture
+R000133	gakkou	gakku	がっこう	omission	medium	suggest	length=short;position=final;lexical=common;feature=sokuon	generated stratified omission fixture
+R000134	gakkou	gakkpu	がっこう	neighbor	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified neighbor fixture
+R000135	gakkou	gikkou	がっこう	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified replacement fixture
+R000136	tomodachi	tomodcahi	ともだち	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000137	tomodachi	tomoddachi	ともだち	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000138	tomodachi	tomodchi	ともだち	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000139	tomodachi	tomodzchi	ともだち	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000140	tomodachi	ttmodachi	ともだち	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000141	toukyou	toukoyu	とうきょう	transpose	medium	suggest	length=medium;position=medial;lexical=proper_noun;feature=none	generated stratified transpose fixture
+R000142	toukyou	touukyou	とうきょう	duplicate	medium	suggest	length=medium;position=medial;lexical=proper_noun;feature=none	generated stratified duplicate fixture
+R000143	toukyou	touyou	とうきょう	omission	medium	suggest	length=short;position=medial;lexical=proper_noun;feature=none	generated stratified omission fixture
+R000144	toukyou	toukyoy	とうきょう	neighbor	medium	suggest	length=medium;position=final;lexical=proper_noun;feature=none	generated stratified neighbor fixture
+R000145	toukyou	tyukyou	とうきょう	replacement	medium	suggest	length=medium;position=medial;lexical=proper_noun;feature=none	generated stratified replacement fixture
+R000146	oosaka	oosaak	おおさか	transpose	medium	suggest	length=short;position=medial;lexical=proper_noun;feature=none	generated stratified transpose fixture
+R000147	oosaka	ooosaka	おおさか	duplicate	medium	suggest	length=medium;position=initial;lexical=proper_noun;feature=none	generated stratified duplicate fixture
+R000148	oosaka	osaka	おおさか	omission	medium	suggest	length=short;position=initial;lexical=proper_noun;feature=none	generated stratified omission fixture
+R000149	oosaka	oosakz	おおさか	neighbor	medium	suggest	length=short;position=final;lexical=proper_noun;feature=none	generated stratified neighbor fixture
+R000150	oosaka	ousaka	おおさか	replacement	medium	suggest	length=short;position=medial;lexical=proper_noun;feature=none	generated stratified replacement fixture
+R000151	arigatou	ariagtou	ありがとう	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000152	arigatou	ariigatou	ありがとう	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000153	arigatou	ariatou	ありがとう	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000154	arigatou	arigatku	ありがとう	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000155	arigatou	aaigatou	ありがとう	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000156	yoroshiku	yoorshiku	よろしく	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000157	yoroshiku	yyoroshiku	よろしく	duplicate	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified duplicate fixture
+R000158	yoroshiku	oroshiku	よろしく	omission	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified omission fixture
+R000159	yoroshiku	yoroshuku	よろしく	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000160	yoroshiku	ysroshiku	よろしく	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000161	kudasai	kudsaai	ください	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000162	kudasai	kudasaii	ください	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000163	kudasai	udasai	ください	omission	medium	suggest	length=short;position=initial;lexical=common;feature=none	generated stratified omission fixture
+R000164	kudasai	kudasau	ください	neighbor	medium	suggest	length=medium;position=final;lexical=common;feature=none	generated stratified neighbor fixture
+R000165	kudasai	kfdasai	ください	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000166	sumimasen	sumiamsen	すみません	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000167	sumimasen	suumimasen	すみません	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000168	sumimasen	suimasen	すみません	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified omission fixture
+R000169	sumimasen	sumimaswn	すみません	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000170	sumimasen	skmimasen	すみません	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified replacement fixture
+R000171	otsukaresama	otsukaersama	おつかれさま	transpose	high	auto	length=long;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000172	otsukaresama	otsukarresama	おつかれさま	duplicate	high	auto	length=long;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000173	otsukaresama	otsukarsama	おつかれさま	omission	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000174	otsukaresama	otsukarwsama	おつかれさま	neighbor	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000175	otsukaresama	ojsukaresama	おつかれさま	replacement	medium	suggest	length=long;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000176	tabemasu	tbaemasu	たべます	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000177	tabemasu	tabemasuu	たべます	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000178	tabemasu	abemasu	たべます	omission	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified omission fixture
+R000179	tabemasu	tabemasi	たべます	neighbor	medium	suggest	length=medium;position=final;lexical=common;feature=none	generated stratified neighbor fixture
+R000180	tabemasu	tjbemasu	たべます	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000181	nomimasu	noimmasu	のみます	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000182	nomimasu	nnomimasu	のみます	duplicate	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified duplicate fixture
+R000183	nomimasu	nmimasu	のみます	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000184	nomimasu	homimasu	のみます	neighbor	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified neighbor fixture
+R000185	nomimasu	njmimasu	のみます	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000186	wakarimasu	wakairmasu	わかります	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000187	wakarimasu	wakkarimasu	わかります	duplicate	medium	suggest	length=long;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000188	wakarimasu	wakrimasu	わかります	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified omission fixture
+R000189	wakarimasu	wakarimaeu	わかります	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000190	wakarimasu	wlkarimasu	わかります	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified replacement fixture
+R000191	dekimasu	dekiamsu	できます	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000192	dekimasu	dekkimasu	できます	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000193	dekimasu	dekmasu	できます	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000194	dekimasu	dekimasi	できます	neighbor	medium	suggest	length=medium;position=final;lexical=common;feature=none	generated stratified neighbor fixture
+R000195	dekimasu	dvkimasu	できます	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000196	ganbarimasu	ganabrimasu	がんばります	transpose	high	auto	length=long;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000197	ganbarimasu	gaanbarimasu	がんばります	duplicate	high	auto	length=long;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000198	ganbarimasu	gabarimasu	がんばります	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=n	generated stratified omission fixture
+R000199	ganbarimasu	ganbarimzsu	がんばります	neighbor	medium	suggest	length=long;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000200	ganbarimasu	gbnbarimasu	がんばります	replacement	medium	suggest	length=long;position=medial;lexical=common;feature=n	generated stratified replacement fixture
+R000201	tanoshii	tanosihi	たのしい	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000202	tanoshii	tanosshii	たのしい	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000203	tanoshii	tanosii	たのしい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000204	tanoshii	fanoshii	たのしい	neighbor	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified neighbor fixture
+R000205	tanoshii	tvnoshii	たのしい	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000206	kawaii	akwaii	かわいい	transpose	medium	suggest	length=short;position=initial;lexical=common;feature=none	generated stratified transpose fixture
+R000207	kawaii	kaawaii	かわいい	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000208	kawaii	kaaii	かわいい	omission	medium	suggest	length=short;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000209	kawaii	kawqii	かわいい	neighbor	medium	suggest	length=short;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000210	kawaii	knwaii	かわいい	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000211	atarashii	aatrashii	あたらしい	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000212	atarashii	attarashii	あたらしい	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000213	atarashii	atrashii	あたらしい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000214	atarashii	atarashio	あたらしい	neighbor	medium	suggest	length=medium;position=final;lexical=common;feature=none	generated stratified neighbor fixture
+R000215	atarashii	anarashii	あたらしい	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000216	omoshiroi	omoshiori	おもしろい	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000217	omoshiroi	omooshiroi	おもしろい	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000218	omoshiroi	omohiroi	おもしろい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000219	omoshiroi	kmoshiroi	おもしろい	neighbor	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified neighbor fixture
+R000220	omoshiroi	ovoshiroi	おもしろい	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000221	muzukashii	muzukasihi	むずかしい	transpose	high	auto	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000222	muzukashii	muzukashiii	むずかしい	duplicate	high	auto	length=long;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000223	muzukashii	uzukashii	むずかしい	omission	medium	suggest	length=medium;position=initial;lexical=common;feature=none	generated stratified omission fixture
+R000224	muzukashii	muzukashik	むずかしい	neighbor	medium	suggest	length=medium;position=final;lexical=common;feature=none	generated stratified neighbor fixture
+R000225	muzukashii	mmzukashii	むずかしい	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000226	yasashii	yasahsii	やさしい	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000227	yasashii	yaasashii	やさしい	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000228	yasashii	yaashii	やさしい	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000229	yasashii	yqsashii	やさしい	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000230	yasashii	yarashii	やさしい	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000231	daijoubu	daijobuu	だいじょうぶ	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified transpose fixture
+R000232	daijoubu	daiijoubu	だいじょうぶ	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified duplicate fixture
+R000233	daijoubu	daioubu	だいじょうぶ	omission	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified omission fixture
+R000234	daijoubu	dwijoubu	だいじょうぶ	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified neighbor fixture
+R000235	daijoubu	datjoubu	だいじょうぶ	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=none	generated stratified replacement fixture
+R000236	chotto	chtoto	ちょっと	transpose	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified transpose fixture
+R000237	chotto	chhotto	ちょっと	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified duplicate fixture
+R000238	chotto	chtto	ちょっと	omission	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified omission fixture
+R000239	chotto	chotro	ちょっと	neighbor	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified neighbor fixture
+R000240	chotto	chytto	ちょっと	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified replacement fixture
+R000241	massugu	masusgu	まっすぐ	transpose	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified transpose fixture
+R000242	massugu	maassugu	まっすぐ	duplicate	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified duplicate fixture
+R000243	massugu	masugu	まっすぐ	omission	medium	suggest	length=short;position=medial;lexical=common;feature=sokuon	generated stratified omission fixture
+R000244	massugu	mazsugu	まっすぐ	neighbor	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified neighbor fixture
+R000245	massugu	maysugu	まっすぐ	replacement	medium	suggest	length=medium;position=medial;lexical=common;feature=sokuon	generated stratified replacement fixture
+R000246	densha	denhsa	でんしゃ	transpose	high	auto	length=short;position=medial;lexical=common;feature=n	generated stratified transpose fixture
+R000247	densha	denssha	でんしゃ	duplicate	high	auto	length=medium;position=medial;lexical=common;feature=n	generated stratified duplicate fixture
+R000248	densha	densa	でんしゃ	omission	medium	suggest	length=short;position=final;lexical=common;feature=n	generated stratified omission fixture
+R000249	densha	deneha	でんしゃ	neighbor	medium	suggest	length=short;position=medial;lexical=common;feature=n	generated stratified neighbor fixture
+R000250	densha	deisha	でんしゃ	replacement	medium	suggest	length=short;position=medial;lexical=common;feature=n	generated stratified replacement fixture

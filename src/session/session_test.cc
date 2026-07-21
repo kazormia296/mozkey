@@ -120,6 +120,8 @@ class SessionTestPeer : testing::TestPeer<Session> {
   PEER_VARIABLE(live_conversion_pending_);
   PEER_VARIABLE(pending_live_conversion_key_);
   PEER_VARIABLE(live_conversion_key_);
+  PEER_VARIABLE(live_conversion_corrected_key_);
+  PEER_VARIABLE(live_conversion_corrected_raw_);
   PEER_VARIABLE(live_conversion_preedit_);
   PEER_VARIABLE(live_conversion_value_);
   PEER_VARIABLE(live_conversion_preedit_output_);
@@ -2540,6 +2542,157 @@ TEST_F(SessionTest, LiveConversionAttachesPassiveSuggestionCandidateWindow) {
   EXPECT_FALSE(session_peer.live_conversion_active_());
   EXPECT_FALSE(command.output().live_conversion());
   EXPECT_PREEDIT("阿", command);
+}
+
+TEST_F(SessionTest, LiveTypingCorrectionKeepsSourceForPendingAndEsc) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_use_typing_correction(true);
+  config.set_live_conversion_delay_msec(0);
+  config.set_live_conversion_min_key_length(1);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = request.key() == "くだしあ" ? 2000 : 100;
+        return true;
+      }));
+
+  commands::Command command;
+  InsertCharacterChars("kudasia", &session, &command);
+  ASSERT_EQ(session.context().composer().GetRawString(), "kudasia");
+  ASSERT_EQ(session.context().composer().GetQueryForConversion(), "くだしあ");
+  ASSERT_EQ(session.context().composer().GetInputMode(),
+            transliteration::HIRAGANA);
+  ASSERT_TRUE(session.context().GetConfig().use_typing_correction());
+  ASSERT_TRUE(session_peer.live_conversion_active_());
+  EXPECT_EQ(session_peer.live_conversion_key_(), "くだしあ");
+  EXPECT_EQ(session_peer.live_conversion_corrected_raw_(), "kudasai");
+  EXPECT_EQ(session_peer.live_conversion_corrected_key_(), "ください");
+  EXPECT_TRUE(command.output().live_conversion());
+  EXPECT_PREEDIT("ください", command);
+
+  command.Clear();
+  ASSERT_TRUE(SendSpecialKey(commands::KeyEvent::ESCAPE, &session, &command));
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  EXPECT_TRUE(session.context().state() == ImeContext::COMPOSITION);
+  EXPECT_PREEDIT("くだしあ", command);
+  EXPECT_TRUE(session_peer.live_conversion_corrected_key_().empty());
+  EXPECT_TRUE(session_peer.live_conversion_corrected_raw_().empty());
+}
+
+TEST_F(SessionTest, LiveTypingCorrectionEnterCommitsCorrectedReading) {
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_live_conversion(true);
+  config.set_use_typing_correction(true);
+  config.set_live_conversion_delay_msec(0);
+  config.set_live_conversion_min_key_length(1);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = request.key() == "くだしあ" ? 2000 : 100;
+        return true;
+      }));
+
+  commands::Command command;
+  InsertCharacterChars("kudasia", &session, &command);
+  ASSERT_EQ(session.context().composer().GetRawString(), "kudasia");
+  ASSERT_EQ(session.context().composer().GetQueryForConversion(), "くだしあ");
+  ASSERT_EQ(session.context().composer().GetInputMode(),
+            transliteration::HIRAGANA);
+  ASSERT_TRUE(session.context().GetConfig().use_typing_correction());
+  ASSERT_TRUE(session_peer.live_conversion_active_());
+
+  command.Clear();
+  ASSERT_TRUE(SendSpecialKey(commands::KeyEvent::ENTER, &session, &command));
+  EXPECT_FALSE(session_peer.live_conversion_active_());
+  EXPECT_RESULT_AND_KEY("ください", "ください", command);
+}
+
+TEST_F(SessionTest,
+       LiveTypingCorrectionDirectCommitPunctuationCommitsCorrectedReading) {
+  MockEngine engine;
+  std::shared_ptr<RecordingExternalLearningConverter> converter =
+      CreateRecordingExternalLearningConverter(&engine);
+
+  Session session(engine);
+  SessionTestPeer session_peer(session);
+  InitSessionToPrecomposition(&session);
+
+  config::Config config;
+  config::ConfigHandler::GetDefaultConfig(&config);
+  config.set_use_auto_conversion(false);
+  config.set_use_direct_commit(true);
+  config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
+  config.set_use_live_conversion(true);
+  config.set_use_typing_correction(true);
+  config.set_live_conversion_delay_msec(0);
+  config.set_live_conversion_min_key_length(1);
+  session.SetConfig(config);
+
+  EXPECT_CALL(*converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        Segment* segment = segments->add_segment();
+        segment->set_key(request.key());
+        converter::Candidate* candidate = segment->add_candidate();
+        candidate->key = std::string(request.key());
+        candidate->content_key = candidate->key;
+        candidate->value = candidate->key;
+        candidate->content_value = candidate->value;
+        candidate->cost = request.key() == "くだしあ" ? 2000 : 100;
+        return true;
+      }));
+
+  commands::Command command;
+  InsertCharacterChars("kudasia", &session, &command);
+  ASSERT_TRUE(session_peer.live_conversion_active_());
+  ASSERT_EQ(session_peer.live_conversion_corrected_key_(), "ください");
+
+  command.Clear();
+  InsertCharacterString("。", ".", &session, &command);
+
+  EXPECT_RESULT_AND_KEY("ください。", "ください。", command);
+  EXPECT_EQ(converter->learn_call_count, 1);
+  EXPECT_EQ(converter->last_key, "ください。");
+  EXPECT_EQ(converter->last_value, "ください。");
+  EXPECT_FALSE(session_peer.live_conversion_active_());
 }
 
 TEST_F(SessionTest,

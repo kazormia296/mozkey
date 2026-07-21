@@ -99,6 +99,22 @@ class EngineConverterInterface {
       const composer::Composer& composer,
       const ConversionPreferences& preferences) = 0;
 
+  // Selects a unique high-confidence raw-input correction already attached to
+  // the active conversion.  The source Composer remains unchanged; callers
+  // use the returned corrected key for live-conversion/Zenz bookkeeping.
+  virtual bool TryApplyTypingCorrectionForLiveConversion(
+      const composer::Composer& composer, std::string* corrected_raw,
+      std::string* corrected_reading) {
+    (void)composer;
+    if (corrected_raw != nullptr) {
+      corrected_raw->clear();
+    }
+    if (corrected_reading != nullptr) {
+      corrected_reading->clear();
+    }
+    return false;
+  }
+
   // Get reading text (e.g. from "猫" to "ねこ").
   virtual bool GetReadingText(absl::string_view str, std::string* reading) = 0;
 
