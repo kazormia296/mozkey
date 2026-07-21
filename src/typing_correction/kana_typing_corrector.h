@@ -53,11 +53,17 @@ struct KanaGoldCase {
   absl::string_view corrected_key_string;
   Operation operation = Operation::kNeighborSubstitution;
   bool auto_applicable = false;
+  absl::string_view stratum;
 };
 
 struct KanaNegativeCase {
   absl::string_view case_id;
   absl::string_view typed_raw;
+  absl::string_view typed_key_string;
+  bool raw_forbidden = false;
+  bool display_forbidden = false;
+  bool auto_forbidden = true;
+  absl::string_view stratum;
 };
 
 absl::Span<const KanaRule> DefaultKanaRules();

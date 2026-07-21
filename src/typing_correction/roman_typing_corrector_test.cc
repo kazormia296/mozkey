@@ -26,7 +26,8 @@ const Hypothesis* FindCorrection(const std::vector<Hypothesis>& hypotheses,
 
 TEST(RomanTypingCorrectorTest, GoldCasesAreCovered) {
   const RomanTypingCorrector corrector;
-  ASSERT_EQ(kGeneratedRomanGoldCaseCount, 30);
+  ASSERT_EQ(kGeneratedRomanGoldCaseCount,
+            kTypingCorrectionRomanGoldTargetCount);
   for (const RomanGoldCase& test_case : kGeneratedRomanGoldCases) {
     const std::vector<Hypothesis> hypotheses =
         corrector.Generate(test_case.typed_raw);
@@ -41,7 +42,8 @@ TEST(RomanTypingCorrectorTest, GoldCasesAreCovered) {
 
 TEST(RomanTypingCorrectorTest, NegativeCorpusHasNoAutomaticCorrections) {
   const RomanTypingCorrector corrector;
-  ASSERT_EQ(kGeneratedRomanNegativeCaseCount, 20);
+  ASSERT_EQ(kGeneratedRomanNegativeCaseCount,
+            kTypingCorrectionRomanNegativeTargetCount);
   for (const RomanNegativeCase& test_case : kGeneratedRomanNegativeCases) {
     for (const Hypothesis& hypothesis : corrector.Generate(test_case.typed_raw)) {
       EXPECT_FALSE(hypothesis.auto_applicable) << test_case.case_id;
@@ -51,7 +53,8 @@ TEST(RomanTypingCorrectorTest, NegativeCorpusHasNoAutomaticCorrections) {
 
 TEST(RomanTypingCorrectorTest, IndependentHoldoutCasesRemainCandidateOnly) {
   const RomanTypingCorrector corrector;
-  ASSERT_EQ(kGeneratedRomanHoldoutCaseCount, 6);
+  ASSERT_EQ(kGeneratedRomanHoldoutCaseCount,
+            kTypingCorrectionRomanHoldoutTargetCount);
   for (const RomanHoldoutCase& test_case : kGeneratedRomanHoldoutCases) {
     const std::vector<Hypothesis> hypotheses =
         corrector.Generate(test_case.typed_raw);

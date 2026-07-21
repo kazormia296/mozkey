@@ -36,7 +36,7 @@ package(default_visibility = ["//:__subpackages__"])
 mozc_cc_library(
     name = "typing_correction",
     srcs = ["typing_correction.cc"],
-    hdrs = ["typing_correction.h"],
+    hdrs = ["generated_contract.h", "typing_correction.h"],
     deps = [
         "//protocol:commands_cc_proto",
         "@com_google_absl//absl/strings:string_view",
@@ -146,6 +146,22 @@ mozc_cc_binary(
     deps = [":roman_typing_corrector"],
 )
 
+mozc_cc_binary(
+    name = "evaluate_typing_correction_metrics",
+    srcs = ["evaluation_metrics.cc"],
+    deps = [
+        ":composer_replayer",
+        ":kana_typing_corrector",
+        ":roman_typing_corrector",
+        ":typing_correction_holdout",
+        "//base:util",
+        "//composer:composer",
+        "//composer:table",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+    ],
+)
+
 mozc_cc_test(
     name = "kana_typing_corrector_test",
     size = "small",
@@ -184,6 +200,7 @@ mozc_cc_test(
     srcs = ["composer_replayer_test.cc"],
     deps = [
         ":composer_replayer",
+        ":typing_correction_holdout",
         "//composer:table",
         "//protocol:commands_cc_proto",
         "//testing:gunit_main",

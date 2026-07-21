@@ -52,7 +52,8 @@ bool IsEligibleForRomanCorrection(const RomanInputGateContext& context,
       context.path_like) {
     return false;
   }
-  if (raw.size() < 4 || raw.size() > context.max_raw_bytes) {
+  if (raw.size() < kTypingCorrectionMinRawBytes ||
+      raw.size() > context.max_raw_bytes) {
     return false;
   }
   return IsLowerAscii(raw);

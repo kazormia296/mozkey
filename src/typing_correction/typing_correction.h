@@ -35,6 +35,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "protocol/commands.pb.h"
+#include "typing_correction/generated_contract.h"
 
 namespace mozc::typing_correction {
 
@@ -79,10 +80,10 @@ struct Hypothesis {
 };
 
 struct Limits {
-  size_t max_edits = 1;
-  size_t max_raw_hypotheses = 16;
-  size_t max_reading_hypotheses = 3;
-  int32_t max_edit_cost = 300;
+  size_t max_edits = kTypingCorrectionMaxEdits;
+  size_t max_raw_hypotheses = kTypingCorrectionMaxRawHypotheses;
+  size_t max_reading_hypotheses = kTypingCorrectionMaxReadingHypotheses;
+  int32_t max_edit_cost = kTypingCorrectionMaxEditCost;
 };
 
 // These checks are kept separate from candidate generation so callers can
@@ -99,7 +100,7 @@ struct RomanInputGateContext {
   bool email_like = false;
   bool path_like = false;
   bool default_roman_table = true;
-  size_t max_raw_bytes = 64;
+  size_t max_raw_bytes = kTypingCorrectionMaxRawBytes;
 };
 
 struct KanaInputGateContext {
@@ -111,7 +112,7 @@ struct KanaInputGateContext {
   bool ascii_input_mode = false;
   bool mixed_script = false;
   bool modifier_insensitive_conversion = false;
-  size_t max_key_events = 64;
+  size_t max_key_events = kTypingCorrectionMaxKeyEvents;
 };
 
 // Safety gate for the candidate-only replay that interprets a physical kana
@@ -124,7 +125,7 @@ struct KanaModeMismatchInputGateContext {
   bool secure_input = false;
   bool reverse_conversion = false;
   bool ascii_input_mode = false;
-  size_t max_key_events = 64;
+  size_t max_key_events = kTypingCorrectionMaxKeyEvents;
 };
 
 bool IsEligibleForRomanCorrection(const RomanInputGateContext& context,

@@ -425,7 +425,8 @@ bool EngineConverter::ConvertWithPreferences(
   if (config_->use_typing_correction() &&
       !conversion_request.incognito_mode()) {
     typing_correction::Limits limits;
-    limits.max_reading_hypotheses = 3;
+    limits.max_reading_hypotheses =
+        typing_correction::kTypingCorrectionMaxReadingHypotheses;
     if (config_->preedit_method() == config::Config::KANA) {
       const typing_correction::KanaInputGateContext gate =
           MakeKanaInputGateContext(composer, *request_, *config_);
@@ -928,7 +929,8 @@ bool EngineConverter::SuggestWithPreferences(
   if (config_->use_typing_correction() &&
       !conversion_request.incognito_mode()) {
     typing_correction::Limits limits;
-    limits.max_reading_hypotheses = 3;
+    limits.max_reading_hypotheses =
+        typing_correction::kTypingCorrectionMaxReadingHypotheses;
     if (config_->preedit_method() == config::Config::KANA) {
       const typing_correction::KanaInputGateContext gate =
           MakeKanaInputGateContext(composer, *request_, *config_);
@@ -1065,7 +1067,8 @@ bool EngineConverter::PredictWithPreferences(
   if (predict_first && config_->use_typing_correction() &&
       !conversion_request.incognito_mode()) {
     typing_correction::Limits limits;
-    limits.max_reading_hypotheses = 3;
+    limits.max_reading_hypotheses =
+        typing_correction::kTypingCorrectionMaxReadingHypotheses;
     if (config_->preedit_method() == config::Config::KANA) {
       const typing_correction::KanaInputGateContext gate =
           MakeKanaInputGateContext(composer, *request_, *config_);
@@ -2037,6 +2040,17 @@ void EngineConverter::FillOutput(const composer::Composer& composer,
   }
 }
 
+std::vector<std::string> EngineConverter::TypingCorrectionCandidateValues()
+    const {
+  std::vector<std::string> values;
+  values.reserve(typing_correction_alternatives_.size());
+  for (const typing_correction::WholeSequenceConversion& alternative :
+       typing_correction_alternatives_) {
+    values.push_back(alternative.candidate.value);
+  }
+  return values;
+}
+
 EngineConverter* EngineConverter::Clone() const {
   EngineConverter* engine_converter =
       new EngineConverter(converter_, request_, config_,
@@ -2063,7 +2077,8 @@ void EngineConverter::AppendTypingCorrectionCandidates(
   // window receives at most two additional entries.  This keeps the normal
   // converter candidates visible and makes the UI budget independently
   // testable from the raw hypothesis budget.
-  constexpr size_t kMaxCandidateWindowAlternatives = 2;
+  constexpr size_t kMaxCandidateWindowAlternatives =
+      typing_correction::kTypingCorrectionMaxCandidateWindowAdditions;
   Segment* source_segment = segments_.mutable_conversion_segment(0);
   size_t appended = 0;
   for (typing_correction::WholeSequenceConversion& alternative :

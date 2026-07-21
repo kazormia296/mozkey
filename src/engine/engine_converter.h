@@ -276,6 +276,12 @@ class EngineConverter : public EngineConverterInterface {
   void FillOutput(const composer::Composer& composer,
                   commands::Output* output) const override;
 
+  // Returns the values of typing-correction alternatives that were actually
+  // appended to the source candidate list.  Metrics intersect this list with
+  // the serialized candidate window because CandidateWindow does not carry
+  // converter-side candidate attributes.
+  std::vector<std::string> TypingCorrectionCandidateValues() const;
+
   // Sets setting by the request;
   void SetRequest(std::shared_ptr<const commands::Request> request) override;
 

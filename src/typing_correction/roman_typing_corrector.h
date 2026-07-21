@@ -55,11 +55,16 @@ struct RomanGoldCase {
   absl::string_view expected_reading;
   Operation operation = Operation::kLiteralReplacement;
   bool auto_applicable = false;
+  absl::string_view stratum;
 };
 
 struct RomanNegativeCase {
   absl::string_view case_id;
   absl::string_view typed_raw;
+  bool raw_forbidden = false;
+  bool display_forbidden = false;
+  bool auto_forbidden = true;
+  absl::string_view stratum;
 };
 
 absl::Span<const RomanRule> DefaultRomanRules();

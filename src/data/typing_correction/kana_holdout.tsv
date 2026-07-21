@@ -1,5 +1,151 @@
-case_id	typed_key_codes	typed_key_strings	corrected_key_codes	corrected_key_strings	operation	behavior	note
-KH000001	ll	りり	l	り	duplicate	test_only	未登録の複数キー重複
-KH000002	oo	らら	o	ら	duplicate	test_only	未登録の複数キー重複
-KH000003	rr	すす	r	す	duplicate	test_only	未登録の複数キー重複
-KH000004	yy	んん	y	ん	duplicate	test_only	未登録の複数キー重複
+case_id	typed_key_codes	typed_key_strings	corrected_key_codes	corrected_key_strings	operation	behavior	stratum	note
+KH000001	qaz1	たちつぬ	qaz2	たちつふ	neighbor	test_only	length=medium;position=final;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000002	2q	ふた	1q	ぬた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000003	2a	ふち	3a	あち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000004	3z	あつ	2z	ふつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000005	31	あぬ	41	うぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000006	4q	うた	3q	あた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000007	4a	うち	5a	えち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000008	6q	おた	5q	えた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000009	6qaz	おたちつ	7qaz	やたちつ	neighbor	test_only	length=medium;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000010	7z	やつ	6z	おつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000011	71	やぬ	81	ゆぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000012	8q	ゆた	7q	やた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000013	9z	よつ	8z	ゆつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000014	19	ぬよ	10	ぬわ	neighbor	test_only	length=short;position=final;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000015	0q	わた	9q	よた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000016	0a	わち	-a	ほち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000017	-z	ほつ	0z	わつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000018	-qaz	ほたちつ	^qaz	へたちつ	neighbor	test_only	length=medium;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000019	^q	へた	-q	ほた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000020	qa	たち	wa	てち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000021	wz	てつ	qz	たつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000022	w1	てぬ	e1	いぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000023	eq	いた	wq	てた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000024	ea	いち	ra	すち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000025	rz	すつ	ez	いつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000026	r1	すぬ	t1	かぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000027	tq	かた	rq	すた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000028	tqaz	かたちつ	yqaz	んたちつ	neighbor	test_only	length=medium;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000029	yz	んつ	tz	かつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000030	1y	ぬん	1u	ぬな	neighbor	test_only	length=short;position=final;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000031	uq	なた	yq	んた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000032	ua	なち	ia	にち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000033	iz	につ	uz	なつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000034	i1	にぬ	o1	らぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000035	oq	らた	iq	にた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000036	oa	らち	pa	せち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000037	pz	せつ	oz	らつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000038	pqaz	せたちつ	@qaz	゛たちつ	neighbor	test_only	length=medium;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000039	a1	ちぬ	s1	とぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000040	sq	とた	aq	ちた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000041	sa	とち	da	しち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000042	dz	しつ	sz	とつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000043	1d	ぬし	1f	ぬは	neighbor	test_only	length=short;position=final;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000044	fq	はた	dq	した	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000045	fqaz	はたちつ	gqaz	きたちつ	neighbor	test_only	length=medium;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000046	gz	きつ	fz	はつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000047	g1	きぬ	h1	くぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000048	hq	くた	gq	きた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000049	ha	くち	ja	まち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000050	jz	まつ	hz	くつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000051	j1	まぬ	k1	のぬ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000052	kq	のた	jq	また	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000053	ka	のち	la	りち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000054	lz	りつ	kz	のつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000055	lqaz	りたちつ	;qaz	れたちつ	neighbor	test_only	length=medium;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000056	;q	れた	lq	りた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000057	;a	れち	:a	けち	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000058	:z	けつ	;z	れつ	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000059	1:	ぬけ	1]	ぬむ	neighbor	test_only	length=short;position=final;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000060	]q	むた	:q	けた	neighbor	test_only	length=short;position=initial;lexical=common;feature=kana_neighbor	independent multi-key JIS neighbor holdout
+KH000061	qazwsedrf3	たちつてといしすはあ	qazwsedrf3	たちつてといしすはぁ	kana_modifier	test_only	length=long;position=final;lexical=common;feature=small_kana	independent modifier-sensitive JIS holdout
+KH000062	4e	うい	4e	ぅい	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=small_kana	independent modifier-sensitive JIS holdout
+KH000063	6b	おこ	6b	ぉこ	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=small_kana	independent modifier-sensitive JIS holdout
+KH000064	7qazwsedrf	やたちつてといしすは	7qazwsedrf	ゃたちつてといしすは	kana_modifier	test_only	length=long;position=initial;lexical=common;feature=small_kana	independent modifier-sensitive JIS holdout
+KH000065	8u	ゆな	8u	ゅな	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=small_kana	independent modifier-sensitive JIS holdout
+KH000066	k9	のよ	k9	のょ	kana_modifier	test_only	length=short;position=final;lexical=common;feature=small_kana	independent modifier-sensitive JIS holdout
+KH000067	t.	かる	t.	がる	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000068	gqazwsedrf	きたちつてといしすは	gqazwsedrf	ぎたちつてといしすは	kana_modifier	test_only	length=long;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000069	h@	く゛	h@	ぐ゛	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000070	:qaz	けたちつ	:qaz	げたちつ	kana_modifier	test_only	length=medium;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000071	bz	こつ	bz	ごつ	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000072	qazwsedrfq	たちつてといしすはた	qazwsedrfq	たちつてといしすはだ	kana_modifier	test_only	length=long;position=final;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000073	ae	ちい	ae	ぢい	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000074	zf	つは	zf	づは	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000075	wb	てこ	wb	でこ	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000076	sqazwsedrf	とたちつてといしすは	sqazwsedrf	どたちつてといしすは	kana_modifier	test_only	length=long;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000077	xu	さな	xu	ざな	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000078	kd	のし	kd	のじ	kana_modifier	test_only	length=short;position=final;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000079	r.	する	r.	ずる	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000080	pqazwsedrf	せたちつてといしすは	pqazwsedrf	ぜたちつてといしすは	kana_modifier	test_only	length=long;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000081	c@	そ゛	c@	ぞ゛	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000082	f]	はむ	f]	ばむ	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000083	vz	ひつ	vz	びつ	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000084	qazwsedrf2	たちつてといしすはふ	qazwsedrf2	たちつてといしすはぶ	kana_modifier	test_only	length=long;position=final;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000085	^e	へい	^e	べい	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000086	-f	ほは	-f	ぼは	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=dakuten	independent modifier-sensitive JIS holdout
+KH000087	bb	ここ	bb	ぽこ	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=handakuten	independent modifier-sensitive JIS holdout
+KH000088	fqazwsedrf	はたちつてといしすは	fqazwsedrf	ぱたちつてといしすは	kana_modifier	test_only	length=long;position=initial;lexical=common;feature=handakuten	independent modifier-sensitive JIS holdout
+KH000089	vu	ひな	vu	ぴな	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=handakuten	independent modifier-sensitive JIS holdout
+KH000090	k2	のふ	k2	のぷ	kana_modifier	test_only	length=short;position=final;lexical=common;feature=handakuten	independent modifier-sensitive JIS holdout
+KH000091	^.	へる	^.	ぺる	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=handakuten	independent modifier-sensitive JIS holdout
+KH000092	-0	ほわ	-0	ぽわ	kana_modifier	test_only	length=short;position=initial;lexical=common;feature=handakuten	independent modifier-sensitive JIS holdout
+KH000093	111	ぬぬぬ	11	ぬぬ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000094	112	ぬぬふ	12	ぬふ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000095	113	ぬぬあ	13	ぬあ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000096	114	ぬぬう	14	ぬう	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000097	611	おぬぬ	61	おぬ	duplicate	test_only	length=short;position=final;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000098	117	ぬぬや	17	ぬや	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000099	118	ぬぬゆ	18	ぬゆ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000100	119	ぬぬよ	19	ぬよ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000101	11qaz	ぬぬたちつ	1qaz	ぬたちつ	duplicate	test_only	length=medium;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000102	11-	ぬぬほ	1-	ぬほ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000103	11^	ぬぬへ	1^	ぬへ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000104	11q	ぬぬた	1q	ぬた	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000105	11w	ぬぬて	1w	ぬて	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000106	11e	ぬぬい	1e	ぬい	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000107	11r	ぬぬす	1r	ぬす	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000108	11t	ぬぬか	1t	ぬか	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000109	y11	んぬぬ	y1	んぬ	duplicate	test_only	length=short;position=final;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000110	11u	ぬぬな	1u	ぬな	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000111	11i	ぬぬに	1i	ぬに	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000112	11o	ぬぬら	1o	ぬら	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000113	11p	ぬぬせ	1p	ぬせ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000114	11a	ぬぬち	1a	ぬち	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000115	11s	ぬぬと	1s	ぬと	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000116	11d	ぬぬし	1d	ぬし	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000117	11f	ぬぬは	1f	ぬは	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000118	11g	ぬぬき	1g	ぬき	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000119	11h	ぬぬく	1h	ぬく	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000120	11j	ぬぬま	1j	ぬま	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000121	qaz11	たちつぬぬ	qaz1	たちつぬ	duplicate	test_only	length=medium;position=final;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000122	11l	ぬぬり	1l	ぬり	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000123	11;	ぬぬれ	1;	ぬれ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000124	11:	ぬぬけ	1:	ぬけ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000125	11]	ぬぬむ	1]	ぬむ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000126	11z	ぬぬつ	1z	ぬつ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000127	11x	ぬぬさ	1x	ぬさ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000128	11c	ぬぬそ	1c	ぬそ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000129	11v	ぬぬひ	1v	ぬひ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000130	11b	ぬぬこ	1b	ぬこ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000131	11n	ぬぬみ	1n	ぬみ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000132	11m	ぬぬも	1m	ぬも	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000133	,11	ねぬぬ	,1	ねぬ	duplicate	test_only	length=short;position=final;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000134	11.	ぬぬる	1.	ぬる	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000135	11/	ぬぬめ	1/	ぬめ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000136	11_	ぬぬろ	1_	ぬろ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000137	221	ふふぬ	21	ふぬ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000138	222	ふふふ	22	ふふ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000139	223	ふふあ	23	ふあ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000140	224	ふふう	24	ふう	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000141	22qaz	ふふたちつ	2qaz	ふたちつ	duplicate	test_only	length=medium;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000142	226	ふふお	26	ふお	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000143	227	ふふや	27	ふや	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000144	228	ふふゆ	28	ふゆ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000145	922	よふふ	92	よふ	duplicate	test_only	length=short;position=final;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000146	220	ふふわ	20	ふわ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000147	22-	ふふほ	2-	ふほ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000148	22^	ふふへ	2^	ふへ	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000149	22q	ふふた	2q	ふた	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout
+KH000150	22w	ふふて	2w	ふて	duplicate	test_only	length=short;position=medial;lexical=common;feature=duplicate	independent multi-key duplicate holdout

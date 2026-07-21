@@ -79,6 +79,18 @@ bool IsBetter(const Hypothesis& lhs, const Hypothesis& rhs) {
   if (lhs_is_generic != rhs_is_generic) {
     return !lhs_is_generic;
   }
+  const bool lhs_is_modifier =
+      !lhs.edits.empty() &&
+      lhs.edits.front().operation == Operation::kKanaModifier;
+  const bool rhs_is_modifier =
+      !rhs.edits.empty() &&
+      rhs.edits.front().operation == Operation::kKanaModifier;
+  if (lhs_is_modifier != rhs_is_modifier) {
+    // Modifier-sensitive readings preserve the same physical key and are a
+    // more specific explanation than a neighboring-key substitution.  Keep
+    // them in the bounded replay window when both are otherwise suggestions.
+    return lhs_is_modifier;
+  }
   if (lhs.edit_cost != rhs.edit_cost) {
     return lhs.edit_cost < rhs.edit_cost;
   }

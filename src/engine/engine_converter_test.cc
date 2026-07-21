@@ -35,6 +35,7 @@
 
 #include "engine/engine_converter.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -73,6 +74,7 @@
 #include "testing/mozctest.h"
 #include "testing/testing_util.h"
 #include "transliteration/transliteration.h"
+#include "typing_correction/generated_holdout_cases.h"
 
 namespace mozc {
 namespace engine {
@@ -4367,6 +4369,95 @@ TEST_F(EngineConverterTest, TypingCorrectionWholeSequenceKeepsSourceAndLearnsCor
   ASSERT_EQ(output.result().tokens_size(), 1);
   EXPECT_EQ(output.result().tokens(0).lid(), 42);
   EXPECT_EQ(output.result().tokens(0).rid(), 84);
+}
+
+TEST_F(EngineConverterTest,
+       TypingCorrectionCandidateWindowExposesNonEmptyNegativeCandidate) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        AddSegmentWithSingleCandidate(segments, request.key(), request.key());
+        Segment* segment = segments->mutable_conversion_segment(0);
+        segment->mutable_candidate(0)->cost = 100;
+        segment->mutable_candidate(0)->wcost = 100;
+        return true;
+      }));
+
+  composer_->InsertCharacter("kana");
+  EngineConverter converter(mock_converter, request_, config_);
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  const std::vector<std::string> typing_values =
+      converter.TypingCorrectionCandidateValues();
+  ASSERT_FALSE(typing_values.empty());
+
+  converter.SetCandidateListVisible(true);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_candidate_window());
+  bool visible = false;
+  for (const auto& candidate : output.candidate_window().candidate()) {
+    if (std::find(typing_values.begin(), typing_values.end(),
+                  candidate.value()) != typing_values.end()) {
+      visible = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(visible);
+}
+
+TEST_F(EngineConverterTest, RomanJapaneseHoldoutAttachesEngineCandidates) {
+  config_->set_use_typing_correction(true);
+  composer_->SetConfig(config_);
+
+  auto mock_converter = std::make_shared<MockConverter>();
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(Invoke([](const ConversionRequest& request,
+                                Segments* segments) {
+        segments->Clear();
+        AddSegmentWithSingleCandidate(segments, request.key(), request.key());
+        converter::Candidate* candidate =
+            segments->mutable_segment(0)->mutable_candidate(0);
+        candidate->cost = 100;
+        candidate->wcost = 100;
+        return true;
+      }));
+
+  size_t engine_holdout_correct = 0;
+  for (const typing_correction::RomanHoldoutCase& test_case
+       : typing_correction::kGeneratedRomanHoldoutCases) {
+    composer_->EditErase();
+    composer_->InsertCharacter(std::string(test_case.typed_raw));
+    EngineConverter converter(mock_converter, request_, config_);
+    ASSERT_TRUE(converter.Convert(*composer_)) << test_case.case_id;
+
+    bool found = false;
+    for (size_t index = 0; index < GetCandidateList(converter).size();
+         ++index) {
+      const int id = GetCandidateList(converter).candidate(index).id();
+      const converter::Candidate& candidate =
+          GetSegments(converter).conversion_segment(0).candidate(id);
+      if (candidate.value != test_case.corrected_reading ||
+          (candidate.attributes & converter::Attribute::TYPING_CORRECTION) ==
+              0) {
+        continue;
+      }
+      found = true;
+      break;
+    }
+    if (found) {
+      ++engine_holdout_correct;
+    }
+  }
+  EXPECT_GE(
+      static_cast<double>(engine_holdout_correct) /
+          typing_correction::kGeneratedRomanHoldoutCaseCount,
+      typing_correction::kTypingCorrectionEngineE2eRecallMinimum);
 }
 
 TEST_F(EngineConverterTest,

@@ -1,21 +1,101 @@
-case_id	typed_key_codes	typed_key_strings	corrected_key_codes	corrected_key_strings	operation	confidence	behavior	note
-K000001	5	え	4	う	neighbor	high	auto	JIS隣接キー
-K000002	3	あ	3	ぁ	kana_modifier	medium	suggest	小かな
-K000003	@	゛	[	゜	kana_modifier	medium	suggest	濁点半濁点混同
-K000004	1	ぬ	2	ふ	neighbor	medium	suggest	JIS上段横隣接
-K000005	6	お	7	や	neighbor	medium	suggest	JIS上段横隣接
-K000006	q	た	w	て	neighbor	medium	suggest	JIS中段横隣接
-K000007	w	て	e	い	neighbor	medium	suggest	JIS中段横隣接
-K000008	r	す	t	か	neighbor	medium	suggest	JIS中段横隣接
-K000009	i	に	o	ら	neighbor	medium	suggest	JIS中段横隣接
-K000010	a	ち	s	と	neighbor	medium	suggest	JIS下段横隣接
-K000011	d	し	f	は	neighbor	medium	suggest	JIS下段横隣接
-K000012	j	ま	k	の	neighbor	medium	suggest	JIS下段横隣接
-K000013	z	つ	x	さ	neighbor	medium	suggest	JIS最下段横隣接
-K000014	x	さ	c	そ	neighbor	medium	suggest	JIS最下段横隣接
-K000015	n	み	m	も	neighbor	medium	suggest	JIS最下段横隣接
-K000016	4	う	4	ぅ	kana_modifier	medium	suggest	小かな
-K000017	5	え	5	ぇ	kana_modifier	medium	suggest	小かな
-K000018	6	お	6	ぉ	kana_modifier	medium	suggest	小かな
-K000019	7	や	7	ゃ	kana_modifier	medium	suggest	小かな
-K000020	8	ゆ	8	ゅ	kana_modifier	medium	suggest	小かな
+case_id	typed_key_codes	typed_key_strings	corrected_key_codes	corrected_key_strings	operation	confidence	behavior	stratum	note
+K000001	5	え	4	う	neighbor	high	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS隣接キー
+K000002	3	あ	3	ぁ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=small_kana	小かな
+K000003	@	゛	[	゜	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=kana_modifier	濁点半濁点混同
+K000004	1	ぬ	2	ふ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS上段横隣接
+K000005	6	お	7	や	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS上段横隣接
+K000006	q	た	w	て	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS中段横隣接
+K000007	w	て	e	い	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS中段横隣接
+K000008	r	す	t	か	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS中段横隣接
+K000009	i	に	o	ら	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS中段横隣接
+K000010	a	ち	s	と	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS下段横隣接
+K000011	d	し	f	は	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS下段横隣接
+K000012	j	ま	k	の	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS下段横隣接
+K000013	z	つ	x	さ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS最下段横隣接
+K000014	x	さ	c	そ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS最下段横隣接
+K000015	n	み	m	も	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	JIS最下段横隣接
+K000016	4	う	4	ぅ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=small_kana	小かな
+K000017	5	え	5	ぇ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=small_kana	小かな
+K000018	6	お	6	ぉ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=small_kana	小かな
+K000019	7	や	7	ゃ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=small_kana	小かな
+K000020	8	ゆ	8	ゅ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=small_kana	小かな
+K000021	9	よ	9	ょ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=small_kana	generated modifier-sensitive fixture
+K000022	t	か	t	が	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000023	g	き	g	ぎ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000024	h	く	h	ぐ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000025	:	け	:	げ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000026	b	こ	b	ご	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000027	q	た	q	だ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000028	a	ち	a	ぢ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000029	z	つ	z	づ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000030	w	て	w	で	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000031	s	と	s	ど	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000032	x	さ	x	ざ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000033	d	し	d	じ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000034	r	す	r	ず	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000035	p	せ	p	ぜ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000036	c	そ	c	ぞ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000037	f	は	f	ば	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000038	v	ひ	v	び	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000039	2	ふ	2	ぶ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000040	^	へ	^	べ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000041	-	ほ	-	ぼ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=dakuten	generated modifier-sensitive fixture
+K000042	b	こ	b	ぽ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=handakuten	generated modifier-sensitive fixture
+K000043	f	は	f	ぱ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=handakuten	generated modifier-sensitive fixture
+K000044	v	ひ	v	ぴ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=handakuten	generated modifier-sensitive fixture
+K000045	2	ふ	2	ぷ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=handakuten	generated modifier-sensitive fixture
+K000046	^	へ	^	ぺ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=handakuten	generated modifier-sensitive fixture
+K000047	-	ほ	-	ぽ	kana_modifier	medium	suggest	length=short;position=single;lexical=common;feature=handakuten	generated modifier-sensitive fixture
+K000048	2	ふ	1	ぬ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000049	2	ふ	3	あ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000050	3	あ	2	ふ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000051	3	あ	4	う	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000052	4	う	3	あ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000053	4	う	5	え	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000054	5	え	6	お	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000055	6	お	5	え	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000056	7	や	6	お	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000057	7	や	8	ゆ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000058	8	ゆ	7	や	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000059	8	ゆ	9	よ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000060	9	よ	8	ゆ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000061	9	よ	0	わ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000062	0	わ	9	よ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000063	0	わ	-	ほ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000064	-	ほ	0	わ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000065	-	ほ	^	へ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000066	^	へ	-	ほ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000067	w	て	q	た	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000068	e	い	w	て	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000069	e	い	r	す	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000070	r	す	e	い	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000071	t	か	r	す	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000072	t	か	y	ん	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000073	y	ん	t	か	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000074	y	ん	u	な	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000075	u	な	y	ん	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000076	u	な	i	に	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000077	i	に	u	な	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000078	o	ら	i	に	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000079	o	ら	p	せ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000080	p	せ	o	ら	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000081	p	せ	@	゛	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000082	@	゛	p	せ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000083	[	゜	@	゛	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000084	s	と	a	ち	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000085	s	と	d	し	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000086	d	し	s	と	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000087	f	は	d	し	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000088	f	は	g	き	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000089	g	き	f	は	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000090	g	き	h	く	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000091	h	く	g	き	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000092	h	く	j	ま	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000093	j	ま	h	く	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000094	k	の	j	ま	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000095	k	の	l	り	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000096	l	り	k	の	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000097	l	り	;	れ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000098	;	れ	l	り	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000099	;	れ	:	け	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture
+K000100	:	け	;	れ	neighbor	medium	suggest	length=short;position=single;lexical=common;feature=kana_neighbor	generated JIS horizontal-neighbor fixture

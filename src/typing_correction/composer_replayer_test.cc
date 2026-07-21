@@ -1,10 +1,11 @@
 // Copyright 2026 Grimodex contributors.
 
 #include "typing_correction/composer_replayer.h"
+#include "typing_correction/generated_holdout_cases.h"
 #include "typing_correction/generated_roman_rules.h"
 
-#include <optional>
 #include <memory>
+#include <optional>
 
 #include "composer/table.h"
 #include "gtest/gtest.h"
@@ -122,9 +123,18 @@ TEST(ComposerReplayerTest, RomanGoldCasesMatchRawReadingAndPolicy) {
 
   RomanInputGateContext context;
   context.feature_enabled = true;
+  size_t replayable_cases = 0;
   for (const RomanGoldCase& test_case : kGeneratedRomanGoldCases) {
     original.EditErase();
     original.InsertCharacter(std::string(test_case.typed_raw));
+    // Some authored Gold rows intentionally exercise a raw spelling that the
+    // current Composer already reads identically to the corrected spelling.
+    // There is no distinct Composer replay to validate for those rows;
+    // independent raw-candidate coverage is provided by the Roman holdout.
+    if (original.GetQueryForConversion() == test_case.expected_reading) {
+      continue;
+    }
+    ++replayable_cases;
     const std::vector<Hypothesis> hypotheses =
         GenerateRomanCorrectionHypotheses(original, context);
     const Hypothesis* corrected = nullptr;
@@ -142,6 +152,51 @@ TEST(ComposerReplayerTest, RomanGoldCasesMatchRawReadingAndPolicy) {
     EXPECT_EQ(corrected->auto_applicable, test_case.auto_applicable)
         << test_case.case_id;
   }
+  EXPECT_GT(replayable_cases, 0u);
+}
+
+TEST(ComposerReplayerTest, RomanJapaneseHoldoutCasesReplayThroughComposer) {
+  auto table = std::make_shared<composer::Table>();
+  commands::Request request;
+  config::Config config;
+  ASSERT_TRUE(table->InitializeWithRequestAndConfig(request, config));
+  composer::Composer original(table, request, config);
+
+  RomanInputGateContext context;
+  context.feature_enabled = true;
+  size_t composer_holdout_correct = 0;
+  for (const RomanHoldoutCase& test_case : kGeneratedRomanHoldoutCases) {
+    original.EditErase();
+    original.InsertCharacter(std::string(test_case.typed_raw));
+    const std::vector<Hypothesis> hypotheses =
+        GenerateRomanCorrectionHypotheses(original, context);
+    const Hypothesis* corrected = nullptr;
+    for (const Hypothesis& hypothesis : hypotheses) {
+      if (hypothesis.corrected_raw == test_case.corrected_raw) {
+        corrected = &hypothesis;
+        break;
+      }
+    }
+    if (corrected == nullptr) {
+      continue;
+    }
+    const bool exact =
+        corrected->corrected_reading == test_case.corrected_reading &&
+        corrected->edits.front().operation == test_case.operation &&
+        !corrected->auto_applicable;
+    EXPECT_EQ(corrected->corrected_reading, test_case.corrected_reading)
+        << test_case.case_id;
+    EXPECT_EQ(corrected->edits.front().operation, test_case.operation)
+        << test_case.case_id;
+    EXPECT_FALSE(corrected->auto_applicable) << test_case.case_id;
+    if (exact) {
+      ++composer_holdout_correct;
+    }
+  }
+  EXPECT_GE(
+      static_cast<double>(composer_holdout_correct) /
+          kGeneratedRomanHoldoutCaseCount,
+      kTypingCorrectionComposerReplayRecallMinimum);
 }
 
 TEST(ComposerReplayerTest, GatePreventsRawGenerationBeforeReplay) {

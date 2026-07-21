@@ -1,8 +1,35 @@
 rule_id	wrong_key_code	wrong_key_string	corrected_key_code	corrected_key_string	operation	cost	behavior	note
-K000002	3	あ	3	ぁ	kana_modifier	140	suggest	小書きかなのShift脱落
-K000003	@	゛	[	゜	kana_modifier	140	suggest	濁点半濁点混同
-K000016	4	う	4	ぅ	kana_modifier	140	suggest	小かな
-K000017	5	え	5	ぇ	kana_modifier	140	suggest	小かな
-K000018	6	お	6	ぉ	kana_modifier	140	suggest	小かな
-K000019	7	や	7	ゃ	kana_modifier	140	suggest	小かな
-K000020	8	ゆ	8	ゅ	kana_modifier	140	suggest	小かな
+K000002	3	あ	3	ぁ	kana_modifier	100	suggest	小書きかなのShift脱落
+K000003	@	゛	[	゜	kana_modifier	100	suggest	濁点半濁点混同
+K000016	4	う	4	ぅ	kana_modifier	100	suggest	小かな
+K000017	5	え	5	ぇ	kana_modifier	100	suggest	小かな
+K000018	6	お	6	ぉ	kana_modifier	100	suggest	小かな
+K000019	7	や	7	ゃ	kana_modifier	100	suggest	小かな
+K000020	8	ゆ	8	ゅ	kana_modifier	100	suggest	小かな
+K000021	9	よ	9	ょ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000022	t	か	t	が	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000023	g	き	g	ぎ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000024	h	く	h	ぐ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000025	:	け	:	げ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000026	b	こ	b	ご	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000027	q	た	q	だ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000028	a	ち	a	ぢ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000029	z	つ	z	づ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000030	w	て	w	で	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000031	s	と	s	ど	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000032	x	さ	x	ざ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000033	d	し	d	じ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000034	r	す	r	ず	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000035	p	せ	p	ぜ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000036	c	そ	c	ぞ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000037	f	は	f	ば	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000038	v	ひ	v	び	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000039	2	ふ	2	ぶ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000040	^	へ	^	べ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000041	-	ほ	-	ぼ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000042	b	こ	b	ぽ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000043	f	は	f	ぱ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000044	v	ひ	v	ぴ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000045	2	ふ	2	ぷ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000046	^	へ	^	ぺ	kana_modifier	100	suggest	generated modifier-sensitive fixture
+K000047	-	ほ	-	ぽ	kana_modifier	100	suggest	generated modifier-sensitive fixture
