@@ -33,6 +33,7 @@
 import argparse
 import os
 import pathlib
+import re
 import subprocess
 
 from build_tools import mozc_version
@@ -40,7 +41,7 @@ from build_tools import vs_util
 
 
 EXPECTED_CRT_REDIST_VERSION = '14.51.36247'
-EXPECTED_CRT_TOOLSET = 'Microsoft.VC145.CRT'
+EXPECTED_CRT_TOOLSET_PATTERN = re.compile(r'^Microsoft\.VC\d+\.CRT$')
 
 
 def exec_command(args: list[str], cwd: str) -> None:
@@ -94,15 +95,19 @@ def find_redist_crt_dir(redist_root: pathlib.Path, arch: str) -> pathlib.Path:
         path.joinpath(name).exists() for name in required
     )
 
-  # The toolset directory is an input to the installer contract.  Never
-  # select an arbitrary version by recursive search or lexical ordering.
-  candidate = arch_dir.joinpath(EXPECTED_CRT_TOOLSET).resolve()
-  if is_valid_dir(candidate):
-    return candidate
+  candidates = tuple(
+      path.resolve()
+      for path in arch_dir.glob('Microsoft.VC*.CRT')
+      if EXPECTED_CRT_TOOLSET_PATTERN.fullmatch(path.name)
+      and is_valid_dir(path)
+  )
+  if len(candidates) == 1:
+    return candidates[0]
 
   raise FileNotFoundError(
-      f'Could not find the exact CRT redistributable directory '
-      f'{EXPECTED_CRT_TOOLSET} containing {required} under: {arch_dir}'
+      f'Expected exactly one valid CRT redistributable directory matching '
+      f'{EXPECTED_CRT_TOOLSET_PATTERN.pattern} containing {required} under: '
+      f'{arch_dir}; found {len(candidates)}'
   )
 
 

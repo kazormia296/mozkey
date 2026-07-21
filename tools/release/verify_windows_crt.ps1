@@ -23,7 +23,7 @@ $requiredDlls = @(
 )
 $expectedRedistVersion = "14.51.36247"
 $expectedFileVersion = "$expectedRedistVersion.0"
-$expectedToolsetDirectory = "Microsoft.VC145.CRT"
+$expectedToolsetDirectoryPattern = '^Microsoft\.VC\d+\.CRT$'
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path -LiteralPath $vswhere)) {
@@ -38,9 +38,11 @@ $installations = @(
 )
 $sourceCandidates = @(
   foreach ($installation in $installations) {
-    $candidate = Join-Path $installation "VC\Redist\MSVC\$expectedRedistVersion\$Architecture\$expectedToolsetDirectory"
-    if (Test-Path -LiteralPath $candidate -PathType Container) {
-      (Resolve-Path -LiteralPath $candidate).Path
+    $architectureRoot = Join-Path $installation "VC\Redist\MSVC\$expectedRedistVersion\$Architecture"
+    if (Test-Path -LiteralPath $architectureRoot -PathType Container) {
+      Get-ChildItem -LiteralPath $architectureRoot -Directory |
+        Where-Object { $_.Name -match $expectedToolsetDirectoryPattern } |
+        ForEach-Object { $_.FullName }
     }
   }
 )
@@ -48,8 +50,10 @@ if ($sourceCandidates.Count -ne 1) {
   throw "Expected exactly one pinned Microsoft CRT source directory, found $($sourceCandidates.Count)."
 }
 $sourceRoot = $sourceCandidates[0]
+$sourceToolsetDirectory = Split-Path -Leaf $sourceRoot
 
-if ($sourceRoot -notmatch "\\$Architecture\\$expectedToolsetDirectory$") {
+if ($sourceToolsetDirectory -notmatch $expectedToolsetDirectoryPattern -or
+    $sourceRoot -notmatch "\\$Architecture\\$sourceToolsetDirectory$") {
   throw "CRT source directory has an unexpected architecture or toolset: $sourceRoot"
 }
 
@@ -82,4 +86,4 @@ foreach ($dll in $requiredDlls) {
   Write-Host "$dll version=$fileVersion sha256=$sourceHash signer=$($signature.SignerCertificate.Subject)"
 }
 
-Write-Host "Prepared exact Microsoft CRT $expectedRedistVersion/$expectedToolsetDirectory for $Architecture"
+Write-Host "Prepared exact Microsoft CRT $expectedRedistVersion/$sourceToolsetDirectory for $Architecture"
