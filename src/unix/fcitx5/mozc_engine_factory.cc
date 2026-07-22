@@ -74,13 +74,15 @@ class MozcEngineFactory : public AddonFactory {
 };
 }  // namespace fcitx
 
-#if defined(FCITX_ADDON_FACTORY_V2)
-// Export both the V2 product-specific entry point and the legacy generic
-// entry point. Some Fcitx5 headers define the backwards-compatibility macro,
-// but its visibility differs between toolchains and can omit the generic
-// symbol from debug builds.
-FCITX_ADDON_FACTORY_V2(mozkey_ibg, fcitx::MozcEngineFactory)
+// Keep the product-specific entry point explicit so the addon also works with
+// older Fcitx5 headers that only provide FCITX_ADDON_FACTORY. The V2 macros
+// are not available on all supported Linux distributions.
+extern "C" {
+FCITX_ADDON_EXPORT ::fcitx::AddonFactory *
+fcitx_addon_factory_instance_mozkey_ibg() {
+  static fcitx::MozcEngineFactory factory;
+  return &factory;
+}
+}
+
 FCITX_ADDON_FACTORY(fcitx::MozcEngineFactory)
-#else
-FCITX_ADDON_FACTORY(fcitx::MozcEngineFactory)
-#endif
