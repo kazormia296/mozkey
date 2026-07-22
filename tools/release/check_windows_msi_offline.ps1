@@ -45,6 +45,35 @@ function Invoke-NetworkCheck {
   }
 }
 
+function Invoke-MsiAdministrativeExtraction {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Artifact,
+    [Parameter(Mandatory = $true)]
+    [string]$Destination
+  )
+
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = "msiexec.exe"
+  $startInfo.UseShellExecute = $false
+  foreach ($argument in @("/a", $Artifact, "/qn", "TARGETDIR=$Destination")) {
+    [void]$startInfo.ArgumentList.Add($argument)
+  }
+
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  if ($null -eq $process) {
+    throw "Could not start MSI administrative extraction."
+  }
+  try {
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+      throw "MSI administrative extraction failed with exit code $($process.ExitCode)."
+    }
+  } finally {
+    $process.Dispose()
+  }
+}
+
 Invoke-NetworkCheck `
   (Join-Path $repositoryRoot "tools\check_no_network_imports.py") `
   @("--root", (Join-Path $repositoryRoot "src\bazel-bin"))
@@ -61,9 +90,13 @@ Invoke-NetworkCheck `
 $extractDir = Join-Path $env:RUNNER_TEMP ("mozkey-msi-offline-" + [guid]::NewGuid())
 try {
   New-Item -ItemType Directory -Force $extractDir | Out-Null
-  & msiexec.exe /a $artifact /qn "TARGETDIR=$extractDir"
-  if ($LASTEXITCODE -ne 0) {
-    throw "MSI administrative extraction failed."
+  Invoke-MsiAdministrativeExtraction `
+    -Artifact $artifact `
+    -Destination $extractDir
+  $extractedFile = Get-ChildItem -LiteralPath $extractDir -Recurse -File |
+    Select-Object -First 1
+  if ($null -eq $extractedFile) {
+    throw "MSI administrative extraction produced no files."
   }
 
   Invoke-NetworkCheck `
