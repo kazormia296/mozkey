@@ -46,10 +46,11 @@ There are three predefined keymaps
 
 Full customization is also available.
 
-Mozkey IbG also provides an opt-in keymap overlay named
-`OVERLAY_CYCLE_SEGMENTATION`. When enabled, it assigns `Ctrl+Shift+Space` to
-`CycleSegmentation` in Conversion mode only; Composition and Precomposition
-keep their existing full-space shortcut.
+Mozkey IbG enables `Ctrl+Shift+Space` for `CycleSegmentation` by default. The
+shortcut can be toggled on the **Mozkey IbG** tab of the configuration tool. It
+is active in Conversion mode only; Composition and Precomposition keep their
+existing full-space shortcut. The legacy `OVERLAY_CYCLE_SEGMENTATION` keymap
+overlay remains supported for programmatic configurations.
 
 With a fully custom keymap, the same binding can be written as:
 

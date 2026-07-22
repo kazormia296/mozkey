@@ -569,10 +569,23 @@ void SwitchCompositionMode(commands::CompositionMode mode, Session* session) {
   EXPECT_TRUE(SwitchCompositionModeCommand(mode, session, &command));
 }
 
+config::Config GetSessionTestConfig() {
+  config::Config config = config::ConfigHandler::DefaultConfig();
+  // General session tests use strict converter mocks and are not about the
+  // extra shadow conversions performed by typing correction. Dedicated tests
+  // opt in explicitly.
+  config.set_use_typing_correction(false);
+  return config;
+}
+
+void GetSessionTestConfig(config::Config* config) {
+  *config = GetSessionTestConfig();
+}
+
 void SetCustomKeymapForSession(absl::string_view custom_keymap_table,
                                Session* session) {
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_session_keymap(config::Config::CUSTOM);
   config.set_custom_keymap_table(std::string(custom_keymap_table));
 
@@ -822,14 +835,14 @@ class SessionTest : public testing::TestWithTempUserProfile {
 
   void EnableZenzFeedbackLearning(Session* session) {
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_zenz_feedback_learning(true);
     session->SetConfig(config);
   }
 
   void EnableZenzLiveCorrectionWithFeedbackLearning(Session* session) {
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_use_zenz_live_correction(true);
     config.set_use_zenz_feedback_learning(true);
@@ -864,10 +877,15 @@ class SessionTest : public testing::TestWithTempUserProfile {
 
   void InitSessionWithRequest(Session* session,
                               const commands::Request& request) {
+    // Most session tests use strict converter mocks and are not about typing
+    // correction. Keep that extra shadow-conversion pipeline isolated here;
+    // dedicated typing-correction tests opt in explicitly below.
+    config::Config test_config = session->context().GetConfig();
+    test_config.set_use_typing_correction(false);
+    session->SetConfig(test_config);
     session->SetRequest(request);
     auto table = std::make_shared<composer::Table>();
-    table->InitializeWithRequestAndConfig(
-        request, config::ConfigHandler::DefaultConfig());
+    table->InitializeWithRequestAndConfig(request, test_config);
     session->SetTable(table);
   }
 
@@ -1059,7 +1077,7 @@ class SessionTest : public testing::TestWithTempUserProfile {
 // always initialized in the order in which they are defined.
 TEST_F(SessionTest, TestOfTestForSetup) {
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   auto key_map_manager = std::make_shared<keymap::KeyMapManager>(config);
   EXPECT_FALSE(config.has_use_auto_conversion())
       << "Global config should be initialized for each test fixture.";
@@ -1177,7 +1195,7 @@ TEST_F(SessionTest, KeymapCommandSequenceCommitZenzLiveCorrectionAndImeOff) {
       "Conversion\tCtrl Enter\tCommit|IMEOff\n";
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_session_keymap(config::Config::CUSTOM);
   config.set_custom_keymap_table(std::string(kCustomKeymapTable));
   config.set_use_live_conversion(true);
@@ -1852,7 +1870,7 @@ TEST_F(SessionTest, ZenzFeedbackFastPathSkipsAutoBlockedCandidate) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_use_zenz_live_correction(true);
   config.set_use_zenz_feedback_learning(true);
@@ -1914,7 +1932,7 @@ TEST_F(SessionTest, ZenzFeedbackFastPathSkipsRejectDominantCandidate) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_use_zenz_live_correction(true);
   config.set_use_zenz_feedback_learning(true);
@@ -2268,7 +2286,7 @@ TEST_F(SessionTest, LiveConversionUsesDefaultMinKeyLength) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   session.SetConfig(config);
@@ -2292,7 +2310,7 @@ TEST_F(SessionTest, LiveConversionAllowsSingleCharacterWhenMinKeyLengthIsOne) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
@@ -2328,7 +2346,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   session.SetConfig(config);
@@ -2377,7 +2395,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   session.SetConfig(config);
@@ -2408,7 +2426,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   session.SetConfig(config);
@@ -2436,7 +2454,7 @@ TEST_F(SessionTest, LiveConversionRecoversAfterTransientSokuonPrefix) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   session.SetConfig(config);
@@ -2488,7 +2506,7 @@ TEST_F(SessionTest, LiveConversionAttachesPassiveSuggestionCandidateWindow) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
@@ -2552,10 +2570,8 @@ TEST_F(SessionTest, LiveTypingCorrectionKeepsSourceForPendingAndEsc) {
   SessionTestPeer session_peer(session);
   InitSessionToPrecomposition(&session);
 
-  config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  config::Config config = config::ConfigHandler::DefaultConfig();
   config.set_use_live_conversion(true);
-  config.set_use_typing_correction(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
   session.SetConfig(config);
@@ -2607,7 +2623,7 @@ TEST_F(SessionTest, LiveTypingCorrectionEnterCommitsCorrectedReading) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_use_typing_correction(true);
   config.set_live_conversion_delay_msec(0);
@@ -2655,7 +2671,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_auto_conversion(false);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
@@ -2705,7 +2721,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_dictionary_suggest(false);
   config.set_shift_key_mode_switch(config::Config::ASCII_INPUT_MODE);
   session.SetConfig(config);
@@ -2754,7 +2770,7 @@ TEST_F(
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(false);
   config.set_use_dictionary_suggest(false);
   config.set_shift_key_mode_switch(config::Config::ASCII_INPUT_MODE);
@@ -2821,7 +2837,7 @@ TEST_F(SessionTest, TabDuringLiveConversionFocusesPredictionCandidates) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
@@ -2880,7 +2896,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
@@ -2973,7 +2989,7 @@ TEST_F(SessionTest, SpaceDuringLiveConversionKeepsNormalCandidateNavigation) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
@@ -3022,7 +3038,7 @@ TEST_F(SessionTest, DownDuringLiveConversionKeepsNormalCandidateNavigation) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
@@ -3072,7 +3088,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(1);
@@ -3122,7 +3138,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(2);
@@ -3169,7 +3185,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(2);
@@ -3218,7 +3234,7 @@ TEST_F(SessionTest, LiveConversionHonorsRaisedMinKeyLength) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   config.set_live_conversion_min_key_length(3);
@@ -3254,7 +3270,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
@@ -3263,7 +3279,7 @@ TEST_F(SessionTest,
   auto table = std::make_shared<composer::Table>();
   table->InitializeWithRequestAndConfig(
       commands::Request::default_instance(),
-      config::ConfigHandler::DefaultConfig());
+      GetSessionTestConfig());
   table->AddRule("v.", "…", "");
   session.SetTable(table);
 
@@ -3305,7 +3321,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_TOUTEN);
@@ -3314,7 +3330,7 @@ TEST_F(SessionTest,
   auto table = std::make_shared<composer::Table>();
   table->InitializeWithRequestAndConfig(
       commands::Request::default_instance(),
-      config::ConfigHandler::DefaultConfig());
+      GetSessionTestConfig());
   table->AddRule("v,", "‥", "");
   session.SetTable(table);
 
@@ -3486,7 +3502,7 @@ TEST_F(SessionTest,
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
@@ -3623,7 +3639,7 @@ TEST_F(SessionTest, LiveConversionKeepsExpressiveKanaPrefixesAsComposition) {
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
@@ -3668,7 +3684,7 @@ TEST_F(SessionTest,
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
@@ -3713,7 +3729,7 @@ TEST_F(SessionTest, LiveConversionDoesNotHoldHohoAsExpressiveAtom) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   session.SetConfig(config);
@@ -3747,7 +3763,7 @@ TEST_F(SessionTest, LiveConversionDoesNotHoldHouhouAsExpressiveAtom) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(0);
   session.SetConfig(config);
@@ -3830,7 +3846,7 @@ TEST_F(SessionTest, LiveConversionDoesNotHoldNonExpressiveSokuonWords) {
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
@@ -3868,7 +3884,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(100);
   session.SetConfig(config);
@@ -3913,7 +3929,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(100);
   session.SetConfig(config);
@@ -3984,7 +4000,7 @@ TEST_F(SessionTest,
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
@@ -4051,7 +4067,7 @@ TEST_F(SessionTest,
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
@@ -4120,7 +4136,7 @@ TEST_F(SessionTest,
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_live_conversion_delay_msec(0);
     session.SetConfig(config);
@@ -4168,7 +4184,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_live_conversion_delay_msec(100);
   session.SetConfig(config);
@@ -4213,7 +4229,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_shift_key_mode_switch(config::Config::ASCII_INPUT_MODE);
   session.SetConfig(config);
@@ -4836,7 +4852,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_session_keymap(config::Config::MSIME);
   config.set_use_live_conversion(false);
   config.set_show_candidate_window_on_initial_conversion(true);
@@ -4886,7 +4902,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_session_keymap(config::Config::MSIME);
   config.set_use_live_conversion(false);
   config.set_show_candidate_window_on_initial_conversion(true);
@@ -4924,7 +4940,7 @@ TEST_F(SessionTest, InitialConversionOptionCanBeDisabled) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_session_keymap(config::Config::MSIME);
   config.set_use_live_conversion(false);
   config.set_show_candidate_window_on_initial_conversion(false);
@@ -4958,7 +4974,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_session_keymap(config::Config::MSIME);
   config.set_use_live_conversion(true);
   config.set_show_candidate_window_on_initial_conversion(true);
@@ -5009,7 +5025,7 @@ TEST_F(SessionTest, SegmentWidthShrink) {
   session.SegmentWidthShrink(&command);
 }
 
-TEST_F(SessionTest, CycleSegmentationOverlayShortcut) {
+TEST_F(SessionTest, CycleSegmentationDefaultShortcut) {
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
 
@@ -5017,9 +5033,11 @@ TEST_F(SessionTest, CycleSegmentationOverlayShortcut) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_session_keymap(config::Config::MSIME);
-  config.add_overlay_keymaps(config::Config::OVERLAY_CYCLE_SEGMENTATION);
+  // This test isolates the shortcut from the extra shadow conversions used by
+  // typing correction, which is covered by dedicated session tests.
+  config.set_use_typing_correction(false);
   session.SetConfig(config);
   session.SetKeyMapManager(std::make_shared<keymap::KeyMapManager>(config));
 
@@ -6482,7 +6500,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_auto_conversion(false);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
@@ -6551,7 +6569,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_auto_conversion(false);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
@@ -6614,7 +6632,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_auto_conversion(false);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
@@ -6662,7 +6680,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_auto_conversion(false);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
@@ -6705,7 +6723,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_auto_conversion(false);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);
@@ -6714,7 +6732,7 @@ TEST_F(SessionTest,
   auto table = std::make_shared<composer::Table>();
   table->InitializeWithRequestAndConfig(
       commands::Request::default_instance(),
-      config::ConfigHandler::DefaultConfig());
+      GetSessionTestConfig());
   table->AddRule("v.", "…", "");
   session.SetTable(table);
 
@@ -12196,7 +12214,7 @@ TEST_F(SessionTest,
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_use_direct_commit(true);
     config.set_symbol_method(config::Config::CORNER_BRACKET_MIDDLE_DOT);
@@ -12228,7 +12246,7 @@ TEST_F(SessionTest,
     InitSessionToPrecomposition(&session);
 
     config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
+    GetSessionTestConfig(&config);
     config.set_use_live_conversion(true);
     config.set_use_direct_commit(true);
     config.set_symbol_method(config::Config::SQUARE_BRACKET_SLASH);
@@ -13450,7 +13468,7 @@ TEST_F(SessionTest, Issue4437420) {
   session.SetRequest(request);
   auto table = std::make_shared<composer::Table>();
   table->InitializeWithRequestAndConfig(request,
-                                        config::ConfigHandler::DefaultConfig());
+                                        GetSessionTestConfig());
   session.SetTable(table);
   // Type "2*" to produce "A".
   SetSendKeyCommand("2", &command);
@@ -13470,7 +13488,7 @@ TEST_F(SessionTest, Issue4437420) {
   session.SetRequest(request);
   table = std::make_shared<composer::Table>();
   table->InitializeWithRequestAndConfig(request,
-                                        config::ConfigHandler::DefaultConfig());
+                                        GetSessionTestConfig());
   session.SetTable(table);
   // Type "2" to produce "Aa".
   SetSendKeyCommand("2", &command);
@@ -13532,7 +13550,7 @@ TEST_F(SessionTest, UndoKeyAction) {
     session.SetRequest(request);
     auto table = std::make_shared<composer::Table>();
     table->InitializeWithRequestAndConfig(
-        request, config::ConfigHandler::DefaultConfig());
+        request, GetSessionTestConfig());
     session.SetTable(table);
 
     // Type "2" to produce "a".
@@ -13577,7 +13595,7 @@ TEST_F(SessionTest, UndoKeyAction) {
     session.SetRequest(request);
     auto table = std::make_shared<composer::Table>();
     table->InitializeWithRequestAndConfig(
-        request, config::ConfigHandler::DefaultConfig());
+        request, GetSessionTestConfig());
     session.SetTable(table);
     // Type "33{<}{<}" to produce "さ"->"し"->"さ"->"そ".
     SetSendKeyCommand("3", &command);
@@ -13619,7 +13637,7 @@ TEST_F(SessionTest, UndoKeyAction) {
     session.SetRequest(request);
     auto table = std::make_shared<composer::Table>();
     table->InitializeWithRequestAndConfig(
-        request, config::ConfigHandler::DefaultConfig());
+        request, GetSessionTestConfig());
     session.SetTable(table);
     // Type "3*{<}*{<}", and composition should change
     // "さ"->"ざ"->(No change)->"さ"->(No change).
@@ -13667,7 +13685,7 @@ TEST_F(SessionTest, UndoKeyAction) {
     session.SetRequest(request);
     auto table = std::make_shared<composer::Table>();
     table->InitializeWithRequestAndConfig(
-        request, config::ConfigHandler::DefaultConfig());
+        request, GetSessionTestConfig());
     session.SetTable(table);
     // Type "{<}" and do nothing
     SetSendCommandCommand(commands::SessionCommand::UNDO_OR_REWIND, &command);
@@ -13746,7 +13764,7 @@ TEST_F(SessionTest, UndoKeyAction) {
     session.SetRequest(request);
     auto table = std::make_shared<composer::Table>();
     table->InitializeWithRequestAndConfig(
-        request, config::ConfigHandler::DefaultConfig());
+        request, GetSessionTestConfig());
     session.SetTable(table);
 
     // commit "あ" to push UNDO stack
@@ -13798,7 +13816,7 @@ TEST_F(SessionTest, DedupAfterUndo) {
 
     auto table = std::make_shared<composer::Table>();
     table->InitializeWithRequestAndConfig(
-        request, config::ConfigHandler::DefaultConfig());
+        request, GetSessionTestConfig());
     session.SetTable(table);
 
     // Type "!" to produce "！".
@@ -14402,7 +14420,7 @@ TEST_F(SessionTest, GrimodexPinnedProjectConditionsOverrideZenzPrompt) {
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_live_conversion(true);
   config.set_use_zenz_live_correction(true);
   config.set_zenz_live_correction_delay_msec(1);
@@ -14516,7 +14534,7 @@ TEST_F(SessionTest, BackKeyCommitsPreeditInPasswordMode) {
 
   auto table = std::make_shared<composer::Table>();
   table->InitializeWithRequestAndConfig(request,
-                                        config::ConfigHandler::DefaultConfig());
+                                        GetSessionTestConfig());
   session.SetTable(table);
 
   SwitchInputFieldType(commands::Context::PASSWORD, &session);
@@ -15459,7 +15477,7 @@ TEST_F(SessionTest, DeleteCandidateFromHistory) {
 
 TEST_F(SessionTest, SetConfig) {
   auto config =
-      std::make_shared<config::Config>(config::ConfigHandler::DefaultConfig());
+      std::make_shared<config::Config>(GetSessionTestConfig());
   config->set_session_keymap(config::Config::CUSTOM);
   MockEngine engine;
   std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
@@ -15664,7 +15682,7 @@ TEST_F(SessionTest,
   InitSessionToPrecomposition(&session);
 
   config::Config config;
-  config::ConfigHandler::GetDefaultConfig(&config);
+  GetSessionTestConfig(&config);
   config.set_use_auto_conversion(false);
   config.set_use_direct_commit(true);
   config.set_direct_commit_key(config::Config::DIRECT_COMMIT_KUTEN);

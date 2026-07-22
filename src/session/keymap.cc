@@ -144,6 +144,10 @@ bool KeyMapManager::IsSameKeyMapManagerApplicable(
   if (old_config.session_keymap() != new_config.session_keymap()) {
     return false;
   }
+  if (old_config.use_cycle_segmentation_shortcut() !=
+      new_config.use_cycle_segmentation_shortcut()) {
+    return false;
+  }
   if (!std::equal(old_config.overlay_keymaps().begin(),
                   old_config.overlay_keymaps().end(),
                   new_config.overlay_keymaps().begin(),
@@ -168,6 +172,12 @@ KeyMapManager::KeyMapManager(const config::Config& config) {
   ApplyPrimarySessionKeymap(config.session_keymap(),
                             config.custom_keymap_table());
   ApplyOverlaySessionKeymap(config.overlay_keymaps());
+  if (config.use_cycle_segmentation_shortcut() &&
+      std::find(config.overlay_keymaps().begin(), config.overlay_keymaps().end(),
+                config::Config::OVERLAY_CYCLE_SEGMENTATION) ==
+          config.overlay_keymaps().end()) {
+    LoadFile(kOverlayCycleSegmentationKeyMapFile);
+  }
 }
 
 void KeyMapManager::Reset() {

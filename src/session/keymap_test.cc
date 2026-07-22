@@ -354,35 +354,52 @@ TEST_F(KeyMapTest, GetCommand_overlay) {
   }
 }
 
-TEST_F(KeyMapTest, GetCommand_cycleSegmentationOverlay) {
-  config::Config default_config;
-  default_config.set_session_keymap(config::Config::MSIME);
-  KeyMapManager default_manager(default_config);
+TEST_F(KeyMapTest, GetCommand_cycleSegmentationShortcut) {
+  config::Config enabled_config;
+  enabled_config.set_session_keymap(config::Config::MSIME);
+  enabled_config.set_use_cycle_segmentation_shortcut(true);
+  KeyMapManager enabled_manager(enabled_config);
   commands::KeyEvent key_event;
   KeyParser::ParseKey("Ctrl Shift Space", &key_event);
-  ConversionState::Commands default_command;
+  ConversionState::Commands enabled_command;
   EXPECT_TRUE(
-      default_manager.GetCommandConversion(key_event, &default_command));
-  EXPECT_EQ(default_command, ConversionState::INSERT_FULL_SPACE);
+      enabled_manager.GetCommandConversion(key_event, &enabled_command));
+  EXPECT_EQ(enabled_command, ConversionState::CYCLE_SEGMENTATION);
 
+  config::Config disabled_config;
+  disabled_config.set_session_keymap(config::Config::MSIME);
+  disabled_config.set_use_cycle_segmentation_shortcut(false);
+  KeyMapManager disabled_manager(disabled_config);
+
+  ConversionState::Commands disabled_command;
+  EXPECT_TRUE(
+      disabled_manager.GetCommandConversion(key_event, &disabled_command));
+  EXPECT_EQ(disabled_command, ConversionState::INSERT_FULL_SPACE);
+
+  // The shortcut must not replace the existing full-space bindings in
+  // composition and precomposition states.
+  CompositionState::Commands composition_command;
+  EXPECT_TRUE(
+      enabled_manager.GetCommandComposition(key_event, &composition_command));
+  EXPECT_EQ(composition_command, CompositionState::INSERT_FULL_SPACE);
+  PrecompositionState::Commands precomposition_command;
+  EXPECT_TRUE(enabled_manager.GetCommandPrecomposition(
+      key_event, &precomposition_command));
+  EXPECT_EQ(precomposition_command, PrecompositionState::INSERT_FULL_SPACE);
+}
+
+TEST_F(KeyMapTest, ExplicitCycleSegmentationOverlayRemainsCompatible) {
   config::Config config;
   config.set_session_keymap(config::Config::MSIME);
+  config.set_use_cycle_segmentation_shortcut(false);
   config.add_overlay_keymaps(config::Config::OVERLAY_CYCLE_SEGMENTATION);
   KeyMapManager manager(config);
 
+  commands::KeyEvent key_event;
+  KeyParser::ParseKey("Ctrl Shift Space", &key_event);
   ConversionState::Commands command;
   EXPECT_TRUE(manager.GetCommandConversion(key_event, &command));
   EXPECT_EQ(command, ConversionState::CYCLE_SEGMENTATION);
-
-  // The opt-in overlay must not replace the existing full-space bindings in
-  // composition and precomposition states.
-  CompositionState::Commands composition_command;
-  EXPECT_TRUE(manager.GetCommandComposition(key_event, &composition_command));
-  EXPECT_EQ(composition_command, CompositionState::INSERT_FULL_SPACE);
-  PrecompositionState::Commands precomposition_command;
-  EXPECT_TRUE(manager.GetCommandPrecomposition(key_event,
-                                                &precomposition_command));
-  EXPECT_EQ(precomposition_command, PrecompositionState::INSERT_FULL_SPACE);
 }
 
 TEST_F(KeyMapTest, GetKeyMapFileName) {
@@ -1318,6 +1335,16 @@ TEST_F(KeyMapTest, IsSameKeyMapManagerApplicable) {
 
     EXPECT_TRUE(KeyMapManager::IsSameKeyMapManagerApplicable(configChromeOs1,
                                                              configChromeOs2));
+  }
+  {
+    config::Config enabled_config;
+    enabled_config.set_session_keymap(config::Config::MSIME);
+    enabled_config.set_use_cycle_segmentation_shortcut(true);
+    config::Config disabled_config = enabled_config;
+    disabled_config.set_use_cycle_segmentation_shortcut(false);
+
+    EXPECT_FALSE(KeyMapManager::IsSameKeyMapManagerApplicable(
+        enabled_config, disabled_config));
   }
   {
     // Current: CHROMEOS + []

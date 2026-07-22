@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_python//python:defs.bzl", "py_test")
 load(
     "//:build_defs.bzl",
     "mozc_cc_binary",
@@ -332,4 +333,13 @@ mozc_cc_binary(
     deps = [
         ":mozc_engine",
     ],
+)
+
+py_test(
+    name = "fcitx5_mozkey_ibg_abi_test",
+    size = "small",
+    srcs = ["fcitx5_mozkey_ibg_abi_test.py"],
+    args = ["$(rootpath :fcitx5-mozkey-ibg.so)"],
+    data = [":fcitx5-mozkey-ibg.so"],
+    target_compatible_with = ["@platforms//os:linux"],
 )

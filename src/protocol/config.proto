@@ -303,6 +303,7 @@ message Config {
 
   // Use typing correction feature.
   // e.g. sunkai -> 深海
+  // Mozkey's product config enables this by default through ConfigHandler.
   optional bool use_typing_correction = 66 [default = false];
 
   // The duration in millisecond to determine the timeout.
@@ -336,6 +337,12 @@ message Config {
   // the focused candidate.
   optional bool show_candidate_window_on_initial_conversion = 72
       [default = false];
+
+  // Use Ctrl+Shift+Space to cycle alternative conversion segmentations.
+  // The shortcut is active only in Conversion mode, so the existing full-space
+  // binding is preserved in Composition and Precomposition modes.
+  // Mozkey's product config enables this by default through ConfigHandler.
+  optional bool use_cycle_segmentation_shortcut = 73 [default = false];
 
   // Use asynchronous zenz live correction after normal live conversion.
   // Mozkey's product config enables this by default through ConfigHandler.

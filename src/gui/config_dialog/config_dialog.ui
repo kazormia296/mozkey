@@ -298,6 +298,99 @@
       </layout>
      </widget>
     </widget>
+    <widget class="QWidget" name="mozkeyTab">
+     <attribute name="title">
+      <string>Mozkey IbG</string>
+     </attribute>
+     <layout class="QVBoxLayout" name="mozkeyOptionsLayout">
+      <property name="leftMargin">
+       <number>20</number>
+      </property>
+      <property name="topMargin">
+       <number>20</number>
+      </property>
+      <property name="rightMargin">
+       <number>20</number>
+      </property>
+      <property name="bottomMargin">
+       <number>20</number>
+      </property>
+      <property name="spacing">
+       <number>16</number>
+      </property>
+      <item>
+       <widget class="QGroupBox" name="typingCorrectionGroupBox">
+        <property name="title">
+         <string>Typing correction</string>
+        </property>
+        <layout class="QVBoxLayout" name="typingCorrectionLayout">
+         <item>
+          <widget class="QCheckBox" name="typingCorrectionCheckBox">
+           <property name="toolTip">
+            <string>Corrects bounded one-edit mistakes in Romaji and JIS-kana input. High-confidence corrections may be applied during live conversion.</string>
+           </property>
+           <property name="text">
+            <string>Correct mistyped Romaji and kana input</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="typingCorrectionDescriptionLabel">
+           <property name="text">
+            <string>Adds safe correction candidates while preserving the original input.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="cycleSegmentationGroupBox">
+        <property name="title">
+         <string>Segment cycling</string>
+        </property>
+        <layout class="QVBoxLayout" name="cycleSegmentationLayout">
+         <item>
+          <widget class="QCheckBox" name="cycleSegmentationShortcutCheckBox">
+           <property name="toolTip">
+            <string>Uses Ctrl+Shift+Space to cycle alternative segment boundaries while converting.</string>
+           </property>
+           <property name="text">
+            <string>Use Ctrl+Shift+Space to cycle segment boundaries</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="cycleSegmentationDescriptionLabel">
+           <property name="text">
+            <string>The fullwidth-space shortcut is preserved outside Conversion mode.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <spacer name="mozkeyOptionsVerticalSpacer">
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </widget>
     <widget class="QWidget" name="dictionaryTab">
      <attribute name="title">
       <string>Dictionary</string>
@@ -2810,6 +2903,8 @@
   <tabstop>keymapSettingComboBox</tabstop>
   <tabstop>editKeymapButton</tabstop>
   <tabstop>editRomanTableButton</tabstop>
+  <tabstop>typingCorrectionCheckBox</tabstop>
+  <tabstop>cycleSegmentationShortcutCheckBox</tabstop>
   <tabstop>historyLearningLevelComboBox</tabstop>
   <tabstop>clearUserHistoryButton</tabstop>
   <tabstop>editUserDictionaryButton</tabstop>

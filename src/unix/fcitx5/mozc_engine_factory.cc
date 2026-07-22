@@ -74,8 +74,8 @@ class MozcEngineFactory : public AddonFactory {
 };
 }  // namespace fcitx
 
-#ifdef FCITX_ADDON_FACTORY_V2
-FCITX_ADDON_FACTORY_V2(mozkey_ibg, fcitx::MozcEngineFactory)
+#ifdef FCITX_ADDON_FACTORY_V2_BACKWARDS
+FCITX_ADDON_FACTORY_V2_BACKWARDS(mozkey_ibg, fcitx::MozcEngineFactory)
 #else
 FCITX_ADDON_FACTORY(fcitx::MozcEngineFactory)
 #endif
