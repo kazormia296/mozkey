@@ -175,7 +175,7 @@ jobs:
             < tools/release/fedora_release_packages.txt
           for package in "${release_packages[@]}"; do
             echo "Checking Fedora package: $package"
-            dnf -q repoquery --available "$package" \
+            dnf -q repoquery --available --whatprovides "$package" \
               > /tmp/mozkey-package-query.txt
             if [ ! -s /tmp/mozkey-package-query.txt ]; then
               echo "::error::Package is absent from the Fedora snapshot: $package" >&2
