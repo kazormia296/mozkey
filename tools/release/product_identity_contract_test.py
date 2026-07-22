@@ -56,6 +56,9 @@ class ProductIdentityContractTest(unittest.TestCase):
         aur = read("packaging/aur/PKGBUILD")
         deb = read("scripts/package_mozkey_linux_deb")
         rpm = read("scripts/package_mozkey_linux_rpm")
+        launcher = read("scripts/launch_fcitx5_mozkey_e2e")
+        profile_relative = "fixtures/fcitx5-mozkey-ibg-e2e/profile"
+        profile_path = ROOT / "scripts" / profile_relative
 
         self.assertIn("Library=fcitx5-mozkey-ibg", addon)
         self.assertIn("Addon=mozkey-ibg", input_method)
@@ -75,6 +78,18 @@ class ProductIdentityContractTest(unittest.TestCase):
         self.assertNotIn("conflicts=('mozkey')", aur)
         self.assertNotRegex(deb, r"(?m)^(?:Breaks|Conflicts|Replaces): mozkey$")
         self.assertNotRegex(rpm, r"(?m)^(?:Conflicts|Obsoletes): +mozkey$")
+
+        self.assertIn(
+            f'profile_fixture="${{script_directory}}/{profile_relative}"',
+            launcher,
+        )
+        self.assertTrue(profile_path.is_file())
+        profile = profile_path.read_text(encoding="utf-8")
+        self.assertIn("DefaultIM=mozkey-ibg", profile)
+        self.assertIn("Name=mozkey-ibg", profile)
+        self.assertFalse(
+            (ROOT / "scripts/fixtures/fcitx5-mozkey-e2e/profile").exists()
+        )
 
     def test_windows_registration_is_independent_from_upstream_mozkey(self) -> None:
         profile = read("src/win32/base/tsf_profile.cc")
