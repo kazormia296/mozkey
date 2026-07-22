@@ -61,9 +61,18 @@ jobs:
             exit 1
           fi
 
+  preflight:
+    name: Verify release environment before product builds
+    needs: release-gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-preflight.yaml
+    with:
+      candidate_tag: ${{ needs.release-gate.outputs.tag }}
+
   linux:
     name: Linux release artifacts
-    needs: release-gate
+    needs: [release-gate, preflight]
     permissions:
       contents: read
     uses: ./.github/workflows/linux.yaml
@@ -72,7 +81,7 @@ jobs:
 
   macos:
     name: macOS release artifacts
-    needs: release-gate
+    needs: [release-gate, preflight]
     permissions:
       contents: read
     uses: ./.github/workflows/macos.yaml
@@ -90,7 +99,7 @@ jobs:
 
   windows:
     name: Windows release artifacts
-    needs: release-gate
+    needs: [release-gate, preflight]
     permissions:
       contents: read
     uses: ./.github/workflows/windows.yaml
@@ -99,14 +108,14 @@ jobs:
 
   secure_offline:
     name: Secure offline release gate
-    needs: release-gate
+    needs: [release-gate, preflight]
     permissions:
       contents: read
     uses: ./.github/workflows/secure-offline.yaml
 
   publish:
     name: Create or update draft prerelease
-    needs: [release-gate, linux, macos, windows, secure_offline]
+    needs: [release-gate, preflight, linux, macos, windows, secure_offline]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

@@ -77,7 +77,7 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         for platform in SUPPORTED_PLATFORMS:
             with self.subTest(platform=platform):
                 block = self.jobs[platform]
-                self.assertIn("needs: release-gate", block)
+                self.assertIn("needs: [release-gate, preflight]", block)
                 self.assertIn(
                     f"uses: ./.github/workflows/{platform}.yaml",
                     block,
@@ -92,16 +92,45 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
                 )
 
         self.assertIn(
-            "needs: [release-gate, linux, macos, windows, secure_offline]",
+            "needs: [release-gate, preflight, linux, macos, windows, "
+            "secure_offline]",
             self.jobs["publish"],
         )
 
     def test_secure_offline_gate_runs_before_publish(self) -> None:
         gate = self.jobs["secure_offline"]
-        self.assertIn("needs: release-gate", gate)
+        self.assertIn("needs: [release-gate, preflight]", gate)
         self.assertIn("uses: ./.github/workflows/secure-offline.yaml", gate)
         self.assertIn("contents: read", gate)
         self.assertIn("secure_offline", self.jobs["publish"])
+
+    def test_short_preflight_gates_every_expensive_release_job(self) -> None:
+        gate = self.jobs["preflight"]
+        self.assertIn("needs: release-gate", gate)
+        self.assertIn(
+            "uses: ./.github/workflows/release-preflight.yaml",
+            gate,
+        )
+        self.assertIn(
+            "candidate_tag: ${{ needs.release-gate.outputs.tag }}",
+            gate,
+        )
+
+        preflight = self._workflow("release-preflight")
+        self.assertIn("  pull_request:", preflight)
+        self.assertIn("  workflow_dispatch:", preflight)
+        self.assertIn("  workflow_call:", preflight)
+        self.assertEqual(preflight.count("timeout-minutes: 5"), 3)
+        self.assertIn("preflight_release_identity.py", preflight)
+        self.assertIn("preflight_release_inputs.py", preflight)
+        self.assertIn("check_powershell_preflight.ps1", preflight)
+        self.assertIn("--phase pull-request", preflight)
+        self.assertIn("--phase pre-tag", preflight)
+        self.assertIn("--phase tag", preflight)
+        self.assertIn("pacman -Si -- \"$package\"", preflight)
+        self.assertIn("dnf -q repoquery --available", preflight)
+        self.assertIn("-Wa,--gsframe=no", preflight)
+        self.assertNotIn("contents: write", preflight)
 
     def test_windows_release_checks_built_and_extracted_msi_payloads(self) -> None:
         windows = self._platform_workflow("windows")
@@ -446,6 +475,7 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
 
     def test_linux_release_build_inputs_use_fixed_snapshots(self) -> None:
         linux = self._platform_workflow("linux")
+        preflight = self._workflow("release-preflight")
         self.assertIn(
             "container: fedora@sha256:"
             "99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814",
@@ -486,6 +516,27 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
                 self.assertIn(script, linux)
         self.assertNotIn("apt-get update", linux)
         self.assertNotIn("pacman -Syu", linux)
+        self.assertIn("2026/07/17", preflight)
+        self.assertIn("Fedora 42", preflight)
+
+        package_contracts = {
+            "archlinux": (
+                "archlinux_release_packages.txt",
+                {"binutils", "gcc", "llama-cpp", "qt6-base"},
+            ),
+            "fedora": (
+                "fedora_release_packages.txt",
+                {"binutils", "gcc-c++", "qt6-qtbase-devel", "rpm-build"},
+            ),
+        }
+        for platform, (filename, required) in package_contracts.items():
+            with self.subTest(platform=platform):
+                path = self.repository / "tools/release" / filename
+                packages = path.read_text(encoding="utf-8").splitlines()
+                self.assertEqual(packages, sorted(set(packages)))
+                self.assertTrue(required.issubset(packages))
+                self.assertIn(filename, linux)
+                self.assertIn(filename, preflight)
 
     def test_ubuntu_snapshot_update_is_strict_and_retryable(self) -> None:
         snapshot = (
