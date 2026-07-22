@@ -197,7 +197,12 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
         script_verification = checker.split("function Invoke-NetworkCheck", 1)[0]
         self.assertIn("if (-not $?)", script_verification)
         self.assertNotIn("$LASTEXITCODE", script_verification)
-        self.assertEqual(checker.count("if ($LASTEXITCODE -ne 0)"), 2)
+        self.assertEqual(checker.count("if ($LASTEXITCODE -ne 0)"), 1)
+        self.assertIn("[System.Diagnostics.ProcessStartInfo]::new()", checker)
+        self.assertIn("$startInfo.ArgumentList.Add($argument)", checker)
+        self.assertIn("$process.WaitForExit()", checker)
+        self.assertIn("$process.ExitCode", checker)
+        self.assertNotIn("& msiexec.exe", checker)
 
     def test_windows_crt_source_is_toolchain_selected_and_verified(self) -> None:
         windows = self._platform_workflow("windows")
