@@ -76,6 +76,11 @@ class MozcEngineFactory : public AddonFactory {
 
 #ifdef FCITX_ADDON_FACTORY_V2_BACKWARDS
 FCITX_ADDON_FACTORY_V2_BACKWARDS(mozkey_ibg, fcitx::MozcEngineFactory)
+#elif defined(FCITX_ADDON_FACTORY_V2)
+// Older Fcitx5 headers expose the V2 entry point but not the compatibility
+// macro. Export both names so the addon remains loadable by both ABI paths.
+FCITX_ADDON_FACTORY_V2(mozkey_ibg, fcitx::MozcEngineFactory)
+FCITX_ADDON_FACTORY(fcitx::MozcEngineFactory)
 #else
 FCITX_ADDON_FACTORY(fcitx::MozcEngineFactory)
 #endif
