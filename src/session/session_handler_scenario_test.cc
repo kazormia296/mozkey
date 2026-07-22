@@ -65,10 +65,12 @@ void SetLegacyInputDefaultsForScenarioTest() {
 
   // Scenario files are golden tests for the traditional Mozc session behavior.
   // Keep live conversion and punctuation/symbol direct commit disabled unless a
-  // scenario explicitly opts into those features.
+  // scenario explicitly opts into those features. Typing correction is also
+  // disabled because these golden files assert the legacy candidate surfaces.
   config.set_use_live_conversion(false);
   config.set_use_direct_commit(false);
   config.set_direct_commit_key(0);
+  config.set_use_typing_correction(false);
 
   config::ConfigHandler::SetConfig(config);
 }
