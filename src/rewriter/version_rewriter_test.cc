@@ -109,7 +109,7 @@ TEST_F(VersionRewriterTest, RewriteTestVersion) {
   constexpr absl::string_view kVersionPrefixExpected = "GoogleJapaneseInput-";
   constexpr absl::string_view kVersionPrefixUnexpected = "Mozc-";
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
-  constexpr absl::string_view kVersionPrefixExpected = "Mozc-";
+  constexpr absl::string_view kVersionPrefixExpected = "MozkeyIbG-";
   constexpr absl::string_view kVersionPrefixUnexpected = "GoogleJapaneseInput-";
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
