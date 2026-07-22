@@ -9,6 +9,51 @@
         <translation></translation>
     </message>
     <message>
+        <location filename="config_dialog.ui" line="303"/>
+        <source>Mozkey IbG</source>
+        <translation>Mozkey IbG</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="324"/>
+        <source>Typing correction</source>
+        <translation>Typing correction</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="330"/>
+        <source>Corrects bounded one-edit mistakes in Romaji and JIS-kana input. High-confidence corrections may be applied during live conversion.</source>
+        <translation>Corrects bounded one-edit mistakes in Romaji and JIS-kana input. High-confidence corrections may be applied during live conversion.</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="333"/>
+        <source>Correct mistyped Romaji and kana input</source>
+        <translation>Correct mistyped Romaji and kana input</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="340"/>
+        <source>Adds safe correction candidates while preserving the original input.</source>
+        <translation>Adds safe correction candidates while preserving the original input.</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="353"/>
+        <source>Segment cycling</source>
+        <translation>Segment cycling</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="359"/>
+        <source>Uses Ctrl+Shift+Space to cycle alternative segment boundaries while converting.</source>
+        <translation>Uses Ctrl+Shift+Space to cycle alternative segment boundaries while converting.</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="362"/>
+        <source>Use Ctrl+Shift+Space to cycle segment boundaries</source>
+        <translation>Use Ctrl+Shift+Space to cycle segment boundaries</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="369"/>
+        <source>The fullwidth-space shortcut is preserved outside Conversion mode.</source>
+        <translation>The fullwidth-space shortcut is preserved outside Conversion mode.</translation>
+    </message>
+    <message>
         <location filename="config_dialog.ui" line="92"/>
         <source>Input mode</source>
         <translation></translation>

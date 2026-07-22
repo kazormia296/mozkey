@@ -112,6 +112,8 @@ Config CreateDefaultConfig() {
     config.set_use_emoji_conversion(true);
   }
 
+  config.set_use_typing_correction(true);
+  config.set_use_cycle_segmentation_shortcut(true);
   config.set_use_zenz_live_correction(true);
 
   return config;
@@ -146,6 +148,14 @@ void NormalizeConfig(Config* config) {
   if (GetPlatformSpecificDefaultEmojiSetting() &&
       !config->has_use_emoji_conversion()) {
     config->set_use_emoji_conversion(true);
+  }
+
+  if (!config->has_use_typing_correction()) {
+    config->set_use_typing_correction(true);
+  }
+
+  if (!config->has_use_cycle_segmentation_shortcut()) {
+    config->set_use_cycle_segmentation_shortcut(true);
   }
 
   if (!config->has_use_live_conversion()) {

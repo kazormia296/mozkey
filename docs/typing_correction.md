@@ -1,9 +1,10 @@
 # Rule-based raw typing correction
 
-Mozkey's raw-input correction is deterministic and rule-based. It uses no ML
-model, external service, telemetry, or external corpus. Production hypotheses
-are bounded to one edit and are replayed through the Composer/Table state that
-created the source composition.
+Mozkey's raw-input correction is deterministic and rule-based. It is enabled by
+default and can be toggled on the **Mozkey IbG** tab of the configuration tool.
+It uses no ML model, external service, telemetry, or external corpus.
+Production hypotheses are bounded to one edit and are replayed through the
+Composer/Table state that created the source composition.
 
 ## Pipeline
 

@@ -2841,7 +2841,7 @@ void ConfigDialog::InitializeRendererAppearanceControls() {
 
 void ConfigDialog::ConvertFromProto(const config::Config &config) {
   base_config_ = config;
-  // tab1
+  // General
   SetComboboxForPreeditMethod(config, inputModeComboBox);
   SET_COMBOBOX(punctuationsSettingComboBox, PunctuationMethod,
                punctuation_method);
@@ -2857,7 +2857,12 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   custom_keymap_table_ = config.custom_keymap_table();
   custom_roman_table_ = config.custom_roman_table();
 
-  // tab2
+  // Mozkey IbG
+  SET_CHECKBOX(typingCorrectionCheckBox, use_typing_correction);
+  SET_CHECKBOX(cycleSegmentationShortcutCheckBox,
+               use_cycle_segmentation_shortcut);
+
+  // Dictionary
   SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                history_learning_level);
   SET_CHECKBOX(singleKanjiConversionCheckBox, use_single_kanji_conversion);
@@ -2875,7 +2880,7 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   localUsageDictionaryCheckBox->setChecked(
       config.information_list_config().use_local_usage_dictionary());
 
-  // tab3
+  // Advanced
   SET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   SET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
@@ -3068,7 +3073,7 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   targetPreeditUnderlineColorButton->setEnabled(
       config.use_custom_preedit_target_underline_color());
 
-  // tab4
+  // Suggestions
   SET_CHECKBOX(historySuggestCheckBox, use_history_suggest);
   SET_CHECKBOX(dictionarySuggestCheckBox, use_dictionary_suggest);
   SET_CHECKBOX(realtimeConversionCheckBox, use_realtime_conversion);
@@ -3076,11 +3081,11 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   suggestionsSizeSpinBox->setValue(
       std::clamp<int>(config.suggestions_size(), 1, 9));
 
-  // tab5
+  // Privacy
   SET_CHECKBOX(incognitoModeCheckBox, incognito_mode);
   SET_CHECKBOX(presentationModeCheckBox, presentation_mode);
 
-  // tab6
+  // Miscellaneous
   SET_COMBOBOX(verboseLevelComboBox, int, verbose_level);
   SET_COMBOBOX(yenSignComboBox, YenSignCharacter, yen_sign_character);
 
@@ -3094,7 +3099,7 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
 void ConfigDialog::ConvertToProto(config::Config *config) const {
   *config = base_config_;
 
-  // tab1
+  // General
   GetComboboxForPreeditMethod(inputModeComboBox, config);
   GET_COMBOBOX(punctuationsSettingComboBox, PunctuationMethod,
                punctuation_method);
@@ -3114,7 +3119,12 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
     config->set_custom_roman_table(custom_roman_table_);
   }
 
-  // tab2
+  // Mozkey IbG
+  GET_CHECKBOX(typingCorrectionCheckBox, use_typing_correction);
+  GET_CHECKBOX(cycleSegmentationShortcutCheckBox,
+               use_cycle_segmentation_shortcut);
+
+  // Dictionary
   GET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                history_learning_level);
   GET_CHECKBOX(singleKanjiConversionCheckBox, use_single_kanji_conversion);
@@ -3132,7 +3142,7 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   config->mutable_information_list_config()->set_use_local_usage_dictionary(
       localUsageDictionaryCheckBox->isChecked());
 
-  // tab3
+  // Advanced
   GET_CHECKBOX(autoSwitchCompositionMode, auto_switch_composition_mode);
 
   GET_CHECKBOX(liveConversionCheckBox, use_live_conversion);
@@ -3294,7 +3304,7 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_COMBOBOX(shiftKeyModeSwitchComboBox, ShiftKeyModeSwitch,
                shift_key_mode_switch);
 
-  // tab4
+  // Suggestions
   GET_CHECKBOX(historySuggestCheckBox, use_history_suggest);
   GET_CHECKBOX(dictionarySuggestCheckBox, use_dictionary_suggest);
   GET_CHECKBOX(realtimeConversionCheckBox, use_realtime_conversion);
@@ -3302,11 +3312,11 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   config->set_suggestions_size(
       static_cast<uint32_t>(suggestionsSizeSpinBox->value()));
 
-  // tab5
+  // Privacy
   GET_CHECKBOX(incognitoModeCheckBox, incognito_mode);
   GET_CHECKBOX(presentationModeCheckBox, presentation_mode);
 
-  // tab6
+  // Miscellaneous
   config->set_verbose_level(verboseLevelComboBox->currentIndex());
   GET_COMBOBOX(yenSignComboBox, YenSignCharacter, yen_sign_character);
 

@@ -51,6 +51,21 @@ require_resolved_links() {
   fi
 }
 
+require_dynamic_symbol() {
+  binary_path="${stage_dir}$1"
+  required_symbol=$2
+  symbol_report="$(nm -D --defined-only "${binary_path}" 2>&1)" || {
+    echo "nm failed for staged binary: $1" >&2
+    echo "${symbol_report}" >&2
+    exit 1
+  }
+  if ! printf '%s\n' "${symbol_report}" | awk '{print $NF}' | \
+      grep -Fqx "${required_symbol}"; then
+    echo "missing staged ABI symbol ${required_symbol}: $1" >&2
+    exit 1
+  fi
+}
+
 install_product() {
   DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_fcitx5_bazel || return
   DESTDIR="${stage_dir}" PREFIX=/usr ../scripts/install_server_bazel
@@ -59,6 +74,12 @@ install_product() {
 install_product
 
 require_file "${addon_dir}/fcitx5-mozkey-ibg.so"
+require_dynamic_symbol \
+  "${addon_dir}/fcitx5-mozkey-ibg.so" \
+  fcitx_addon_factory_instance
+require_dynamic_symbol \
+  "${addon_dir}/fcitx5-mozkey-ibg.so" \
+  fcitx_addon_factory_instance_mozkey_ibg
 require_file /usr/lib/mozkey-ibg/mozc_server
 require_file /usr/lib/mozkey-ibg/mozc_tool
 require_file /usr/lib/mozkey-ibg/mozc_zenz_scorer

@@ -9,6 +9,51 @@
         <translation>[ProductName] プロパティ</translation>
     </message>
     <message>
+        <location filename="config_dialog.ui" line="303"/>
+        <source>Mozkey IbG</source>
+        <translation>Mozkey IbG</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="324"/>
+        <source>Typing correction</source>
+        <translation>ミスタイプ補正</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="330"/>
+        <source>Corrects bounded one-edit mistakes in Romaji and JIS-kana input. High-confidence corrections may be applied during live conversion.</source>
+        <translation>ローマ字入力とJISかな入力の1か所の打ち間違いを補正します。信頼度の高い補正はライブ変換中に自動適用される場合があります。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="333"/>
+        <source>Correct mistyped Romaji and kana input</source>
+        <translation>ローマ字・かな入力のミスタイプを補正する</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="340"/>
+        <source>Adds safe correction candidates while preserving the original input.</source>
+        <translation>元の入力を保持したまま、安全な補正候補を追加します。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="353"/>
+        <source>Segment cycling</source>
+        <translation>文節サイクル</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="359"/>
+        <source>Uses Ctrl+Shift+Space to cycle alternative segment boundaries while converting.</source>
+        <translation>変換中にCtrl+Shift+Spaceで文節の区切り候補を順番に切り替えます。</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="362"/>
+        <source>Use Ctrl+Shift+Space to cycle segment boundaries</source>
+        <translation>Ctrl+Shift+Spaceで文節区切りを順番に切り替える</translation>
+    </message>
+    <message>
+        <location filename="config_dialog.ui" line="369"/>
+        <source>The fullwidth-space shortcut is preserved outside Conversion mode.</source>
+        <translation>変換中以外では、従来どおり全角スペースのショートカットとして動作します。</translation>
+    </message>
+    <message>
         <location filename="config_dialog.ui" line="57"/>
         <source>General</source>
         <translation>一般</translation>

@@ -71,6 +71,8 @@ class ConfigHandlerTest : public testing::TestWithTempUserProfile {
 };
 
 void SetMozkeyInputDefaultsForTesting(Config* config) {
+  config->set_use_typing_correction(true);
+  config->set_use_cycle_segmentation_shortcut(true);
   config->set_use_live_conversion(true);
   config->set_use_zenz_live_correction(true);
   config->set_show_candidate_window_on_initial_conversion(true);
@@ -142,6 +144,8 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaults) {
 
   const Config output = ConfigHandler::GetCopiedConfig();
 
+  EXPECT_TRUE(output.use_typing_correction());
+  EXPECT_TRUE(output.use_cycle_segmentation_shortcut());
   EXPECT_TRUE(output.use_live_conversion());
   EXPECT_TRUE(output.use_zenz_live_correction());
   EXPECT_TRUE(output.zenz_live_correction_device().empty());
@@ -168,6 +172,8 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaultsPreservesExplicitFalse) {
 
   Config input;
   ConfigHandler::GetDefaultConfig(&input);
+  input.set_use_typing_correction(false);
+  input.set_use_cycle_segmentation_shortcut(false);
   input.set_use_live_conversion(false);
   input.set_use_zenz_live_correction(false);
   input.set_show_candidate_window_on_initial_conversion(false);
@@ -176,6 +182,8 @@ TEST_F(ConfigHandlerTest, NormalizeMozkeyInputDefaultsPreservesExplicitFalse) {
   ConfigHandler::SetConfig(input);
   const Config output = ConfigHandler::GetCopiedConfig();
 
+  EXPECT_FALSE(output.use_typing_correction());
+  EXPECT_FALSE(output.use_cycle_segmentation_shortcut());
   EXPECT_FALSE(output.use_live_conversion());
   EXPECT_FALSE(output.use_zenz_live_correction());
   EXPECT_FALSE(output.show_candidate_window_on_initial_conversion());
@@ -315,6 +323,8 @@ TEST_F(ConfigHandlerTest, GetDefaultConfig) {
 #endif  // __APPLE__ || OS_CHROMEOS
 
   EXPECT_EQ(output.live_conversion_min_key_length(), 2);
+  EXPECT_TRUE(output.use_typing_correction());
+  EXPECT_TRUE(output.use_cycle_segmentation_shortcut());
   EXPECT_TRUE(output.use_zenz_live_correction());
   EXPECT_TRUE(output.zenz_live_correction_device().empty());
   EXPECT_EQ(output.character_form_rules_size(), 13);
@@ -357,6 +367,8 @@ TEST_F(ConfigHandlerTest, DefaultConfig) {
   Config config;
   ConfigHandler::GetDefaultConfig(&config);
   EXPECT_EQ(absl::StrCat(ConfigHandler::DefaultConfig()), absl::StrCat(config));
+  EXPECT_TRUE(config.use_typing_correction());
+  EXPECT_TRUE(config.use_cycle_segmentation_shortcut());
 }
 
 // Returns concatenated serialized data of |Config::character_form_rules|.
