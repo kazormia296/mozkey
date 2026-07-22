@@ -71,6 +71,7 @@ void SetLegacyInputDefaultsForScenarioTest() {
   config.set_use_direct_commit(false);
   config.set_direct_commit_key(0);
   config.set_use_typing_correction(false);
+  config.set_use_cycle_segmentation_shortcut(false);
 
   config::ConfigHandler::SetConfig(config);
 }
