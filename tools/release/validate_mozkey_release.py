@@ -44,17 +44,12 @@ def parse_release_tag(tag: str) -> tuple[int, int, int]:
     return tuple(int(value) for value in match.groups())  # type: ignore[return-value]
 
 
-def parse_version_file(version_file: Path) -> tuple[int, int, int]:
-    if version_file.is_symlink() or not version_file.is_file():
-        raise ReleaseValidationError(
-            f"version file must be a regular non-symlink file: {version_file}"
-        )
-
+def parse_version_source(source: str, label: str) -> tuple[int, int, int]:
     try:
-        tree = ast.parse(version_file.read_text(encoding="utf-8"), version_file.name)
-    except (OSError, UnicodeError, SyntaxError) as error:
+        tree = ast.parse(source, label)
+    except SyntaxError as error:
         raise ReleaseValidationError(
-            f"failed to parse release version file {version_file}: {error}"
+            f"failed to parse release version source {label}: {error}"
         ) from error
 
     assignments: dict[str, list[ast.expr]] = {
@@ -101,6 +96,21 @@ def parse_version_file(version_file: Path) -> tuple[int, int, int]:
             )
         values.append(value)
     return tuple(values)  # type: ignore[return-value]
+
+
+def parse_version_file(version_file: Path) -> tuple[int, int, int]:
+    if version_file.is_symlink() or not version_file.is_file():
+        raise ReleaseValidationError(
+            f"version file must be a regular non-symlink file: {version_file}"
+        )
+
+    try:
+        source = version_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ReleaseValidationError(
+            f"failed to read release version file {version_file}: {error}"
+        ) from error
+    return parse_version_source(source, str(version_file))
 
 
 def _git(

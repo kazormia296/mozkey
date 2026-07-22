@@ -1,0 +1,186 @@
+name: Mozkey Release Preflight
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      candidate_tag:
+        description: New vX.Y.Z tag to validate before creating it
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      candidate_tag:
+        description: Existing release tag being checked before product builds
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preflight-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable:
+    name: Identity, pinned inputs, PowerShell, and workflow contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout with main history and tags
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate pull-request release identity
+        if: ${{ github.event_name == 'pull_request' }}
+        run: >-
+          python tools/release/preflight_release_identity.py
+          --phase pull-request
+          --version-file src/version.bzl
+          --repository .
+          --main-ref origin/main
+
+      - name: Validate pre-tag release identity
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: >-
+          python tools/release/preflight_release_identity.py
+          --phase pre-tag
+          --tag "$CANDIDATE_TAG"
+          --version-file src/version.bzl
+          --repository .
+          --main-ref origin/main
+
+      - name: Revalidate tagged release identity
+        if: >-
+          ${{ github.event_name != 'pull_request' &&
+              github.event_name != 'workflow_dispatch' }}
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: >-
+          python tools/release/preflight_release_identity.py
+          --phase tag
+          --tag "$CANDIDATE_TAG"
+          --version-file src/version.bzl
+          --repository .
+          --main-ref origin/main
+
+      - name: Verify pinned runtime and toolchain inputs
+        run: python tools/release/preflight_release_inputs.py --repository .
+
+      - name: Parse PowerShell and run the StrictMode status probe
+        shell: pwsh
+        run: ./tools/release/check_powershell_preflight.ps1 -Repository .
+
+      - name: Verify release and preflight workflow contracts
+        run: |
+          python -m unittest \
+            tools.release.preflight_release_identity_test \
+            tools.release.preflight_release_inputs_test \
+            tools.release.release_workflow_contract_test \
+            tools.release.validate_mozkey_release_test
+
+  archlinux:
+    name: Arch snapshot, packages, and assembler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    container: archlinux/archlinux@sha256:0cd360b9243ce17125ef37dee01e99d115e96321fd46d4b212b6a6247a5d6cea
+
+    steps:
+      - name: Bootstrap the fixed Arch repository for checkout
+        run: |
+          cat > /etc/pacman.d/mirrorlist <<'EOF'
+          Server = https://archive.archlinux.org/repos/2026/07/17/$repo/os/$arch
+          EOF
+          pacman -Syy --noconfirm
+          pacman -S --noconfirm --needed git
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Verify snapshot URLs, package DB, and assembler option
+        run: |
+          tools/release/use_archlinux_snapshot.sh
+          pacman -S --noconfirm --needed curl gcc binutils
+          for repository in core extra; do
+            curl --fail --silent --show-error --location --head \
+              --retry 2 --max-time 20 \
+              --output /dev/null \
+              "https://archive.archlinux.org/repos/2026/07/17/${repository}/os/x86_64/${repository}.db"
+          done
+          mapfile -t release_packages \
+            < tools/release/archlinux_release_packages.txt
+          for package in "${release_packages[@]}"; do
+            pacman -Si -- "$package" > /dev/null
+          done
+          printf 'int mozkey_preflight;\n' \
+            | gcc -x c -c -Wa,--gsframe=no -o /tmp/mozkey-preflight.o -
+
+  fedora:
+    name: Fedora snapshot, packages, and compiler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    container: fedora@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
+
+    steps:
+      - name: Bootstrap the fixed Fedora repository for checkout
+        run: |
+          rm -f -- /etc/yum.repos.d/*.repo
+          cat > /etc/yum.repos.d/mozkey-fedora-snapshot.repo <<'EOF'
+          [fedora]
+          name=Fedora 42 Everything archive
+          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/42/Everything/\$basearch/os/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-42-primary
+          metadata_expire=never
+
+          [updates]
+          name=Fedora 42 updates archive
+          baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/updates/42/Everything/\$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-42-primary
+          metadata_expire=never
+          EOF
+          dnf clean all
+          dnf -y install git
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Verify snapshot URLs, package DB, and compiler options
+        run: |
+          tools/release/use_fedora_snapshot.sh
+          dnf -y --setopt=install_weak_deps=False install curl gcc-c++ binutils
+          for metadata in \
+            https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/42/Everything/x86_64/os/repodata/repomd.xml \
+            https://archives.fedoraproject.org/pub/archive/fedora/linux/updates/42/Everything/x86_64/repodata/repomd.xml; do
+            curl --fail --silent --show-error --location \
+              --retry 2 --max-time 20 --output /dev/null "$metadata"
+          done
+          dnf -q makecache
+          mapfile -t release_packages \
+            < tools/release/fedora_release_packages.txt
+          for package in "${release_packages[@]}"; do
+            echo "Checking Fedora package: $package"
+            dnf -q repoquery --available --whatprovides "$package" \
+              > /tmp/mozkey-package-query.txt
+            if [ ! -s /tmp/mozkey-package-query.txt ]; then
+              echo "::error::Package is absent from the Fedora snapshot: $package" >&2
+              exit 1
+            fi
+          done
+          printf 'int mozkey_preflight;\n' \
+            | gcc -x c -c -o /tmp/mozkey-preflight.o -

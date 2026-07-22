@@ -10,6 +10,13 @@ from a `vX.Y.Z` tag (or a manual run whose selected ref is such a tag).
 - The tag must be exactly `v<major>.<minor>.<patch>` and must match the three
   `MOZKEY_RELEASE_VERSION_*` values.
 - The tagged commit must already be contained in `origin/main`.
+- **Mozkey Release Preflight** must pass on the release-preparation PR and on
+  `main` for the intended, still-absent tag before that tag is created. It
+  checks the fixed Arch/Fedora repositories and package indexes, the effective
+  compiler/assembler options, pinned runtime URLs and checksums, PowerShell
+  syntax and StrictMode status handling, and the release/workflow contracts.
+- The tag workflow reruns the same short preflight after identity validation;
+  Linux, macOS, Windows, and secure-offline product jobs all depend on it.
 - The release workflow reruns the reusable platform tests before it accepts any
   product artifact.
 - Only the final publish job has `contents: write`; build jobs are read-only.
@@ -58,14 +65,36 @@ product build, CI, or release targets in this fork.
 
 1. Update the three `MOZKEY_RELEASE_VERSION_*` values in `src/version.bzl` on a
    release-preparation branch.
-2. Merge that branch only after the normal pull-request checks are green.
-3. Confirm the intended release commit is on `origin/main` and the tag is new.
-4. Create and push an annotated tag:
+2. Merge that branch only after **Mozkey Release Preflight** and all normal
+   pull-request checks are green.
+3. Run the pre-tag workflow on `main` with the intended new tag and wait for all
+   three short jobs to pass:
+
+   ```sh
+   gh workflow run release-preflight.yaml \
+     --ref main \
+     -f candidate_tag=vX.Y.Z
+   gh run list --workflow release-preflight.yaml --branch main --limit 1
+   gh run watch <preflight-run-id> --exit-status
+   ```
+
+   The identity job fails unless the selected checkout is exactly
+   `origin/main`, `src/version.bzl` matches the candidate tag, the worktree is
+   clean, and the tag is still absent.
+4. Fetch the verified main commit and create and push an annotated tag without
+   changing the target SHA:
 
    ```sh
    git fetch origin main --tags
-   git merge-base --is-ancestor <release-commit> origin/main
-   git tag -a vX.Y.Z <release-commit> -m "Release vX.Y.Z"
+   release_commit=$(git rev-parse origin/main)
+   git switch --detach "$release_commit"
+   python tools/release/preflight_release_identity.py \
+     --phase pre-tag \
+     --tag vX.Y.Z \
+     --version-file src/version.bzl \
+     --repository . \
+     --main-ref origin/main
+   git tag -a vX.Y.Z "$release_commit" -m "Release vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
@@ -73,8 +102,11 @@ product build, CI, or release targets in this fork.
    review every artifact, `SHA256SUMS`, limitations, and release notes, then
    publish it when ready.
 
-The tag/version/ancestry gate runs before any expensive platform build. A bad
-tag therefore fails quickly instead of consuming the release matrix.
+The tag/version/ancestry gate and the reusable environment preflight run before
+any expensive platform build. A bad tag, stale repository snapshot, missing
+package, unsupported assembler option, unreachable pinned input, or broken
+PowerShell/workflow contract therefore fails quickly instead of consuming the
+release matrix.
 
 ## Automatic release notes
 
