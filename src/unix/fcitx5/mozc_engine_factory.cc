@@ -77,12 +77,20 @@ class MozcEngineFactory : public AddonFactory {
 // Keep the product-specific entry point explicit so the addon also works with
 // older Fcitx5 headers that only provide FCITX_ADDON_FACTORY. The V2 macros
 // are not available on all supported Linux distributions.
+#if defined(_WIN32)
+#define MOZKEY_FCITX_FACTORY_EXPORT __declspec(dllexport)
+#else
+#define MOZKEY_FCITX_FACTORY_EXPORT __attribute__((visibility("default")))
+#endif
+
 extern "C" {
-FCITX_ADDON_EXPORT ::fcitx::AddonFactory *
+MOZKEY_FCITX_FACTORY_EXPORT ::fcitx::AddonFactory *
 fcitx_addon_factory_instance_mozkey_ibg() {
   static fcitx::MozcEngineFactory factory;
   return &factory;
 }
 }
+
+#undef MOZKEY_FCITX_FACTORY_EXPORT
 
 FCITX_ADDON_FACTORY(fcitx::MozcEngineFactory)
