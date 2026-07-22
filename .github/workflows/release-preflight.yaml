@@ -174,10 +174,13 @@ jobs:
           mapfile -t release_packages \
             < tools/release/fedora_release_packages.txt
           for package in "${release_packages[@]}"; do
-            dnf -q repoquery --available \
-              --queryformat '%{name}' "$package" \
+            echo "Checking Fedora package: $package"
+            dnf -q repoquery --available "$package" \
               > /tmp/mozkey-package-query.txt
-            grep -Fx -- "$package" /tmp/mozkey-package-query.txt > /dev/null
+            if [ ! -s /tmp/mozkey-package-query.txt ]; then
+              echo "::error::Package is absent from the Fedora snapshot: $package" >&2
+              exit 1
+            fi
           done
           printf 'int mozkey_preflight;\n' \
             | gcc -x c -c -o /tmp/mozkey-preflight.o -
