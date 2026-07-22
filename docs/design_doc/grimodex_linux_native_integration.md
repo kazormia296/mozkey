@@ -102,11 +102,11 @@ inotify は更新通知の hint としてのみ使う。composition boundary で
 する。
 
 Fcitx addon は起動時と15分ごとに
-`consumers/fcitx5-mozkey.json` を private/atomic に更新する。これが Grimodex の
+`consumers/fcitx5-mozkey-ibg.json` を private/atomic に更新する。これが Grimodex の
 `auto` 連携を有効にする唯一の runtime identity であり、Mozc/Hazkey の consumer
 fileを借用しない。通常のFcitx再起動では短い検出切れを避けるためfileを残し、
 uninstall時だけ明示helperでこの1 fileを削除する。state、project snapshot、他IMEの
-consumer fileは削除しない。heartbeatは毎回 `/usr/lib/mozkey/mozc_server` を前後2回
+consumer fileは削除しない。heartbeatは毎回 `/usr/lib/mozkey-ibg/mozc_server` を前後2回
 確認し、package removal後も古いaddonがFcitxにmapされたままならconsumerを削除する。
 uninstallerはこのruntime markerを先に外し、続けてnative unregister helperを実行する。
 Zenz capabilityはserver markerだけでは宣言せず、scorer、immutable GGUF、実行可能な

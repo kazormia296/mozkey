@@ -38,4 +38,4 @@ manually with the already-published `vX.Y.Z` tag. Draft releases are rejected.
 
 The 0BSD `LICENSE` covers only this AUR packaging metadata. The installed
 Mozkey payload retains its upstream and third-party notices under
-`/usr/share/licenses/mozkey/`.
+`/usr/share/licenses/mozkey-ibg/`.

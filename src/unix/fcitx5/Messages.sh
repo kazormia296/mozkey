@@ -1,3 +1,3 @@
 #!/bin/bash
 
-gen_pot cxx:desktop:appdata fcitx5-mozkey po .
+gen_pot cxx:desktop:appdata fcitx5-mozkey-ibg po .

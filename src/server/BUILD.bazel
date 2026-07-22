@@ -44,6 +44,7 @@ load(
     "//:config.bzl",
     "BRANDING",
     "MACOS_BUNDLE_ID_PREFIX",
+    "MOZKEY_IBG_PRODUCT_PREFIX",
 )
 
 package(default_visibility = ["//visibility:private"])
@@ -130,7 +131,11 @@ mozc_macos_application(
     },
     app_icons = ["//data/images/mac:product_icon.icns"],
     bundle_id = MACOS_BUNDLE_ID_PREFIX + ".Converter",
-    bundle_name = BRANDING + "Converter",
+    bundle_name = mozc_select(
+        default = "GoogleJapaneseInputConverter",
+        oss = MOZKEY_IBG_PRODUCT_PREFIX + "Converter",
+        prod = "GoogleJapaneseInputConverter",
+    ),
     infoplists = ["Info.plist"],
     visibility = [
         "//mac:__pkg__",

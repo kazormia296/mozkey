@@ -8,7 +8,7 @@ namespace mozc::session {
 // Canonical Windows endpoint used by the scorer and checked against the client
 // configuration default. A raw string keeps the separators unambiguous.
 inline constexpr char kDefaultZenzNamedPipeName[] =
-    R"(\\.\pipe\mozc_zenz_scorer)";
+    R"(\\.\pipe\mozkey-ibg_zenz_scorer)";
 
 }  // namespace mozc::session
 

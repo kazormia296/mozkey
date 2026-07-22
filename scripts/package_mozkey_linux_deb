@@ -115,7 +115,7 @@ dpkg-deb --root-owner-group --uniform-compression -Zxz -z9 \
   --build "${stage_dir}" "${publish_dir}/${package_name}"
 dpkg-deb --info "${publish_dir}/${package_name}" >/dev/null
 dpkg-deb --contents "${publish_dir}/${package_name}" |
-  grep -Fq './usr/lib/mozkey/llama-server'
+  grep -Fq './usr/lib/mozkey-ibg/llama-server'
 dpkg-deb --extract "${publish_dir}/${package_name}" "${extract_dir}"
 python3 "${repository_root}/tools/release/verify_staged_linux_payload.py" \
   "${stage_dir}/usr" "${extract_dir}/usr"
@@ -124,7 +124,7 @@ install -d -m 755 "${output_dir}"
 install -m 644 "${publish_dir}/${package_name}" "${output_dir}/${package_name}"
 install -m 644 \
   "${repository_root}/dist/linux/ubuntu-layout/build-attestation.json" \
-  "${output_dir}/mozkey-v${version}-ubuntu-x86_64.build-attestation.json"
-install -m 644 "${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json" \
-  "${output_dir}/mozkey-v${version}-ubuntu-x86_64.spdx.json"
+  "${output_dir}/mozkey-ibg-v${version}-ubuntu-x86_64.build-attestation.json"
+install -m 644 "${stage_dir}/usr/share/doc/mozkey-ibg/mozkey-linux.spdx.json" \
+  "${output_dir}/mozkey-ibg-v${version}-ubuntu-x86_64.spdx.json"
 printf 'Mozkey Debian package: %s\n' "${output_dir}/${package_name}"

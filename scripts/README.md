@@ -9,8 +9,8 @@ Grimodex consumer lifecycle
 ----------------------------
 
 The Fcitx5 Mozkey addon publishes a private atomic
-`consumers/fcitx5-mozkey.json` heartbeat at startup and every 15 minutes.  The
-installed `/usr/lib/mozkey/unregister-grimodex-consumer` helper removes only
+`consumers/fcitx5-mozkey-ibg.json` heartbeat at startup and every 15 minutes.  The
+installed `/usr/lib/mozkey-ibg/unregister-grimodex-consumer` helper removes only
 that per-user identity using the same fd-relative native registrar as runtime.
 The audited uninstaller removes the Mozkey runtime marker before invoking the
 helper, so a still-mapped addon cannot resurrect the identity. Stop or reload
@@ -27,15 +27,15 @@ Linux process test. It accepts only the private `GRIMODEX_IME_ROOT`, `HOME`,
 and XDG directories created by that test, installs the repository's Mozkey-only
 profile into the private `XDG_CONFIG_HOME`, and starts a headless Fcitx5 under
 `dbus-run-session`. The legacy `mozc` and `grimodex` addons are disabled while
-`mozkey` is force-enabled, so the test proves that the installed
-`/usr/lib/fcitx5/fcitx5-mozkey.so` creates the real `fcitx5-mozkey` heartbeat;
+`mozkey-ibg` is force-enabled, so the test proves that the installed
+`/usr/lib/fcitx5/fcitx5-mozkey-ibg.so` creates the real `fcitx5-mozkey-ibg` heartbeat;
 it never substitutes `mozc_server` or a fixture writer for the addon.
 
 Install the Mozkey Fcitx5 product and server first. Then run the Grimodex test
 with the launcher specified by absolute path:
 
 ```sh
-GRIMODEX_LINUX_MOZKEY_LAUNCHER=/absolute/path/to/mozkey/scripts/launch_fcitx5_mozkey_e2e \
+GRIMODEX_LINUX_MOZKEY_LAUNCHER=/absolute/path/to/mozkey-ibg/scripts/launch_fcitx5_mozkey_e2e \
   cargo test --manifest-path src-tauri/Cargo.toml -p grimodex-db \
   --test linux_ime_server_e2e -- --ignored --nocapture
 ```

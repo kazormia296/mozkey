@@ -127,7 +127,8 @@ ZenzLiveResponse ConvertWithResponsePayloadSizes(uint32_t value_size,
 #endif  // !defined(_WIN32)
 
 TEST(ZenzNamedPipeClientTest, DefaultPipeMatchesConfigContract) {
-  constexpr char kExpectedPipeName[] = R"(\\.\pipe\mozc_zenz_scorer)";
+  constexpr char kExpectedPipeName[] =
+      R"(\\.\pipe\mozkey-ibg_zenz_scorer)";
 
   config::Config config;
   EXPECT_STREQ(kDefaultZenzNamedPipeName, kExpectedPipeName);
@@ -157,8 +158,8 @@ TEST(ZenzNamedPipeClientTest, UnixFallback) {
   setenv("HOME", temp_dir, 1);
 
   std::string socket_path = std::string(temp_dir) +
-#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
-                            "/.mozkey_zenz_scorer_pipe";
+#if !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+                            "/.mozkey-ibg_zenz_scorer_pipe";
 #else
                             "/.mozc_zenz_scorer_pipe";
 #endif

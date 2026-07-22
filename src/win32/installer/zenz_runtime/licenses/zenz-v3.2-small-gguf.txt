@@ -9,8 +9,8 @@ Original model file:
 
 Included as:
   Windows: models/zenz-v3.2-small-Q5_K_M.gguf
-  Linux: /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
-  macOS: MozcConverter.app/Contents/Resources/models/zenz-v3.2-small-Q5_K_M.gguf
+  Linux: /usr/lib/mozkey-ibg/models/zenz-v3.2-small-Q5_K_M.gguf
+  macOS: MozkeyIbGConverter.app/Contents/Resources/models/zenz-v3.2-small-Q5_K_M.gguf
 
 License:
   Apache License 2.0

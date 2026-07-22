@@ -34,19 +34,19 @@ IBUS_BUS_NAME = "org.freedesktop.IBus"
 DBUS_BUS_NAME = "org.freedesktop.DBus"
 DBUS_PATH = "/org/freedesktop/DBus"
 DBUS_INTERFACE = "org.freedesktop.DBus"
-PROFILE_MARKER_NAME = ".mozkey-dogfood-fresh-profile.json"
+PROFILE_MARKER_NAME = ".mozkey-ibg-dogfood-fresh-profile.json"
 PROFILE_MARKER_SCHEMA = 2
 FCITX_PROFILE_PAYLOAD = b"""[Groups/0]
 Name=Mozkey Dogfood
 Default Layout=jp
-DefaultIM=mozkey
+DefaultIM=mozkey-ibg
 
 [Groups/0/Items/0]
 Name=keyboard-jp
 Layout=
 
 [Groups/0/Items/1]
-Name=mozkey
+Name=mozkey-ibg
 Layout=
 
 [GroupOrder]
@@ -417,7 +417,7 @@ def validate_fcitx_profile(root: Path) -> tuple[int, int, int, int, str]:
 
 
 def validate_no_mozkey_config_override(root: Path) -> None:
-    override = root / "fcitx5" / "conf" / "mozkey.conf"
+    override = root / "fcitx5" / "conf" / "mozkey-ibg.conf"
     try:
         override.lstat()
     except FileNotFoundError:
@@ -670,14 +670,14 @@ def load_fresh_profile_evidence(
     ):
         fail("fresh profile marker does not bind this release run")
     if require_unused:
-        mozkey_profile = root / "mozkey"
+        mozkey_profile = root / "mozkey-ibg"
         try:
             mozkey_profile.lstat()
         except FileNotFoundError:
             pass
         else:
             fail("fresh profile already contains Mozkey state")
-    legacy_profile = root / ".mozkey"
+    legacy_profile = root / ".mozkey-ibg"
     try:
         legacy_profile.lstat()
     except FileNotFoundError:
@@ -1580,10 +1580,10 @@ def stable_consumer_entries(
     consumers: Path, *, allow_empty: bool
 ) -> list[str]:
     temporary_pattern = re.compile(
-        r"^\.fcitx5-mozkey\.[1-9][0-9]*\.[0-9]+\.tmp$"
+        r"^\.fcitx5-mozkey-ibg\.[1-9][0-9]*\.[0-9]+\.tmp$"
     )
-    accepted = ([], ["fcitx5-mozkey.json"]) if allow_empty else (
-        ["fcitx5-mozkey.json"],
+    accepted = ([], ["fcitx5-mozkey-ibg.json"]) if allow_empty else (
+        ["fcitx5-mozkey-ibg.json"],
     )
     for _ in range(50):
         entries = sorted(path.name for path in consumers.iterdir())
@@ -1594,7 +1594,7 @@ def stable_consumer_entries(
             len(temporary) == 1
             and len(entries) in (1, 2)
             and all(
-                name == "fcitx5-mozkey.json" or name in temporary
+                name == "fcitx5-mozkey-ibg.json" or name in temporary
                 for name in entries
             )
         ):

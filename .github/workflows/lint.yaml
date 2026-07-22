@@ -34,6 +34,7 @@ jobs:
         run: |
           python -m unittest \
             tools.release.aur_repository_contract_test \
+            tools.release.product_identity_contract_test \
             tools.typing_correction.validate_typing_correction_corpus_test \
             tools.typing_correction.validate_typing_correction_metrics_test
 

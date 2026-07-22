@@ -48,7 +48,7 @@ if [ -z "${DESTDIR}" ]; then
 fi
 "${script_dir}/verify_zenz_gguf_normalization"
 
-runtime_link="${DESTDIR}${PREFIX}/lib/mozkey/llama-server"
+runtime_link="${DESTDIR}${PREFIX}/lib/mozkey-ibg/llama-server"
 if [ -e "${runtime_link}" ] || [ -L "${runtime_link}" ]; then
   if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
     if [ ! -f "${runtime_link}" ] || [ -L "${runtime_link}" ]; then
@@ -70,19 +70,19 @@ if [ ! -f "${model_source}" ] || [ ! -s "${model_source}" ]; then
 fi
 
 atomic_install_file "${model_source}" 644 \
-  "${DESTDIR}${PREFIX}/lib/mozkey/models/${model_name}"
+  "${DESTDIR}${PREFIX}/lib/mozkey-ibg/models/${model_name}"
 atomic_install_file "${runtime_source}/licenses/zenz-v3.2-small-gguf.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/zenz-v3.2-small-gguf.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/zenz-runtime/zenz-v3.2-small-gguf.txt"
 atomic_install_file "${runtime_source}/licenses/llama.cpp-MIT.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/zenz-runtime/llama.cpp-MIT.txt"
 atomic_install_file "${runtime_source}/licenses/cpp-httplib-MIT.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/cpp-httplib-MIT.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/zenz-runtime/cpp-httplib-MIT.txt"
 atomic_install_file "${runtime_source}/licenses/nlohmann-json-MIT.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/nlohmann-json-MIT.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/zenz-runtime/nlohmann-json-MIT.txt"
 atomic_install_file "${runtime_source}/licenses/Apache-2.0.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/Apache-2.0.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/zenz-runtime/Apache-2.0.txt"
 atomic_install_file "${runtime_source}/licenses/THIRD_PARTY_NOTICES.md" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/zenz-runtime/THIRD_PARTY_NOTICES.md"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/zenz-runtime/THIRD_PARTY_NOTICES.md"
 
 if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
   atomic_install_file "${LLAMA_SERVER_SOURCE}" 755 "${runtime_link}"

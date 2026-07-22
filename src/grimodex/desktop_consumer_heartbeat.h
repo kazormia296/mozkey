@@ -36,8 +36,8 @@ class DesktopConsumerHeartbeat {
 };
 
 // Starts the current desktop platform's one process heartbeat.  Windows uses
-// tsf-mozkey and macOS uses imkit-mozkey.  Other platforms and Google-branded
-// builds return nullptr.
+// tsf-mozkey-ibg and macOS uses imkit-mozkey-ibg.  Other platforms and
+// Google-branded builds return nullptr.
 // Resolution and publication failures are logged and never abort the server.
 std::unique_ptr<DesktopConsumerHeartbeat> StartDesktopConsumerHeartbeat();
 

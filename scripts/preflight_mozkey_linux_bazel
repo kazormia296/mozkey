@@ -38,7 +38,7 @@ fi
 # An existing path record participates in upgrade cleanup. Validate it before
 # the preflight performs any expensive probes and, critically, before the
 # combined installer writes metadata or server files in its data phase.
-installed_addon_record="${DESTDIR}${PREFIX}/share/mozkey/fcitx5-addon-dir"
+installed_addon_record="${DESTDIR}${PREFIX}/share/mozkey-ibg/fcitx5-addon-dir"
 if [ -e "${installed_addon_record}" ] || [ -L "${installed_addon_record}" ]; then
   read_installed_fcitx5_addon_dir "${installed_addon_record}" >/dev/null
 fi
@@ -74,7 +74,7 @@ done
 for required_binary in \
   bazel-bin/server/mozc_server \
   bazel-bin/gui/tool/mozc_tool \
-  bazel-bin/unix/fcitx5/fcitx5-mozkey.so \
+  bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so \
   bazel-bin/unix/fcitx5/grimodex_consumer_tool \
   bazel-bin/zenz_scorer/mozc_zenz_scorer
 do
@@ -95,9 +95,9 @@ do
 done
 
 for required_metadata in \
-  unix/fcitx5/mozkey-addon.conf \
-  unix/fcitx5/mozkey.conf \
-  unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in \
+  unix/fcitx5/mozkey-ibg-addon.conf \
+  unix/fcitx5/mozkey-ibg.conf \
+  unix/fcitx5/io.github.kazormia296.MozkeyIbG.metainfo.xml.in \
   data/images/product_icon_32bpp-128.png \
   data/images/unix/ime_product_icon_opensource-32.png \
   ../scripts/icons/ui-alpha_full.png \
@@ -149,16 +149,16 @@ do
   require_nonempty_file "${documentation_file}"
 done
 
-grep -Fqx 'Library=fcitx5-mozkey' unix/fcitx5/mozkey-addon.conf || {
-  echo "Fcitx addon metadata does not select fcitx5-mozkey" >&2
+grep -Fqx 'Library=fcitx5-mozkey-ibg' unix/fcitx5/mozkey-ibg-addon.conf || {
+  echo "Fcitx addon metadata does not select fcitx5-mozkey-ibg" >&2
   exit 1
 }
-grep -Fqx 'Addon=mozkey' unix/fcitx5/mozkey.conf || {
-  echo "Fcitx input method metadata does not select mozkey" >&2
+grep -Fqx 'Addon=mozkey-ibg' unix/fcitx5/mozkey-ibg.conf || {
+  echo "Fcitx input method metadata does not select mozkey-ibg" >&2
   exit 1
 }
-grep -Fq '<id>org.fcitx.Fcitx5.Addon.Mozkey</id>' \
-  unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in || {
+grep -Fq '<id>io.github.kazormia296.MozkeyIbG</id>' \
+  unix/fcitx5/io.github.kazormia296.MozkeyIbG.metainfo.xml.in || {
   echo "Mozkey AppStream component identity is missing" >&2
   exit 1
 }
@@ -195,15 +195,15 @@ do
     -o "${metadata_tmp}/${language}.mo"
 done
 msgfmt --xml -d unix/fcitx5/po/ \
-  --template unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in \
-  -o "${metadata_tmp}/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+  --template unix/fcitx5/io.github.kazormia296.MozkeyIbG.metainfo.xml.in \
+  -o "${metadata_tmp}/io.github.kazormia296.MozkeyIbG.metainfo.xml"
 
 if command -v appstreamcli >/dev/null 2>&1; then
   appstreamcli validate --no-net \
-    "${metadata_tmp}/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+    "${metadata_tmp}/io.github.kazormia296.MozkeyIbG.metainfo.xml"
 fi
 
-runtime_link="${DESTDIR}${PREFIX}/lib/mozkey/llama-server"
+runtime_link="${DESTDIR}${PREFIX}/lib/mozkey-ibg/llama-server"
 if [ -n "${LLAMA_SERVER_SOURCE}" ]; then
   case "${LLAMA_SERVER_SOURCE}" in
     /*) ;;

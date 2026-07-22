@@ -98,7 +98,7 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
         for binary in [
             "bazel-bin/server/mozc_server",
             "bazel-bin/gui/tool/mozc_tool",
-            "bazel-bin/unix/fcitx5/fcitx5-mozkey.so",
+            "bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so",
             "bazel-bin/unix/fcitx5/grimodex_consumer_tool",
             "bazel-bin/zenz_scorer/mozc_zenz_scorer",
         ]:
@@ -123,12 +123,12 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             root,
             "dist/zenz/linux/zenz-v3.2-small-Q5_K_M.gguf",
         )
-        self.write(source, "unix/fcitx5/mozkey-addon.conf", b"Library=fcitx5-mozkey\n")
-        self.write(source, "unix/fcitx5/mozkey.conf", b"Addon=mozkey\n")
+        self.write(source, "unix/fcitx5/mozkey-ibg-addon.conf", b"Library=fcitx5-mozkey-ibg\n")
+        self.write(source, "unix/fcitx5/mozkey-ibg.conf", b"Addon=mozkey-ibg\n")
         self.write(
             source,
-            "unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in",
-            b"<component><id>org.fcitx.Fcitx5.Addon.Mozkey</id></component>\n",
+            "unix/fcitx5/io.github.kazormia296.MozkeyIbG.metainfo.xml.in",
+            b"<component><id>io.github.kazormia296.MozkeyIbG</id></component>\n",
         )
 
         repository_metadata = [
@@ -247,7 +247,7 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             root = Path(temporary)
             preflight, source, verifier_log = self.make_harness(root)
             destination = root / "destination"
-            (destination / "usr/lib/mozkey/llama-server").mkdir(parents=True)
+            (destination / "usr/lib/mozkey-ibg/llama-server").mkdir(parents=True)
             result = self.run_preflight(preflight, source, verifier_log, destination)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("non-symlink", result.stderr)
@@ -258,7 +258,7 @@ class PreflightMozkeyLinuxBazelTest(unittest.TestCase):
             root = Path(temporary)
             preflight, source, verifier_log = self.make_harness(root)
             destination = root / "destination"
-            record = destination / "usr/share/mozkey/fcitx5-addon-dir"
+            record = destination / "usr/share/mozkey-ibg/fcitx5-addon-dir"
             record.parent.mkdir(parents=True)
             record.symlink_to("/etc/passwd")
             result = self.run_preflight(preflight, source, verifier_log, destination)

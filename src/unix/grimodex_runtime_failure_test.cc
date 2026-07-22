@@ -554,7 +554,7 @@ class GrimodexRuntimeFailureTest : public ::testing::Test {
   void SetUp() override {
     home_ = absl::StrCat(temp_.path(), "/home");
     xdg_config_ = absl::StrCat(temp_.path(), "/config");
-    profile_ = absl::StrCat(xdg_config_, "/mozkey");
+    profile_ = absl::StrCat(xdg_config_, "/mozkey-ibg");
     protocol_root_ = absl::StrCat(temp_.path(), "/ime");
     projects_ = absl::StrCat(protocol_root_, "/projects");
     ASSERT_TRUE(MakeDirectory(home_));

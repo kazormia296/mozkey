@@ -56,7 +56,7 @@ class InstallZenzRuntimeTest(unittest.TestCase):
     def test_rejects_preexisting_directory_before_copying_product_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary)
-            link = destination / "usr/lib/mozkey/llama-server"
+            link = destination / "usr/lib/mozkey-ibg/llama-server"
             link.mkdir(parents=True)
             result = self.run_installer(destination)
             self.assertNotEqual(result.returncode, 0)
@@ -64,7 +64,7 @@ class InstallZenzRuntimeTest(unittest.TestCase):
             self.assertFalse(
                 (
                     destination
-                    / "usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf"
+                    / "usr/lib/mozkey-ibg/models/zenz-v3.2-small-Q5_K_M.gguf"
                 ).exists()
             )
 
@@ -73,12 +73,12 @@ class InstallZenzRuntimeTest(unittest.TestCase):
             destination = Path(temporary)
             result = self.run_installer(destination)
             self.assertEqual(result.returncode, 0, result.stderr)
-            link = destination / "usr/lib/mozkey/llama-server"
+            link = destination / "usr/lib/mozkey-ibg/llama-server"
             self.assertTrue(link.is_symlink())
             self.assertEqual(os.readlink(link), "/usr/bin/llama-server")
             installed_model = (
                 destination
-                / "usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf"
+                / "usr/lib/mozkey-ibg/models/zenz-v3.2-small-Q5_K_M.gguf"
             )
             self.assertEqual(sha256(installed_model), sha256(NORMALIZED_MODEL))
             self.assertNotEqual(sha256(installed_model), sha256(SOURCE_MODEL))
@@ -88,7 +88,7 @@ class InstallZenzRuntimeTest(unittest.TestCase):
             self.assertTrue(link.is_symlink())
             self.assertEqual(os.readlink(link), "/usr/lib/llama/llama-server")
             self.assertEqual(
-                list(link.parent.glob(".mozkey-llama-link.*")),
+                list(link.parent.glob(".mozkey-ibg-llama-link.*")),
                 [],
             )
 
@@ -102,7 +102,7 @@ class InstallZenzRuntimeTest(unittest.TestCase):
 
             result = self.run_installer(destination, str(source), source)
             self.assertEqual(result.returncode, 0, result.stderr)
-            installed = destination / "usr/lib/mozkey/llama-server"
+            installed = destination / "usr/lib/mozkey-ibg/llama-server"
             self.assertTrue(installed.is_file())
             self.assertFalse(installed.is_symlink())
             self.assertEqual(installed.read_bytes(), source.read_bytes())
@@ -113,7 +113,7 @@ class InstallZenzRuntimeTest(unittest.TestCase):
             result = self.run_installer(destination, str(source), source)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(installed.read_bytes(), source.read_bytes())
-            self.assertEqual(list(installed.parent.glob(".mozkey-install.*")), [])
+            self.assertEqual(list(installed.parent.glob(".mozkey-ibg-install.*")), [])
 
     def test_bundled_mode_rejects_symlink_source(self):
         with tempfile.TemporaryDirectory() as temporary:

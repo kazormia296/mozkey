@@ -56,7 +56,7 @@ namespace win32 {
 namespace {
 
 constexpr wchar_t kRendererShadowWindowClassName[] =
-    L"MozcRendererShadowWindow";
+    L"MozkeyIbGRendererShadowWindow";
 constexpr uint32_t kDefaultDpi = 96;
 constexpr uint32_t kMinOpacityPercent = 20;
 constexpr uint32_t kMaxOpacityPercent = 100;

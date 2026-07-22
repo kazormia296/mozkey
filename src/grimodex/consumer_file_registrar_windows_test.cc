@@ -110,7 +110,7 @@ class Sandbox final {
   const std::wstring &root() const { return root_; }
   std::wstring consumers() const { return root_ + L"\\consumers"; }
   std::wstring destination() const {
-    return consumers() + L"\\tsf-mozkey.json";
+    return consumers() + L"\\tsf-mozkey-ibg.json";
   }
 
  private:
@@ -214,7 +214,7 @@ TEST(WindowsConsumerFileRegistrarTest,
 
   ASSERT_TRUE(
       UnregisterWindowsDesktopConsumerForAppData(app_data.path()).ok());
-  const std::string own_path = *root + "\\consumers\\tsf-mozkey.json";
+  const std::string own_path = *root + "\\consumers\\tsf-mozkey-ibg.json";
   const std::string other_path = *root + "\\consumers\\other-ime.json";
 #if defined(MOZC_BUILD)
   EXPECT_FALSE(FileUtil::FileExists(own_path).ok());

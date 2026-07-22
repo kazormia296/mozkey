@@ -27,13 +27,13 @@ DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" \
 for documentation_file in data/installer/*.html
 do
   atomic_install_file "${documentation_file}" 644 \
-    "${DESTDIR}${PREFIX}/share/doc/mozkey/$(basename -- "${documentation_file}")"
+    "${DESTDIR}${PREFIX}/share/doc/mozkey-ibg/$(basename -- "${documentation_file}")"
 done
 atomic_install_file "out_linux/${_bldtype}/mozc_tool" 755 \
-  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_tool"
+  "${DESTDIR}${PREFIX}/lib/mozkey-ibg/mozc_tool"
 atomic_install_file "out_linux/${_bldtype}/grimodex_consumer_tool" 755 \
-  "${DESTDIR}${PREFIX}/lib/mozkey/unregister-grimodex-consumer"
+  "${DESTDIR}${PREFIX}/lib/mozkey-ibg/unregister-grimodex-consumer"
 atomic_install_file "out_linux/${_bldtype}/mozc_zenz_scorer" 755 \
-  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_zenz_scorer"
+  "${DESTDIR}${PREFIX}/lib/mozkey-ibg/mozc_zenz_scorer"
 atomic_install_file "out_linux/${_bldtype}/mozc_server" 755 \
-  "${DESTDIR}${PREFIX}/lib/mozkey/mozc_server"
+  "${DESTDIR}${PREFIX}/lib/mozkey-ibg/mozc_server"

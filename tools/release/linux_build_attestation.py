@@ -33,7 +33,7 @@ RELEASE_PROFILE = "release-approved-only"
 NICO_SOURCE_ID = "dic-nico-intersection-pixiv"
 
 COMMON_TARGETS = (
-    "//unix/fcitx5:fcitx5-mozkey.so",
+    "//unix/fcitx5:fcitx5-mozkey-ibg.so",
     "//unix/fcitx5:grimodex_consumer_tool",
     "//server:mozc_server",
     "//gui/tool:mozc_tool",
@@ -87,7 +87,7 @@ DICTIONARY_OUTPUT_PATHS = (
     ),
 )
 BINARY_PATHS = (
-    PurePosixPath("src/bazel-bin/unix/fcitx5/fcitx5-mozkey.so"),
+    PurePosixPath("src/bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so"),
     PurePosixPath("src/bazel-bin/unix/fcitx5/grimodex_consumer_tool"),
     PurePosixPath("src/bazel-bin/server/mozc_server"),
     PurePosixPath("src/bazel-bin/gui/tool/mozc_tool"),

@@ -178,8 +178,8 @@ jobs:
           name: release-linux-ubuntu-x86_64
           path: |
             dist/mozkey-ibg_*_amd64.deb
-            dist/mozkey-v*-ubuntu-x86_64.build-attestation.json
-            dist/mozkey-v*-ubuntu-x86_64.spdx.json
+            dist/mozkey-ibg-v*-ubuntu-x86_64.build-attestation.json
+            dist/mozkey-ibg-v*-ubuntu-x86_64.spdx.json
             dist/ubuntu-build-packages.txt
           if-no-files-found: error
           overwrite: true
@@ -284,8 +284,8 @@ jobs:
           name: release-linux-fedora-x86_64
           path: |
             dist/mozkey-ibg-*-1.x86_64.rpm
-            dist/mozkey-v*-fedora-x86_64.build-attestation.json
-            dist/mozkey-v*-fedora-x86_64.spdx.json
+            dist/mozkey-ibg-v*-fedora-x86_64.build-attestation.json
+            dist/mozkey-ibg-v*-fedora-x86_64.spdx.json
             dist/fedora-build-packages.txt
           if-no-files-found: error
           overwrite: true
@@ -373,10 +373,10 @@ jobs:
         with:
           name: release-linux-archlinux-x86_64
           path: |
-            dist/mozkey-v*-archlinux-x86_64.tar.xz
-            dist/mozkey-v*-archlinux-x86_64.tar.xz.sha256
-            dist/mozkey-v*-archlinux-x86_64.build-attestation.json
-            dist/mozkey-v*-archlinux-x86_64.spdx.json
+            dist/mozkey-ibg-v*-archlinux-x86_64.tar.xz
+            dist/mozkey-ibg-v*-archlinux-x86_64.tar.xz.sha256
+            dist/mozkey-ibg-v*-archlinux-x86_64.build-attestation.json
+            dist/mozkey-ibg-v*-archlinux-x86_64.spdx.json
             dist/archlinux-build-packages.txt
           if-no-files-found: error
           overwrite: true

@@ -62,7 +62,7 @@ jobs:
             exit 1
           fi
 
-          archive="mozkey-v${version}-archlinux-x86_64.tar.xz"
+          archive="mozkey-ibg-v${version}-archlinux-x86_64.tar.xz"
           checksum_asset="${archive}.sha256"
           archive_count="$(jq --arg name "$archive" \
             '[.assets[] | select(.name == $name)] | length' "$release_json")"

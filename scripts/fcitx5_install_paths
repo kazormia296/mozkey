@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Shared path validation for the source-install, staging, and uninstall tools.
-# Mozkey's OSS Linux binary embeds /usr/lib/mozkey as its private libexec path,
+# Mozkey's OSS Linux binary embeds /usr/lib/mozkey-ibg as its private libexec path,
 # so PREFIX is deliberately fixed while DESTDIR remains available to packagers.
 
 validate_mozkey_install_environment() {
@@ -79,7 +79,7 @@ atomic_install_file() {
   destination_path="$3"
   destination_directory="$(dirname -- "${destination_path}")"
   install -d -m 755 "${destination_directory}"
-  install_temporary="$(mktemp "${destination_directory}/.mozkey-install.XXXXXX")"
+  install_temporary="$(mktemp "${destination_directory}/.mozkey-ibg-install.XXXXXX")"
   if ! install -m "${target_mode}" "${source_path}" "${install_temporary}"; then
     rm -f -- "${install_temporary}"
     return 1
@@ -95,7 +95,7 @@ atomic_install_symlink() {
   destination_path="$2"
   destination_directory="$(dirname -- "${destination_path}")"
   install -d -m 755 "${destination_directory}"
-  link_temporary_directory="$(mktemp -d "${destination_directory}/.mozkey-link.XXXXXX")"
+  link_temporary_directory="$(mktemp -d "${destination_directory}/.mozkey-ibg-link.XXXXXX")"
   link_temporary="${link_temporary_directory}/link"
   if ! ln -s -- "${symlink_target}" "${link_temporary}"; then
     rmdir -- "${link_temporary_directory}" 2>/dev/null || true

@@ -35,7 +35,7 @@ class GrimodexConsumerRegistrar final {
                                   absl::string_view timestamp,
                                   absl::string_view runtime_marker) const;
 
-  // Removes only consumers/fcitx5-mozkey.json.  The runtime intentionally
+  // Removes only consumers/fcitx5-mozkey-ibg.json.  The runtime intentionally
   // does not call this on ordinary Fcitx shutdown so short restarts do not
   // create an integration gap; the uninstall helper calls the equivalent
   // operation explicitly.
@@ -43,7 +43,7 @@ class GrimodexConsumerRegistrar final {
 
   const std::string &root() const { return root_; }
 
-  static constexpr absl::string_view kConsumerId = "fcitx5-mozkey";
+  static constexpr absl::string_view kConsumerId = "fcitx5-mozkey-ibg";
 
  private:
   absl::Status RegisterWithCapabilities(

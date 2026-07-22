@@ -6,15 +6,15 @@ server endpoint, or installed executable directory.
 
 | Resource | Mozkey path or identity |
 | --- | --- |
-| Fcitx addon | `mozkey`, `${fcitx5_libdir}/fcitx5/fcitx5-mozkey.so` |
-| Fcitx input method | `mozkey` |
-| Profile | `$XDG_CONFIG_HOME/mozkey`, otherwise `~/.config/mozkey` |
-| Legacy profile | `~/.mozkey` |
-| Linux abstract IPC prefix | `/tmp/.mozkey.` (the leading slash becomes NUL) |
-| Server and tools | `/usr/lib/mozkey` |
-| Zenz socket and lock | `~/.mozkey_zenz_scorer_pipe`, `~/.mozkey_zenz_scorer.lock` |
-| Zenz runtime | Arch/source: link to distro `/usr/bin/llama-server`; deb/rpm: attested regular file at `/usr/lib/mozkey/llama-server` |
-| Zenz model | `/usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf` |
+| Fcitx addon | `mozkey-ibg`, `${fcitx5_libdir}/fcitx5/fcitx5-mozkey-ibg.so` |
+| Fcitx input method | `mozkey-ibg` |
+| Profile | `$XDG_CONFIG_HOME/mozkey-ibg`, otherwise `~/.config/mozkey-ibg` |
+| Legacy profile | `~/.mozkey-ibg` |
+| Linux abstract IPC prefix | `/tmp/.mozkey-ibg.` (the leading slash becomes NUL) |
+| Server and tools | `/usr/lib/mozkey-ibg` |
+| Zenz socket and lock | `~/.mozkey-ibg_zenz_scorer_pipe`, `~/.mozkey-ibg_zenz_scorer.lock` |
+| Zenz runtime | Arch/source: link to distro `/usr/bin/llama-server`; deb/rpm: attested regular file at `/usr/lib/mozkey-ibg/llama-server` |
+| Zenz model | `/usr/lib/mozkey-ibg/models/zenz-v3.2-small-Q5_K_M.gguf` |
 
 Grimodex project data is application-scoped independently of these product
 paths. The default `MOZKEY_GRIMODEX_SCOPE` is `grimodex-only`: only exact,
@@ -24,7 +24,7 @@ closed. `MOZKEY_GRIMODEX_SCOPE=all` is the explicit all-applications opt-in;
 `off` and unknown non-empty values disable project integration without
 disabling ordinary Mozkey conversion or learning.
 
-`/usr/lib/mozkey` is used as the product-private libexec directory because the
+`/usr/lib/mozkey-ibg` is used as the product-private libexec directory because the
 server, GUI tool, and Zenz scorer are implementation helpers launched by the
 frontend and are not general-purpose commands for `$PATH`. The directory also
 matches `SystemUtil::GetServerDirectory()` in the OSS Linux Bazel build.
@@ -34,9 +34,9 @@ The Fcitx addon directory is distribution-specific. Source installation asks
 multiarch paths and Fedora `/usr/lib64` therefore do not fall back to the Arch
 path. Packagers may set an absolute `FCITX5_ADDON_DIR`, but it must remain under
 a validated `/usr` library directory. The resolved path is installed as
-`/usr/share/mozkey/fcitx5-addon-dir`, consumed by E2E and uninstall, and audited
+`/usr/share/mozkey-ibg/fcitx5-addon-dir`, consumed by E2E and uninstall, and audited
 by the staging smoke. `PREFIX` is intentionally fixed to `/usr` because the
-OSS binary embeds `/usr/lib/mozkey`; only `DESTDIR` is relocatable for package
+OSS binary embeds `/usr/lib/mozkey-ibg`; only `DESTDIR` is relocatable for package
 staging.
 
 From the repository root, a fresh clone can build the exact Arch release target
@@ -120,7 +120,7 @@ pinned personal names, and the Mozkey syntax guard. Nico/Pixiv stays available
 to the separately named local-evaluation profile but is absent from the CI
 dictionary transfer artifact and compiled public product. The installed
 dictionary notice, Apache-2.0 text, and immutable source lock live under
-`/usr/share/licenses/mozkey/dictionary/`.
+`/usr/share/licenses/mozkey-ibg/dictionary/`.
 
 Arch and source packaging depend on a compatible `llama-server` provider. The
 default private link targets `/usr/bin/llama-server`; a source packager with a
@@ -169,10 +169,10 @@ fcitx5-remote -e
 ```
 
 The stop gate uses Linux pidfds and repeated `/proc` identity checks. It can
-signal only the exact `/usr/lib/mozkey/mozc_server` and
-`/usr/lib/mozkey/mozc_zenz_scorer` processes belonging to the target UID, plus
+signal only the exact `/usr/lib/mozkey-ibg/mozc_server` and
+`/usr/lib/mozkey-ibg/mozc_zenz_scorer` processes belonging to the target UID, plus
 an exact `/usr/bin/llama-server` (Arch/source install) or
-`/usr/lib/mozkey/llama-server` (deb/rpm) proven to descend from that scorer. It
+`/usr/lib/mozkey-ibg/llama-server` (deb/rpm) proven to descend from that scorer. It
 never falls back to a basename or command-line match. Root automation must name
 the non-root desktop UID explicitly with `--uid`; `DESTDIR` and non-`/usr`
 layouts are rejected. Only after that gate succeeds should the product files be
@@ -182,7 +182,7 @@ removed:
 sudo env PREFIX=/usr ./scripts/uninstall_mozkey_fcitx5
 ```
 
-It deliberately preserves `$XDG_CONFIG_HOME/mozkey`, `~/.config/mozkey`, the
+It deliberately preserves `$XDG_CONFIG_HOME/mozkey-ibg`, `~/.config/mozkey-ibg`, the
 legacy profile, per-user Zenz feedback, and Grimodex Protocol v1 snapshots.
 The system-owned bundled GGUF is a product file and is removed. Windows and
 macOS product paths are unchanged.
@@ -199,7 +199,7 @@ sudo env PREFIX=/usr MOZKEY_REMOVE_GRIMODEX_CONSUMER=1 \
 The uninstaller resolves the root owner before removing the runtime marker and
 uses `setpriv` to run the native unregister helper as that owner.  The helper
 still performs its fd-relative ownership, mode, and symlink checks; it removes
-only `consumers/fcitx5-mozkey.json`.
+only `consumers/fcitx5-mozkey-ibg.json`.
 
 ## Real Fcitx5 consumer E2E
 
@@ -209,7 +209,7 @@ products, point `GRIMODEX_LINUX_MOZKEY_LAUNCHER` at
 `scripts/launch_fcitx5_mozkey_e2e` in this checkout. The launcher preserves the
 test-provided `GRIMODEX_IME_ROOT`, `HOME`, and XDG homes, installs a private
 Mozkey-only Fcitx profile, and starts foreground Fcitx5 on a new D-Bus session.
-Detection of `consumers/fcitx5-mozkey.json` therefore proves the actual addon
+Detection of `consumers/fcitx5-mozkey-ibg.json` therefore proves the actual addon
 was loaded and executed its startup heartbeat. This is intentionally a
 heartbeat-only process gate. Native session fault injection separately proves
 snapshot reload, security-domain purge, stale-candidate rejection and server

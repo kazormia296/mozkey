@@ -43,8 +43,8 @@ exports_files(
 pkg_zip(
     name = "launch_agents",
     srcs = [
-        "LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist",
-        "LaunchAgents/org.mozc.inputmethod.Japanese.Renderer.plist",
+        "LaunchAgents/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Converter.plist",
+        "LaunchAgents/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Renderer.plist",
     ],
     out = "launch_agents.zip",
     strip_prefix = ".",

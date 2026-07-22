@@ -18,7 +18,7 @@ if [ ! -f "${manifest}" ] || [ -z "${install_root}" ] ||
   exit 2
 fi
 
-addon_record="${install_root}/share/mozkey/fcitx5-addon-dir"
+addon_record="${install_root}/share/mozkey-ibg/fcitx5-addon-dir"
 recorded_addon_dir=""
 if [ -e "${addon_record}" ] || [ -L "${addon_record}" ]; then
   recorded_addon_dir="$(read_installed_fcitx5_addon_dir "${addon_record}")" || {
@@ -53,7 +53,7 @@ if [ "${MOZKEY_REMOVE_GRIMODEX_CONSUMER:-0}" = 1 ]; then
       exit 2
       ;;
   esac
-  consumer_helper="${install_root}/lib/mozkey/unregister-grimodex-consumer"
+  consumer_helper="${install_root}/lib/mozkey-ibg/unregister-grimodex-consumer"
   if [ ! -x "${consumer_helper}" ] || [ ! -d "${GRIMODEX_IME_ROOT}" ] ||
      [ -L "${GRIMODEX_IME_ROOT}" ]; then
     echo "consumer helper or GRIMODEX_IME_ROOT is unavailable" >&2
@@ -81,7 +81,7 @@ if [ "${MOZKEY_REMOVE_GRIMODEX_CONSUMER:-0}" = 1 ]; then
   # Remove the product marker first. A still-running Fcitx process may keep
   # this addon mapped, but its heartbeat rechecks the marker after publishing
   # and therefore cannot resurrect the consumer after the helper returns.
-  rm -f -- "${install_root}/lib/mozkey/mozc_server"
+  rm -f -- "${install_root}/lib/mozkey-ibg/mozc_server"
   if [ "$(id -u)" = 0 ] && [ "${ime_root_uid}" != 0 ]; then
     "${setpriv_path}" --reuid "${ime_root_uid}" --regid "${ime_root_gid}" \
       --clear-groups -- "${env_path}" \
@@ -93,15 +93,15 @@ fi
 
 # The addon lives under the distribution's Fcitx multiarch libdir and is not
 # relative to /usr in the static product manifest.
-rm -f -- "${DESTDIR}${current_addon_dir}/fcitx5-mozkey.so"
+rm -f -- "${DESTDIR}${current_addon_dir}/fcitx5-mozkey-ibg.so"
 if [ -n "${recorded_addon_dir}" ] &&
    [ "${recorded_addon_dir}" != "${current_addon_dir}" ]; then
-  rm -f -- "${DESTDIR}${recorded_addon_dir}/fcitx5-mozkey.so"
+  rm -f -- "${DESTDIR}${recorded_addon_dir}/fcitx5-mozkey-ibg.so"
 fi
 legacy_addon_dir=/usr/lib/fcitx5
 if [ "${legacy_addon_dir}" != "${current_addon_dir}" ] &&
    [ "${legacy_addon_dir}" != "${recorded_addon_dir}" ]; then
-  rm -f -- "${DESTDIR}${legacy_addon_dir}/fcitx5-mozkey.so"
+  rm -f -- "${DESTDIR}${legacy_addon_dir}/fcitx5-mozkey-ibg.so"
 fi
 
 while IFS= read -r relative_path; do
@@ -122,13 +122,12 @@ while IFS= read -r relative_path; do
 done < "${manifest}"
 
 # Remove only product-private directories, and only when already empty.
-rmdir "${install_root}/lib/mozkey/models" 2>/dev/null || true
-rmdir "${install_root}/lib/mozkey" 2>/dev/null || true
-rmdir "${install_root}/share/doc/mozkey" 2>/dev/null || true
+rmdir "${install_root}/lib/mozkey-ibg/models" 2>/dev/null || true
+rmdir "${install_root}/lib/mozkey-ibg" 2>/dev/null || true
 rmdir "${install_root}/share/doc/mozkey-ibg" 2>/dev/null || true
-rmdir "${install_root}/share/licenses/mozkey/dictionary" 2>/dev/null || true
-rmdir "${install_root}/share/licenses/mozkey/zenz-runtime" 2>/dev/null || true
-rmdir "${install_root}/share/licenses/mozkey" 2>/dev/null || true
-rmdir "${install_root}/share/mozkey" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey-ibg/dictionary" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey-ibg/zenz-runtime" 2>/dev/null || true
+rmdir "${install_root}/share/licenses/mozkey-ibg" 2>/dev/null || true
+rmdir "${install_root}/share/mozkey-ibg" 2>/dev/null || true
 
-echo "Mozkey Fcitx5 product files removed; project snapshots and profiles preserved"
+echo "Mozkey IbG Fcitx5 product files removed; project snapshots and profiles preserved"

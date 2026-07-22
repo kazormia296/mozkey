@@ -251,7 +251,7 @@ jobs:
       - name: Probe packaged arm64 scorer and server with real inference
         run: |
           python3 tools/release/probe_macos_zenz_runtime.py \
-            --package src/bazel-bin/mac/Mozc.pkg \
+            --package src/bazel-bin/mac/MozkeyIbG.pkg \
             --timeout-seconds 300
 
       - name: Prepare the package tree before loading signing credentials
@@ -392,7 +392,7 @@ jobs:
             zip -q -ry "$SIGNED_PACKAGE_FILES" installer
           )
           test -s "$SIGNED_PACKAGE_FILES"
-          PKG_PATH="$GITHUB_WORKSPACE/Mozkey_v${RELEASE_VERSION}_macos_arm64.pkg"
+          PKG_PATH="$GITHUB_WORKSPACE/MozkeyIbG_v${RELEASE_VERSION}_macos_arm64.pkg"
           python3 src/mac/build_package.py \
             --oss \
             --input "$SIGNED_PACKAGE_FILES" \
@@ -476,7 +476,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-macos-arm64
-          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg
+          path: MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg
           if-no-files-found: error
           overwrite: true
           retention-days: 7

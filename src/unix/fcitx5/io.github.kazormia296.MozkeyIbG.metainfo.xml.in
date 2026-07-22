@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <component type="addon">
-  <id>org.fcitx.Fcitx5.Addon.Mozkey</id>
+  <id>io.github.kazormia296.MozkeyIbG</id>
   <extends>org.fcitx.Fcitx5</extends>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>BSD-3-Clause AND LGPL-2.1-or-later AND Apache-2.0</project_license>

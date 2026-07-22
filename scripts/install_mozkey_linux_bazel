@@ -40,4 +40,4 @@ PREFIX="${PREFIX}" DESTDIR="${DESTDIR}" \
   "${script_dir}/install_fcitx5_bazel"
 
 printf 'Mozkey Linux product installed; Fcitx addon: %s\n' \
-  "${FCITX5_ADDON_DIR}/fcitx5-mozkey.so"
+  "${FCITX5_ADDON_DIR}/fcitx5-mozkey-ibg.so"

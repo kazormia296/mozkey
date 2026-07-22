@@ -290,11 +290,11 @@ HANDLE g_llama_process = nullptr;
 HANDLE g_llama_job = nullptr;
 
 constexpr wchar_t kSingleInstanceMutexName[] =
-    LR"(Local\MozcZenzScorerSingleInstance)";
+    LR"(Local\MozkeyIbGZenzScorerSingleInstance)";
 #else
 pid_t g_llama_process = -1;
-#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
-constexpr char kDefaultPipeNameSuffix[] = "/.mozkey_zenz_scorer_pipe";
+#if !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+constexpr char kDefaultPipeNameSuffix[] = "/.mozkey-ibg_zenz_scorer_pipe";
 #else
 constexpr char kDefaultPipeNameSuffix[] = "/.mozc_zenz_scorer_pipe";
 #endif
@@ -2574,8 +2574,8 @@ int main() {
 
   std::string lock_path =
       std::string(getenv("HOME") ? getenv("HOME") : "/tmp") +
-#if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
-      "/.mozkey_zenz_scorer.lock";
+#if !defined(GOOGLE_JAPANESE_INPUT_BUILD)
+      "/.mozkey-ibg_zenz_scorer.lock";
 #else
       "/.mozc_zenz_scorer.lock";
 #endif

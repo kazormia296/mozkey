@@ -99,7 +99,7 @@ TEST(ConsumerHandshakeTest, UsesDeterministicCanonicalFieldOrder) {
   ASSERT_TRUE(payload.ok()) << payload.status();
   EXPECT_EQ(
       *payload,
-      R"json({"capabilities":{"application_scoping":true,"dynamic_dictionary":true,"profile":true,"zenzai_v3_conditions":false},"consumer_id":"fcitx5-mozkey","format_version":1,"last_seen":"2026-07-18T01:02:03.456Z","name":"Mozkey IbG for Grimodex on Linux","platform":"linux","version":"v0.7.7"})json"
+      R"json({"capabilities":{"application_scoping":true,"dynamic_dictionary":true,"profile":true,"zenzai_v3_conditions":false},"consumer_id":"fcitx5-mozkey-ibg","format_version":1,"last_seen":"2026-07-18T01:02:03.456Z","name":"Mozkey IbG for Grimodex on Linux","platform":"linux","version":"v0.7.7"})json"
       "\n");
 }
 
@@ -120,10 +120,10 @@ TEST(ConsumerHandshakeTest, RejectsUnsafeOrUnboundedMetadata) {
   ConsumerHandshake handshake =
       MakeHandshake(kTsfConsumerId, "Mozkey for Grimodex", "windows");
 
-  handshake.consumer_id = "../tsf-mozkey";
+  handshake.consumer_id = "../tsf-mozkey-ibg";
   EXPECT_EQ(SerializeConsumerHandshake(handshake).status().code(),
             absl::StatusCode::kInvalidArgument);
-  handshake.consumer_id = ".tsf-mozkey";
+  handshake.consumer_id = ".tsf-mozkey-ibg";
   EXPECT_EQ(SerializeConsumerHandshake(handshake).status().code(),
             absl::StatusCode::kInvalidArgument);
   handshake.consumer_id = std::string(kTsfConsumerId);

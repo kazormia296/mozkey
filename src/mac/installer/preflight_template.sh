@@ -1,4 +1,4 @@
 #!/bin/sh
 
-rm -Rf "/Applications/Mozc"
+rm -Rf "/Applications/MozkeyIbG"
 /usr/bin/true

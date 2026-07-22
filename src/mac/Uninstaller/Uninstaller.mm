@@ -90,9 +90,10 @@ bool DeleteFiles(const AuthorizationRef &auth) {
       "/Applications/GoogleJapaneseInput.localized", nullptr};
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
   const char *kRemovePaths[] = {
-      "/Library/Input Methods/Mozc.app",
-      "/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist",
-      "/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Renderer.plist", "/Applications/Mozc",
+      "/Library/Input Methods/MozkeyIbG.app",
+      "/Library/LaunchAgents/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Converter.plist",
+      "/Library/LaunchAgents/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Renderer.plist",
+      "/Applications/MozkeyIbG",
       nullptr};
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
   for (int i = 0; kRemovePaths[i] != nullptr; ++i) {
@@ -177,8 +178,8 @@ bool FindMozcConverterProcesses(uid_t uid, std::vector<pid_t> *converter_pids) {
     return false;
   }
   constexpr char kConverterPath[] =
-      "/Library/Input Methods/Mozc.app/Contents/Resources/"
-      "MozcConverter.app/Contents/MacOS/MozcConverter";
+      "/Library/Input Methods/MozkeyIbG.app/Contents/Resources/"
+      "MozkeyIbGConverter.app/Contents/MacOS/MozkeyIbGConverter";
   for (const pid_t pid : pids) {
     if (pid <= 0) {
       continue;
@@ -215,7 +216,7 @@ bool SignalMozcConverter(uid_t uid, int signal_number) {
   }
   for (const pid_t pid : converter_pids) {
     if (kill(pid, signal_number) != 0 && errno != ESRCH) {
-      NSLog(@"Failed to signal MozcConverter pid %d", pid);
+      NSLog(@"Failed to signal MozkeyIbGConverter pid %d", pid);
       return false;
     }
   }
@@ -226,7 +227,7 @@ bool IsConverterLaunchAgentAbsent(NSString *domain) {
   constexpr char kNotFound[] = "Could not find service";
   NSString *service = [NSString
       stringWithFormat:@"%@/%@", domain,
-                       @"org.mozc.inputmethod.Japanese.Converter"];
+                       @"io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Converter"];
   int status = 0;
   std::string output;
   if (!RunTaskWithOutput(@"/bin/launchctl", @[@"print", service], &status,
@@ -242,14 +243,14 @@ bool StopMozcConverter() {
   const uid_t uid = getuid();
   NSString *domain = [NSString stringWithFormat:@"gui/%u", uid];
   NSString *plist =
-      @"/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist";
+      @"/Library/LaunchAgents/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Converter.plist";
 
   // Remove the job before terminating the process so launchd cannot respawn
-  // MozcConverter between the process-exit check and heartbeat removal.
+  // MozkeyIbGConverter between the process-exit check and heartbeat removal.
   const int bootout_status =
       RunTask(@"/bin/launchctl", @[@"bootout", domain, plist]);
   if (!IsConverterLaunchAgentAbsent(domain)) {
-    NSLog(@"MozcConverter LaunchAgent remains loaded after bootout (status %d)",
+    NSLog(@"MozkeyIbGConverter LaunchAgent remains loaded after bootout (status %d)",
           bootout_status);
     return false;
   }
@@ -268,7 +269,7 @@ bool StopMozcConverter() {
     return true;
   }
 
-  NSLog(@"MozcConverter is still running; refusing heartbeat removal");
+  NSLog(@"MozkeyIbGConverter is still running; refusing heartbeat removal");
   return false;
 }
 
@@ -285,11 +286,11 @@ bool FindMozkeyZenzRuntimeProcessGroups(uid_t uid,
   }
 
   constexpr char kScorerPath[] =
-      "/Library/Input Methods/Mozc.app/Contents/Resources/"
-      "MozcConverter.app/Contents/Resources/mozc_zenz_scorer";
+      "/Library/Input Methods/MozkeyIbG.app/Contents/Resources/"
+      "MozkeyIbGConverter.app/Contents/Resources/mozc_zenz_scorer";
   constexpr char kLlamaServerPath[] =
-      "/Library/Input Methods/Mozc.app/Contents/Resources/"
-      "MozcConverter.app/Contents/Resources/llama-server";
+      "/Library/Input Methods/MozkeyIbG.app/Contents/Resources/"
+      "MozkeyIbGConverter.app/Contents/Resources/llama-server";
   const pid_t uninstaller_process_group = getpgrp();
   for (const pid_t pid : pids) {
     if (pid <= 0) {
@@ -416,7 +417,7 @@ bool RunReboot(const AuthorizationRef &auth) {
   if (OpenUninstallSurvey() && DeleteFiles(auth) && UnregisterKeystoneTicket(auth)) {
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
   // Ordinary shutdown and package replacement intentionally leave this
-  // heartbeat.  Only the user-facing uninstaller removes imkit-mozkey.  Stop
+  // heartbeat.  Only the user-facing uninstaller removes imkit-mozkey-ibg. Stop
   // the launchd job and process first so they cannot republish the heartbeat
   // after the registrar removes it.
   const bool stopped = StopMozcConverter() && StopMozkeyZenzRuntime();

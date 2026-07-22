@@ -395,7 +395,8 @@ bool MozcResponseParser::ParseResponse(const mozc::commands::Output& response,
   if (response.has_mode()) {
     mozc_state->SetCompositionMode(
         response.mode(), !engine_->deactivating() &&
-                             engine_->instance()->inputMethod(ic) == "mozkey");
+                             engine_->instance()->inputMethod(ic) ==
+                                 "mozkey-ibg");
   }
 
   if (!response.consumed()) {

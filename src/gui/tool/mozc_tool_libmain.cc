@@ -89,9 +89,9 @@ constexpr int kTsfProfileIconIndexSimpleWhite = 16;
 
 constexpr wchar_t kTsfProfileSubKey[] =
     L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}\\"
+    L"{2D046FEA-2B23-4E77-946B-FC2AF48219DC}\\"
     L"LanguageProfile\\0x00000411\\"
-    L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}";
+    L"{A5F4AF8E-7338-4A5C-9186-FF5B05B28393}";
 
 bool EndsWithCaseInsensitive(const std::wstring& text,
                              const std::wstring& suffix) {
@@ -147,9 +147,10 @@ std::wstring GetFallbackTsfProfileIconFile() {
   const DWORD length = ::GetEnvironmentVariableW(
       L"ProgramFiles(x86)", program_files_x86, MAX_PATH);
   if (length > 0 && length < MAX_PATH) {
-    return std::wstring(program_files_x86) + L"\\Mozc\\mozc_tip32.dll";
+    return std::wstring(program_files_x86) +
+           L"\\MozkeyIbG\\mozc_tip32.dll";
   }
-  return L"C:\\Program Files (x86)\\Mozc\\mozc_tip32.dll";
+  return L"C:\\Program Files (x86)\\MozkeyIbG\\mozc_tip32.dll";
 }
 
 bool ReadTsfProfileIconFile(std::wstring* icon_file) {

@@ -7,7 +7,7 @@ _TARGET_COMPATIBLE_WITH = ["@platforms//os:macos"]
 # These inputs are generated and checksum-verified before a macOS package
 # build. rules_apple preserves the owner-relative directory for
 # additional_contents, so stage every file at this package root before adding
-# it to MozcConverter.app. This keeps the installed layout canonical while
+# it to MozkeyIbGConverter.app. This keeps the installed layout canonical while
 # still failing closed when preparation has not run.
 copy_file(
     name = "packaged_llama_server",

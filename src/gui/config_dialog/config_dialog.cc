@@ -2011,9 +2011,9 @@ constexpr int kTsfProfileIconIndexSimpleWhite = 16;
 
 constexpr wchar_t kTsfProfileSubKey[] =
     L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}\\"
+    L"{2D046FEA-2B23-4E77-946B-FC2AF48219DC}\\"
     L"LanguageProfile\\0x00000411\\"
-    L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}";
+    L"{A5F4AF8E-7338-4A5C-9186-FF5B05B28393}";
 
 bool EndsWithCaseInsensitive(const std::wstring& text,
                              const std::wstring& suffix) {
@@ -2333,9 +2333,9 @@ bool RefreshTsfProfileIcon() {
       CLSID mozc_tip_guid = {};
       GUID mozc_profile_guid = {};
       const HRESULT clsid_hr = ::CLSIDFromString(
-          L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}", &mozc_tip_guid);
+          L"{2D046FEA-2B23-4E77-946B-FC2AF48219DC}", &mozc_tip_guid);
       const HRESULT profile_guid_hr = ::CLSIDFromString(
-          L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}", &mozc_profile_guid);
+          L"{A5F4AF8E-7338-4A5C-9186-FF5B05B28393}", &mozc_profile_guid);
 
       if (SUCCEEDED(clsid_hr) && SUCCEEDED(profile_guid_hr)) {
         result = RefreshTsfProfileIconViaInstalledInputProcessorProfile(

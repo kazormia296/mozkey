@@ -49,22 +49,22 @@ view cannot be rebound to the current composition.
 Mozkey-branded desktop server processes publish a private, atomic consumer
 heartbeat every 15 minutes:
 
-- Windows: `consumers/tsf-mozkey.json`
-- macOS: `consumers/imkit-mozkey.json`
+- Windows: `consumers/tsf-mozkey-ibg.json`
+- macOS: `consumers/imkit-mozkey-ibg.json`
 
 The Windows MSI uses a checked commit action for final removal. It stops only
 the exact installed `mozc_server.exe`, protects against PID reuse, and requires
 two consecutive process snapshots proving that executable absent before the
-secure registrar may remove `tsf-mozkey`. If quiescence or registrar validation
+secure registrar may remove `tsf-mozkey-ibg`. If quiescence or registrar validation
 fails, uninstall reports failure and preserves the heartbeat instead of
 silently completing with an unsafe or immediately republished record.
 
 The macOS uninstaller first boots the per-user Converter LaunchAgent out of
-the GUI domain and verifies that `MozcConverter` has exited. It removes the
+the GUI domain and verifies that `MozkeyIbGConverter` has exited. It removes the
 detached Zenz scorer process group (including its `llama-server` child) and
 verifies that the product-owned executables have exited before deleting the
 bundle. Only after those gates and successful bundle deletion does it make a
-best-effort request through the secure registrar to remove the `imkit-mozkey`
+best-effort request through the secure registrar to remove the `imkit-mozkey-ibg`
 heartbeat. If registrar ownership, mode, or symlink validation rejects the
 record, uninstall can finish while leaving that record for manual inspection;
 there is no unsafe recursive-delete fallback.
@@ -80,7 +80,7 @@ Zenz capability publication is fail closed. It is enabled only when the
 packaged scorer, model, and local llama.cpp runtime are all present. Windows
 packages use the bundled named-pipe scorer path. The macOS arm64 application
 package stages an arm64-only scorer and CPU/Accelerate `llama-server`, normalized
-model, and licenses inside `MozcConverter.app/Contents/Resources`. CI proves
+model, and licenses inside `MozkeyIbGConverter.app/Contents/Resources`. CI proves
 usability by checking package layout, code signatures, the exact arm64
 architecture and deployment target, and real inference in the shipped package.
 

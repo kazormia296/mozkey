@@ -2,6 +2,11 @@
 
 This document records the rename policy used for the v0.7.0 release.
 
+> **Historical policy:** Mozkey IbG supersedes this compatibility-oriented
+> policy. Its product identifiers are intentionally distinct from the upstream
+> Mozkey identifiers, and no migration from an unreleased Mozkey IbG install is
+> supported. See [Mozkey IbG product identity](mozkey_ibg_product_identity.md).
+
 ## Goal
 
 v0.7.0 renames the public-facing product branding from Mozc / my-product to Mozkey.

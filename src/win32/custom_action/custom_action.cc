@@ -433,11 +433,11 @@ struct MozcFirewallRule {
 };
 
 constexpr MozcFirewallRule kMozcOfflineFirewallRules[] = {
-    {L"Mozc Offline - Block mozc_server outbound", "mozc_server.exe"},
-    {L"Mozc Offline - Block mozc_tool outbound", "mozc_tool.exe"},
-    {L"Mozc Offline - Block mozc_renderer outbound", "mozc_renderer.exe"},
-    {L"Mozc Offline - Block mozc_broker outbound", "mozc_broker.exe"},
-    {L"Mozc Offline - Block mozc_cache_service outbound",
+    {L"Mozkey IbG Offline - Block mozc_server outbound", "mozc_server.exe"},
+    {L"Mozkey IbG Offline - Block mozc_tool outbound", "mozc_tool.exe"},
+    {L"Mozkey IbG Offline - Block mozc_renderer outbound", "mozc_renderer.exe"},
+    {L"Mozkey IbG Offline - Block mozc_broker outbound", "mozc_broker.exe"},
+    {L"Mozkey IbG Offline - Block mozc_cache_service outbound",
      "mozc_cache_service.exe"},
 };
 
@@ -577,7 +577,7 @@ UINT __stdcall UnregisterGrimodexConsumer(MSIHANDLE msi_handle) {
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
   const std::wstring app_data = GetProperty(msi_handle, L"CustomActionData");
   if (!StopMozcServer()) {
-    // The server owns the tsf-mozkey heartbeat refresh loop.  Never remove the
+    // The server owns the tsf-mozkey-ibg heartbeat refresh loop.  Never remove the
     // record while an exact installed server may still republish it.
     LogInstallerInfo(
         msi_handle,

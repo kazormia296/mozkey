@@ -218,7 +218,7 @@ class ScopedUserProfileForZenzFeedbackSessionTest {
     const std::wstring local_low_dir =
         JoinPathForZenzFeedbackSessionTest(app_data_dir, L"LocalLow");
     const std::wstring mozc_dir =
-        JoinPathForZenzFeedbackSessionTest(local_low_dir, L"Mozc");
+        JoinPathForZenzFeedbackSessionTest(local_low_dir, L"MozkeyIbG");
     const std::wstring feedback_path =
         JoinPathForZenzFeedbackSessionTest(mozc_dir, L"zenz_feedback.tsv");
 

@@ -91,7 +91,7 @@ def main():
     domain_prefix = 'com.google'
     product_name = 'Google Japanese Input'
   else:
-    domain_prefix = 'org.mozc'
+    domain_prefix = 'io.github.kazormia296.mozkey-ibg'
     product_name = 'Mozkey IbG'
 
   variables = {

@@ -11,7 +11,7 @@ descriptions below and make sure the operations before running them.
 
 ```
 git clone https://github.com/kazormia296/mozkey-ibg.git
-cd mozkey/src
+cd mozkey-ibg/src
 
 python3 build_tools/update_deps.py
 
@@ -20,13 +20,13 @@ python3 build_tools/build_qt.py --release --confirm_license --macos_cpus=arm64
 
 python3 ../tools/release/prepare_macos_zenz_runtime.py
 bazelisk build package --config release_build --macos_cpus=arm64
-open bazel-bin/mac/Mozc.pkg
+open bazel-bin/mac/MozkeyIbG.pkg
 ```
 
 💡 Mozkey for macOS is distributed for Apple Silicon only. The application,
 installer, Zenz scorer, and `llama-server` runtime are all arm64-only.
 
-💡 You can also download `Mozc.pkg` from GitHub Actions. Check
+💡 You can also download `MozkeyIbG.pkg` from GitHub Actions. Check
 [Build with GitHub Actions](#build-with-github-actions) for details.
 
 ## Setup
@@ -56,7 +56,7 @@ You can download Mozc source code as follows:
 
 ```
 git clone https://github.com/kazormia296/mozkey-ibg.git
-cd mozkey/src
+cd mozkey-ibg/src
 ```
 
 Hereafter you can do all the operations without changing directory.
@@ -113,7 +113,7 @@ SHA-256, and builds the arm64 runtime.
 ```
 python3 ../tools/release/prepare_macos_zenz_runtime.py
 bazelisk build package --config release_build --macos_cpus=arm64
-open bazel-bin/mac/Mozc.pkg
+open bazel-bin/mac/MozkeyIbG.pkg
 ```
 
 The runtime preparation command has no architecture option because its output
@@ -168,7 +168,7 @@ builds are called by the release workflow from a validated release tag.
     annotated `vX.Y.Z` tag with the same version.
 3.  Push the tag and wait for the **Mozkey Release** workflow to succeed.
 4.  Review the generated draft prerelease and its checksums.
-5.  Download `Mozkey_vX.Y.Z_macos_arm64.pkg` after publishing the release.
+5.  Download `MozkeyIbG_vX.Y.Z_macos_arm64.pkg` after publishing the release.
 
 See [Releasing Mozkey](releasing.md) for the exact version, ancestry, release
 notes, and rerun contract.

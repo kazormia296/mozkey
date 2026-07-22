@@ -62,38 +62,38 @@ TEST_F(SystemUtilTest, GetUserProfileDirectory) {
 
   // The OSS Linux default is isolated from system Mozc.
   EXPECT_FALSE(
-      FileUtil::DirectoryExists("/home/mozcuser/.config/mozkey").ok());
-  EXPECT_EQ("/home/mozcuser/.config/mozkey",
+      FileUtil::DirectoryExists("/home/mozcuser/.config/mozkey-ibg").ok());
+  EXPECT_EQ("/home/mozcuser/.config/mozkey-ibg",
             SystemUtil::GetUserProfileDirectory());
-  EXPECT_OK(FileUtil::DirectoryExists("/home/mozcuser/.config/mozkey"));
+  EXPECT_OK(FileUtil::DirectoryExists("/home/mozcuser/.config/mozkey-ibg"));
 
   environ_mock.SetEnv("XDG_CONFIG_HOME", "/tmp/config");
 
   // Once the dir is initialized, the value is not changed.
-  EXPECT_EQ("/home/mozcuser/.config/mozkey",
+  EXPECT_EQ("/home/mozcuser/.config/mozkey-ibg",
             SystemUtil::GetUserProfileDirectory());
 
   // Resets the cache by setting an empty string.
   SystemUtil::SetUserProfileDirectory("");
 
   // $XDG_CONFIG_HOME is already set with "/tmp/config" in above.
-  // If $XDG_CONFIG_HOME is specified, "$XDG_CONFIG_HOME/mozkey" is used.
-  EXPECT_FALSE(FileUtil::DirectoryExists("/tmp/config/mozkey").ok());
-  EXPECT_EQ("/tmp/config/mozkey", SystemUtil::GetUserProfileDirectory());
-  EXPECT_OK(FileUtil::DirectoryExists("/tmp/config/mozkey"));
+  // If $XDG_CONFIG_HOME is specified, "$XDG_CONFIG_HOME/mozkey-ibg" is used.
+  EXPECT_FALSE(FileUtil::DirectoryExists("/tmp/config/mozkey-ibg").ok());
+  EXPECT_EQ("/tmp/config/mozkey-ibg", SystemUtil::GetUserProfileDirectory());
+  EXPECT_OK(FileUtil::DirectoryExists("/tmp/config/mozkey-ibg"));
 
   // Resets again.
   SystemUtil::SetUserProfileDirectory("");
 
   // A system Mozc profile must never redirect Mozkey's profile.
   EXPECT_OK(FileUtil::CreateDirectory("/home/mozcuser/.mozc"));
-  EXPECT_EQ("/tmp/config/mozkey", SystemUtil::GetUserProfileDirectory());
+  EXPECT_EQ("/tmp/config/mozkey-ibg", SystemUtil::GetUserProfileDirectory());
 
   // Mozkey's own legacy directory is still honored.
-  EXPECT_OK(FileUtil::CreateDirectory("/home/mozcuser/.mozkey"));
-  EXPECT_OK(FileUtil::DirectoryExists("/home/mozcuser/.mozkey"));
+  EXPECT_OK(FileUtil::CreateDirectory("/home/mozcuser/.mozkey-ibg"));
+  EXPECT_OK(FileUtil::DirectoryExists("/home/mozcuser/.mozkey-ibg"));
   SystemUtil::SetUserProfileDirectory("");
-  EXPECT_EQ("/home/mozcuser/.mozkey",
+  EXPECT_EQ("/home/mozcuser/.mozkey-ibg",
             SystemUtil::GetUserProfileDirectory());
 
   // Resets again to avoid side effects to other tests.
@@ -111,8 +111,8 @@ TEST_F(SystemUtilTest, GetTotalPhysicalMemoryTest) {
 
 #if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
 TEST_F(SystemUtilTest, OssLinuxUsesMozkeyServerDirectory) {
-  EXPECT_EQ(SystemUtil::GetServerDirectory(), "/usr/lib/mozkey");
-  EXPECT_EQ(SystemUtil::GetDocumentDirectory(), "/usr/lib/mozkey/documents");
+  EXPECT_EQ(SystemUtil::GetServerDirectory(), "/usr/lib/mozkey-ibg");
+  EXPECT_EQ(SystemUtil::GetDocumentDirectory(), "/usr/lib/mozkey-ibg/documents");
 }
 #endif
 

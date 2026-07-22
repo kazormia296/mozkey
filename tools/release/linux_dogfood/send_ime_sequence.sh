@@ -11,7 +11,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "${script_path}")" && pwd -P)
 usage='usage: send_ime_sequence.sh ROMAJI_READING [direct|conversion|literal|password]'
 reading=${1:?${usage}}
 mode=${2:-conversion}
-input_method=mozkey
+input_method=mozkey-ibg
 key_delay=${MOZKEY_DOGFOOD_KEY_DELAY_MS:-50}
 settle_delay=${MOZKEY_DOGFOOD_SETTLE_DELAY_SECONDS:-1}
 verifier=${script_dir}/verify_ydotool_socket.py

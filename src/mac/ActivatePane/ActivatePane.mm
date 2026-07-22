@@ -46,11 +46,14 @@ static NSString *kLaunchdPlistFiles[] = {
     @"/Library/LaunchAgents/com.google.inputmethod.Japanese.Renderer.plist", nil};
 static NSString *const kSourceID = @"com.google.inputmethod.Japanese";
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
-static const unsigned char kInstalledLocation[] = "/Library/Input Methods/Mozc.app";
+static const unsigned char kInstalledLocation[] =
+    "/Library/Input Methods/MozkeyIbG.app";
 static NSString *kLaunchdPlistFiles[] = {
-    @"/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist",
-    @"/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Renderer.plist", nil};
-static NSString *const kSourceID = @"org.mozc.inputmethod.Japanese";
+    @"/Library/LaunchAgents/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Converter.plist",
+    @"/Library/LaunchAgents/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Renderer.plist",
+    nil};
+static NSString *const kSourceID =
+    @"io.github.kazormia296.mozkey-ibg.inputmethod.Japanese";
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
 // Load the installed Google Japanese Input to the system.

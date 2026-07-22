@@ -164,7 +164,7 @@ jobs:
       - name: Stage versioned x64 MSI
         shell: pwsh
         run: |
-          $destination = "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi"
+          $destination = "MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi"
           Move-Item `
             -LiteralPath .\src\bazel-bin\win32\installer\Mozc64.msi `
             -Destination $destination
@@ -173,7 +173,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-windows-x64
-          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi
+          path: MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi
           if-no-files-found: error
           overwrite: true
           retention-days: 7
@@ -268,7 +268,7 @@ jobs:
       - name: Stage versioned universal MSI
         shell: pwsh
         run: |
-          $destination = "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_universal.msi"
+          $destination = "MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_universal.msi"
           Move-Item `
             -LiteralPath .\src\bazel-bin\win32\installer\Mozc64.msi `
             -Destination $destination
@@ -277,7 +277,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-windows-universal
-          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_universal.msi
+          path: MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_universal.msi
           if-no-files-found: error
           overwrite: true
           retention-days: 7
@@ -365,7 +365,7 @@ jobs:
       - name: Stage versioned ARM64 MSI
         shell: pwsh
         run: |
-          $destination = "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_arm64.msi"
+          $destination = "MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_arm64.msi"
           Move-Item `
             -LiteralPath .\src\bazel-bin\win32\installer\Mozc64.msi `
             -Destination $destination
@@ -374,7 +374,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-windows-arm64
-          path: Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_arm64.msi
+          path: MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_arm64.msi
           if-no-files-found: error
           overwrite: true
           retention-days: 7

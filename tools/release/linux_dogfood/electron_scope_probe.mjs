@@ -393,10 +393,10 @@ function loadReleaseFixture(filename) {
 const consumerRefreshWait = new Int32Array(new SharedArrayBuffer(4));
 
 function stableConsumerEntries(consumers) {
-  const temporaryPattern = /^\.fcitx5-mozkey\.[1-9][0-9]*\.[0-9]+\.tmp$/;
+  const temporaryPattern = /^\.fcitx5-mozkey-ibg\.[1-9][0-9]*\.[0-9]+\.tmp$/;
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const entries = readdirSync(consumers).sort();
-    if (JSON.stringify(entries) === JSON.stringify(["fcitx5-mozkey.json"])) {
+    if (JSON.stringify(entries) === JSON.stringify(["fcitx5-mozkey-ibg.json"])) {
       return entries;
     }
     const temporary = entries.filter((name) => temporaryPattern.test(name));
@@ -404,7 +404,7 @@ function stableConsumerEntries(consumers) {
       temporary.length === 1 &&
       (entries.length === 1 || entries.length === 2) &&
       entries.every(
-        (name) => name === "fcitx5-mozkey.json" || temporary.includes(name),
+        (name) => name === "fcitx5-mozkey-ibg.json" || temporary.includes(name),
       )
     ) {
       Atomics.wait(consumerRefreshWait, 0, 0, 10);
@@ -2472,7 +2472,7 @@ try {
     LANG: environment.LANG,
     LC_ALL: environment.LC_ALL,
     LOGNAME: environment.LOGNAME,
-    MOZKEY_DOGFOOD_IM: "mozkey",
+    MOZKEY_DOGFOOD_IM: "mozkey-ibg",
     MOZKEY_DOGFOOD_KEY_DELAY_MS: "50",
     MOZKEY_DOGFOOD_SETTLE_DELAY_SECONDS: "1",
     MOZKEY_DOGFOOD_YDOTOOLD_PID: ydotooldPid,

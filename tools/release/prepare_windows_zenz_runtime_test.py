@@ -377,7 +377,7 @@ class PrepareWindowsZenzRuntimeTest(unittest.TestCase):
         for architecture, artifact_name in release_artifacts.items():
             with self.subTest(architecture=architecture):
                 self.assertIn(
-                    "Mozkey_v${{ needs.prepare_daily_dictionary.outputs."
+                    "MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs."
                     "release_version }}"
                     f"_{architecture}.msi",
                     workflow,

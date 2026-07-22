@@ -80,11 +80,11 @@ MOZKEY_LLAMA_ATTESTED_SHA256="${runtime_sha256}" \
 )
 
 install -D -m 644 "${attestation}" \
-  "${stage_dir}/usr/share/doc/mozkey/linux-build-attestation.json"
+  "${stage_dir}/usr/share/doc/mozkey-ibg/linux-build-attestation.json"
 install -D -m 644 "${build_packages}" \
-  "${stage_dir}/usr/share/doc/mozkey/${distro}-build-packages.txt"
+  "${stage_dir}/usr/share/doc/mozkey-ibg/${distro}-build-packages.txt"
 install -D -m 644 "${runtime_manifest}" \
-  "${stage_dir}/usr/share/doc/mozkey/llama-server-manifest.json"
+  "${stage_dir}/usr/share/doc/mozkey-ibg/llama-server-manifest.json"
 if [ "${distro}" = ubuntu ]; then
   copyright_path="${stage_dir}/usr/share/doc/mozkey-ibg/copyright"
   install -d -m 755 "$(dirname -- "${copyright_path}")"
@@ -96,18 +96,18 @@ if [ "${distro}" = ubuntu ]; then
       'This file reproduces the copyright notices and license texts shipped' \
       'with the binary distribution. The section labels are installed paths.'
     for license_path in \
-      usr/share/licenses/mozkey/Mozc-LICENSE.txt \
-      usr/share/licenses/mozkey/Fcitx5-Mozc-BSD-3-Clause.txt \
-      usr/share/licenses/mozkey/LGPL-2.1-or-later.txt \
-      usr/share/licenses/mozkey/THIRD_PARTY_NOTICES.md \
-      usr/share/licenses/mozkey/dictionary/Apache-2.0.txt \
-      usr/share/licenses/mozkey/dictionary/THIRD_PARTY_NOTICES.md \
-      usr/share/licenses/mozkey/zenz-runtime/Apache-2.0.txt \
-      usr/share/licenses/mozkey/zenz-runtime/THIRD_PARTY_NOTICES.md \
-      usr/share/licenses/mozkey/zenz-runtime/cpp-httplib-MIT.txt \
-      usr/share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt \
-      usr/share/licenses/mozkey/zenz-runtime/nlohmann-json-MIT.txt \
-      usr/share/licenses/mozkey/zenz-runtime/zenz-v3.2-small-gguf.txt
+      usr/share/licenses/mozkey-ibg/Mozc-LICENSE.txt \
+      usr/share/licenses/mozkey-ibg/Fcitx5-Mozc-BSD-3-Clause.txt \
+      usr/share/licenses/mozkey-ibg/LGPL-2.1-or-later.txt \
+      usr/share/licenses/mozkey-ibg/THIRD_PARTY_NOTICES.md \
+      usr/share/licenses/mozkey-ibg/dictionary/Apache-2.0.txt \
+      usr/share/licenses/mozkey-ibg/dictionary/THIRD_PARTY_NOTICES.md \
+      usr/share/licenses/mozkey-ibg/zenz-runtime/Apache-2.0.txt \
+      usr/share/licenses/mozkey-ibg/zenz-runtime/THIRD_PARTY_NOTICES.md \
+      usr/share/licenses/mozkey-ibg/zenz-runtime/cpp-httplib-MIT.txt \
+      usr/share/licenses/mozkey-ibg/zenz-runtime/llama.cpp-MIT.txt \
+      usr/share/licenses/mozkey-ibg/zenz-runtime/nlohmann-json-MIT.txt \
+      usr/share/licenses/mozkey-ibg/zenz-runtime/zenz-v3.2-small-gguf.txt
     do
       printf '\n===== /%s =====\n' "${license_path}"
       cat "${stage_dir}/${license_path}"
@@ -128,7 +128,7 @@ printf '%s\n' "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
 revision="$(git -C "${repository_root}" rev-parse HEAD)"
 python3 "${repository_root}/tools/release/generate_linux_spdx_sbom.py" \
   --root "${stage_dir}" \
-  --output "${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json" \
+  --output "${stage_dir}/usr/share/doc/mozkey-ibg/mozkey-linux.spdx.json" \
   --version "${version}" \
   --revision "${revision}" \
   --distro "${distro}" \

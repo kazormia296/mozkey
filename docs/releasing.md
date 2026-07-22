@@ -1,6 +1,6 @@
-# Releasing Mozkey
+# Releasing Mozkey IbG
 
-Mozkey product builds are release operations. Pull requests and ordinary pushes
+Mozkey IbG product builds are release operations. Pull requests and ordinary pushes
 run tests, but they do not build or upload installers. A release starts only
 from a `vX.Y.Z` tag (or a manual run whose selected ref is such a tag).
 
@@ -32,13 +32,13 @@ from a `vX.Y.Z` tag (or a manual run whose selected ref is such a tag).
 
 The expected public artifacts are:
 
-- `Mozkey_vX.Y.Z_x64.msi`
-- `Mozkey_vX.Y.Z_universal.msi`
-- `Mozkey_vX.Y.Z_arm64.msi`
-- `Mozkey_vX.Y.Z_macos_arm64.pkg`
+- `MozkeyIbG_vX.Y.Z_x64.msi`
+- `MozkeyIbG_vX.Y.Z_universal.msi`
+- `MozkeyIbG_vX.Y.Z_arm64.msi`
+- `MozkeyIbG_vX.Y.Z_macos_arm64.pkg`
 - `mozkey-ibg_X.Y.Z_amd64.deb`, its Ubuntu build attestation and SPDX inventory
 - `mozkey-ibg-X.Y.Z-1.x86_64.rpm`, its Fedora build attestation and SPDX inventory
-- `mozkey-vX.Y.Z-archlinux-x86_64.tar.xz` and its checksum, build attestation,
+- `mozkey-ibg-vX.Y.Z-archlinux-x86_64.tar.xz` and its checksum, build attestation,
   and SPDX inventory
 - `ubuntu-build-packages.txt`, `fedora-build-packages.txt`, and
   `archlinux-build-packages.txt`
@@ -122,7 +122,7 @@ ID Application identity, signs the installer with a Developer ID Installer
 identity, submits the `.pkg` to Apple's notary service, staples the ticket, and
 checks the final package with `pkgutil`, `stapler`, and Gatekeeper.
 
-Configure these Actions secrets in the `mozkey` repository:
+Configure these Actions secrets in the `mozkey-ibg` repository:
 
 - `APPLE_CERTIFICATE`
 - `APPLE_CERTIFICATE_PASSWORD`
@@ -136,7 +136,8 @@ Configure these Actions secrets in the `mozkey` repository:
 The application certificate, keychain password, and App Store Connect API key
 material can use the same values and secret names as the Grimodex repository.
 GitHub repository secrets are not automatically visible to another repository,
-so those values still need to be configured for `mozkey`. A `.pkg` additionally
+so those values still need to be configured for `mozkey-ibg`. A `.pkg`
+additionally
 requires the two `APPLE_INSTALLER_CERTIFICATE*` secrets; Grimodex's `.dmg`
 release does not use an installer certificate.
 
