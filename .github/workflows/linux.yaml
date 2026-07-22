@@ -477,4 +477,5 @@ jobs:
         working-directory: ./src
         run: |
           bazelisk test ... -c dbg \
+            --test_output=errors \
             --define=mozkey_dictionary_profile=release-approved-only
