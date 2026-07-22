@@ -1,6 +1,6 @@
 # Linux installed-product dogfood
 
-These probes exercise the installed `/usr/lib/mozkey/mozc_server` and Fcitx
+These probes exercise the installed `/usr/lib/mozkey-ibg/mozc_server` and Fcitx
 addon on the real desktop session. They use the tracked, non-secret
 `release_fixture.json`; callers cannot replace the expected reading, ordinary
 Mozc result, or project-dictionary result after observing a run.
@@ -8,7 +8,7 @@ Mozc result, or project-dictionary result after observing a run.
 Run them from the exact clean checkout used by
 `scripts/build_mozkey_linux_bazel archlinux-x86_64`, and install the generated
 package payload rather than using a direct source install. The package embeds
-`/usr/share/doc/mozkey/linux-build-attestation.json`. Every GUI, restart, and
+`/usr/share/doc/mozkey-ibg/linux-build-attestation.json`. Every GUI, restart, and
 Electron result binds that document byte-for-byte to the candidate
 attestation, the installed addon/server digests, the addon inode actually
 mapped executable by Fcitx, and the direct live server child with the requested
@@ -29,9 +29,9 @@ Before installation and again before dogfood, verify the candidate itself:
 ```sh
 scripts/verify_mozkey_linux_build_attestation archlinux-x86_64
 (cd dist && \
-  sha256sum -c mozkey-v0.8.0-archlinux-x86_64.tar.xz.sha256)
+  sha256sum -c mozkey-ibg-v0.8.0-archlinux-x86_64.tar.xz.sha256)
 cmp dist/linux/archlinux-x86_64/build-attestation.json \
-  dist/mozkey-v0.8.0-archlinux-x86_64.build-attestation.json
+  dist/mozkey-ibg-v0.8.0-archlinux-x86_64.build-attestation.json
 ```
 
 ## Isolated Protocol fixture and fresh Mozkey profile
@@ -61,9 +61,9 @@ export MOZKEY_DOGFOOD_PROFILE_ROOT="${profile_root}"
 Start the one installed `/usr/bin/fcitx5` with
 `GRIMODEX_IME_ROOT=${protocol_root}` and
 both `HOME=${profile_root}` and `XDG_CONFIG_HOME=${profile_root}`. Mozkey
-intentionally honors an existing `$HOME/.mozkey` for backward compatibility;
+intentionally honors an existing `$HOME/.mozkey-ibg` for backward compatibility;
 the private HOME prevents that legacy profile from bypassing the release
-fixture. The marker and every candidate check require `.mozkey` to remain
+fixture. The marker and every candidate check require `.mozkey-ibg` to remain
 absent. Omit `MOZKEY_GRIMODEX_SCOPE` for the default
 gate; restart Fcitx with the exact values `all`, `off`, and a fixed unsupported
 value for the other scope gates. The runners verify the live Fcitx PID, start
@@ -89,7 +89,7 @@ The headless IBus restart gate requires exactly one `CommitText`, every key
 consumed, no forwarded key, exact custom output, a unique killed installed
 server, and a different replacement server lifetime. Before any custom commit,
 it proves the ordinary/default result with no pre-existing server and no
-`$XDG_CONFIG_HOME/mozkey` state. This ordering prevents the custom canary from
+`$XDG_CONFIG_HOME/mozkey-ibg` state. This ordering prevents the custom canary from
 teaching Mozc the answer that is later used as fallback evidence. The gate also
 restores and verifies the prior focused Fcitx method/state.
 

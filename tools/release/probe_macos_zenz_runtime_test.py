@@ -15,7 +15,7 @@ from tools.release import probe_zenz_runtime as portable_probe
 
 
 def _create_probe_layout(root: Path) -> target.RuntimeLayout:
-    resources = root / "MozcConverter.app/Contents/Resources"
+    resources = root / "MozkeyIbGConverter.app/Contents/Resources"
     model_directory = resources / "models"
     license_directory = resources / "licenses"
     model_directory.mkdir(parents=True)
@@ -266,11 +266,11 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
 
     def test_owner_executable_package_is_accepted_without_relaxing_runtime_modes(self):
         with tempfile.TemporaryDirectory() as temporary:
-            package = Path(temporary) / "Mozc.pkg"
+            package = Path(temporary) / "MozkeyIbG.pkg"
             package.write_bytes(b"package")
             package.chmod(0o744)
             layout = target.RuntimeLayout(
-                converter_app=Path("/runtime/MozcConverter.app"),
+                converter_app=Path("/runtime/MozkeyIbGConverter.app"),
                 resources=Path("/runtime/Resources"),
                 scorer=Path("/runtime/mozc_zenz_scorer"),
                 server=Path("/runtime/llama-server"),
@@ -366,7 +366,7 @@ class ProbeMacosZenzRuntimeTest(unittest.TestCase):
 
     def test_empty_package_has_package_specific_layout_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
-            package = Path(temporary) / "Mozc.pkg"
+            package = Path(temporary) / "MozkeyIbG.pkg"
             package.touch(mode=0o644)
             with mock.patch.object(target.sys, "platform", "darwin"):
                 with self.assertRaises(target.ProbeFailure) as raised:

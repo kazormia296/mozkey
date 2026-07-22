@@ -34,7 +34,7 @@ body:
     attributes:
       label: Mozkey のバージョンまたは commit ID
       description: 可能であれば最新の commit / 最新リリースでも再現するか確認してください。
-      placeholder: '例: Mozkey v0.7.1 または d50a8b9ae28c4fba265f734b38bc5ae392fe4d25'
+      placeholder: '例: Mozkey IbG v0.10.0 または d50a8b9ae28c4fba265f734b38bc5ae392fe4d25'
     validations:
       required: true
 

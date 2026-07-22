@@ -53,7 +53,7 @@ localhost only.
 ### Linux Zenz path
 
 Linux Zenz builds use `mozc_zenz_scorer`, the bundled local GGUF model, and the
-product-private `/usr/lib/mozkey/llama-server` path. Arch/source installs link
+product-private `/usr/lib/mozkey-ibg/llama-server` path. Arch/source installs link
 that path to a compatible distribution runtime. Debian and RPM packages contain
 an attested, pinned CPU-only llama.cpp runtime as a regular executable.
 Installation or staging checks the applicable runtime's identity and CLI

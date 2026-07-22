@@ -1,7 +1,7 @@
 import struct
 import win32file
 
-PIPE = r"\\.\pipe\mozc_zenz_scorer"
+PIPE = r"\\.\pipe\mozkey-ibg_zenz_scorer"
 
 MAGIC = 0x315A4E5A
 VERSION = 2

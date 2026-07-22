@@ -54,7 +54,7 @@ body:
     attributes:
       label: Mozkey のバージョンまたは commit ID
       description: 「Version」または「ばーじょん」と変換するとバージョン文字列を確認できます。不明な場合は "不明" と記載してください。
-      placeholder: '例: Mozkey v0.7.1、d50a8b9ae28c4fba265f734b38bc5ae392fe4d25、不明'
+      placeholder: '例: Mozkey IbG v0.10.0、d50a8b9ae28c4fba265f734b38bc5ae392fe4d25、不明'
     validations:
       required: true
 

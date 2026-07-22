@@ -278,7 +278,7 @@ bool IPCPathManager::GetPathName(std::string *ipc_name) const {
 #elif defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
   // OSS Mozkey uses its own abstract namespace and cannot attach to a system
   // Mozc server belonging to the same user.
-  constexpr char kIPCPrefix[] = "/tmp/.mozkey.";
+  constexpr char kIPCPrefix[] = "/tmp/.mozkey-ibg.";
   *ipc_name = kIPCPrefix;
 #else   // not _WIN32, __APPLE__, or OSS Linux
   // GetUserIPCName("<name>") => "/tmp/.mozc.<key>.<name>"

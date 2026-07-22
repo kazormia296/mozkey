@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
   }
   const char *application_id = g_getenv("MOZKEY_DOGFOOD_APP_ID");
   if (application_id == NULL || *application_id == '\0') {
-    application_id = "com.miyakey.mozkey.GtkDogfood";
+    application_id = "com.miyakey.mozkey-ibg.GtkDogfood";
   }
   const char *password_environment = g_getenv("MOZKEY_DOGFOOD_PASSWORD");
   if (password_environment != NULL &&

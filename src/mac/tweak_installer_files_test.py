@@ -9,7 +9,7 @@ from mac import tweak_installer_files as target
 
 
 def _create_runtime(top_dir: Path, *, oss: bool):
-    name = "Mozc" if oss else "GoogleJapaneseInput"
+    name = "MozkeyIbG" if oss else "GoogleJapaneseInput"
     resources = (
         top_dir
         / "root/Library/Input Methods"
@@ -48,7 +48,7 @@ class TweakInstallerFilesRuntimeLayoutTest(unittest.TestCase):
 
                 target.NormalizeAndValidateZenzRuntime(str(top_dir), oss)
 
-                expected_brand = "Mozc" if oss else "GoogleJapaneseInput"
+                expected_brand = "MozkeyIbG" if oss else "GoogleJapaneseInput"
                 self.assertEqual(
                     resources,
                     top_dir
@@ -150,7 +150,7 @@ class TweakInstallerFilesRuntimeLayoutTest(unittest.TestCase):
 class TweakInstallerFilesCodesignTest(unittest.TestCase):
     def test_signs_nested_runtime_before_enclosing_app(self):
         with tempfile.TemporaryDirectory() as temporary:
-            app = Path(temporary) / "MozcConverter.app"
+            app = Path(temporary) / "MozkeyIbGConverter.app"
             resources = app / "Contents/Resources"
             resources.mkdir(parents=True)
             server = resources / "llama-server"
@@ -169,7 +169,7 @@ class TweakInstallerFilesCodesignTest(unittest.TestCase):
 
     def test_release_identity_enables_timestamped_hardened_runtime(self):
         with tempfile.TemporaryDirectory() as temporary:
-            app = Path(temporary) / "MozcConverter.app"
+            app = Path(temporary) / "MozkeyIbGConverter.app"
             resources = app / "Contents/Resources"
             resources.mkdir(parents=True)
             server = resources / "llama-server"
@@ -186,7 +186,7 @@ class TweakInstallerFilesCodesignTest(unittest.TestCase):
 
     def test_release_identity_uses_explicit_temporary_keychain(self):
         with tempfile.TemporaryDirectory() as temporary:
-            app = Path(temporary) / "MozcConverter.app"
+            app = Path(temporary) / "MozkeyIbGConverter.app"
             (app / "Contents/MacOS").mkdir(parents=True)
             keychain = "/private/tmp/mozkey-signing.keychain-db"
 
@@ -219,7 +219,9 @@ class TweakInstallerFilesCodesignTest(unittest.TestCase):
 
     def test_refuses_nested_runtime_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
-            resources = Path(temporary) / "MozcConverter.app/Contents/Resources"
+            resources = (
+                Path(temporary) / "MozkeyIbGConverter.app/Contents/Resources"
+            )
             resources.mkdir(parents=True)
             target_file = resources / "other"
             target_file.write_bytes(b"fixture")

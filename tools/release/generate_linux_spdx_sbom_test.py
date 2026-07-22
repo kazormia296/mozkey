@@ -15,7 +15,7 @@ class GenerateLinuxSpdxSbomTest(unittest.TestCase):
             (root / "usr/bin/z").write_bytes(b"z")
             (root / "usr/bin/a").write_bytes(b"a")
             (root / "usr/bin/link").symlink_to("/usr/bin/a")
-            output = root / "usr/share/doc/mozkey/sbom.json"
+            output = root / "usr/share/doc/mozkey-ibg/sbom.json"
             (root / "usr/bin/unknown").write_bytes(b"\x00\x01\x02")
             (root / "usr/bin/elf").write_bytes(b"\x7fELFpayload")
             document = generate(
@@ -49,7 +49,7 @@ class GenerateLinuxSpdxSbomTest(unittest.TestCase):
             verification = document["packages"][0]["packageVerificationCode"]
             self.assertEqual(
                 verification["packageVerificationCodeExcludedFiles"],
-                ["./usr/share/doc/mozkey/sbom.json"],
+                ["./usr/share/doc/mozkey-ibg/sbom.json"],
             )
             self.assertEqual(len(verification["packageVerificationCodeValue"]), 40)
             self.assertIn(

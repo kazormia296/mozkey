@@ -87,7 +87,7 @@ namespace {
 constexpr absl::string_view kMozcServerDir = MOZC_SERVER_DIR;
 #else  // MOZC_SERVER_DIR
 #if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
-constexpr absl::string_view kMozcServerDir = "/usr/lib/mozkey";
+constexpr absl::string_view kMozcServerDir = "/usr/lib/mozkey-ibg";
 #else
 constexpr absl::string_view kMozcServerDir = "/usr/lib/mozc";
 #endif
@@ -97,7 +97,8 @@ constexpr absl::string_view kMozcServerDir = "/usr/lib/mozc";
 constexpr absl::string_view kMozcDocumentDir = MOZC_DOCUMENT_DIR;
 #else  // MOZC_DOCUMENT_DIR
 #if defined(__linux__) && !defined(GOOGLE_JAPANESE_INPUT_BUILD)
-constexpr absl::string_view kMozcDocumentDir = "/usr/lib/mozkey/documents";
+constexpr absl::string_view kMozcDocumentDir =
+    "/usr/lib/mozkey-ibg/documents";
 #else
 constexpr absl::string_view kMozcDocumentDir = "/usr/lib/mozc/documents";
 #endif
@@ -337,15 +338,15 @@ std::string UserProfileDirectoryImpl::GetUserProfileDirectory() const {
     ::mkdir(dir.c_str(), 0755);
     return FileUtil::JoinPath(dir, "JapaneseInput");
 #else   //  GOOGLE_JAPANESE_INPUT_BUILD
-    return FileUtil::JoinPath(dir, "Mozc");
+    return FileUtil::JoinPath(dir, "MozkeyIbG");
 #endif  //  GOOGLE_JAPANESE_INPUT_BUILD
 
 #elif defined(__linux__)
     // Keep the OSS Mozkey profile separate from system Mozc.  Official Google
     // Japanese Input builds retain their existing product-specific behavior.
 #if !defined(GOOGLE_JAPANESE_INPUT_BUILD)
-    constexpr absl::string_view kLegacyProfileName = ".mozkey";
-    constexpr absl::string_view kXdgProfileName = "mozkey";
+    constexpr absl::string_view kLegacyProfileName = ".mozkey-ibg";
+    constexpr absl::string_view kXdgProfileName = "mozkey-ibg";
 #else
     constexpr absl::string_view kLegacyProfileName = ".mozc";
     constexpr absl::string_view kXdgProfileName = "mozc";
@@ -483,7 +484,7 @@ constexpr wchar_t kMozcTipClsid[] =
 #ifdef GOOGLE_JAPANESE_INPUT_BUILD
     L"{D5A86FD5-5308-47EA-AD16-9C4EB160EC3C}"
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}"
+    L"{2D046FEA-2B23-4E77-946B-FC2AF48219DC}"
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
     L"\\InprocServer32";
 

@@ -18,7 +18,7 @@ case "${install_phase}" in
     ;;
 esac
 
-addon_record="${DESTDIR}${PREFIX}/share/mozkey/fcitx5-addon-dir"
+addon_record="${DESTDIR}${PREFIX}/share/mozkey-ibg/fcitx5-addon-dir"
 previous_addon_dir=""
 if [ "${install_phase}" != data ]; then
   if previous_addon_dir="$(read_installed_fcitx5_addon_dir "${addon_record}")"; then
@@ -40,12 +40,12 @@ if [ "${install_phase}" = data ]; then
   exit 0
 fi
 
-[ -x "out_linux/${_bldtype}/fcitx5-mozkey.so" ] || {
+[ -x "out_linux/${_bldtype}/fcitx5-mozkey-ibg.so" ] || {
   echo "missing built Fcitx5 Mozkey addon" >&2
   exit 1
 }
-atomic_install_file "out_linux/${_bldtype}/fcitx5-mozkey.so" 755 \
-  "${DESTDIR}${addon_dir}/fcitx5-mozkey.so"
+atomic_install_file "out_linux/${_bldtype}/fcitx5-mozkey-ibg.so" 755 \
+  "${DESTDIR}${addon_dir}/fcitx5-mozkey-ibg.so"
 
 record_tmp="$(mktemp "${TMPDIR:-/tmp}/mozkey-addon-dir.XXXXXX")"
 trap 'rm -f "$record_tmp"' EXIT HUP INT TERM
@@ -54,9 +54,9 @@ atomic_install_file "${record_tmp}" 644 "${addon_record}"
 
 if [ -n "${previous_addon_dir}" ] &&
    [ "${previous_addon_dir}" != "${addon_dir}" ]; then
-  rm -f -- "${DESTDIR}${previous_addon_dir}/fcitx5-mozkey.so"
+  rm -f -- "${DESTDIR}${previous_addon_dir}/fcitx5-mozkey-ibg.so"
 fi
 legacy_addon_dir=/usr/lib/fcitx5
 if [ "${legacy_addon_dir}" != "${addon_dir}" ]; then
-  rm -f -- "${DESTDIR}${legacy_addon_dir}/fcitx5-mozkey.so"
+  rm -f -- "${DESTDIR}${legacy_addon_dir}/fcitx5-mozkey-ibg.so"
 fi

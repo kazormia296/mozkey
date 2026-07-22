@@ -54,7 +54,7 @@ constexpr wchar_t kGetPreferredTouchKeyboardLayoutDisplayName[] =
     L"Google Japanese Input: GetPreferredTouchKeyboardLayout Function";
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
 constexpr wchar_t kGetPreferredTouchKeyboardLayoutDisplayName[] =
-    L"Mozc: GetPreferredTouchKeyboardLayout Function";
+    L"Mozkey IbG: GetPreferredTouchKeyboardLayout Function";
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
 class GetPreferredTouchKeyboardLayoutImpl final

@@ -24,7 +24,7 @@ case "${layout}" in
   ubuntu-layout)
     set -- \
       package \
-      //unix/fcitx5:fcitx5-mozkey.so \
+      //unix/fcitx5:fcitx5-mozkey-ibg.so \
       //unix/fcitx5:grimodex_consumer_tool \
       //server:mozc_server \
       //gui/tool:mozc_tool \
@@ -36,7 +36,7 @@ case "${layout}" in
     ;;
   fedora-x86_64|archlinux-x86_64)
     set -- \
-      //unix/fcitx5:fcitx5-mozkey.so \
+      //unix/fcitx5:fcitx5-mozkey-ibg.so \
       //unix/fcitx5:grimodex_consumer_tool \
       //server:mozc_server \
       //gui/tool:mozc_tool \

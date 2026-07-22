@@ -13,7 +13,7 @@ import win32security
 import pywintypes
 
 
-PIPE_NAME_DEFAULT = r"\\.\pipe\mozc_zenz_scorer"
+PIPE_NAME_DEFAULT = r"\\.\pipe\mozkey-ibg_zenz_scorer"
 LLAMA_URL_DEFAULT = "http://127.0.0.1:18080/completion"
 
 MAGIC = 0x315A4E5A  # "ZNZ1"

@@ -28,21 +28,21 @@ from typing import Any, Mapping, NoReturn
 
 SCHEMA = "mozkey.linux_build_attestation.v2"
 EXPECTED_FCITX = Path("/usr/bin/fcitx5")
-EXPECTED_ADDON = Path("/usr/lib/fcitx5/fcitx5-mozkey.so")
-EXPECTED_SERVER = Path("/usr/lib/mozkey/mozc_server")
-PROFILE_MARKER_NAME = ".mozkey-dogfood-fresh-profile.json"
+EXPECTED_ADDON = Path("/usr/lib/fcitx5/fcitx5-mozkey-ibg.so")
+EXPECTED_SERVER = Path("/usr/lib/mozkey-ibg/mozc_server")
+PROFILE_MARKER_NAME = ".mozkey-ibg-dogfood-fresh-profile.json"
 PROFILE_MARKER_SCHEMA = 2
 FCITX_PROFILE_PAYLOAD = b"""[Groups/0]
 Name=Mozkey Dogfood
 Default Layout=jp
-DefaultIM=mozkey
+DefaultIM=mozkey-ibg
 
 [Groups/0/Items/0]
 Name=keyboard-jp
 Layout=
 
 [Groups/0/Items/1]
-Name=mozkey
+Name=mozkey-ibg
 Layout=
 
 [GroupOrder]
@@ -54,16 +54,16 @@ MAX_CONSUMER_AGE_SECONDS = 20 * 60
 MAX_CONSUMER_BYTES = 8 * 1024
 CONSUMER_START_TOLERANCE_SECONDS = 2
 INSTALLED_ATTESTATION = Path(
-    "/usr/share/doc/mozkey/linux-build-attestation.json"
+    "/usr/share/doc/mozkey-ibg/linux-build-attestation.json"
 )
-ADDON_PATH_RECORD = Path("/usr/share/mozkey/fcitx5-addon-dir")
+ADDON_PATH_RECORD = Path("/usr/share/mozkey-ibg/fcitx5-addon-dir")
 ATTESTED_INSTALLS = {
-    "src/bazel-bin/unix/fcitx5/fcitx5-mozkey.so": EXPECTED_ADDON,
+    "src/bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so": EXPECTED_ADDON,
     "src/bazel-bin/server/mozc_server": EXPECTED_SERVER,
 }
 EXPECTED_BINARY_PATHS = frozenset(
     (
-        "src/bazel-bin/unix/fcitx5/fcitx5-mozkey.so",
+        "src/bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so",
         "src/bazel-bin/unix/fcitx5/grimodex_consumer_tool",
         "src/bazel-bin/server/mozc_server",
         "src/bazel-bin/gui/tool/mozc_tool",
@@ -799,7 +799,7 @@ def validate_fcitx_profile(root: Path) -> str:
 
 
 def validate_no_mozkey_config_override(root: Path) -> None:
-    override = root / "fcitx5" / "conf" / "mozkey.conf"
+    override = root / "fcitx5" / "conf" / "mozkey-ibg.conf"
     try:
         override.lstat()
     except FileNotFoundError:
@@ -860,7 +860,7 @@ def validate_consumer_payload(
         or not isinstance(capabilities, dict)
         or set(capabilities) != set(expected_capabilities)
         or any(capabilities[name] is not True for name in expected_capabilities)
-        or document.get("consumer_id") != "fcitx5-mozkey"
+        or document.get("consumer_id") != "fcitx5-mozkey-ibg"
         or type(document.get("format_version")) is not int
         or document.get("format_version") != 1
         or document.get("name") != "Mozkey for Grimodex on Linux"
@@ -951,9 +951,9 @@ def validate_consumer_handshake(
         fail("Mozkey consumer directory identity is invalid")
     if fcitx_pid <= 1:
         fail("Fcitx pid is invalid for consumer verification")
-    expected_entries = ["fcitx5-mozkey.json"]
+    expected_entries = ["fcitx5-mozkey-ibg.json"]
     temporary_pattern = re.compile(
-        rf"^\.fcitx5-mozkey\.{fcitx_pid}\.[0-9]+\.tmp$"
+        rf"^\.fcitx5-mozkey-ibg\.{fcitx_pid}\.[0-9]+\.tmp$"
     )
 
     def refresh_in_progress(entries: list[str]) -> bool:
@@ -964,12 +964,12 @@ def validate_consumer_handshake(
             len(temporary) == 1
             and len(entries) in (1, 2)
             and all(
-                name == "fcitx5-mozkey.json" or name in temporary
+                name == "fcitx5-mozkey-ibg.json" or name in temporary
                 for name in entries
             )
         )
 
-    consumer = consumers / "fcitx5-mozkey.json"
+    consumer = consumers / "fcitx5-mozkey-ibg.json"
     payload: bytes | None = None
     for _ in range(50):
         entries = sorted(path.name for path in consumers.iterdir())
@@ -1081,7 +1081,7 @@ def validate_fresh_profile_evidence(
         fail("fresh profile marker does not bind this installed candidate")
     fcitx_profile_sha256 = validate_fcitx_profile(root)
     validate_no_mozkey_config_override(root)
-    legacy_profile = root / ".mozkey"
+    legacy_profile = root / ".mozkey-ibg"
     try:
         legacy_profile.lstat()
     except FileNotFoundError:
@@ -1209,7 +1209,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "gitHead": document["git_head"],
             "attestationSha256": sha256_bytes(attestation_payload),
             "addonSha256": records[
-                "src/bazel-bin/unix/fcitx5/fcitx5-mozkey.so"
+                "src/bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so"
             ]["sha256"],
             "serverSha256": records["src/bazel-bin/server/mozc_server"][
                 "sha256"
@@ -1293,7 +1293,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "gitHead": document["git_head"],
         "attestationSha256": sha256_bytes(attestation_payload),
         "addonSha256": records[
-            "src/bazel-bin/unix/fcitx5/fcitx5-mozkey.so"
+            "src/bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so"
         ]["sha256"],
         "serverSha256": records["src/bazel-bin/server/mozc_server"]["sha256"],
         "fcitxPid": fcitx.pid,

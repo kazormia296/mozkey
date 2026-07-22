@@ -11,7 +11,7 @@ descriptions below to understand the operations before running them.
 
 ```
 git clone https://github.com/kazormia296/mozkey-ibg.git
-cd mozkey\src
+cd mozkey-ibg\src
 
 python build_tools/update_deps.py
 python ..\tools\release\prepare_windows_zenz_runtime.py --arch x64
@@ -58,7 +58,7 @@ Building Mozc on Windows requires the following software.
 
 ```
 git clone https://github.com/kazormia296/mozkey-ibg.git
-cd mozkey\src
+cd mozkey-ibg\src
 ```
 
 Hereafter you can do all the operations without changing directory.
@@ -218,7 +218,7 @@ tag.
     annotated `vX.Y.Z` tag with the same version.
 3.  Push the tag and wait for the **Mozkey Release** workflow to succeed.
 4.  Review the generated draft prerelease and its checksums.
-5.  Download the architecture-specific `Mozkey_vX.Y.Z_*.msi` after publishing
+5.  Download the architecture-specific `MozkeyIbG_vX.Y.Z_*.msi` after publishing
     the release.
 
 See [Releasing Mozkey](releasing.md) for the exact version, ancestry, release

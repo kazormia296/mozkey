@@ -77,7 +77,7 @@ Conversion	Ctrl Shift Space	CycleSegmentation
 ## Configuration path
 
 The OSS Linux Mozkey build creates configuration files under
-`$XDG_CONFIG_HOME/mozkey` (default: `~/.config/mozkey`). If `~/.mozkey`
+`$XDG_CONFIG_HOME/mozkey-ibg` (default: `~/.config/mozkey-ibg`). If `~/.mozkey-ibg`
 already exists, that product-specific legacy directory is used. A system Mozc
 profile is deliberately ignored. Windows, macOS, and official Google Japanese
 Input builds retain their platform-specific paths.
@@ -109,9 +109,9 @@ bazelisk build @com_google_protobuf//:protoc
 ## IBus
 
 Starting from version 2.26.4220, IBus specific configurations are customizable
-in `~/.config/mozkey/ibus_config.textproto` for the OSS Linux Mozkey build.
+in `~/.config/mozkey-ibg/ibus_config.textproto` for the OSS Linux Mozkey build.
 
-The file path may be `~/.mozkey/ibus_config.textproto` if `~/.mozkey` directory
+The file path may be `~/.mozkey-ibg/ibus_config.textproto` if `~/.mozkey-ibg` directory
 already exists.
 
 Here is the default configuration as of version 2.29.5205.

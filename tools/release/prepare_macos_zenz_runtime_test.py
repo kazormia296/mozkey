@@ -239,7 +239,7 @@ class PrepareMacosZenzRuntimeTest(unittest.TestCase):
         self.assertNotIn("inputs.release", test_job)
         self.assertNotIn("\n  cache_deps:\n", workflow)
         self.assertIn(
-            "Mozkey_v${{ needs.prepare_daily_dictionary.outputs."
+            "MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs."
             "release_version }}_macos_arm64.pkg",
             workflow,
         )

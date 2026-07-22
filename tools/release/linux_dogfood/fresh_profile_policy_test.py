@@ -76,7 +76,7 @@ class FreshProfilePolicyTest(unittest.TestCase):
             self.write_marker(root)
             override_directory = root / "fcitx5" / "conf"
             override_directory.mkdir(mode=0o700)
-            override = override_directory / "mozkey.conf"
+            override = override_directory / "mozkey-ibg.conf"
             override.write_bytes(b"[Zenz]\nEnabled=False\n")
             override.chmod(0o600)
             with self.assertRaises(RuntimeError):
@@ -173,7 +173,7 @@ class FreshProfilePolicyTest(unittest.TestCase):
                 )
             state.write_bytes(state_payload)
             state.chmod(0o600)
-            marker = consumers / "fcitx5-mozkey.json"
+            marker = consumers / "fcitx5-mozkey-ibg.json"
             marker.write_bytes(b"{}\n")
             marker.chmod(0o600)
             with self.assertRaises(RuntimeError):
@@ -193,7 +193,7 @@ class FreshProfilePolicyTest(unittest.TestCase):
             and isinstance(node.value, ast.Constant)
             and isinstance(node.value.value, str)
         }
-        self.assertEqual(assignments.get("IBUS_ENGINE"), "mozkey")
+        self.assertEqual(assignments.get("IBUS_ENGINE"), "mozkey-ibg")
 
 
 if __name__ == "__main__":

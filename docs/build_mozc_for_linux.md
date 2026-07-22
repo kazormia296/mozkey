@@ -146,13 +146,13 @@ Here is a table of contents in `mozc.zip` and their actual build target names.
 
 build target                     | installation location
 -------------------------------- | ---------------------
-`//server:mozc_server`           | `/usr/lib/mozkey/mozc_server`
-`//gui/tool:mozc_tool`           | `/usr/lib/mozkey/mozc_tool`
-`//renderer:mozc_renderer`       | `/usr/lib/mozkey/mozc_renderer`
+`//server:mozc_server`           | `/usr/lib/mozkey-ibg/mozc_server`
+`//gui/tool:mozc_tool`           | `/usr/lib/mozkey-ibg/mozc_tool`
+`//renderer:mozc_renderer`       | `/usr/lib/mozkey-ibg/mozc_renderer`
 `//unix/ibus/ibus_mozc`          | `/usr/lib/ibus-mozc/ibus-engine-mozc`
 `//unix/ibus:gen_mozc_xml`       | `/usr/share/ibus/component/mozc.xml`
 `//unix:icons`                   | `/usr/share/ibus-mozc/...`
-`//unix:icons`                   | `/usr/share/icons/mozkey/...`
+`//unix:icons`                   | `/usr/share/icons/mozkey-ibg/...`
 `//unix/emacs:mozc.el`           | `/usr/share/emacs/site-lisp/emacs-mozc/mozc.el`
 `//unix/emacs:mozc_emacs_helper` | `/usr/bin/mozc_emacs_helper`
 

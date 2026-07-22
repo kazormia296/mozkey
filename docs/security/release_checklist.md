@@ -101,7 +101,7 @@ python tools\check_no_network_strings.py --root msi_extract
 ## Installed binary checks
 
 Use the actual install directory. On many Windows systems, Mozc is installed
-under `C:\Program Files (x86)\Mozc`.
+under `C:\Program Files (x86)\MozkeyIbG`.
 
 - [ ] Installed Mozc core runtime binaries do not import prohibited networking DLLs
 
@@ -109,12 +109,12 @@ under `C:\Program Files (x86)\Mozc`.
 cd C:\Users\Makoto\dev\mozc
 
 python tools\check_no_network_imports.py `
-  "C:\Program Files (x86)\Mozc\mozc_server.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_tool.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_renderer.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_broker.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_cache_service.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_tip64.dll"
+  "C:\Program Files (x86)\MozkeyIbG\mozc_server.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_tool.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_renderer.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_broker.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_cache_service.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_tip64.dll"
 ```
 
 - [ ] Installed Mozc core runtime binaries do not contain hard-deny telemetry / updater / crash-upload / usage-statistics markers
@@ -124,12 +124,12 @@ python tools\check_no_network_imports.py `
 cd C:\Users\Makoto\dev\mozc
 
 python tools\check_no_network_strings.py `
-  "C:\Program Files (x86)\Mozc\mozc_server.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_tool.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_renderer.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_broker.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_cache_service.exe" `
-  "C:\Program Files (x86)\Mozc\mozc_tip64.dll"
+  "C:\Program Files (x86)\MozkeyIbG\mozc_server.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_tool.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_renderer.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_broker.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_cache_service.exe" `
+  "C:\Program Files (x86)\MozkeyIbG\mozc_tip64.dll"
 ```
 
 ## Zenz localhost transport checks
@@ -229,13 +229,13 @@ Expected DebugView markers:
 - [ ] Outbound block rules exist for Mozc runtime executables
 
 ```powershell
-Get-NetFirewallRule -DisplayName "Mozc Offline - Block *"
+Get-NetFirewallRule -DisplayName "Mozkey IbG Offline - Block *"
 ```
 
 - [ ] Firewall rules target Mozc executable paths
 
 ```powershell
-Get-NetFirewallRule -DisplayName "Mozc Offline - Block *" |
+Get-NetFirewallRule -DisplayName "Mozkey IbG Offline - Block *" |
   Get-NetFirewallApplicationFilter |
   Select-Object Program
 ```
@@ -243,17 +243,17 @@ Get-NetFirewallRule -DisplayName "Mozc Offline - Block *" |
 Expected programs:
 
 ```text
-C:\Program Files (x86)\Mozc\mozc_server.exe
-C:\Program Files (x86)\Mozc\mozc_tool.exe
-C:\Program Files (x86)\Mozc\mozc_renderer.exe
-C:\Program Files (x86)\Mozc\mozc_broker.exe
-C:\Program Files (x86)\Mozc\mozc_cache_service.exe
+C:\Program Files (x86)\MozkeyIbG\mozc_server.exe
+C:\Program Files (x86)\MozkeyIbG\mozc_tool.exe
+C:\Program Files (x86)\MozkeyIbG\mozc_renderer.exe
+C:\Program Files (x86)\MozkeyIbG\mozc_broker.exe
+C:\Program Files (x86)\MozkeyIbG\mozc_cache_service.exe
 ```
 
 - [ ] Firewall rules are outbound block rules
 
 ```powershell
-Get-NetFirewallRule -DisplayName "Mozc Offline - Block *" |
+Get-NetFirewallRule -DisplayName "Mozkey IbG Offline - Block *" |
   Select-Object DisplayName, Direction, Action, Enabled, Profile
 ```
 
@@ -270,7 +270,7 @@ Profile: Any
 - [ ] Uninstall removes Mozc firewall rules
 
 ```powershell
-Get-NetFirewallRule -DisplayName "Mozc Offline - Block *" -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName "Mozkey IbG Offline - Block *" -ErrorAction SilentlyContinue
 ```
 
 Expected after uninstall: no rules are returned.

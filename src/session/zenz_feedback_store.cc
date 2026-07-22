@@ -142,7 +142,7 @@ bool IsWritableDirectory(const std::wstring& dir) {
   }
 
   const std::wstring probe_path =
-      dir + L"\\mozc_zenz_feedback_probe_" +
+      dir + L"\\mozkey_ibg_zenz_feedback_probe_" +
       std::to_wstring(::GetCurrentProcessId()) + L".tmp";
 
   HANDLE file = ::CreateFileW(
@@ -181,24 +181,24 @@ std::wstring GetFeedbackDirWide() {
     return L"";
   }
 
-  const std::wstring dir = local_low + L"\\Mozc";
+  const std::wstring dir = local_low + L"\\MozkeyIbG";
 
   if (!EnsureDirectoryExists(dir)) {
     StoreDebugOutputWide(
-      std::wstring(L"LocalLow Mozc dir cannot be created ")
+      std::wstring(L"LocalLow MozkeyIbG dir cannot be created ")
           .append(RedactedWidePathStats(L"dir", dir)));
     return L"";
   }
 
   if (!IsWritableDirectory(dir)) {
     StoreDebugOutputWide(
-      std::wstring(L"LocalLow Mozc dir not writable ")
+      std::wstring(L"LocalLow MozkeyIbG dir not writable ")
           .append(RedactedWidePathStats(L"dir", dir)));
     return L"";
   }
 
   StoreDebugOutputWide(
-    std::wstring(L"selected LocalLow Mozc dir ")
+    std::wstring(L"selected LocalLow MozkeyIbG dir ")
         .append(RedactedWidePathStats(L"dir", dir)));
   return dir;
 }
@@ -337,7 +337,8 @@ bool IsWritableDirectory(const std::string& dir) {
   }
 
   const std::string probe_path =
-      dir + "/.mozc_zenz_feedback_probe_" + std::to_string(getpid()) + ".tmp";
+      dir + "/.mozkey-ibg_zenz_feedback_probe_" + std::to_string(getpid()) +
+      ".tmp";
 
   int fd = open(probe_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
   if (fd < 0) {

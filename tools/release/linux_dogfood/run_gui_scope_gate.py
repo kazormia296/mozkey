@@ -38,7 +38,7 @@ EXPECTED_BINARY_NAMES = {
     "qt": "mozkey-qt-scope-probe",
 }
 EXPECTED_PROGRAM_IDENTITIES = {
-    "gtk": "com.miyakey.mozkey.GtkDogfood",
+    "gtk": "com.miyakey.mozkey-ibg.GtkDogfood",
     "qt": "mozkey-qt-scope-probe",
 }
 EXPECTED_SURFACE_TITLES = {
@@ -893,18 +893,18 @@ def load_release_fixture(path: Path) -> tuple[str, str, str]:
 
 def stable_consumer_entries(consumers: Path) -> list[str]:
     temporary_pattern = re.compile(
-        r"^\.fcitx5-mozkey\.[1-9][0-9]*\.[0-9]+\.tmp$"
+        r"^\.fcitx5-mozkey-ibg\.[1-9][0-9]*\.[0-9]+\.tmp$"
     )
     for _ in range(50):
         entries = sorted(path.name for path in consumers.iterdir())
-        if entries == ["fcitx5-mozkey.json"]:
+        if entries == ["fcitx5-mozkey-ibg.json"]:
             return entries
         temporary = [name for name in entries if temporary_pattern.fullmatch(name)]
         if (
             len(temporary) == 1
             and len(entries) in (1, 2)
             and all(
-                name == "fcitx5-mozkey.json" or name in temporary
+                name == "fcitx5-mozkey-ibg.json" or name in temporary
                 for name in entries
             )
         ):
@@ -1945,7 +1945,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
                 "MOZKEY_DOGFOOD_TIMEOUT_SECONDS": str(
                     max(10, min(300, args.timeout_seconds - 5))
                 ),
-                "MOZKEY_DOGFOOD_IM": "mozkey",
+                "MOZKEY_DOGFOOD_IM": "mozkey-ibg",
             }
         )
         environment.pop("MOZKEY_DOGFOOD_PASSWORD", None)
@@ -2231,7 +2231,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, object]:
         "expectedCharacters": len(expected_value),
         "expectedSha256": hashlib.sha256(expected_value.encode("utf-8")).hexdigest(),
         "requestedProgramIdentity": EXPECTED_PROGRAM_IDENTITIES[args.toolkit],
-        "inputMethod": "mozkey",
+        "inputMethod": "mozkey-ibg",
         "probeExecutable": EXPECTED_BINARY_NAMES[args.toolkit],
         "probeSha256": probe_hash,
         "probePid": probe_identity.pid,

@@ -38,8 +38,8 @@ BRANDING = "Mozc"
 BAZEL_TOOLS_PREFIX = "@bazel_tools"
 
 LINUX_MOZC_BROWSER_COMMAND = "/usr/bin/xdg-open"
-LINUX_MOZC_ICONS_DIR = "/usr/share/icons/mozkey"
-LINUX_MOZC_SERVER_DIR = "/usr/lib/mozkey"
+LINUX_MOZC_ICONS_DIR = "/usr/share/icons/mozkey-ibg"
+LINUX_MOZC_SERVER_DIR = "/usr/lib/mozkey-ibg"
 LINUX_MOZC_DOCUMENT_DIR = LINUX_MOZC_SERVER_DIR + "/documents"
 IBUS_COMPONENT_DIR = "/usr/share/ibus/component"
 IBUS_MOZC_INSTALL_DIR = "/usr/share/ibus-mozc"
@@ -48,7 +48,8 @@ IBUS_MOZC_PATH = "/usr/lib/ibus-mozc/ibus-engine-mozc"
 EMACS_MOZC_CLIENT_DIR = "/usr/share/emacs/site-lisp/emacs-mozc"
 EMACS_MOZC_HELPER_DIR = "/usr/bin"
 
-MACOS_BUNDLE_ID_PREFIX = "org.mozc.inputmethod.Japanese"
+MOZKEY_IBG_PRODUCT_PREFIX = "MozkeyIbG"
+MACOS_BUNDLE_ID_PREFIX = "io.github.kazormia296.mozkey-ibg.inputmethod.Japanese"
 MACOS_MIN_OS_VER = "12.0"
 
 # identity for codesign. The value passed to the --sign option of the codesign command.

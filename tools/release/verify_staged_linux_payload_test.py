@@ -12,11 +12,11 @@ class VerifyStagedLinuxPayloadTest(unittest.TestCase):
         expected = root / "expected"
         actual = root / "actual"
         for tree in (expected, actual):
-            (tree / "lib/mozkey").mkdir(parents=True)
-            server = tree / "lib/mozkey/llama-server"
+            (tree / "lib/mozkey-ibg").mkdir(parents=True)
+            server = tree / "lib/mozkey-ibg/llama-server"
             server.write_bytes(b"runtime\n")
             server.chmod(0o755)
-            (tree / "runtime-link").symlink_to("lib/mozkey/llama-server")
+            (tree / "runtime-link").symlink_to("lib/mozkey-ibg/llama-server")
         return expected, actual
 
     def test_accepts_identical_regular_files_modes_and_links(self) -> None:
@@ -27,7 +27,7 @@ class VerifyStagedLinuxPayloadTest(unittest.TestCase):
     def test_rejects_content_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             expected, actual = self._trees(Path(temporary))
-            (actual / "lib/mozkey/llama-server").write_bytes(b"stripped\n")
+            (actual / "lib/mozkey-ibg/llama-server").write_bytes(b"stripped\n")
             with self.assertRaisesRegex(
                 target.PayloadError, "package_payload_mismatch"
             ):
@@ -36,7 +36,7 @@ class VerifyStagedLinuxPayloadTest(unittest.TestCase):
     def test_rejects_mode_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             expected, actual = self._trees(Path(temporary))
-            (actual / "lib/mozkey/llama-server").chmod(0o644)
+            (actual / "lib/mozkey-ibg/llama-server").chmod(0o644)
             with self.assertRaisesRegex(
                 target.PayloadError, "package_payload_mismatch"
             ):

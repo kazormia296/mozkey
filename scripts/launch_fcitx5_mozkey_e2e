@@ -69,27 +69,27 @@ script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 PREFIX=/usr
 DESTDIR=
 validate_mozkey_install_environment || die "invalid Mozkey install layout"
-addon_record=/usr/share/mozkey/fcitx5-addon-dir
+addon_record=/usr/share/mozkey-ibg/fcitx5-addon-dir
 require_regular_file "${addon_record}"
 IFS= read -r addon_dir < "${addon_record}"
 validate_fcitx5_addon_dir "${addon_dir}" ||
   die "installed Fcitx5 addon path record is invalid"
-require_regular_file "${addon_dir}/fcitx5-mozkey.so"
-require_regular_file /usr/lib/mozkey/mozc_server
-require_regular_file /usr/share/fcitx5/addon/mozkey.conf
-require_regular_file /usr/share/fcitx5/inputmethod/mozkey.conf
-[ -x /usr/lib/mozkey/mozc_server ] ||
-  die "installed Mozkey server is not executable: /usr/lib/mozkey/mozc_server"
-grep -qx 'Name=Mozkey IbG' /usr/share/fcitx5/addon/mozkey.conf ||
+require_regular_file "${addon_dir}/fcitx5-mozkey-ibg.so"
+require_regular_file /usr/lib/mozkey-ibg/mozc_server
+require_regular_file /usr/share/fcitx5/addon/mozkey-ibg.conf
+require_regular_file /usr/share/fcitx5/inputmethod/mozkey-ibg.conf
+[ -x /usr/lib/mozkey-ibg/mozc_server ] ||
+  die "installed Mozkey server is not executable: /usr/lib/mozkey-ibg/mozc_server"
+grep -qx 'Name=Mozkey IbG' /usr/share/fcitx5/addon/mozkey-ibg.conf ||
   die "installed addon metadata does not expose the Mozkey IbG display name"
-grep -qx 'Name=Mozkey IbG' /usr/share/fcitx5/inputmethod/mozkey.conf ||
+grep -qx 'Name=Mozkey IbG' /usr/share/fcitx5/inputmethod/mozkey-ibg.conf ||
   die "installed input method metadata does not expose the Mozkey IbG display name"
-grep -qx 'Library=fcitx5-mozkey' /usr/share/fcitx5/addon/mozkey.conf ||
-  die "installed addon metadata does not select fcitx5-mozkey"
-grep -qx 'Addon=mozkey' /usr/share/fcitx5/inputmethod/mozkey.conf ||
-  die "installed input method metadata does not select the mozkey addon"
+grep -qx 'Library=fcitx5-mozkey-ibg' /usr/share/fcitx5/addon/mozkey-ibg.conf ||
+  die "installed addon metadata does not select fcitx5-mozkey-ibg"
+grep -qx 'Addon=mozkey-ibg' /usr/share/fcitx5/inputmethod/mozkey-ibg.conf ||
+  die "installed input method metadata does not select the mozkey-ibg addon"
 
-profile_fixture="${script_directory}/fixtures/fcitx5-mozkey-e2e/profile"
+profile_fixture="${script_directory}/fixtures/fcitx5-mozkey-ibg-e2e/profile"
 require_regular_file "${profile_fixture}"
 
 fcitx_config_directory="${XDG_CONFIG_HOME}/fcitx5"
@@ -113,11 +113,11 @@ export XDG_DATA_DIRS XDG_CONFIG_DIRS
 # Never attach the isolated process to the user's graphical or D-Bus session.
 # `-k` keeps the foreground instance alive without a display.  Keep Fcitx's
 # normal infrastructure (including its D-Bus module), but disable the legacy
-# competing IME addons and force-enable `mozkey`.  The private profile also
+# competing IME addons and force-enable `mozkey-ibg`.  The private profile also
 # selects Mozkey as DefaultIM, making MozcEngine construction and its startup
 # heartbeat deterministic.
 unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID DBUS_SESSION_BUS_WINDOWID
 unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET XAUTHORITY
 
 exec "${dbus_run_session}" -- "${fcitx5_binary}" -D -k \
-  --disable mozc,grimodex --enable mozkey --verbose default=4
+  --disable mozc,grimodex --enable mozkey-ibg --verbose default=4

@@ -57,7 +57,7 @@
     http://msdn.microsoft.com/en-us/library/aa367850.aspx.
     So we change the product ID for every new version.
   -->
-  <Package Name="Mozkey IbG" Language="1041" Codepage="932" Version="$(var.MozcVersion)" Manufacturer="koyasi777" UpgradeCode="$(var.UpgradeCode)" InstallerVersion="500">
+  <Package Name="Mozkey IbG" Language="1041" Codepage="932" Version="$(var.MozcVersion)" Manufacturer="Grimodex" UpgradeCode="$(var.UpgradeCode)" InstallerVersion="500">
     <SummaryInformation Keywords="Installer" Description="Mozkey IbG インストーラー" Manufacturer="koyasi777" Codepage="932" />
 
     <!--
@@ -167,7 +167,6 @@
         <ComponentRef Id="QtWidgetsdDll" />
         <ComponentRef Id="QWindowsdDll" />
       <?endif?>
-      <ComponentRef Id="SysProcs" />
       <ComponentRef Id="PrelaunchProcesses" />
       <ComponentRef Id="CreditsEn" />
 
@@ -218,7 +217,7 @@
       <!-- This action invoked only when removal of the old product failed. -->
       <Custom Action="UnregisterTIPRollback64" After="RestoreUserIMEEnvironment" Condition="(REMOVE=&quot;ALL&quot;) AND UPGRADINGPRODUCTCODE AND (VersionNT64)" />
       <Custom Action="UnregisterTIP64" After="UnregisterTIPRollback64" Condition="(REMOVE=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE) AND (VersionNT64)" />
-      <!-- Keep consumer discovery across upgrades and failed/rolled-back removals. The checked commit action stops and proves the exact installed server absent before removing tsf-mozkey. -->
+      <!-- Keep consumer discovery across upgrades and failed/rolled-back removals. The checked commit action stops and proves the exact installed server absent before removing tsf-mozkey-ibg. -->
       <Custom Action="UnregisterGrimodexConsumer" After="UnregisterTIP64" Condition="(REMOVE=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE)" />
       <Custom Action="RemoveMozcFirewallRules" After="UnregisterGrimodexConsumer" Condition="(REMOVE=&quot;ALL&quot;)" />
       <!--
@@ -263,7 +262,7 @@
     </InstallExecuteSequence>
 
     <StandardDirectory Id="ProgramFilesFolder">
-      <Directory Id="MozcDir" Name="Mozc">
+      <Directory Id="MozkeyIbGDir" Name="MozkeyIbG">
         <Component Id="MozcConverter">
           <File Id="mozc_server.exe" Name="mozc_server.exe" DiskId="1" Checksum="yes" Source="$(var.MozcServer64Path)" Vital="yes" KeyPath="yes" />
         </Component>
@@ -283,7 +282,7 @@
             |mozc::kMozcCacheServiceName| defined in base/const.h.
             TODO(yukawa): Share these parameters. http://b/2357270
           -->
-          <ServiceInstall Id="MozcCacheService" Name="MozcCacheService" DisplayName="@[#mozc_cache_service.exe],-100" Description="@[#mozc_cache_service.exe],-101" Type="ownProcess" Start="auto" ErrorControl="normal" />
+          <ServiceInstall Id="MozcCacheService" Name="MozkeyIbGCacheService" DisplayName="@[#mozc_cache_service.exe],-100" Description="@[#mozc_cache_service.exe],-101" Type="ownProcess" Start="auto" ErrorControl="normal" />
           <!--
             The following entry which stops our cache service both on
             installation and uninstallation should be the first entry in
@@ -291,7 +290,7 @@
             recognise that the specified service will be stopped during the
             instalaltion.  See http://b/2440272 for details.
           -->
-          <ServiceControl Id="StopMozcCacheService" Name="MozcCacheService" Stop="both" Remove="uninstall" Wait="yes" />
+          <ServiceControl Id="StopMozcCacheService" Name="MozkeyIbGCacheService" Stop="both" Remove="uninstall" Wait="yes" />
         </Component>
         <Component Id="MozcTIP32" Permanent="no" Bitness="always32">
           <File Id="mozc_tip32.dll" Name="mozc_tip32.dll" DiskId="1" Checksum="yes" Source="$(var.MozcTIP32Path)" Vital="yes" />
@@ -426,21 +425,11 @@
     </StandardDirectory>
 
     <!--
-      Write registry keys to make sure mozc_server.exe and
-      mozc_renderer.exe exit when a user logoff via remote desctop
-      connection.
-    -->
-    <Component Id="SysProcs" Directory="TARGETDIR">
-      <RegistryValue Id="SysProcsMozcConverter" Root="HKLM" Key="SYSTEM\CurrentControlSet\Control\Terminal Server\SysProcs" Name="mozc_server.exe" Value="0" Action="write" Type="integer" />
-      <RegistryValue Id="SysProcsMozcRenderer" Root="HKLM" Key="SYSTEM\CurrentControlSet\Control\Terminal Server\SysProcs" Name="mozc_renderer.exe" Value="0" Action="write" Type="integer" />
-    </Component>
-
-    <!--
       Write a registry key to launch mozc_server.exe and
       mozc_renderer.exe automatically after user logon.
     -->
     <Component Id="PrelaunchProcesses" Directory="TARGETDIR">
-      <RegistryValue Id="RunBroker" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Mozc Prelauncher" Action="write" Type="string" Value="&quot;[MozcDir]mozc_broker.exe&quot; --mode=prelaunch_processes" />
+      <RegistryValue Id="RunBroker" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Mozkey IbG Prelauncher" Action="write" Type="string" Value="&quot;[MozkeyIbGDir]mozc_broker.exe&quot; --mode=prelaunch_processes" />
     </Component>
   </Package>
 </Wix>

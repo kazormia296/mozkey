@@ -34,7 +34,7 @@ def consumer_payload(
             "profile": True,
             "zenzai_v3_conditions": True,
         },
-        "consumer_id": "fcitx5-mozkey",
+        "consumer_id": "fcitx5-mozkey-ibg",
         "format_version": 1,
         "last_seen": timestamp,
         "name": "Mozkey for Grimodex on Linux",
@@ -128,7 +128,7 @@ class ConsumerFixturePolicyTest(unittest.TestCase):
             root.chmod(0o700)
             consumers = root / "consumers"
             consumers.mkdir(mode=0o700)
-            marker = consumers / "fcitx5-mozkey.json"
+            marker = consumers / "fcitx5-mozkey-ibg.json"
             marker.write_bytes(consumer_payload(timestamp, version=version))
             marker.chmod(0o600)
             ticks_per_second = os.sysconf("SC_CLK_TCK")
@@ -160,10 +160,10 @@ class ConsumerFixturePolicyTest(unittest.TestCase):
             root.chmod(0o700)
             consumers = root / "consumers"
             consumers.mkdir(mode=0o700)
-            marker = consumers / "fcitx5-mozkey.json"
+            marker = consumers / "fcitx5-mozkey-ibg.json"
             marker.write_bytes(consumer_payload(timestamp, version=version))
             marker.chmod(0o600)
-            transient = consumers / f".fcitx5-mozkey.{pid}.0.tmp"
+            transient = consumers / f".fcitx5-mozkey-ibg.{pid}.0.tmp"
             transient.write_bytes(b"pending")
             transient.chmod(0o600)
 

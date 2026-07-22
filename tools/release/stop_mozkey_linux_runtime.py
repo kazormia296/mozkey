@@ -25,10 +25,10 @@ from pathlib import Path
 from typing import Callable, Iterable, Protocol, Sequence
 
 
-MOZKEY_SERVER = "/usr/lib/mozkey/mozc_server"
-MOZKEY_SCORER = "/usr/lib/mozkey/mozc_zenz_scorer"
+MOZKEY_SERVER = "/usr/lib/mozkey-ibg/mozc_server"
+MOZKEY_SCORER = "/usr/lib/mozkey-ibg/mozc_zenz_scorer"
 LLAMA_SERVER = "/usr/bin/llama-server"
-BUNDLED_LLAMA_SERVER = "/usr/lib/mozkey/llama-server"
+BUNDLED_LLAMA_SERVER = "/usr/lib/mozkey-ibg/llama-server"
 LLAMA_SERVERS = frozenset({LLAMA_SERVER, BUNDLED_LLAMA_SERVER})
 RUNTIME_ROOTS = frozenset({MOZKEY_SERVER, MOZKEY_SCORER})
 # Linux TASK_COMM_LEN includes the trailing NUL, so an executable basename is

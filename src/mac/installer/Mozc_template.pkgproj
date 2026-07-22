@@ -57,7 +57,7 @@
 											<key>GID</key>
 											<integer>0</integer>
 											<key>PATH</key>
-											<string>${BUILD_DIR}/UninstallMozc.app</string>
+											<string>${BUILD_DIR}/UninstallMozkeyIbG.app</string>
 											<key>PATH_TYPE</key>
 											<integer>0</integer>
 											<key>PERMISSIONS</key>
@@ -71,7 +71,7 @@
 									<key>GID</key>
 									<integer>0</integer>
 									<key>PATH</key>
-									<string>Mozc</string>
+									<string>MozkeyIbG</string>
 									<key>PATH_TYPE</key>
 									<integer>0</integer>
 									<key>PERMISSIONS</key>
@@ -187,7 +187,7 @@
 											<key>GID</key>
 											<integer>0</integer>
 											<key>PATH</key>
-											<string>${BUILD_DIR}/Mozc.app</string>
+											<string>${BUILD_DIR}/MozkeyIbG.app</string>
 											<key>PATH_TYPE</key>
 											<integer>0</integer>
 											<key>PERMISSIONS</key>
@@ -236,7 +236,7 @@
 											<key>GID</key>
 											<integer>0</integer>
 											<key>PATH</key>
-											<string>${LAUNCH_AGENT_DIR}/org.mozc.inputmethod.Japanese.Converter.plist</string>
+											<string>${LAUNCH_AGENT_DIR}/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Converter.plist</string>
 											<key>PATH_TYPE</key>
 											<integer>0</integer>
 											<key>PERMISSIONS</key>
@@ -252,7 +252,7 @@
 											<key>GID</key>
 											<integer>0</integer>
 											<key>PATH</key>
-											<string>${LAUNCH_AGENT_DIR}/org.mozc.inputmethod.Japanese.Renderer.plist</string>
+											<string>${LAUNCH_AGENT_DIR}/io.github.kazormia296.mozkey-ibg.inputmethod.Japanese.Renderer.plist</string>
 											<key>PATH_TYPE</key>
 											<integer>0</integer>
 											<key>PERMISSIONS</key>
@@ -578,7 +578,7 @@
 				<key>CONCLUSION_ACTION</key>
 				<integer>0</integer>
 				<key>IDENTIFIER</key>
-				<string>org.mozc.pkg.JapaneseInput</string>
+				<string>io.github.kazormia296.mozkey-ibg.pkg.JapaneseInput</string>
 				<key>NAME</key>
 				<string>Mozkey IbG</string>
 				<key>OVERWRITE_PERMISSIONS</key>

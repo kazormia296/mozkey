@@ -80,7 +80,7 @@ class ScopedUserProfileForZenzFeedbackCandidateRewriterTest {
 
     const std::wstring app_data_dir = JoinPath(profile_dir_, L"AppData");
     const std::wstring local_low_dir = JoinPath(app_data_dir, L"LocalLow");
-    const std::wstring mozc_dir = JoinPath(local_low_dir, L"Mozc");
+    const std::wstring mozc_dir = JoinPath(local_low_dir, L"MozkeyIbG");
     const std::wstring feedback_path = JoinPath(mozc_dir, L"zenz_feedback.tsv");
 
     ::DeleteFileW(feedback_path.c_str());

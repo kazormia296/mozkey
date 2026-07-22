@@ -220,7 +220,7 @@ def _probe_directories() -> Iterator[tuple[Path, Path]]:
             _require_private_directory(probe_root)
             _require_private_directory(stage)
             _require_private_directory(home)
-            _require_short_socket_path(home / ".mozkey_zenz_scorer_pipe")
+            _require_short_socket_path(home / ".mozkey-ibg_zenz_scorer_pipe")
             yield stage, home
     except ProbeFailure:
         raise
@@ -248,9 +248,9 @@ def _require_staged_regular(
 def _validate_staged_runtime(
     stage: Path, *, bundled_server: bool = False
 ) -> tuple[Path, Path, Path]:
-    scorer = stage / "usr/lib/mozkey/mozc_zenz_scorer"
-    model = stage / "usr/lib/mozkey/models" / MODEL_NAME
-    llama_link = stage / "usr/lib/mozkey/llama-server"
+    scorer = stage / "usr/lib/mozkey-ibg/mozc_zenz_scorer"
+    model = stage / "usr/lib/mozkey-ibg/models" / MODEL_NAME
+    llama_link = stage / "usr/lib/mozkey-ibg/llama-server"
 
     _require_staged_regular(scorer, mode=0o755, executable=True, nonempty=True)
     _require_staged_regular(model, mode=0o644, executable=False, nonempty=True)
@@ -894,8 +894,8 @@ def run_probe(
         output = _BoundedOutput(scorer.stdout)
         output.start()
         runtime: LlamaRuntime | None = None
-        socket_path = home / ".mozkey_zenz_scorer_pipe"
-        lock_path = home / ".mozkey_zenz_scorer.lock"
+        socket_path = home / ".mozkey-ibg_zenz_scorer_pipe"
+        lock_path = home / ".mozkey-ibg_zenz_scorer.lock"
         deadline = time.monotonic() + timeout_seconds
         failure: BaseException | None = None
         try:

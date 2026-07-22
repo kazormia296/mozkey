@@ -15,8 +15,8 @@ from tools.release import probe_zenz_runtime as probe
 
 class ProbeZenzRuntimeTest(unittest.TestCase):
     def test_accepts_exact_release_llama_arguments(self):
-        link = Path("/private/stage/usr/lib/mozkey/llama-server")
-        model = Path("/private/stage/usr/lib/mozkey/models") / probe.MODEL_NAME
+        link = Path("/private/stage/usr/lib/mozkey-ibg/llama-server")
+        model = Path("/private/stage/usr/lib/mozkey-ibg/models") / probe.MODEL_NAME
         arguments = [
             str(link),
             "-m",
@@ -48,8 +48,8 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
         self.assertEqual(device_key, key)
 
     def test_rejects_non_loopback_or_malformed_llama_arguments(self):
-        link = Path("/private/stage/usr/lib/mozkey/llama-server")
-        model = Path("/private/stage/usr/lib/mozkey/models") / probe.MODEL_NAME
+        link = Path("/private/stage/usr/lib/mozkey-ibg/llama-server")
+        model = Path("/private/stage/usr/lib/mozkey-ibg/models") / probe.MODEL_NAME
         base = [
             str(link),
             "-m",
@@ -90,7 +90,7 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
         with self.assertRaisesRegex(probe.ProbeFailure, "llama_arguments_invalid"):
             probe._inspect_llama_argv(
                 base,
-                expected_link=Path("/private/stage/usr/lib/mozkey/other-server"),
+                expected_link=Path("/private/stage/usr/lib/mozkey-ibg/other-server"),
                 expected_model=model,
             )
 
@@ -216,7 +216,7 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
     def test_staged_runtime_rejects_wrong_modes(self):
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary)
-            root = stage / "usr/lib/mozkey"
+            root = stage / "usr/lib/mozkey-ibg"
             model = root / "models" / probe.MODEL_NAME
             model.parent.mkdir(parents=True)
             scorer = root / "mozc_zenz_scorer"
@@ -231,7 +231,7 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
     def test_staged_runtime_accepts_verified_bundled_server(self):
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary)
-            root = stage / "usr/lib/mozkey"
+            root = stage / "usr/lib/mozkey-ibg"
             model = root / "models" / probe.MODEL_NAME
             model.parent.mkdir(parents=True)
             scorer = root / "mozc_zenz_scorer"
@@ -272,7 +272,7 @@ class ProbeZenzRuntimeTest(unittest.TestCase):
                     self.assertEqual(stage.parent.parent, long_tmp)
                     self.assertEqual(home.parent, probe.SHORT_RUNTIME_PARENT)
                     self.assertLessEqual(
-                        len(os.fsencode(home / ".mozkey_zenz_scorer_pipe")),
+                        len(os.fsencode(home / ".mozkey-ibg_zenz_scorer_pipe")),
                         probe.MAX_UNIX_SOCKET_PATH_BYTES,
                     )
                     self.assertEqual(stage.stat().st_mode & 0o777, 0o700)

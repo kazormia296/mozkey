@@ -24,7 +24,7 @@ typedef ATL::CWinTraits<WS_POPUP,
 class RubyWindow
     : public ATL::CWindowImpl<RubyWindow, ATL::CWindow, RubyWindowTraits> {
  public:
-  DECLARE_WND_CLASS_EX(L"MozcRubyWindow", CS_SAVEBITS, COLOR_WINDOW);
+  DECLARE_WND_CLASS_EX(L"MozkeyIbGRubyWindow", CS_SAVEBITS, COLOR_WINDOW);
 
   RubyWindow();
   RubyWindow(const RubyWindow&) = delete;

@@ -1,10 +1,10 @@
 [Groups/0]
 Name=Mozkey E2E
 Default Layout=us
-DefaultIM=mozkey
+DefaultIM=mozkey-ibg
 
 [Groups/0/Items/0]
-Name=mozkey
+Name=mozkey-ibg
 Layout=
 
 [GroupOrder]

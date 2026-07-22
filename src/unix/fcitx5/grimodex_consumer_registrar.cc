@@ -233,7 +233,7 @@ std::string Handshake(absl::string_view version,
   return absl::StrCat(
       R"json({"capabilities":{"application_scoping":true,"dynamic_dictionary":true,"profile":true,"zenzai_v3_conditions":)json",
       zenzai_v3_conditions ? "true" : "false",
-      R"json(},"consumer_id":"fcitx5-mozkey","format_version":1,"last_seen":")json",
+      R"json(},"consumer_id":"fcitx5-mozkey-ibg","format_version":1,"last_seen":")json",
       timestamp,
       R"json(","name":"Mozkey IbG for Grimodex on Linux","platform":"linux","version":")json",
       version, R"json("})json",
@@ -261,7 +261,7 @@ absl::Status AtomicReplace(int directory_fd, absl::string_view bytes) {
   std::string temporary_name;
   UniqueFd temporary;
   for (int attempt = 0; attempt < kCreateAttempts; ++attempt) {
-    temporary_name = absl::StrCat(".fcitx5-mozkey.", getpid(), ".",
+    temporary_name = absl::StrCat(".fcitx5-mozkey-ibg.", getpid(), ".",
                                   nonce.fetch_add(1), ".tmp");
     temporary = UniqueFd(openat(directory_fd, temporary_name.c_str(),
                                 O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC |
@@ -302,7 +302,7 @@ absl::Status AtomicReplace(int directory_fd, absl::string_view bytes) {
     return status;
   }
   if (renameat(directory_fd, temporary_name.c_str(), directory_fd,
-               "fcitx5-mozkey.json") != 0) {
+               "fcitx5-mozkey-ibg.json") != 0) {
     const absl::Status status =
         SystemError("replace Grimodex consumer handshake", errno);
     cleanup();
@@ -404,7 +404,7 @@ absl::Status GrimodexConsumerRegistrar::Unregister() const {
       !status.ok()) {
     return status;
   }
-  if (unlinkat(consumers.get(), "fcitx5-mozkey.json", 0) != 0 &&
+  if (unlinkat(consumers.get(), "fcitx5-mozkey-ibg.json", 0) != 0 &&
       errno != ENOENT) {
     return SystemError("remove Grimodex Mozkey consumer handshake", errno);
   }

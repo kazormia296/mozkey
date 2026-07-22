@@ -177,22 +177,22 @@ jobs:
           fi
 
           expected_product_assets=(
-            "Mozkey_v${RELEASE_VERSION}_arm64.msi"
-            "Mozkey_v${RELEASE_VERSION}_macos_arm64.pkg"
-            "Mozkey_v${RELEASE_VERSION}_universal.msi"
-            "Mozkey_v${RELEASE_VERSION}_x64.msi"
+            "MozkeyIbG_v${RELEASE_VERSION}_arm64.msi"
+            "MozkeyIbG_v${RELEASE_VERSION}_macos_arm64.pkg"
+            "MozkeyIbG_v${RELEASE_VERSION}_universal.msi"
+            "MozkeyIbG_v${RELEASE_VERSION}_x64.msi"
             "archlinux-build-packages.txt"
             "fedora-build-packages.txt"
             "mozkey-ibg-${RELEASE_VERSION}-1.x86_64.rpm"
             "mozkey-ibg_${RELEASE_VERSION}_amd64.deb"
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.build-attestation.json"
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.spdx.json"
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz"
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz.sha256"
-            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.build-attestation.json"
-            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.spdx.json"
-            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.build-attestation.json"
-            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.spdx.json"
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.build-attestation.json"
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.spdx.json"
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz"
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz.sha256"
+            "mozkey-ibg-v${RELEASE_VERSION}-fedora-x86_64.build-attestation.json"
+            "mozkey-ibg-v${RELEASE_VERSION}-fedora-x86_64.spdx.json"
+            "mozkey-ibg-v${RELEASE_VERSION}-ubuntu-x86_64.build-attestation.json"
+            "mozkey-ibg-v${RELEASE_VERSION}-ubuntu-x86_64.spdx.json"
             "ubuntu-build-packages.txt"
           )
           printf '%s\n' "${expected_product_assets[@]}" \
@@ -276,7 +276,7 @@ jobs:
             require_mutable_draft
             gh release edit "$RELEASE_TAG" \
               --prerelease \
-              --title "Mozkey v${RELEASE_VERSION}" \
+              --title "Mozkey IbG v${RELEASE_VERSION}" \
               --notes-file "$RELEASE_NOTES_FILE"
           elif grep -q 'HTTP 404' "$RUNNER_TEMP/current-release.err"; then
             release_id="$(find_draft_release_id)"
@@ -285,7 +285,7 @@ jobs:
                 --verify-tag \
                 --draft \
                 --prerelease \
-                --title "Mozkey v${RELEASE_VERSION}" \
+                --title "Mozkey IbG v${RELEASE_VERSION}" \
                 --notes-file "$RELEASE_NOTES_FILE"
               release_id="$(find_draft_release_id)"
             fi
@@ -296,7 +296,7 @@ jobs:
             require_mutable_draft
             gh release edit "$RELEASE_TAG" \
               --prerelease \
-              --title "Mozkey v${RELEASE_VERSION}" \
+              --title "Mozkey IbG v${RELEASE_VERSION}" \
               --notes-file "$RELEASE_NOTES_FILE"
           else
             cat "$RUNNER_TEMP/current-release.err" >&2

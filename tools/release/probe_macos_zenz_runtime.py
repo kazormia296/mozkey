@@ -174,7 +174,7 @@ def _require_regular(
 def _find_layout(expanded: Path) -> RuntimeLayout:
     scorers = list(
         expanded.glob(
-            f"**/*Converter.app/Contents/Resources/{SCORER_NAME}"
+            f"**/MozkeyIbGConverter.app/Contents/Resources/{SCORER_NAME}"
         )
     )
     if len(scorers) != 1:
@@ -534,8 +534,8 @@ def _probe_live_runtime(layout: RuntimeLayout, timeout_seconds: float) -> None:
         except OSError as error:
             raise ProbeFailure("scorer_launch_failed") from error
 
-        socket_path = home / ".mozc_zenz_scorer_pipe"
-        lock_path = home / ".mozc_zenz_scorer.lock"
+        socket_path = home / ".mozkey-ibg_zenz_scorer_pipe"
+        lock_path = home / ".mozkey-ibg_zenz_scorer.lock"
         deadline = time.monotonic() + timeout_seconds
         failure: BaseException | None = None
         wire_failures = {failure_class: 0 for failure_class in WireFailureClass}

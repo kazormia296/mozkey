@@ -91,9 +91,9 @@ case "${source_date_epoch}" in
 esac
 export SOURCE_DATE_EPOCH="${source_date_epoch}"
 
-artifact_base="mozkey-v${version}-${distro}-${architecture}"
+artifact_base="mozkey-ibg-v${version}-${distro}-${architecture}"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/mozkey-linux-package.XXXXXX")"
-publish_dir="$(mktemp -d "${output_dir}/.mozkey-linux-publish.XXXXXX")"
+publish_dir="$(mktemp -d "${output_dir}/.mozkey-ibg-linux-publish.XXXXXX")"
 cleanup_package() {
   rm -rf "${stage_dir}" "${publish_dir}"
 }
@@ -107,11 +107,11 @@ trap cleanup_package EXIT HUP INT TERM
 )
 
 install -D -m 644 "${build_attestation}" \
-  "${stage_dir}/usr/share/doc/mozkey/linux-build-attestation.json"
+  "${stage_dir}/usr/share/doc/mozkey-ibg/linux-build-attestation.json"
 install -D -m 644 "${build_packages}" \
-  "${stage_dir}/usr/share/doc/mozkey/archlinux-build-packages.txt"
+  "${stage_dir}/usr/share/doc/mozkey-ibg/archlinux-build-packages.txt"
 
-sbom="${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json"
+sbom="${stage_dir}/usr/share/doc/mozkey-ibg/mozkey-linux.spdx.json"
 python3 "${repository_root}/tools/release/generate_linux_spdx_sbom.py" \
   --root "${stage_dir}" \
   --output "${sbom}" \

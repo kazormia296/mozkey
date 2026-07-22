@@ -35,7 +35,7 @@ load(
     "mozc_win32_cc_prod_binary",
     "mozc_win32_resource_from_template",
 )
-load("//:config.bzl", "BRANDING")
+load("//:config.bzl", "BRANDING", "MOZKEY_IBG_PRODUCT_PREFIX")
 load(
     "//bazel:qt.bzl",
     "mozc_cc_qt_binary",
@@ -150,12 +150,20 @@ mozc_win32_cc_prod_binary(
 
 mozc_macos_qt_application(
     name = "mozc_tool_macos",
-    bundle_name = "MozcTool",
+    bundle_name = mozc_select(
+        default = "GoogleJapaneseInputTool",
+        oss = MOZKEY_IBG_PRODUCT_PREFIX + "Tool",
+        prod = "GoogleJapaneseInputTool",
+    ),
     deps = [":mozc_tool_main_lib"],
 )
 
 mozc_macos_qt_application(
     name = "mozc_prelauncher_macos",
-    bundle_name = BRANDING + "Prelauncher",
+    bundle_name = mozc_select(
+        default = "GoogleJapaneseInputPrelauncher",
+        oss = MOZKEY_IBG_PRODUCT_PREFIX + "Prelauncher",
+        prod = "GoogleJapaneseInputPrelauncher",
+    ),
     deps = [":mozc_tool_main_lib"],
 )

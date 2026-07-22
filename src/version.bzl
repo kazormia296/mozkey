@@ -43,8 +43,8 @@ REVISION = 100
 # User-facing Mozkey release version.  This is shown in the About dialog and
 # should match the GitHub release tag without the leading "v".
 MOZKEY_RELEASE_VERSION_MAJOR = 0
-MOZKEY_RELEASE_VERSION_MINOR = 9
-MOZKEY_RELEASE_VERSION_PATCH = 5
+MOZKEY_RELEASE_VERSION_MINOR = 10
+MOZKEY_RELEASE_VERSION_PATCH = 0
 
 # LINT.IfChange
 DEFAULT_BUILD_LABEL_MACOS = "%d.%d.%d.%d" % (MAJOR, MINOR, BUILD, REVISION + 1)

@@ -8,8 +8,8 @@ This product includes third-party software and model files.
 - Source: Hugging Face
 - Original model file: ggml-model-Q5_K_M.gguf
 - Windows included file: models/zenz-v3.2-small-Q5_K_M.gguf
-- Linux included file: /usr/lib/mozkey/models/zenz-v3.2-small-Q5_K_M.gguf
-- macOS included file: MozcConverter.app/Contents/Resources/models/zenz-v3.2-small-Q5_K_M.gguf
+- Linux included file: /usr/lib/mozkey-ibg/models/zenz-v3.2-small-Q5_K_M.gguf
+- macOS included file: MozkeyIbGConverter.app/Contents/Resources/models/zenz-v3.2-small-Q5_K_M.gguf
 - License: Apache License 2.0
 - Source repository URL: https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf
 - Source file URL: https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf/blob/c67e03e07d215c869f591b274c1631170d3e11fe/ggml-model-Q5_K_M.gguf

@@ -70,14 +70,14 @@ TEST(GrimodexConsumerRegistrarTest, CreatesPrivateAtomicHandshake) {
 
   const std::string consumers = absl::StrCat(root, "/consumers");
   const std::string destination =
-      absl::StrCat(consumers, "/fcitx5-mozkey.json");
+      absl::StrCat(consumers, "/fcitx5-mozkey-ibg.json");
   EXPECT_EQ(Mode(root), 0700);
   EXPECT_EQ(Mode(consumers), 0700);
   EXPECT_EQ(Mode(destination), 0600);
 
   const google::protobuf::Struct value = ReadJson(destination);
   EXPECT_EQ(value.fields().at("format_version").number_value(), 1);
-  EXPECT_EQ(StringField(value, "consumer_id"), "fcitx5-mozkey");
+  EXPECT_EQ(StringField(value, "consumer_id"), "fcitx5-mozkey-ibg");
   EXPECT_EQ(StringField(value, "name"), "Mozkey IbG for Grimodex on Linux");
   EXPECT_EQ(StringField(value, "version"), "v0.7.7");
   EXPECT_EQ(StringField(value, "platform"), "linux");
@@ -90,7 +90,7 @@ TEST(GrimodexConsumerRegistrarTest, CreatesPrivateAtomicHandshake) {
   EXPECT_TRUE(capabilities.at("application_scoping").bool_value());
 
   EXPECT_EQ(ListEntries(consumers),
-            std::vector<std::string>({"fcitx5-mozkey.json"}));
+            std::vector<std::string>({"fcitx5-mozkey-ibg.json"}));
 }
 
 TEST(GrimodexConsumerRegistrarTest, RefreshReplacesOnlyItsOwnFile) {
@@ -107,7 +107,7 @@ TEST(GrimodexConsumerRegistrarTest, RefreshReplacesOnlyItsOwnFile) {
   EXPECT_TRUE(registrar.Register("v0.7.8", kTimeB).ok());
 
   const std::string destination =
-      absl::StrCat(consumers, "/fcitx5-mozkey.json");
+      absl::StrCat(consumers, "/fcitx5-mozkey-ibg.json");
   const google::protobuf::Struct value = ReadJson(destination);
   EXPECT_EQ(StringField(value, "version"), "v0.7.8");
   EXPECT_EQ(StringField(value, "last_seen"), kTimeB);
@@ -116,7 +116,7 @@ TEST(GrimodexConsumerRegistrarTest, RefreshReplacesOnlyItsOwnFile) {
   EXPECT_EQ(*other_bytes, "other\n");
 
   EXPECT_EQ(ListEntries(consumers),
-            std::vector<std::string>({"fcitx5-mozkey.json",
+            std::vector<std::string>({"fcitx5-mozkey-ibg.json",
                                       "other-ime.json"}));
 }
 
@@ -126,7 +126,7 @@ TEST(GrimodexConsumerRegistrarTest,
   const std::string root = absl::StrCat(temp.path(), "/ime");
   const std::string marker = absl::StrCat(temp.path(), "/mozc_server");
   const std::string destination =
-      absl::StrCat(root, "/consumers/fcitx5-mozkey.json");
+      absl::StrCat(root, "/consumers/fcitx5-mozkey-ibg.json");
   GrimodexConsumerRegistrar registrar(root);
 
   // An addon mapped after package removal must not advertise itself.
@@ -187,7 +187,7 @@ TEST(GrimodexConsumerRegistrarTest, RejectsSymlinkRuntimeMarker) {
   EXPECT_EQ(registrar.RefreshIfInstalled("v0.7.7", kTimeA, marker).code(),
             absl::StatusCode::kFailedPrecondition);
   EXPECT_FALSE(FileUtil::FileExists(
-                   absl::StrCat(root, "/consumers/fcitx5-mozkey.json"))
+                   absl::StrCat(root, "/consumers/fcitx5-mozkey-ibg.json"))
                    .ok());
 }
 
@@ -213,7 +213,7 @@ TEST(GrimodexConsumerRegistrarTest, RejectsSymlinkedSecurityBoundary) {
   GrimodexConsumerRegistrar registrar(root);
   EXPECT_FALSE(registrar.Register("v0.7.7", kTimeA).ok());
   EXPECT_FALSE(FileUtil::FileExists(
-                   absl::StrCat(target, "/consumers/fcitx5-mozkey.json"))
+                   absl::StrCat(target, "/consumers/fcitx5-mozkey-ibg.json"))
                    .ok());
 }
 
@@ -227,7 +227,7 @@ TEST(GrimodexConsumerRegistrarTest, RejectsSymlinkedAncestorComponent) {
   GrimodexConsumerRegistrar registrar(absl::StrCat(alias, "/ime"));
   EXPECT_FALSE(registrar.Register("v0.7.7", kTimeA).ok());
   EXPECT_FALSE(FileUtil::FileExists(
-                   absl::StrCat(target, "/ime/consumers/fcitx5-mozkey.json"))
+                   absl::StrCat(target, "/ime/consumers/fcitx5-mozkey-ibg.json"))
                    .ok());
 }
 
@@ -259,7 +259,7 @@ TEST(GrimodexConsumerRegistrarTest, UnregisterPreservesOtherStateAndConsumers) {
 
   EXPECT_TRUE(registrar.Unregister().ok());
   EXPECT_FALSE(FileUtil::FileExists(
-                   absl::StrCat(root, "/consumers/fcitx5-mozkey.json"))
+                   absl::StrCat(root, "/consumers/fcitx5-mozkey-ibg.json"))
                    .ok());
   EXPECT_TRUE(FileUtil::FileExists(state).ok());
   EXPECT_TRUE(FileUtil::FileExists(other).ok());

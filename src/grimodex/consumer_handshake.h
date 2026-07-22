@@ -13,9 +13,9 @@
 
 namespace mozc::grimodex {
 
-inline constexpr absl::string_view kFcitx5ConsumerId = "fcitx5-mozkey";
-inline constexpr absl::string_view kTsfConsumerId = "tsf-mozkey";
-inline constexpr absl::string_view kImkitConsumerId = "imkit-mozkey";
+inline constexpr absl::string_view kFcitx5ConsumerId = "fcitx5-mozkey-ibg";
+inline constexpr absl::string_view kTsfConsumerId = "tsf-mozkey-ibg";
+inline constexpr absl::string_view kImkitConsumerId = "imkit-mozkey-ibg";
 
 inline constexpr absl::Duration kConsumerRefreshInterval =
     absl::Seconds(900);

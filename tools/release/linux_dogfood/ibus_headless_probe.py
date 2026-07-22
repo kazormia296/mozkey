@@ -34,7 +34,7 @@ TEXT_METADATA = frozenset({"IBusText", "IBusAttribute", "IBusAttrList"})
 FCITX_REMOTE_TIMEOUT_SECONDS = 5.0
 FCITX_REMOTE_PATH = "/usr/bin/fcitx5-remote"
 FCITX_PATH = "/usr/bin/fcitx5"
-IBUS_ENGINE = "mozkey"
+IBUS_ENGINE = "mozkey-ibg"
 MAX_READING_CHARACTERS = 128
 CONTROL_TIMEOUT_SECONDS = 15.0
 FIXTURE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "release_fixture.json")
@@ -318,11 +318,11 @@ def main() -> int:
         previous_fcitx = query_fcitx_snapshot()
         previous_handlers = install_termination_handlers()
         try:
-            run_fcitx_remote("-s", "mozkey")
+            run_fcitx_remote("-s", "mozkey-ibg")
             run_fcitx_remote("-o")
             pump_until(time.monotonic() + 0.25, lambda: False)
             requested_fcitx = query_fcitx_snapshot()
-            if requested_fcitx != FcitxSnapshot(input_method="mozkey", state="2"):
+            if requested_fcitx != FcitxSnapshot(input_method="mozkey-ibg", state="2"):
                 raise RuntimeError("requested Mozkey Fcitx identity was not established")
             verify_ibus_owner(bus, expected_owner)
 

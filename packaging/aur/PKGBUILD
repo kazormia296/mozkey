@@ -12,15 +12,15 @@ provides=("mozkey-ibg=${pkgver}")
 conflicts=('mozkey-ibg')
 options=('!debug' '!strip')
 source_x86_64=(
-  "${pkgname}-${pkgver}-${CARCH}.tar.xz::${url}/releases/download/v${pkgver}/mozkey-v${pkgver}-archlinux-${CARCH}.tar.xz"
+  "${pkgname}-${pkgver}-${CARCH}.tar.xz::${url}/releases/download/v${pkgver}/mozkey-ibg-v${pkgver}-archlinux-${CARCH}.tar.xz"
 )
 sha256sums_x86_64=('6ffac6020d419a3fabcbecd91f26497165c3c810dcda9bd4350e7f6d4b70fc71')
 
 package() {
   cp -a --no-preserve=ownership "${srcdir}/usr" "${pkgdir}/"
-  install -Dm644 "${srcdir}/usr/share/licenses/mozkey/Mozc-LICENSE.txt" \
+  install -Dm644 "${srcdir}/usr/share/licenses/mozkey-ibg/Mozc-LICENSE.txt" \
     "${pkgdir}/usr/share/licenses/${pkgname}/BSD-3-Clause.txt"
   install -Dm644 \
-    "${srcdir}/usr/share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt" \
+    "${srcdir}/usr/share/licenses/mozkey-ibg/zenz-runtime/llama.cpp-MIT.txt" \
     "${pkgdir}/usr/share/licenses/${pkgname}/MIT.txt"
 }

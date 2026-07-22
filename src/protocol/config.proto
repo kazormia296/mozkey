@@ -363,7 +363,7 @@ message Config {
 
   // Windows named pipe endpoint for zenz_scorer.exe.
   optional string zenz_live_correction_pipe_name = 1009
-      [default = "\\\\.\\pipe\\mozc_zenz_scorer"];
+      [default = "\\\\.\\pipe\\mozkey-ibg_zenz_scorer"];
 
   // Debug logging for zenz live correction.
   optional bool zenz_live_correction_debug = 1010 [default = false];

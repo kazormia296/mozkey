@@ -86,15 +86,15 @@ mkdir -p %{buildroot}
 cp -a usr %{buildroot}/
 
 %files
-/usr/lib/mozkey
-/usr/lib64/fcitx5/fcitx5-mozkey.so
-%doc /usr/share/doc/mozkey
+/usr/lib/mozkey-ibg
+/usr/lib64/fcitx5/fcitx5-mozkey-ibg.so
+%doc /usr/share/doc/mozkey-ibg
 /usr/share/fcitx5
 /usr/share/icons/hicolor
-%license /usr/share/licenses/mozkey
+%license /usr/share/licenses/mozkey-ibg
 /usr/share/locale
-/usr/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml
-/usr/share/mozkey
+/usr/share/metainfo/io.github.kazormia296.MozkeyIbG.metainfo.xml
+/usr/share/mozkey-ibg
 
 %changelog
 * Thu Jan 01 1970 kazormia296 <kazormia296@users.noreply.github.com> - ${version}-1
@@ -113,10 +113,10 @@ package="$1"
 [ "$(rpm -qp --qf '%{NAME}' "${package}")" = mozkey-ibg ]
 [ "$(rpm -qp --qf '%{VERSION}' "${package}")" = "${version}" ]
 [ "$(rpm -qp --qf '%{ARCH}' "${package}")" = x86_64 ]
-rpm -qpl "${package}" | grep -Fq '/usr/lib/mozkey/llama-server'
+rpm -qpl "${package}" | grep -Fq '/usr/lib/mozkey-ibg/llama-server'
 rpm -qpR "${package}" | grep -Eq '^fcitx5([[:space:]]|$)'
 rpm -qp --licensefiles "${package}" |
-  grep -Fq '/usr/share/licenses/mozkey/zenz-runtime/llama.cpp-MIT.txt'
+  grep -Fq '/usr/share/licenses/mozkey-ibg/zenz-runtime/llama.cpp-MIT.txt'
 (
   cd "${extract_dir}"
   rpm2cpio "${package}" | cpio -idm --quiet --no-absolute-filenames
@@ -128,8 +128,8 @@ install -d -m 755 "${output_dir}"
 install -m 644 "${package}" "${output_dir}/mozkey-ibg-${version}-1.x86_64.rpm"
 install -m 644 \
   "${repository_root}/dist/linux/fedora-x86_64/build-attestation.json" \
-  "${output_dir}/mozkey-v${version}-fedora-x86_64.build-attestation.json"
-install -m 644 "${stage_dir}/usr/share/doc/mozkey/mozkey-linux.spdx.json" \
-  "${output_dir}/mozkey-v${version}-fedora-x86_64.spdx.json"
+  "${output_dir}/mozkey-ibg-v${version}-fedora-x86_64.build-attestation.json"
+install -m 644 "${stage_dir}/usr/share/doc/mozkey-ibg/mozkey-linux.spdx.json" \
+  "${output_dir}/mozkey-ibg-v${version}-fedora-x86_64.spdx.json"
 printf 'Mozkey RPM package: %s\n' \
   "${output_dir}/mozkey-ibg-${version}-1.x86_64.rpm"

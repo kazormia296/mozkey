@@ -53,7 +53,7 @@ IDB_FOOTER_LOGO_COLOR_200  BITMAP    "data/images/win/candidate_window_logo_PBGR
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_FILE_DESCRIPTION "Google 日本語入力 レンダラー"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_FILE_DESCRIPTION "Mozc Renderer"
+    #define MOZC_RES_FILE_DESCRIPTION "Mozkey IbG Renderer"
   #endif
 #endif
 #ifndef MOZC_RES_FILETYPE

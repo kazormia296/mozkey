@@ -419,7 +419,7 @@ class LinuxBuildAttestationTest(unittest.TestCase):
                 for argument in "$@"; do printf '%s\n' "$argument" >> "$MOZKEY_TEST_BUILD_LOG"; done
                 if [ "${MOZKEY_TEST_BUILD_FAIL:-0}" = 1 ]; then exit 19; fi
                 for output in \
-                  src/bazel-bin/unix/fcitx5/fcitx5-mozkey.so \
+                  src/bazel-bin/unix/fcitx5/fcitx5-mozkey-ibg.so \
                   src/bazel-bin/unix/fcitx5/grimodex_consumer_tool \
                   src/bazel-bin/server/mozc_server \
                   src/bazel-bin/gui/tool/mozc_tool \

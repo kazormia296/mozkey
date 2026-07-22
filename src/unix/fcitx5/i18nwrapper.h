@@ -22,7 +22,7 @@
 #ifndef UNIX_FCITX5_I18NWRAPPER_H_
 #define UNIX_FCITX5_I18NWRAPPER_H_
 
-#define FCITX_GETTEXT_DOMAIN "fcitx5-mozkey"
+#define FCITX_GETTEXT_DOMAIN "fcitx5-mozkey-ibg"
 
 #include <fcitx-utils/i18n.h>  // IWYU pragma: export
 

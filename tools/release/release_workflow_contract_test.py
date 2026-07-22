@@ -332,15 +332,15 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
     def test_public_product_filenames_are_versioned(self) -> None:
         expected = {
             "linux": (
-                "dist/mozkey-v*-archlinux-x86_64.tar.xz",
+                "dist/mozkey-ibg-v*-archlinux-x86_64.tar.xz",
                 "dist/mozkey-ibg_*_amd64.deb",
                 "dist/mozkey-ibg-*-1.x86_64.rpm",
             ),
             "macos": (
-                "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg",
+                "MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_macos_arm64.pkg",
             ),
             "windows": (
-                "Mozkey_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi",
+                "MozkeyIbG_v${{ needs.prepare_daily_dictionary.outputs.release_version }}_x64.msi",
             ),
         }
         for platform, filenames in expected.items():
@@ -559,22 +559,22 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
     def test_publish_replaces_and_verifies_exact_asset_set(self) -> None:
         publish = self.jobs["publish"]
         expected = {
-            "Mozkey_v${RELEASE_VERSION}_arm64.msi",
-            "Mozkey_v${RELEASE_VERSION}_macos_arm64.pkg",
-            "Mozkey_v${RELEASE_VERSION}_universal.msi",
-            "Mozkey_v${RELEASE_VERSION}_x64.msi",
+            "MozkeyIbG_v${RELEASE_VERSION}_arm64.msi",
+            "MozkeyIbG_v${RELEASE_VERSION}_macos_arm64.pkg",
+            "MozkeyIbG_v${RELEASE_VERSION}_universal.msi",
+            "MozkeyIbG_v${RELEASE_VERSION}_x64.msi",
             "archlinux-build-packages.txt",
             "fedora-build-packages.txt",
             "mozkey-ibg-${RELEASE_VERSION}-1.x86_64.rpm",
             "mozkey-ibg_${RELEASE_VERSION}_amd64.deb",
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.build-attestation.json",
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.spdx.json",
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz",
-            "mozkey-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz.sha256",
-            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.build-attestation.json",
-            "mozkey-v${RELEASE_VERSION}-fedora-x86_64.spdx.json",
-            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.build-attestation.json",
-            "mozkey-v${RELEASE_VERSION}-ubuntu-x86_64.spdx.json",
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.build-attestation.json",
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.spdx.json",
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz",
+            "mozkey-ibg-v${RELEASE_VERSION}-archlinux-x86_64.tar.xz.sha256",
+            "mozkey-ibg-v${RELEASE_VERSION}-fedora-x86_64.build-attestation.json",
+            "mozkey-ibg-v${RELEASE_VERSION}-fedora-x86_64.spdx.json",
+            "mozkey-ibg-v${RELEASE_VERSION}-ubuntu-x86_64.build-attestation.json",
+            "mozkey-ibg-v${RELEASE_VERSION}-ubuntu-x86_64.spdx.json",
             "ubuntu-build-packages.txt",
         }
         allowlist = re.search(

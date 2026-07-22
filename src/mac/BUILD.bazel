@@ -49,6 +49,7 @@ load(
     "MACOS_CODESIGN_IDENTITY_TESTING",
     "MACOS_KEYCHAIN_INSTALLER_RELEASE",
     "MACOS_KEYCHAIN_INSTALLER_TESTING",
+    "MOZKEY_IBG_PRODUCT_PREFIX",
 )
 
 package(default_visibility = ["//visibility:private"])
@@ -103,7 +104,11 @@ mozc_macos_application(
     ),
     app_icons = ["//data/images/mac:product_icon.icns"],
     bundle_id = MACOS_BUNDLE_ID_PREFIX,
-    bundle_name = BRANDING,
+    bundle_name = mozc_select(
+        default = "GoogleJapaneseInput",
+        oss = MOZKEY_IBG_PRODUCT_PREFIX,
+        prod = "GoogleJapaneseInput",
+    ),
     infoplists = ["Info.plist"],
     resources = [
         "//data/images/mac:direct.tiff",
@@ -399,7 +404,7 @@ mozc_macos_application(
     bundle_name = "Uninstall" +
                   mozc_select(
                       default = "GoogleJapaneseInput",
-                      oss = "Mozc",
+                      oss = "MozkeyIbG",
                       prod = "GoogleJapaneseInput",
                   ),
     infoplists = ["Uninstaller/Info.plist"],
@@ -560,7 +565,7 @@ mozc_py_binary(
 genrule(
     name = "package",
     srcs = [":package_files"],
-    outs = ["Mozc.pkg"],
+    outs = ["MozkeyIbG.pkg"],
     cmd = "$(location :build_package) --input $(location :package_files)" +
           " --output $@" +
           ' --codesign_identity "' + CODESIGN_IDENTITY_INSTALLER_SELECT + '"' +

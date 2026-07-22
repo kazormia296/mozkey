@@ -47,10 +47,10 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
                 '''\
                 #!/bin/sh
                 set -eu
-                install -D -m 755 /bin/true "${DESTDIR}/usr/lib/mozkey/mozc_server"
-                install -D -m 644 /dev/null "${DESTDIR}/usr/share/doc/mozkey/marker.txt"
-                install -d "${DESTDIR}/usr/lib/mozkey"
-                ln -s /usr/bin/llama-server "${DESTDIR}/usr/lib/mozkey/llama-server"
+                install -D -m 755 /bin/true "${DESTDIR}/usr/lib/mozkey-ibg/mozc_server"
+                install -D -m 644 /dev/null "${DESTDIR}/usr/share/doc/mozkey-ibg/marker.txt"
+                install -d "${DESTDIR}/usr/lib/mozkey-ibg"
+                ln -s /usr/bin/llama-server "${DESTDIR}/usr/lib/mozkey-ibg/llama-server"
                 '''
             ),
             encoding="utf-8",
@@ -119,7 +119,7 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
             first = self.run_package(repository, package_script, output)
             self.assertEqual(first.returncode, 0, first.stderr)
 
-            base = "mozkey-v0.8.0-archlinux-x86_64"
+            base = "mozkey-ibg-v0.8.0-archlinux-x86_64"
             archive = output / f"{base}.tar.xz"
             checksum = output / f"{base}.tar.xz.sha256"
             sbom = output / f"{base}.spdx.json"
@@ -160,11 +160,11 @@ class PackageMozkeyLinuxBazelTest(unittest.TestCase):
                 capture_output=True,
             ).stdout.splitlines()
             self.assertIn(
-                "usr/share/doc/mozkey/linux-build-attestation.json",
+                "usr/share/doc/mozkey-ibg/linux-build-attestation.json",
                 archive_listing,
             )
             self.assertIn(
-                "usr/share/doc/mozkey/archlinux-build-packages.txt",
+                "usr/share/doc/mozkey-ibg/archlinux-build-packages.txt",
                 archive_listing,
             )
 

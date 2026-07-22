@@ -18,36 +18,36 @@ do
     mofile="${install_tmpdir}/${lang}.mo"
     msgfmt "${pofile}" -o "${mofile}"
     atomic_install_file "${mofile}" 644 \
-      "${DESTDIR}${PREFIX}/share/locale/${lang}/LC_MESSAGES/fcitx5-mozkey.mo"
+      "${DESTDIR}${PREFIX}/share/locale/${lang}/LC_MESSAGES/fcitx5-mozkey-ibg.mo"
 done
 
-atomic_install_file unix/fcitx5/mozkey-addon.conf 644 \
-  "${DESTDIR}${PREFIX}/share/fcitx5/addon/mozkey.conf"
-atomic_install_file unix/fcitx5/mozkey.conf 644 \
-  "${DESTDIR}${PREFIX}/share/fcitx5/inputmethod/mozkey.conf"
+atomic_install_file unix/fcitx5/mozkey-ibg-addon.conf 644 \
+  "${DESTDIR}${PREFIX}/share/fcitx5/addon/mozkey-ibg.conf"
+atomic_install_file unix/fcitx5/mozkey-ibg.conf 644 \
+  "${DESTDIR}${PREFIX}/share/fcitx5/inputmethod/mozkey-ibg.conf"
 
 DESTDIR="${DESTDIR}" PREFIX="${PREFIX}" ../scripts/install_fcitx5_icons
 
-metainfo_output="${install_tmpdir}/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
-msgfmt --xml -d unix/fcitx5/po/ --template unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml.in -o "${metainfo_output}"
+metainfo_output="${install_tmpdir}/io.github.kazormia296.MozkeyIbG.metainfo.xml"
+msgfmt --xml -d unix/fcitx5/po/ --template unix/fcitx5/io.github.kazormia296.MozkeyIbG.metainfo.xml.in -o "${metainfo_output}"
 atomic_install_file "${metainfo_output}" 644 \
-  "${DESTDIR}${PREFIX}/share/metainfo/org.fcitx.Fcitx5.Addon.Mozkey.metainfo.xml"
+  "${DESTDIR}${PREFIX}/share/metainfo/io.github.kazormia296.MozkeyIbG.metainfo.xml"
 
 atomic_install_file "${repository_root}/LICENSE" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/Mozc-LICENSE.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/Mozc-LICENSE.txt"
 atomic_install_file \
   "${repository_root}/LICENSES/Fcitx5-Mozc-BSD-3-Clause.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/Fcitx5-Mozc-BSD-3-Clause.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/Fcitx5-Mozc-BSD-3-Clause.txt"
 atomic_install_file "${repository_root}/LICENSES/LGPL-2.1-or-later.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/LGPL-2.1-or-later.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/LGPL-2.1-or-later.txt"
 atomic_install_file "${repository_root}/THIRD_PARTY_NOTICES.md" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/THIRD_PARTY_NOTICES.md"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/THIRD_PARTY_NOTICES.md"
 atomic_install_file \
   "${repository_root}/src/win32/installer/zenz_runtime/licenses/Apache-2.0.txt" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/dictionary/Apache-2.0.txt"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/dictionary/Apache-2.0.txt"
 atomic_install_file \
   "${repository_root}/tools/dictionary/RELEASE_THIRD_PARTY_NOTICES.md" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/dictionary/THIRD_PARTY_NOTICES.md"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/dictionary/THIRD_PARTY_NOTICES.md"
 atomic_install_file \
   "${repository_root}/tools/dictionary/daily_sources.lock.json" 644 \
-  "${DESTDIR}${PREFIX}/share/licenses/mozkey/dictionary/daily_sources.lock.json"
+  "${DESTDIR}${PREFIX}/share/licenses/mozkey-ibg/dictionary/daily_sources.lock.json"
